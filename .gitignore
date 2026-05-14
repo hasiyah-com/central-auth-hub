@@ -1,0 +1,42 @@
+# ============ Secrets ============
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+keys/
+
+# ============ Python ============
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+.venv/
+*.egg-info/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# ============ Node ============
+node_modules/
+.next/
+dist/
+build/
+*.log
+
+# ============ IDE ============
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# ============ Database ============
+*.db
+*.sqlite
+
+# ============ Docker ============
+postgres_data/

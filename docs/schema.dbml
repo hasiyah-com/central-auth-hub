@@ -1,0 +1,140 @@
+// Central Auth Hub — Database Schema (DBML)
+// วิธีใช้: ไปที่ https://dbdiagram.io/d → New Diagram → Import → DBML → paste ไฟล์นี้
+// จะเห็น ER Diagram ทันที สามารถ export เป็น PDF/PNG ใส่ในเล่มจบได้
+
+Project central_auth_hub {
+  database_type: 'PostgreSQL'
+  Note: '''
+    ระบบจัดการสิทธิ์ผู้ใช้แบบศูนย์กลาง สำหรับมหาวิทยาลัย
+    - 100 users (70 student + 15 teacher + 10 staff + 5 admin)
+    - 2 subsystems (หอพัก + ห้องสมุด)
+    - ML Verifier ใช้ Isolation Forest
+  '''
+}
+
+// ============ TABLE: users ============
+Table users {
+  id uuid [pk, default: `gen_random_uuid()`]
+  google_sub varchar(255) [unique, note: 'จาก Google OAuth — null ตอน seed']
+  email varchar(255) [unique, not null]
+  full_name varchar(255) [not null]
+  user_type varchar(20) [not null, note: 'student/teacher/staff/admin']
+
+  identifier varchar(50) [note: 'student_id หรือ employee_id']
+  faculty varchar(100)
+  major varchar(100)
+  year_or_position varchar(50)
+
+  phone varchar(20)
+  address text
+
+  status varchar(20) [default: 'active', note: 'active/suspended/deleted']
+  is_hub_admin boolean [default: false]
+  created_at timestamp [default: `now()`]
+  updated_at timestamp [default: `now()`]
+
+  indexes {
+    email
+    user_type
+    faculty
+    (faculty, user_type) [name: 'idx_faculty_type']
+    status
+  }
+}
+
+// ============ TABLE: subsystems ============
+Table subsystems {
+  id uuid [pk, default: `gen_random_uuid()`]
+  name varchar(255) [not null, note: 'ระบบหอพัก, ระบบห้องสมุด']
+  description text
+  client_id varchar(64) [unique, not null]
+  client_secret_hash text [not null, note: 'Argon2id hash ไม่เก็บ plaintext']
+  redirect_uris "text[]" [not null]
+  scope "text[]" [not null, note: 'email, name, student_id, faculty, ...']
+  status varchar(20) [default: 'pending', note: 'pending/active/suspended']
+  owner_user_id uuid [ref: > users.id]
+  created_at timestamp [default: `now()`]
+  approved_at timestamp
+
+  indexes {
+    client_id
+    status
+  }
+}
+
+// ============ TABLE: access_list ============
+// Whitelist ของ user ที่เข้าถึงแต่ละ subsystem ได้
+Table access_list {
+  id uuid [pk, default: `gen_random_uuid()`]
+  subsystem_id uuid [not null, ref: > subsystems.id]
+  user_id uuid [not null, ref: > users.id]
+  role_in_sub varchar(50) [note: 'resident, student, staff, admin per subsystem']
+  granted_by uuid [ref: > users.id]
+  granted_at timestamp [default: `now()`]
+  revoked_at timestamp [note: 'NULL = ยังมีสิทธิ์']
+
+  indexes {
+    subsystem_id
+    user_id
+    (subsystem_id, user_id) [unique]
+  }
+}
+
+// ============ TABLE: login_sessions ============
+// บันทึกทุก login ใช้สำหรับ audit + ML training
+Table login_sessions {
+  id uuid [pk, default: `gen_random_uuid()`]
+  user_id uuid [ref: > users.id]
+  subsystem_id uuid [ref: > subsystems.id]
+  ip inet
+  user_agent text
+  geo_country varchar(50)
+  geo_city varchar(100)
+  anomaly_score "numeric(3,2)" [note: '0.00 - 1.00 จาก ML']
+  decision varchar(20) [note: 'pass/mfa/block']
+  created_at timestamp [default: `now()`]
+
+  indexes {
+    user_id
+    subsystem_id
+    created_at
+    decision
+  }
+}
+
+// ============ TABLE: audit_logs ============
+// ทุกการกระทำของ admin + ระบบ — append-only
+Table audit_logs {
+  id uuid [pk, default: `gen_random_uuid()`]
+  actor_id uuid [note: 'NULL ถ้าเป็น system action']
+  action varchar(100) [not null, note: 'access_added, login_blocked, ...']
+  target_type varchar(50)
+  target_id uuid
+  ip inet
+  metadata json
+  created_at timestamp [default: `now()`]
+
+  indexes {
+    action
+    actor_id
+    created_at
+    target_id
+  }
+}
+
+// ============ TABLE: secret_retrieval_tokens ============
+// One-time link ให้ developer ดู client_secret ครั้งเดียว
+Table secret_retrieval_tokens {
+  id uuid [pk, default: `gen_random_uuid()`]
+  token varchar(128) [unique, not null]
+  subsystem_id uuid [not null, ref: > subsystems.id]
+  secret_encrypted text [not null, note: 'AES encrypted ลบหลังดูแล้ว']
+  expires_at timestamp [not null, note: '15 นาทีจาก create']
+  used_at timestamp [note: 'NULL = ยังไม่ถูกใช้']
+  created_at timestamp [default: `now()`]
+
+  indexes {
+    token
+    expires_at
+  }
+}
