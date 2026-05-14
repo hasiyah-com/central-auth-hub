@@ -3,9 +3,11 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.sessions import SessionMiddleware
 
+from app.config import settings
 from app.database import Base, engine
-from app.routers import health, users, admin
+from app.routers import health, users, admin, auth
 
 
 @asynccontextmanager
@@ -18,9 +20,12 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Central Auth Hub",
     description="ระบบจัดการสิทธิ์ผู้ใช้แบบศูนย์กลาง สำหรับมหาวิทยาลัย",
-    version="0.1.0",
+    version="0.2.0",
     lifespan=lifespan,
 )
+
+# Session middleware — จำเป็นสำหรับ Authlib OAuth (เก็บ state ระหว่าง flow)
+app.add_middleware(SessionMiddleware, secret_key=settings.secret_key)
 
 # CORS — allow frontend during development
 app.add_middleware(
@@ -33,6 +38,7 @@ app.add_middleware(
 
 # Routers
 app.include_router(health.router, tags=["Health"])
+app.include_router(auth.router, prefix="/auth", tags=["Authentication"])
 app.include_router(users.router, prefix="/admin/users", tags=["Admin: Users"])
 app.include_router(admin.router, prefix="/admin", tags=["Admin"])
 
@@ -41,7 +47,8 @@ app.include_router(admin.router, prefix="/admin", tags=["Admin"])
 def root():
     return {
         "name": "Central Auth Hub",
-        "version": "0.1.0",
+        "version": "0.2.0",
         "docs": "/docs",
         "health": "/health",
+        "login": "/auth/google/login",
     }
