@@ -54,6 +54,11 @@ class SubsystemResponse(BaseModel):
     created_at: datetime
 
 
+class WhitelistAddUser(BaseModel):
+    email: str
+    role: str = "member"
+
+
 # ============ 1. ลงทะเบียน subsystem ============
 
 @router.post("/subsystems")
@@ -278,6 +283,7 @@ def get_whitelist(
         "total": len(rows),
         "users": [
             {
+                "user_id": str(u.id),
                 "email": u.email,
                 "full_name": u.full_name,
                 "role_in_sub": al.role_in_sub,
@@ -285,4 +291,140 @@ def get_whitelist(
             }
             for al, u in rows
         ],
+    }
+
+
+# ============ 5. เพิ่ม user ทีละคน (หลังลงทะเบียนแล้ว) ============
+
+def _get_owned_subsystem(subsystem_id: str, user: User, db: Session) -> Subsystem:
+    """helper — หา subsystem ที่ user เป็นเจ้าของ (ใช้ซ้ำหลาย endpoint)."""
+    subsystem = (
+        db.query(Subsystem)
+        .filter(Subsystem.id == subsystem_id, Subsystem.owner_user_id == user.id)
+        .first()
+    )
+    if not subsystem:
+        raise HTTPException(
+            status_code=404, detail="ไม่พบ subsystem หรือคุณไม่ใช่เจ้าของ"
+        )
+    return subsystem
+
+
+@router.post("/subsystems/{subsystem_id}/whitelist/user")
+def add_user_to_whitelist(
+    subsystem_id: str,
+    payload: WhitelistAddUser,
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """เพิ่ม user เข้า whitelist ทีละคน (สำหรับเพิ่มภายหลังจากลงทะเบียนแล้ว).
+
+    ใช้ได้ตลอดเวลา ไม่ว่า subsystem จะ status ไหน — เจ้าของจัดการ whitelist
+    ของตัวเองได้
+    """
+    subsystem = _get_owned_subsystem(subsystem_id, user, db)
+
+    # หา target user
+    target = db.query(User).filter(User.email == payload.email).first()
+    if not target:
+        raise HTTPException(
+            status_code=404, detail=f"ไม่พบ user อีเมล {payload.email} ใน Hub"
+        )
+
+    # เช็คว่ามีใน access_list อยู่แล้วไหม
+    existing = (
+        db.query(AccessList)
+        .filter(
+            AccessList.subsystem_id == subsystem.id,
+            AccessList.user_id == target.id,
+        )
+        .first()
+    )
+    if existing:
+        if existing.revoked_at is None:
+            raise HTTPException(
+                status_code=400, detail=f"{payload.email} อยู่ใน whitelist อยู่แล้ว"
+            )
+        # เคยถูก revoke -> คืนสิทธิ์ (un-revoke) แทนการสร้างใหม่
+        existing.revoked_at = None
+        existing.role_in_sub = payload.role
+        existing.granted_by = user.id
+        action = "whitelist_user_restored"
+    else:
+        db.add(AccessList(
+            subsystem_id=subsystem.id,
+            user_id=target.id,
+            role_in_sub=payload.role,
+            granted_by=user.id,
+        ))
+        action = "whitelist_user_added"
+
+    log_action(
+        db,
+        actor_id=user.id,
+        action=action,
+        target_type="subsystem",
+        target_id=subsystem.id,
+        ip=request.client.host if request.client else None,
+        metadata={"email": payload.email, "role": payload.role},
+    )
+    db.commit()
+
+    return {
+        "subsystem": subsystem.name,
+        "email": payload.email,
+        "role": payload.role,
+        "result": "เพิ่มเข้า whitelist แล้ว",
+    }
+
+
+# ============ 6. ลบ user ออกจาก whitelist ============
+
+@router.delete("/subsystems/{subsystem_id}/whitelist/{user_id}")
+def remove_user_from_whitelist(
+    subsystem_id: str,
+    user_id: str,
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """ลบ user ออกจาก whitelist (soft delete — set revoked_at).
+
+    user คนนั้นจะ login เข้า subsystem นี้ไม่ได้อีก แต่ประวัติยังเก็บไว้
+    """
+    subsystem = _get_owned_subsystem(subsystem_id, user, db)
+
+    entry = (
+        db.query(AccessList)
+        .filter(
+            AccessList.subsystem_id == subsystem.id,
+            AccessList.user_id == user_id,
+            AccessList.revoked_at.is_(None),
+        )
+        .first()
+    )
+    if not entry:
+        raise HTTPException(
+            status_code=404, detail="ไม่พบ user นี้ใน whitelist (หรือถูกลบไปแล้ว)"
+        )
+
+    # soft delete — ไม่ลบ record จริง เก็บประวัติไว้
+    entry.revoked_at = datetime.utcnow()
+
+    log_action(
+        db,
+        actor_id=user.id,
+        action="whitelist_user_removed",
+        target_type="subsystem",
+        target_id=subsystem.id,
+        ip=request.client.host if request.client else None,
+        metadata={"removed_user_id": user_id},
+    )
+    db.commit()
+
+    return {
+        "subsystem": subsystem.name,
+        "removed_user_id": user_id,
+        "result": "ลบออกจาก whitelist แล้ว (soft delete — ประวัติยังเก็บไว้)",
     }
