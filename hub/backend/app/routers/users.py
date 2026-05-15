@@ -6,6 +6,7 @@ from pydantic import BaseModel, EmailStr
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.deps import require_hub_admin
 from app.models import User
 
 router = APIRouter()
@@ -48,9 +49,10 @@ def list_users(
     limit: int = 100,
     user_type: Optional[str] = Query(None, description="filter by user_type"),
     faculty: Optional[str] = Query(None, description="filter by faculty"),
+    admin: User = Depends(require_hub_admin),
     db: Session = Depends(get_db),
 ):
-    """List all users with optional filters."""
+    """List all users with optional filters. (admin only)"""
     q = db.query(User)
     if user_type:
         q = q.filter(User.user_type == user_type)
@@ -75,8 +77,11 @@ def list_users(
 
 
 @router.get("/count")
-def count_users(db: Session = Depends(get_db)):
-    """Count users by type."""
+def count_users(
+    admin: User = Depends(require_hub_admin),
+    db: Session = Depends(get_db),
+):
+    """Count users by type. (admin only)"""
     from sqlalchemy import func
     rows = (
         db.query(User.user_type, func.count(User.id))
@@ -87,7 +92,11 @@ def count_users(db: Session = Depends(get_db)):
 
 
 @router.get("/{user_id}", response_model=UserResponse)
-def get_user(user_id: str, db: Session = Depends(get_db)):
+def get_user(
+    user_id: str,
+    admin: User = Depends(require_hub_admin),
+    db: Session = Depends(get_db),
+):
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
