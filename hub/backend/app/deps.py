@@ -47,3 +47,20 @@ def require_hub_admin(user: User = Depends(get_current_user)) -> User:
     if not user.is_hub_admin:
         raise HTTPException(status_code=403, detail="ต้องเป็น Hub admin")
     return user
+
+
+def require_developer(user: User = Depends(get_current_user)) -> User:
+    """ใช้ใน Developer Portal — อนุญาตเฉพาะ teacher/staff/admin.
+
+    นักศึกษาไม่สามารถลงทะเบียนระบบย่อยได้ — เป็นไปตามนโยบาย:
+    'ระบบกลางใช้สำหรับบุคลากร — นักศึกษาเข้าระบบผ่านระบบย่อยเท่านั้น'
+    """
+    if user.user_type == "student":
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "นักศึกษาไม่สามารถลงทะเบียนระบบย่อยได้ — "
+                "endpoint นี้สำหรับอาจารย์ เจ้าหน้าที่ หรือ admin เท่านั้น"
+            ),
+        )
+    return user

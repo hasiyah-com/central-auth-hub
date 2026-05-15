@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.database import get_db
-from app.deps import get_current_user
+from app.deps import get_current_user, require_developer
 from app.models import AccessList, Subsystem, SecretRetrievalToken, User
 from app.services.audit_service import log_action
 from app.services.secret_service import (
@@ -65,7 +65,7 @@ class WhitelistAddUser(BaseModel):
 def register_subsystem(
     payload: SubsystemCreate,
     request: Request,
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_developer),
     db: Session = Depends(get_db),
 ):
     """ลงทะเบียนระบบย่อยใหม่ — สร้าง client_id/secret + one-time retrieval link.
@@ -141,7 +141,7 @@ def register_subsystem(
 
 @router.get("/subsystems", response_model=list[SubsystemResponse])
 def my_subsystems(
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_developer),
     db: Session = Depends(get_db),
 ):
     """ดูรายการ subsystem ทั้งหมดที่ฉันเป็นเจ้าของ."""
@@ -167,7 +167,7 @@ def upload_whitelist(
     subsystem_id: str,
     request: Request,
     file: UploadFile = File(..., description="CSV: email,role,note"),
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_developer),
     db: Session = Depends(get_db),
 ):
     """อัปโหลด whitelist CSV — ระบุว่า user คนไหนเข้า subsystem นี้ได้.
@@ -257,7 +257,7 @@ def upload_whitelist(
 @router.get("/subsystems/{subsystem_id}/whitelist")
 def get_whitelist(
     subsystem_id: str,
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_developer),
     db: Session = Depends(get_db),
 ):
     """ดูรายชื่อ user ใน whitelist ของ subsystem."""
@@ -315,7 +315,7 @@ def add_user_to_whitelist(
     subsystem_id: str,
     payload: WhitelistAddUser,
     request: Request,
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_developer),
     db: Session = Depends(get_db),
 ):
     """เพิ่ม user เข้า whitelist ทีละคน (สำหรับเพิ่มภายหลังจากลงทะเบียนแล้ว).
@@ -386,7 +386,7 @@ def remove_user_from_whitelist(
     subsystem_id: str,
     user_id: str,
     request: Request,
-    user: User = Depends(get_current_user),
+    user: User = Depends(require_developer),
     db: Session = Depends(get_db),
 ):
     """ลบ user ออกจาก whitelist (soft delete — set revoked_at).
