@@ -1,0 +1,12 @@
+email,role,note
+650001@uni.ac.th,resident,นักศึกษาที่พักหอ
+650002@uni.ac.th,resident,นักศึกษาที่พักหอ
+650003@uni.ac.th,resident,นักศึกษาที่พักหอ
+650004@uni.ac.th,resident,
+650005@uni.ac.th,resident,
+650006@uni.ac.th,resident,
+650007@uni.ac.th,resident,
+650008@uni.ac.th,resident,
+650009@uni.ac.th,resident,
+650010@uni.ac.th,resident,
+nonexistent@fake.com,resident,อีเมลนี้ไม่มีใน Hub - ระบบจะ skip โดยตั้งใจ
