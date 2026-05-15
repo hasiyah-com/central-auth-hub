@@ -25,6 +25,9 @@ class Settings(BaseSettings):
     google_client_secret: str = ""
     google_redirect_uri: str = "http://localhost:8000/auth/google/callback"
 
+    # OAuth flow (subsystem) — callback ที่ Google ส่งกลับตอน subsystem login
+    oauth_callback_uri: str = "http://localhost:8000/oauth/callback"
+
     # ML Service
     ml_service_url: str = "http://ml-service:9000"
 

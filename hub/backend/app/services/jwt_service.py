@@ -58,6 +58,48 @@ def create_access_token(user, audience: str | None = None) -> str:
     return jwt.encode(payload, _private_key(), algorithm="RS256", headers=headers)
 
 
+def create_subsystem_token(
+    user, client_id: str, scope: list[str], role_in_sub: str
+) -> str:
+    """สร้าง JWT สำหรับ subsystem — ใส่ข้อมูล user เฉพาะ field ที่อยู่ใน scope.
+
+    นี่คือหัวใจของ "Scope-based Data Access":
+    subsystem ได้รับเฉพาะข้อมูลที่ลงทะเบียนขอไว้เท่านั้น
+    """
+    now = datetime.now(timezone.utc)
+    expire = now + timedelta(minutes=settings.jwt_access_token_expire_minutes)
+
+    payload = {
+        "iss": ISSUER,
+        "sub": str(user.id),
+        "aud": client_id,                    # token นี้ใช้ได้เฉพาะ subsystem นี้
+        "iat": int(now.timestamp()),
+        "exp": int(expire.timestamp()),
+        "role_in_subsystem": role_in_sub,
+    }
+
+    # map scope -> field ของ user (ใส่เฉพาะที่ subsystem ขอ)
+    scope_field_map = {
+        "email": ("email", user.email),
+        "name": ("name", user.full_name),
+        "student_id": ("student_id", user.identifier),
+        "employee_id": ("employee_id", user.identifier),
+        "faculty": ("faculty", user.faculty),
+        "major": ("major", user.major),
+        "year": ("year", user.year_or_position),
+        "position": ("position", user.year_or_position),
+        "phone": ("phone", user.phone),
+        "address": ("address", user.address),
+    }
+    for s in scope:
+        if s in scope_field_map:
+            key, value = scope_field_map[s]
+            payload[key] = value
+
+    headers = {"kid": KEY_ID}
+    return jwt.encode(payload, _private_key(), algorithm="RS256", headers=headers)
+
+
 def verify_token(token: str, audience: str | None = None) -> dict:
     """ตรวจสอบ JWT — คืน payload ถ้า valid, raise JWTError ถ้าไม่ valid."""
     options = {"verify_aud": audience is not None}
