@@ -10,3 +10,4 @@ email,role,note
 650009@uni.ac.th,resident,
 650010@uni.ac.th,resident,
 nonexistent@fake.com,resident,อีเมลนี้ไม่มีใน Hub - ระบบจะ skip โดยตั้งใจ
+U08@example.invalid,resident,
