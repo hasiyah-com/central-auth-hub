@@ -67,6 +67,18 @@ async def google_callback(request: Request, db: Session = Depends(get_db)):
     if user.status != "active":
         raise HTTPException(status_code=403, detail=f"บัญชีถูก {user.status}")
 
+    # *** นโยบาย: นักศึกษาเข้าระบบกลางโดยตรงไม่ได้ ***
+    # ต้องเข้าใช้บริการผ่านระบบย่อยที่ได้รับสิทธิ์เท่านั้น
+    if user.user_type == "student":
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "นักศึกษาไม่สามารถเข้าระบบกลางโดยตรงได้ — "
+                "กรุณาเข้าใช้ผ่านระบบย่อยที่ได้รับสิทธิ์ "
+                "(เช่น ระบบหอพัก ระบบห้องสมุด)"
+            ),
+        )
+
     # ผูก google_sub ครั้งแรกที่ login (ถ้ายังไม่มี)
     if not user.google_sub:
         user.google_sub = google_sub

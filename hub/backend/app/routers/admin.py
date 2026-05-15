@@ -24,8 +24,11 @@ router = APIRouter()
 # ============ Overview KPIs ============
 
 @router.get("/overview")
-def admin_overview(db: Session = Depends(get_db)):
-    """KPI สรุปสำหรับหน้า Overview Dashboard."""
+def admin_overview(
+    admin: User = Depends(require_hub_admin),
+    db: Session = Depends(get_db),
+):
+    """KPI สรุปสำหรับหน้า Overview Dashboard. (admin only)"""
     total_users = db.query(func.count(User.id)).scalar()
     active_users = db.query(func.count(User.id)).filter(User.status == "active").scalar()
     subsystems_count = db.query(func.count(Subsystem.id)).scalar()
