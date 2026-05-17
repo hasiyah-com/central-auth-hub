@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}หน้าแรก — ระบบหอพัก{% endblock %}
+{% block content %}
+
+<div class="mb-6">
+  <h1 class="text-2xl font-bold">สวัสดี {{ user.full_name }} 👋</h1>
+  <p class="text-slate-500 text-sm">ข้อมูลของคุณจาก Central Auth Hub</p>
+</div>
+
+<div class="grid md:grid-cols-3 gap-4 mb-6">
+  <div class="bg-white p-5 rounded-lg border border-slate-200">
+    <div class="text-xs text-slate-500 mb-1">role ในระบบหอพัก</div>
+    <div class="text-lg font-semibold"><span class="badge badge-{{ user.role_in_sub }}">{{ user.role_in_sub }}</span></div>
+  </div>
+  <div class="bg-white p-5 rounded-lg border border-slate-200">
+    <div class="text-xs text-slate-500 mb-1">ห้องปัจจุบัน</div>
+    <div class="text-lg font-semibold">
+      {% if current_room %}
+        🛏️ {{ current_room.room_number }}
+      {% else %}
+        <span class="text-slate-400">ยังไม่ได้ check-in</span>
+      {% endif %}
+    </div>
+  </div>
+  <div class="bg-white p-5 rounded-lg border border-slate-200">
+    <div class="text-xs text-slate-500 mb-1">สถานะ</div>
+    <div class="text-lg font-semibold">
+      {% if resident %}{{ resident.status }}{% else %}—{% endif %}
+    </div>
+  </div>
+</div>
+
+{% if latest_reservation %}
+<div class="bg-white p-5 rounded-lg border border-slate-200 mb-6">
+  <h2 class="font-semibold mb-3">📋 Reservation ล่าสุด</h2>
+  <div class="flex items-center justify-between">
+    <div>
+      <div class="text-sm text-slate-500">สถานะ</div>
+      <div><span class="badge badge-{{ latest_reservation.status if latest_reservation.status != 'checked_in' else 'checked' }}">{{ latest_reservation.status }}</span></div>
+    </div>
+    <a href="/me" class="text-indigo-600 hover:underline text-sm">ดูรายละเอียด →</a>
+  </div>
+  {% if latest_reservation.status == "rejected" and latest_reservation.reject_reason %}
+  <div class="mt-3 bg-red-50 border-l-4 border-red-400 p-3 rounded text-sm text-red-700">
+    เหตุผลที่ปฏิเสธ: {{ latest_reservation.reject_reason }}
+  </div>
+  {% endif %}
+</div>
+{% endif %}
+
+<div class="grid md:grid-cols-2 gap-4">
+  <a href="/rooms" class="block bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 p-5 rounded-lg transition">
+    <div class="text-2xl mb-2">🏠</div>
+    <div class="font-semibold">ดูห้องทั้งหมด</div>
+    <div class="text-sm text-slate-600">เลือกห้องที่ต้องการจอง</div>
+  </a>
+  <a href="/me" class="block bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 p-5 rounded-lg transition">
+    <div class="text-2xl mb-2">👤</div>
+    <div class="font-semibold">โปรไฟล์ของฉัน</div>
+    <div class="text-sm text-slate-600">ดูข้อมูล + จัดการ reservation</div>
+  </a>
+</div>
+
+{% endblock %}

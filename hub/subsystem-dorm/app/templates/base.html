@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}ระบบหอพัก{% endblock %}</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="bg-slate-50 text-slate-900 min-h-screen">
+
+{% if user %}
+<nav class="bg-white border-b border-slate-200">
+  <div class="max-w-6xl mx-auto px-4 py-3 flex items-center justify-between">
+    <div class="flex items-center gap-6">
+      <a href="/" class="text-lg font-bold text-indigo-700">🏠 ระบบหอพัก</a>
+      <div class="flex gap-4 text-sm">
+        <a href="/" class="hover:text-indigo-600">หน้าแรก</a>
+        <a href="/rooms" class="hover:text-indigo-600">ห้องทั้งหมด</a>
+        <a href="/me" class="hover:text-indigo-600">โปรไฟล์</a>
+        {% if user.role_in_sub == "staff" %}
+        <span class="text-slate-300">|</span>
+        <a href="/staff/residents" class="hover:text-pink-600 text-pink-700">👥 ผู้พักทั้งหมด</a>
+        <a href="/staff/reservations" class="hover:text-pink-600 text-pink-700">📋 คำขอจอง</a>
+        {% endif %}
+      </div>
+    </div>
+    <div class="flex items-center gap-3 text-sm">
+      <span class="badge badge-{{ user.role_in_sub }}">{{ user.role_in_sub }}</span>
+      <span class="text-slate-700">{{ user.full_name }}</span>
+      <a href="/logout" class="text-slate-500 hover:text-red-600">ออกจากระบบ</a>
+    </div>
+  </div>
+</nav>
+{% endif %}
+
+<main class="max-w-6xl mx-auto px-4 py-8">
+  {% block content %}{% endblock %}
+</main>
+
+</body>
+</html>
