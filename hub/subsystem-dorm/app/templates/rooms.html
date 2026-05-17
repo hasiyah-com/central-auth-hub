@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}ห้องทั้งหมด — ระบบหอพัก{% endblock %}
+{% block content %}
+
+<div class="mb-6 flex items-center justify-between">
+  <div>
+    <h1 class="text-2xl font-bold">🏠 ห้องทั้งหมด</h1>
+    <p class="text-slate-500 text-sm">เลือกห้องที่ต้องการดูรายละเอียด/จอง</p>
+  </div>
+  <div class="text-sm text-slate-500">รวม {{ rooms|length }} ห้อง</div>
+</div>
+
+<div class="grid md:grid-cols-3 lg:grid-cols-4 gap-4">
+  {% for room in rooms %}
+  {% set occ = occupancy[room.id|string] %}
+  <a href="/rooms/{{ room.id }}"
+     class="block bg-white border border-slate-200 hover:border-indigo-400 hover:shadow-sm rounded-lg p-4 transition">
+    <div class="flex items-start justify-between mb-2">
+      <div>
+        <div class="text-lg font-bold">{{ room.room_number }}</div>
+        <div class="text-xs text-slate-500">ตึก {{ room.building }} · ชั้น {{ room.floor }}</div>
+      </div>
+      <span class="badge badge-{{ room.status }}">{{ room.status }}</span>
+    </div>
+    <div class="text-sm text-slate-600">
+      ผู้พัก {{ occ }} / {{ room.capacity }} คน
+    </div>
+    <div class="mt-2 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+      <div class="h-full bg-indigo-500" style="width: {{ (occ / room.capacity * 100)|round }}%"></div>
+    </div>
+  </a>
+  {% endfor %}
+</div>
+
+{% endblock %}

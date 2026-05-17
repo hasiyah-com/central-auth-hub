@@ -1,0 +1,16 @@
+/* Subsystem A — สไตล์เพิ่มเติมจาก Tailwind CDN */
+@import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;600;700&display=swap');
+
+body { font-family: 'Sarabun', system-ui, sans-serif; }
+
+.badge { display:inline-block; padding:2px 8px; border-radius:6px; font-size:12px; font-weight:500; }
+.badge-pending  { background:#fef3c7; color:#92400e; }
+.badge-approved { background:#dbeafe; color:#1e40af; }
+.badge-rejected { background:#fee2e2; color:#991b1b; }
+.badge-checked  { background:#d1fae5; color:#065f46; }
+.badge-cancelled{ background:#e5e7eb; color:#374151; }
+.badge-available{ background:#d1fae5; color:#065f46; }
+.badge-full     { background:#fef3c7; color:#92400e; }
+.badge-maintenance { background:#fee2e2; color:#991b1b; }
+.badge-resident { background:#e0e7ff; color:#3730a3; }
+.badge-staff    { background:#fce7f3; color:#9d174d; }

@@ -1,0 +1,96 @@
+{% extends "base.html" %}
+{% block title %}โปรไฟล์ — ระบบหอพัก{% endblock %}
+{% block content %}
+
+<h1 class="text-2xl font-bold mb-1">👤 โปรไฟล์ของฉัน</h1>
+<p class="text-slate-500 text-sm mb-6">ข้อมูลจาก Central Auth Hub (ผ่าน JWT scope)</p>
+
+<div class="grid md:grid-cols-2 gap-6">
+  <!-- ข้อมูลจาก Hub -->
+  <div class="bg-white border border-slate-200 rounded-lg p-6">
+    <h2 class="font-semibold mb-4 text-slate-800">ข้อมูลจาก Hub</h2>
+    <dl class="text-sm space-y-2">
+      <div class="flex justify-between"><dt class="text-slate-500">ชื่อ</dt><dd>{{ user.full_name }}</dd></div>
+      <div class="flex justify-between"><dt class="text-slate-500">อีเมล</dt><dd>{{ user.email }}</dd></div>
+      <div class="flex justify-between"><dt class="text-slate-500">รหัส</dt><dd>{{ user.student_id or "—" }}</dd></div>
+      <div class="flex justify-between"><dt class="text-slate-500">คณะ</dt><dd>{{ user.faculty or "—" }}</dd></div>
+      <div class="flex justify-between"><dt class="text-slate-500">โทร</dt><dd>{{ user.phone or "—" }}</dd></div>
+      <div class="flex justify-between items-center pt-2 border-t"><dt class="text-slate-500">role</dt><dd><span class="badge badge-{{ user.role_in_sub }}">{{ user.role_in_sub }}</span></dd></div>
+    </dl>
+  </div>
+
+  <!-- ข้อมูลในระบบหอพัก -->
+  <div class="bg-white border border-slate-200 rounded-lg p-6">
+    <h2 class="font-semibold mb-4 text-slate-800">ข้อมูลในระบบหอพัก</h2>
+    {% if resident %}
+    <dl class="text-sm space-y-2">
+      <div class="flex justify-between"><dt class="text-slate-500">สถานะ</dt><dd>{{ resident.status }}</dd></div>
+      <div class="flex justify-between"><dt class="text-slate-500">ห้องที่อยู่</dt>
+        <dd>{% if current_room %}🛏️ {{ current_room.room_number }}{% else %}<span class="text-slate-400">ยังไม่มี</span>{% endif %}</dd>
+      </div>
+      <div class="flex justify-between"><dt class="text-slate-500">check-in</dt>
+        <dd>{{ resident.checked_in_at.strftime("%Y-%m-%d %H:%M") if resident.checked_in_at else "—" }}</dd>
+      </div>
+      <div class="flex justify-between"><dt class="text-slate-500">เข้าระบบครั้งแรก</dt>
+        <dd>{{ resident.created_at.strftime("%Y-%m-%d") }}</dd>
+      </div>
+    </dl>
+    {% else %}
+    <p class="text-slate-400 text-sm">ยังไม่มีข้อมูล</p>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Reservation history -->
+<div class="mt-6 bg-white border border-slate-200 rounded-lg p-6">
+  <h2 class="font-semibold mb-4 text-slate-800">📋 ประวัติการจอง</h2>
+  {% if reservations %}
+  <table class="w-full text-sm">
+    <thead class="text-left text-xs text-slate-500 border-b">
+      <tr>
+        <th class="py-2">ห้อง</th>
+        <th>วันที่ขอ</th>
+        <th>สถานะ</th>
+        <th>เหตุผล</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r, room in reservations %}
+      <tr class="border-b last:border-0">
+        <td class="py-3 font-medium">{{ room.room_number }}</td>
+        <td class="text-slate-600">{{ r.created_at.strftime("%Y-%m-%d %H:%M") }}</td>
+        <td>
+          <span class="badge badge-{{ r.status if r.status != 'checked_in' else 'checked' }}">{{ r.status }}</span>
+        </td>
+        <td class="text-slate-600 max-w-xs truncate">
+          {% if r.status == "rejected" and r.reject_reason %}
+            <span class="text-red-600">{{ r.reject_reason }}</span>
+          {% else %}
+            {{ r.reason or "—" }}
+          {% endif %}
+        </td>
+        <td class="text-right">
+          {% if r.status in ["pending", "approved"] and not r.cancelled_at %}
+          <form action="/reservation/{{ r.id }}/cancel" method="post" class="inline"
+                onsubmit="return confirm('ยกเลิก reservation นี้?');">
+            <button type="submit" class="text-red-600 hover:underline text-xs">ยกเลิก</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="text-slate-400 text-sm">ยังไม่เคยจองห้อง — ไปที่ <a href="/rooms" class="text-indigo-600 hover:underline">ห้องทั้งหมด</a> เพื่อเริ่มจอง</p>
+  {% endif %}
+</div>
+
+<div class="mt-6 bg-blue-50 border-l-4 border-blue-400 p-4 rounded text-sm text-slate-700">
+  <strong class="block mb-1 text-blue-800">หมายเหตุ</strong>
+  ข้อมูลด้านซ้ายมาจาก Hub ตามที่อยู่ใน JWT scope (email, name, student_id, faculty, phone)
+  หากต้องการเปลี่ยน → ติดต่อ admin มหาวิทยาลัย
+</div>
+
+{% endblock %}
