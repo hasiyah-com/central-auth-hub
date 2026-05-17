@@ -61,5 +61,44 @@ services:
       - ./hub/backend:/app
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
+  # ============ Subsystem A — ระบบหอพัก (Week 6) ============
+  postgres-dorm:
+    image: postgres:15-alpine
+    container_name: hub-postgres-dorm
+    environment:
+      POSTGRES_USER: ${DORM_POSTGRES_USER:-dorm}
+      POSTGRES_PASSWORD: ${DORM_POSTGRES_PASSWORD:-dormpass}
+      POSTGRES_DB: ${DORM_POSTGRES_DB:-dorm_db}
+    ports:
+      - "5433:5432"   # 5432 ใช้กับ Hub Postgres แล้ว
+    volumes:
+      - postgres_dorm_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DORM_POSTGRES_USER:-dorm} -d ${DORM_POSTGRES_DB:-dorm_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  subsystem-dorm:
+    build:
+      context: ./hub/subsystem-dorm
+      dockerfile: Dockerfile
+    container_name: hub-subsystem-dorm
+    env_file:
+      - ./hub/subsystem-dorm/.env
+    environment:
+      DATABASE_URL: postgresql+psycopg2://${DORM_POSTGRES_USER:-dorm}:${DORM_POSTGRES_PASSWORD:-dormpass}@postgres-dorm:5432/${DORM_POSTGRES_DB:-dorm_db}
+    ports:
+      - "8001:8000"
+    depends_on:
+      postgres-dorm:
+        condition: service_healthy
+      hub-backend:
+        condition: service_started
+    volumes:
+      - ./hub/subsystem-dorm:/app
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
 volumes:
   postgres_data:
+  postgres_dorm_data:

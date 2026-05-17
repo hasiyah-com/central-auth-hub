@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block title %}ห้อง {{ room.room_number }} — ระบบหอพัก{% endblock %}
+{% block content %}
+
+<a href="/rooms" class="text-sm text-indigo-600 hover:underline">← กลับหน้าห้องทั้งหมด</a>
+
+<div class="mt-4 bg-white border border-slate-200 rounded-lg p-6">
+  <div class="flex items-start justify-between mb-4">
+    <div>
+      <h1 class="text-3xl font-bold">🛏️ {{ room.room_number }}</h1>
+      <p class="text-slate-500 text-sm mt-1">ตึก {{ room.building }} · ชั้น {{ room.floor }} · รองรับ {{ room.capacity }} คน</p>
+    </div>
+    <span class="badge badge-{{ room.status }}">{{ room.status }}</span>
+  </div>
+
+  <div class="grid md:grid-cols-2 gap-4 mb-6">
+    <div class="bg-slate-50 p-4 rounded">
+      <div class="text-xs text-slate-500 mb-1">ผู้พักปัจจุบัน</div>
+      <div class="text-2xl font-bold">{{ occupancy }} / {{ room.capacity }}</div>
+    </div>
+    <div class="bg-slate-50 p-4 rounded">
+      <div class="text-xs text-slate-500 mb-1">ที่ว่าง</div>
+      <div class="text-2xl font-bold text-emerald-600">{{ room.capacity - occupancy }}</div>
+    </div>
+  </div>
+
+  {% if occupants %}
+  <h2 class="font-semibold mb-2 text-sm text-slate-700">ผู้พักในห้องนี้</h2>
+  <ul class="bg-slate-50 rounded p-3 mb-6 text-sm">
+    {% for r in occupants %}
+    <li class="py-1">{{ r.full_name }} <span class="text-slate-500">({{ r.email }})</span></li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+
+  <hr class="my-4 border-slate-200">
+
+  {% if user.role_in_sub == "staff" %}
+    <div class="bg-amber-50 border-l-4 border-amber-400 p-3 rounded text-sm text-amber-800">
+      คุณคือ staff — ไม่ต้องจองห้อง ใช้หน้า
+      <a href="/staff/reservations" class="underline">📋 คำขอจอง</a> เพื่อจัดการ
+    </div>
+  {% elif active_reservation %}
+    <div class="bg-blue-50 border-l-4 border-blue-400 p-3 rounded text-sm">
+      คุณมี reservation อยู่แล้ว (สถานะ:
+      <span class="badge badge-{{ active_reservation.status if active_reservation.status != 'checked_in' else 'checked' }}">{{ active_reservation.status }}</span>)
+      — ไปที่ <a href="/me" class="underline">โปรไฟล์</a> เพื่อจัดการ
+    </div>
+  {% elif room.status != "available" %}
+    <div class="bg-red-50 border-l-4 border-red-400 p-3 rounded text-sm text-red-700">
+      ห้องนี้ไม่พร้อมจอง ({{ room.status }})
+    </div>
+  {% else %}
+    <h2 class="font-semibold mb-3">📝 ขอจองห้องนี้</h2>
+    <form action="/reservation/rooms/{{ room.id }}/reserve" method="post" class="space-y-3">
+      <textarea name="reason" rows="3" placeholder="เหตุผลที่ต้องการห้องนี้ (ไม่บังคับ)"
+                class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:border-indigo-500"></textarea>
+      <button type="submit"
+              class="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-2 rounded-lg font-medium">
+        ส่งคำขอจอง
+      </button>
+      <p class="text-xs text-slate-500">หลังส่งคำขอ ต้องรอ staff อนุมัติก่อนจึงจะ check-in ได้</p>
+    </form>
+  {% endif %}
+</div>
+
+{% endblock %}
