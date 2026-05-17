@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block title %}{{ book.title }} — ระบบห้องสมุด{% endblock %}
+{% block content %}
+
+<a href="/books" class="text-sm text-emerald-600 hover:underline">← กลับไปคลังหนังสือ</a>
+
+<div class="mt-4 bg-white border border-slate-200 rounded-lg p-6">
+  <div class="flex items-start justify-between mb-2">
+    <div class="text-xs text-slate-500">{{ book.category or "—" }}</div>
+    {% if book.copies_available > 0 %}
+      <span class="badge badge-returned">ว่าง {{ book.copies_available }}/{{ book.copies_total }}</span>
+    {% else %}
+      <span class="badge badge-overdue">ยืมหมด</span>
+    {% endif %}
+  </div>
+
+  <h1 class="text-2xl font-bold mb-2">{{ book.title }}</h1>
+  <div class="text-slate-600 mb-2">{{ book.author }}</div>
+  <div class="text-xs text-slate-400 font-mono mb-4">ISBN {{ book.isbn }}</div>
+
+  {% if book.description %}
+  <div class="bg-slate-50 p-4 rounded text-sm text-slate-700 mb-6 whitespace-pre-line">{{ book.description }}</div>
+  {% endif %}
+
+  <hr class="my-4 border-slate-200">
+
+  {% if user.role_in_sub == "librarian" %}
+    <div class="bg-amber-50 border-l-4 border-amber-400 p-3 rounded text-sm text-amber-800">
+      คุณคือ librarian — ใช้หน้า
+      <a href="/librarian/borrows" class="underline">📋 รายการยืม</a> เพื่อจัดการคำขอ
+    </div>
+  {% elif active_borrowing %}
+    <div class="bg-blue-50 border-l-4 border-blue-400 p-3 rounded text-sm">
+      คุณมีการยืมเล่มนี้อยู่ (สถานะ:
+      <span class="badge badge-{{ active_borrowing.status }}">{{ active_borrowing.status }}</span>)
+      — ไปที่ <a href="/me" class="underline">การยืมของฉัน</a>
+    </div>
+  {% elif book.copies_available <= 0 %}
+    <div class="bg-red-50 border-l-4 border-red-400 p-3 rounded text-sm text-red-700">
+      ไม่มี copy ว่าง — รอผู้ยืมคืนก่อน
+    </div>
+  {% elif active_count >= max_borrows %}
+    <div class="bg-amber-50 border-l-4 border-amber-400 p-3 rounded text-sm text-amber-800">
+      คุณยืมพร้อมกันได้สูงสุด {{ max_borrows }} เล่ม (ตอนนี้: {{ active_count }})
+      — คืนเล่มอื่นก่อน
+    </div>
+  {% else %}
+    <h2 class="font-semibold mb-3">📖 ขอยืมเล่มนี้</h2>
+    <form action="/borrow/books/{{ book.id }}/request" method="post">
+      <button type="submit"
+              class="bg-emerald-600 hover:bg-emerald-700 text-white px-6 py-2 rounded-lg font-medium">
+        ส่งคำขอยืม
+      </button>
+      <p class="text-xs text-slate-500 mt-2">
+        หลังส่งคำขอ ต้องให้ librarian อนุมัติก่อน — ระยะยืม 14 วัน
+      </p>
+    </form>
+  {% endif %}
+</div>
+
+{% endblock %}

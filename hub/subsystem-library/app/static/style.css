@@ -1,0 +1,14 @@
+/* Subsystem B — ห้องสมุด — สไตล์เพิ่มเติมจาก Tailwind CDN */
+@import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;600;700&display=swap');
+
+body { font-family: 'Sarabun', system-ui, sans-serif; }
+
+.badge { display:inline-block; padding:2px 8px; border-radius:6px; font-size:12px; font-weight:500; }
+.badge-requested { background:#fef3c7; color:#92400e; }
+.badge-active    { background:#dbeafe; color:#1e40af; }
+.badge-returned  { background:#d1fae5; color:#065f46; }
+.badge-cancelled { background:#e5e7eb; color:#374151; }
+.badge-overdue   { background:#fee2e2; color:#991b1b; }
+.badge-member    { background:#e0e7ff; color:#3730a3; }
+.badge-librarian { background:#fce7f3; color:#9d174d; }
+.badge-withdrawn { background:#fee2e2; color:#991b1b; }

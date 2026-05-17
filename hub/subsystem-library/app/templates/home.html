@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}หน้าแรก — ระบบห้องสมุด{% endblock %}
+{% block content %}
+
+<div class="mb-6">
+  <h1 class="text-2xl font-bold">สวัสดี {{ user.full_name }} 👋</h1>
+  <p class="text-slate-500 text-sm">ยินดีต้อนรับสู่ระบบห้องสมุด</p>
+</div>
+
+<div class="grid md:grid-cols-3 gap-4 mb-6">
+  <div class="bg-white p-5 rounded-lg border border-slate-200">
+    <div class="text-xs text-slate-500 mb-1">role</div>
+    <div class="text-lg font-semibold"><span class="badge badge-{{ user.role_in_sub }}">{{ user.role_in_sub }}</span></div>
+  </div>
+  <div class="bg-white p-5 rounded-lg border border-slate-200">
+    <div class="text-xs text-slate-500 mb-1">กำลังยืม</div>
+    <div class="text-lg font-semibold">📖 {{ active_borrows }} / {{ max_borrows }} เล่ม</div>
+  </div>
+  <div class="bg-white p-5 rounded-lg border border-slate-200">
+    <div class="text-xs text-slate-500 mb-1">รออนุมัติ</div>
+    <div class="text-lg font-semibold">
+      {% if pending_borrows %}
+        <span class="text-amber-600">⏳ {{ pending_borrows }} เล่ม</span>
+      {% else %}
+        <span class="text-slate-400">—</span>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<div class="grid md:grid-cols-2 gap-4">
+  <a href="/books" class="block bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 p-5 rounded-lg transition">
+    <div class="text-2xl mb-2">🔍</div>
+    <div class="font-semibold">ค้นหาหนังสือ</div>
+    <div class="text-sm text-slate-600">ดูคลังหนังสือทั้งหมด ค้นด้วยชื่อ/ผู้แต่ง</div>
+  </a>
+  <a href="/me" class="block bg-blue-50 hover:bg-blue-100 border border-blue-200 p-5 rounded-lg transition">
+    <div class="text-2xl mb-2">📋</div>
+    <div class="font-semibold">การยืมของฉัน</div>
+    <div class="text-sm text-slate-600">ดูประวัติยืม + ยกเลิก request</div>
+  </a>
+</div>
+
+{% endblock %}

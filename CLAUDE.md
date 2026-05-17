@@ -8,7 +8,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ระบบประกอบด้วย:
 - **Hub** (Central Auth Server) — จัดการ identity, permissions, audit, dashboard
-- **Subsystems** — ระบบย่อยที่ต้องการ login ผ่าน Hub (Week 6: หอพัก, Week 7: ห้องสมุด)
+- **Subsystem A — ระบบหอพัก** (Week 6, port 8001) — OAuth client เต็มลูป + business logic จองห้อง
+- **Subsystem B — ระบบห้องสมุด** (Week 7, port 8002) — OAuth client + business logic ยืม/คืนหนังสือ
 - **ML Verifier** — Isolation Forest ตรวจ anomaly login (Shadow Mode)
 
 **สถาปัตยกรรมไม่ใช่ SSO** — แต่ละ subsystem มี session แยกของตัวเอง Hub ทำหน้าที่ authenticate + authorize เท่านั้น
@@ -71,7 +72,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```
 central-auth-starter/
-├── docker-compose.yml                    # 4 services: postgres, redis, hub-backend, ml-service
+├── docker-compose.yml                    # 8 services: hub-postgres, hub-redis, hub-backend, ml-service,
+│                                         #             postgres-dorm, subsystem-dorm,
+│                                         #             postgres-library, subsystem-library
 ├── .env.example                          # template (commit OK — placeholders only)
 ├── .env                                  # secrets (NEVER commit)
 ├── .gitignore                            # excludes .env, *.pem, keys/, postgres_data/
@@ -81,25 +84,29 @@ central-auth-starter/
 │   ├── schema.dbml                       # DBML for dbdiagram.io
 │   └── sample_whitelist.csv              # test CSV for whitelist upload
 │
-├── hub/backend/                          # Central Auth Hub
+├── hub/backend/                          # Central Auth Hub (port 8000)
 │   ├── Dockerfile
 │   ├── requirements.txt
 │   ├── app/
-│   │   ├── main.py                       # FastAPI entrypoint, routers, middleware
-│   │   ├── config.py                     # Pydantic Settings (loads .env)
-│   │   ├── database.py                   # SQLAlchemy engine + get_db()
-│   │   ├── models.py                     # 6 tables: users, subsystems, access_list,
+│   │   ├── main.py                       # FastAPI entrypoint + JWKS at /.well-known/jwks.json
+│   │   ├── config.py                     # Pydantic Settings + validate_production() fail-fast
+│   │   ├── database.py
+│   │   ├── models.py                     # 7 tables: users, subsystems, access_list,
 │   │   │                                 #          login_sessions, audit_logs,
-│   │   │                                 #          secret_retrieval_tokens
-│   │   ├── deps.py                       # get_current_user, require_hub_admin, require_developer
-│   │   ├── redis_client.py               # Redis connection (lazy)
+│   │   │                                 #          request_logs, secret_retrieval_tokens
+│   │   ├── deps.py                       # get_current_user, get_client_ip (X-Forwarded-For),
+│   │   │                                 #   require_hub_admin, require_developer
+│   │   ├── redis_client.py
 │   │   ├── services/
-│   │   │   ├── jwt_service.py            # create_access_token, create_subsystem_token, JWKS
-│   │   │   ├── secret_service.py         # Argon2id hash, AES encrypt for one-time link
+│   │   │   ├── jwt_service.py            # create_access_token (aud=hub.internal),
+│   │   │   │                             #   create_subsystem_token (aud=client_id), JWKS
+│   │   │   ├── secret_service.py         # Argon2id hash, Fernet (SECRET_ENCRYPTION_KEY),
+│   │   │   │                             #   hash_retrieval_token (HMAC-SHA256)
 │   │   │   ├── audit_service.py          # log_action() — bookkeeping
 │   │   │   ├── ml_client.py              # async httpx → ML service (fail-safe to pass)
 │   │   │   ├── feature_extraction.py     # 12 features from session + DB history
-│   │   │   └── pkce.py                   # verify_pkce, generate_pkce_pair
+│   │   │   ├── request_logger.py         # middleware: log all HTTP requests
+│   │   │   └── pkce.py                   # verify_pkce (hmac.compare_digest), generate_pkce_pair
 │   │   ├── routers/
 │   │   │   ├── health.py                 # GET /health, /health/db
 │   │   │   ├── auth.py                   # Google OAuth for Hub direct login
@@ -111,12 +118,43 @@ central-auth-starter/
 │   │   └── seeds/
 │   │       └── seed_users.py             # generate 100 users (70 student + 15 teacher + 10 staff + 5 admin)
 │   ├── keys/                             # JWT RSA keys (gitignored)
-│   │   ├── jwt_private.pem
-│   │   └── jwt_public.pem
 │   └── scripts/
-│       └── generate_jwt_keys.py          # generate RSA 2048 key pair
+│       └── generate_jwt_keys.py
 │
-└── ml-service/                           # ML Verifier (separate container)
+├── hub/subsystem-dorm/                   # Subsystem A — ระบบหอพัก (port 8001)
+│   ├── Dockerfile, requirements.txt, .env.example, README.md
+│   ├── app/
+│   │   ├── main.py, config.py, database.py, deps.py
+│   │   ├── models.py                     # rooms, residents, reservations, dorm_audit_logs
+│   │   ├── services/
+│   │   │   ├── hub_client.py             # PKCE + token exchange + JWKS verify (10 นาที cache)
+│   │   │   ├── session.py                # itsdangerous signed cookie (HttpOnly+SameSite)
+│   │   │   └── audit.py                  # log_action() ของ subsystem
+│   │   ├── routers/
+│   │   │   ├── auth.py                   # /login, /oauth/start, /oauth/callback, /logout
+│   │   │   ├── pages.py                  # /, /me, /rooms, /rooms/{id}
+│   │   │   ├── reservation.py            # POST /reservation/rooms/{id}/reserve, /cancel
+│   │   │   └── staff.py                  # /staff/residents, /staff/reservations + approve/reject/checkin
+│   │   ├── templates/                    # Jinja2 + Tailwind CDN (theme: indigo)
+│   │   └── static/style.css
+│   └── scripts/seed_rooms.py             # 24 ห้อง (ตึก A/B × 3 ชั้น × 4 ห้อง × capacity 2)
+│
+├── hub/subsystem-library/                # Subsystem B — ระบบห้องสมุด (port 8002)
+│   ├── Dockerfile, requirements.txt, .env.example, README.md
+│   ├── app/
+│   │   ├── main.py, config.py, database.py, deps.py
+│   │   ├── models.py                     # books, members, borrowings, library_audit_logs
+│   │   ├── services/                     # hub_client.py, session.py, audit.py (same pattern as dorm)
+│   │   ├── routers/
+│   │   │   ├── auth.py
+│   │   │   ├── pages.py                  # /, /books?q=&category=, /books/{id}, /me
+│   │   │   ├── borrow.py                 # POST /borrow/books/{id}/request, /cancel
+│   │   │   └── librarian.py              # /librarian/borrows + members + approve/reject/return
+│   │   ├── templates/                    # Jinja2 + Tailwind CDN (theme: emerald)
+│   │   └── static/style.css
+│   └── scripts/seed_books.py             # 30 หนังสือ × 6 หมวด
+│
+└── ml-service/                           # ML Verifier (separate container, port 9000)
     ├── Dockerfile
     ├── requirements.txt
     ├── app/
@@ -124,8 +162,8 @@ central-auth-starter/
     │   ├── features.py                   # FEATURE_NAMES (12), FEATURE_RANGES
     │   └── model.py                      # load IsolationForest, sigmoid score
     ├── scripts/
-    │   ├── generate_data.py              # synthetic data: 10000 normal + 500 anomaly
-    │   └── train_model.py                # train + evaluate (AUC, F1)
+    │   ├── generate_data.py
+    │   └── train_model.py
     ├── data/                             # sessions.csv (gitignored)
     └── models/                           # iforest_v1.pkl (gitignored)
 ```
@@ -155,24 +193,42 @@ docker compose restart hub-backend
 ```
 
 **Access points (dev):**
-- Hub API: http://localhost:8000
-- Hub Swagger: http://localhost:8000/docs (disabled in production via `ENABLE_DOCS=false`)
-- ML service: http://localhost:9000
-- ML Swagger: http://localhost:9000/docs
-- pgAdmin: connect to `localhost:5432`, user/pass/db from `.env`
+- Hub API: http://localhost:8000 (Swagger `/docs`, JWKS `/.well-known/jwks.json`)
+- ML service: http://localhost:9000 (Swagger `/docs`, score endpoint `/v1/score`)
+- Subsystem A — ระบบหอพัก: http://localhost:8001
+- Subsystem B — ระบบห้องสมุด: http://localhost:8002
+- pgAdmin: `localhost:5432` (Hub), `localhost:5433` (Dorm), `localhost:5434` (Library)
+
+**Seed subsystems (after Hub admin registers them via /developer/subsystems):**
+```bash
+# 24 rooms (ตึก A/B × 3 ชั้น × 4 ห้อง × capacity 2)
+docker compose exec subsystem-dorm python -m scripts.seed_rooms
+
+# 30 books × 6 categories
+docker compose exec subsystem-library python -m scripts.seed_books
+```
+
+Subsystem registration steps อยู่ใน README ของแต่ละ subsystem (`hub/subsystem-dorm/README.md`, `hub/subsystem-library/README.md`)
 
 ## Database Schema
 
-6 tables:
+**Hub Postgres (hub_db, port 5432) — 7 tables:**
 
 1. **users** (100 seeded) — id, google_sub, email, full_name, **user_type** (student/teacher/staff/admin), identifier, faculty, major, year_or_position, phone, address, status, is_hub_admin
 2. **subsystems** — id, name, client_id, **client_secret_hash** (argon2), redirect_uris, scope, status (pending/active/suspended), owner_user_id
 3. **access_list** — id, subsystem_id, user_id, role_in_sub, granted_by, granted_at, revoked_at (soft delete)
 4. **login_sessions** — id, user_id, subsystem_id, ip, user_agent, geo_country, anomaly_score (0.00-1.00), decision (pass/mfa/block/would_mfa/would_block), created_at (UTC)
 5. **audit_logs** — id, actor_id, action, target_type, target_id, ip, metadata (JSONB), created_at
-6. **secret_retrieval_tokens** — id, token, subsystem_id, secret_encrypted (Fernet), expires_at (15min), used_at
+6. **request_logs** — id, method, path, status_code, user_id, ip, user_agent, duration_ms, error_detail, created_at (เพิ่มใน Week 5 v2)
+7. **secret_retrieval_tokens** — id, **token** (HMAC-SHA256 ของ plaintext), subsystem_id, secret_encrypted (Fernet via SECRET_ENCRYPTION_KEY), expires_at (15min), used_at
 
-**FK constraint important** — re-seed must delete child tables first (access_list, login_sessions, audit_logs, subsystems, secret_retrieval_tokens) then users. See `seed_users.py` for the correct order.
+**Subsystem A — postgres-dorm (dorm_db, port 5433) — 4 tables:**
+- `rooms`, `residents`, `reservations`, `dorm_audit_logs` — ไม่มี FK ไป Hub (hub_user_id เก็บเป็น UUID อิสระจาก JWT.sub)
+
+**Subsystem B — postgres-library (library_db, port 5434) — 4 tables:**
+- `books`, `members`, `borrowings`, `library_audit_logs` — รูปแบบเดียวกับ Subsystem A
+
+**FK constraint important** — re-seed Hub users must delete child tables first (access_list, login_sessions, audit_logs, request_logs, subsystems, secret_retrieval_tokens) then users. See `seed_users.py` for the correct order.
 
 **Timezone** — all timestamps stored as UTC. Convert at display time with `AT TIME ZONE 'Asia/Bangkok'`.
 
@@ -215,9 +271,9 @@ Students blocked at `/auth/google/callback` — never receive a Hub-direct JWT.
 
 ### Auth (Hub direct)
 - `GET /auth/google/login` — start Google OAuth (Hub direct, blocks students)
-- `GET /auth/google/callback` — exchange code, issue Hub JWT
+- `GET /auth/google/callback` — exchange code, issue Hub JWT (aud=hub.internal)
 - `GET /auth/me` — return current user (test endpoint)
-- `GET /auth/.well-known/jwks.json` — public key for subsystems
+- `GET /.well-known/jwks.json` — public key for subsystems (root path — OIDC standard)
 
 ### OAuth (Subsystem flow)
 - `GET /oauth/authorize` — entry from subsystem (client_id, redirect_uri, state, code_challenge)
@@ -253,17 +309,31 @@ Students blocked at `/auth/google/callback` — never receive a Hub-direct JWT.
 
 ## Security Model
 
-**JWT** — RS256 (asymmetric), 60min expiry, includes:
-- Hub-direct token: sub, email, user_type, faculty
-- Subsystem token: sub, **aud**=client_id, scope-based fields, role_in_subsystem
+**JWT** — RS256 (asymmetric), 60min expiry. ทุก token มี `aud` claim (บังคับ):
+- Hub-direct token: sub, **aud=hub.internal**, email, user_type, faculty
+- Subsystem token: sub, **aud=client_id**, scope-based fields, role_in_subsystem
 
-**PKCE** — required for all subsystem OAuth flows (gan auth code interception)
+`verify_token()` ของ Hub บังคับ `verify_aud=True` กับ `aud=hub.internal` → subsystem token (aud=cli_xxx) ใช้ที่ Hub ไม่ได้
 
-**One-time secret link** — `secret_retrieval_tokens` table, AES-Fernet encrypted, used_at marker, encrypted column zeroed after view
+Subsystem ตรวจ JWT ผ่าน JWKS ของ Hub (cache 10 นาที) + verify `aud=client_id ของเรา`
+
+**PKCE** — required for all subsystem OAuth flows (กัน auth code interception); ใช้ `hmac.compare_digest` กัน timing attack
+
+**One-time secret link** — `secret_retrieval_tokens.token` เก็บเป็น **HMAC-SHA256** (ไม่ใช่ plaintext); `secret_encrypted` ใช้ **Fernet** ผ่าน `SECRET_ENCRYPTION_KEY` (แยกจาก SECRET_KEY)
+
+**Atomic auth code** — `/oauth/token` ใช้ Redis `getdel` ป้องกัน race condition
+
+**Multi-tab safe OAuth** — `authreq:{hub_state}` เก็บใน Redis โดย key คือ state token ของ Hub (ไม่พึ่ง session)
 
 **Argon2id** — for client_secret hashing (memory=64MB, iterations=3)
 
-**Shadow Mode** — `ML_SHADOW_MODE=true` in .env — ML scores but doesn't block. Decision column gets `would_mfa` / `would_block` for shadow recommendations.
+**X-Forwarded-For** — `get_client_ip()` helper ใน deps.py + request_logger middleware อ่าน header ก่อน fallback ไป request.client.host (กัน Docker IP 172.x)
+
+**Production fail-fast** — `config.validate_production()` ปฏิเสธ start ถ้า APP_ENV=production แต่ยังใช้ default SECRET_KEY/SECRET_ENCRYPTION_KEY
+
+**Session (Subsystem)** — itsdangerous signed cookie, HttpOnly + SameSite=Lax, max_age 1h, separate salt per purpose (session vs OAuth flow state)
+
+**Shadow Mode (ML)** — `ML_SHADOW_MODE=true` in .env — ML scores but doesn't block. Decision column gets `would_mfa` / `would_block` for shadow recommendations.
 
 ## Common Tasks
 
@@ -329,7 +399,7 @@ docker compose exec ml-service python -m scripts.train_model
 
 2. **Browser direct URL → 401 expected** — `/admin/users/count` in browser address bar returns 401 because no `Authorization` header. Use Swagger Authorize button or Postman. This is the RBAC working correctly.
 
-3. **In Docker, `request.client.host` returns `172.18.0.1`** — Docker internal IP, not real client IP. Production needs to read `X-Forwarded-For` header.
+3. **`request.client.host` ใน Docker = `172.18.0.1`** — แก้แล้วผ่าน `get_client_ip()` helper ใน `deps.py` (อ่าน X-Forwarded-For ก่อน) + request_logger middleware ก็ใช้แล้ว
 
 4. **`geo_country` is currently NULL** — GeoIP lookup not implemented yet. Plans: MaxMind GeoIP2 in Week 7+.
 
@@ -366,10 +436,10 @@ Future (Week 13+):
 | 2 | Google OAuth + JWT (Hub direct) | ✅ |
 | 3 | Subsystem Registration + Whitelist | ✅ |
 | 4 | OAuth flow with PKCE + access_list check | ✅ |
-| 5 | ML Verifier (Isolation Forest, 12 features, Shadow Mode) | ✅ |
-| 6 | Subsystem A — ระบบหอพัก | 🔄 next |
-| 7 | Subsystem B — ระบบห้องสมุด | ⏳ |
-| 8 | Admin Dashboard frontend (Next.js) | ⏳ |
+| 5 | ML Verifier (Isolation Forest, 12 features, Shadow Mode) + security hardening (17 bugs) | ✅ |
+| 6 | Subsystem A — ระบบหอพัก (FastAPI + Jinja2 + postgres-dorm) | ✅ |
+| 7 | Subsystem B — ระบบห้องสมุด (FastAPI + Jinja2 + postgres-library) | ✅ |
+| 8 | Admin Dashboard frontend (Next.js) | 🔄 next |
 | 9-10 | MFA flow + token revocation | ⏳ |
 | 11-12 | Security hardening + penetration test | ⏳ |
 | 13-14 | Test suite + documentation | ⏳ |
