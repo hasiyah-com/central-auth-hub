@@ -15,6 +15,7 @@ from app.config import settings
 from app.database import get_db
 from app.deps import get_current_user
 from app.models import User
+from app.services.audit_service import log_action
 from app.services.jwt_service import create_access_token, get_jwks
 
 router = APIRouter()
@@ -57,19 +58,41 @@ async def google_callback(request: Request, db: Session = Depends(get_db)):
     email = userinfo["email"]
     google_sub = userinfo["sub"]
 
+    client_ip = request.client.host if request.client else None
+
     # หา user ใน DB (จาก 100 คนที่ seed)
     user = db.query(User).filter(User.email == email).first()
     if not user:
+        log_action(
+            db, actor_id=None,
+            action="hub_login_failed_unknown_email",
+            target_type="email", target_id=None, ip=client_ip,
+            metadata={"email": email, "google_sub": google_sub},
+        )
+        db.commit()
         raise HTTPException(
             status_code=403,
             detail=f"อีเมล {email} ไม่ใช่ผู้ใช้ของมหาวิทยาลัย",
         )
     if user.status != "active":
+        log_action(
+            db, actor_id=user.id,
+            action="hub_login_failed_inactive",
+            target_type="user", target_id=user.id, ip=client_ip,
+            metadata={"email": email, "status": user.status},
+        )
+        db.commit()
         raise HTTPException(status_code=403, detail=f"บัญชีถูก {user.status}")
 
     # *** นโยบาย: นักศึกษาเข้าระบบกลางโดยตรงไม่ได้ ***
-    # ต้องเข้าใช้บริการผ่านระบบย่อยที่ได้รับสิทธิ์เท่านั้น
     if user.user_type == "student":
+        log_action(
+            db, actor_id=user.id,
+            action="hub_login_blocked_student",
+            target_type="user", target_id=user.id, ip=client_ip,
+            metadata={"email": email, "user_type": "student"},
+        )
+        db.commit()
         raise HTTPException(
             status_code=403,
             detail=(
@@ -83,6 +106,15 @@ async def google_callback(request: Request, db: Session = Depends(get_db)):
     if not user.google_sub:
         user.google_sub = google_sub
         db.commit()
+
+    # log การ login สำเร็จ
+    log_action(
+        db, actor_id=user.id,
+        action="hub_login_success",
+        target_type="user", target_id=user.id, ip=client_ip,
+        metadata={"email": email, "user_type": user.user_type},
+    )
+    db.commit()
 
     # ออก JWT
     access_token = create_access_token(user)

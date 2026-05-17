@@ -8,6 +8,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from app.config import settings
 from app.database import Base, engine
 from app.routers import health, users, admin, auth, developer, secret, oauth
+from app.services.request_logger import RequestLoggerMiddleware
 
 
 @asynccontextmanager
@@ -20,9 +21,16 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="Central Auth Hub",
     description="ระบบจัดการสิทธิ์ผู้ใช้แบบศูนย์กลาง สำหรับมหาวิทยาลัย",
-    version="0.4.0",
+    version="0.5.0",
     lifespan=lifespan,
+    # ปิด docs ใน production (set ENABLE_DOCS=false ใน .env)
+    docs_url="/docs" if settings.enable_docs else None,
+    redoc_url="/redoc" if settings.enable_docs else None,
+    openapi_url="/openapi.json" if settings.enable_docs else None,
 )
+
+# Request logger — log ทุก HTTP request ลง request_logs (skip /health, /docs)
+app.add_middleware(RequestLoggerMiddleware)
 
 # Session middleware — จำเป็นสำหรับ Authlib OAuth (เก็บ state ระหว่าง flow)
 app.add_middleware(SessionMiddleware, secret_key=settings.secret_key)

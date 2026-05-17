@@ -104,6 +104,26 @@ class AuditLog(Base):
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
 
 
+class RequestLog(Base):
+    """บันทึก HTTP request ทุกครั้งที่เข้าระบบ — สำหรับ audit + traffic analysis.
+
+    หมายเหตุ: user_id ไม่มี FK constraint — เก็บได้แม้ user ถูกลบไปแล้ว
+             (สำหรับ failed login ที่ไม่มี user_id ก็ใส่ NULL)
+    """
+    __tablename__ = "request_logs"
+
+    id = uuid_pk()
+    method = Column(String(10), nullable=False)
+    path = Column(Text, nullable=False, index=True)
+    status_code = Column(Integer, index=True)
+    user_id = Column(UUID(as_uuid=True), index=True, nullable=True)
+    ip = Column(INET)
+    user_agent = Column(Text)
+    duration_ms = Column(Integer)
+    error_detail = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+
+
 class SecretRetrievalToken(Base):
     """One-time link สำหรับให้นักพัฒนาดู client_secret ครั้งเดียว"""
     __tablename__ = "secret_retrieval_tokens"

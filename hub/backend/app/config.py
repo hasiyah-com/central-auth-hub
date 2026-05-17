@@ -8,6 +8,8 @@ class Settings(BaseSettings):
     # App
     app_env: str = "development"
     secret_key: str = "dev-secret-change-me"
+    # ปิด Swagger UI ใน production — กันคนภายนอกเห็น API tree
+    enable_docs: bool = True
 
     # Database
     database_url: str = "postgresql+psycopg2://hub:devpassword@localhost:5432/hub_db"
@@ -30,6 +32,8 @@ class Settings(BaseSettings):
 
     # ML Service
     ml_service_url: str = "http://ml-service:9000"
+    ml_timeout_seconds: float = 2.0
+    ml_shadow_mode: bool = True   # True = log score แต่ไม่ block / False = enforce
 
     # Email
     smtp_host: str = "smtp.gmail.com"
