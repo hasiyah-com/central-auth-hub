@@ -129,6 +129,8 @@ class SecretRetrievalToken(Base):
     __tablename__ = "secret_retrieval_tokens"
 
     id = uuid_pk()
+    # เก็บเป็น HMAC-SHA256 ของ plaintext token (hex 64 chars) — ไม่เก็บ plaintext
+    # ถ้า DB หลุดก็เอา token ที่นี่ไป retrieve ไม่ได้
     token = Column(String(128), unique=True, nullable=False, index=True)
     subsystem_id = Column(UUID(as_uuid=True), ForeignKey("subsystems.id"), nullable=False)
     secret_encrypted = Column(Text, nullable=False)   # AES-encrypted, ลบหลังดู

@@ -10,16 +10,18 @@
 """
 import base64
 import hashlib
+import hmac
 
 
 def verify_pkce(code_verifier: str, code_challenge: str) -> bool:
     """ตรวจสอบ PKCE — คืน True ถ้า code_verifier ตรงกับ code_challenge.
 
     code_challenge = base64url( SHA256(code_verifier) ) แบบไม่มี padding (=)
+    ใช้ hmac.compare_digest กัน timing attack
     """
     digest = hashlib.sha256(code_verifier.encode("ascii")).digest()
     computed_challenge = base64.urlsafe_b64encode(digest).decode("ascii").rstrip("=")
-    return computed_challenge == code_challenge
+    return hmac.compare_digest(computed_challenge, code_challenge)
 
 
 def generate_pkce_pair() -> tuple[str, str]:

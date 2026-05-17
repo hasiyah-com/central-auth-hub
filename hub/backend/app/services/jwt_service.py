@@ -31,10 +31,13 @@ def _public_key() -> str:
 # ============ สร้าง / ตรวจสอบ token ============
 
 def create_access_token(user, audience: str | None = None) -> str:
-    """สร้าง JWT access token สำหรับ user.
+    """สร้าง JWT access token สำหรับ user ที่ login กับ Hub โดยตรง.
 
     audience = client_id ของ subsystem (ถ้าเป็น token สำหรับ subsystem)
-               หรือ None ถ้าเป็น token ทั่วไปของ Hub
+               หรือ None = token ของ Hub เอง (จะตั้ง aud = jwt_hub_audience)
+
+    การแยก audience สำคัญมาก — กัน subsystem token มาใช้กับ Hub endpoint
+    เพราะ verify_token() ที่ Hub จะบังคับเช็ค aud = jwt_hub_audience
     """
     now = datetime.now(timezone.utc)
     expire = now + timedelta(minutes=settings.jwt_access_token_expire_minutes)
@@ -43,6 +46,7 @@ def create_access_token(user, audience: str | None = None) -> str:
         # Standard claims
         "iss": ISSUER,
         "sub": str(user.id),
+        "aud": audience or settings.jwt_hub_audience,
         "iat": int(now.timestamp()),
         "exp": int(expire.timestamp()),
         # User data
@@ -51,8 +55,6 @@ def create_access_token(user, audience: str | None = None) -> str:
         "user_type": user.user_type,
         "faculty": user.faculty,
     }
-    if audience:
-        payload["aud"] = audience
 
     headers = {"kid": KEY_ID}
     return jwt.encode(payload, _private_key(), algorithm="RS256", headers=headers)
@@ -101,15 +103,19 @@ def create_subsystem_token(
 
 
 def verify_token(token: str, audience: str | None = None) -> dict:
-    """ตรวจสอบ JWT — คืน payload ถ้า valid, raise JWTError ถ้าไม่ valid."""
-    options = {"verify_aud": audience is not None}
+    """ตรวจสอบ JWT — คืน payload ถ้า valid, raise JWTError ถ้าไม่ valid.
+
+    audience: ค่าที่คาดหวังใน aud claim. ถ้า None จะใช้ jwt_hub_audience
+              (กัน subsystem token หลุดมาใช้ที่ Hub).
+    """
+    expected_aud = audience or settings.jwt_hub_audience
     return jwt.decode(
         token,
         _public_key(),
         algorithms=["RS256"],
         issuer=ISSUER,
-        audience=audience,
-        options=options,
+        audience=expected_aud,
+        options={"verify_aud": True},
     )
 
 

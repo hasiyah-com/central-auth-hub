@@ -57,7 +57,12 @@ class RequestLoggerMiddleware(BaseHTTPMiddleware):
 
         start = time.time()
         user_id = _extract_user_id(request)
-        client_ip = request.client.host if request.client else None
+        # ใช้ X-Forwarded-For ถ้ามี (Docker/nginx/cloudflare) — กัน 172.x.x.x
+        xff = request.headers.get("x-forwarded-for")
+        if xff:
+            client_ip = xff.split(",")[0].strip()
+        else:
+            client_ip = request.client.host if request.client else None
         user_agent = request.headers.get("user-agent")
 
         # เรียก endpoint จริง

@@ -24,6 +24,7 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.database import get_db
+from app.deps import get_client_ip
 from app.models import AccessList, LoginSession, Subsystem, User
 from app.redis_client import redis_client
 from app.routers.auth import oauth          # ใช้ Authlib client ตัวเดียวกับ Week 2
@@ -70,37 +71,49 @@ async def authorize(
             detail="redirect_uri ไม่ตรงกับที่ลงทะเบียนไว้",
         )
 
-    # 3. เก็บ OAuth request ใน Redis
-    req_id = secrets.token_urlsafe(24)
+    # 3. เก็บ OAuth request ใน Redis โดยใช้ "state token ของ Hub" เป็น key
+    #    (state ที่ subsystem ส่งมาเก็บแยกเป็นข้อมูลภายใน)
+    #
+    #    การใช้ state token เป็น Redis key ทำให้:
+    #    - เปิดหลาย tab พร้อมกันได้ (ไม่ทับกันใน session)
+    #    - state ที่ Google ส่งกลับ = key ของ Redis ตรงๆ
+    hub_state = secrets.token_urlsafe(24)
     redis_client.setex(
-        f"authreq:{req_id}",
+        f"authreq:{hub_state}",
         AUTH_REQUEST_TTL,
         json.dumps({
             "client_id": client_id,
             "redirect_uri": redirect_uri,
-            "state": state,
+            "state": state,                  # state ของ subsystem (ส่งกลับตอน redirect)
             "code_challenge": code_challenge,
             "subsystem_id": str(subsystem.id),
             "scope": subsystem.scope,        # ใช้ scope ที่ลงทะเบียนไว้
         }),
     )
 
-    # 4. จำ req_id ใน session แล้วส่งผู้ใช้ไป Google
-    request.session["oauth_req_id"] = req_id
-    return await oauth.google.authorize_redirect(request, settings.oauth_callback_uri)
+    # 4. ส่ง hub_state ของเราไปกับ Google — Authlib จะเก็บใน session
+    #    แบบ keyed-by-state (_state_google_{hub_state}_data) ทำให้ multi-tab ใช้ได้
+    return await oauth.google.authorize_redirect(
+        request, settings.oauth_callback_uri, state=hub_state
+    )
 
 
 # ============ 2. /oauth/callback — Google ส่งกลับ ============
 
 @router.get("/callback")
-async def oauth_callback(request: Request, db: Session = Depends(get_db)):
-    """Google ส่งผู้ใช้กลับมาที่นี่ — Hub ตรวจสิทธิ์แล้วออก authorization code."""
-    # ดึง req_id จาก session
-    req_id = request.session.get("oauth_req_id")
-    if not req_id:
-        raise HTTPException(status_code=400, detail="ไม่พบ OAuth request — เริ่มใหม่")
+async def oauth_callback(
+    request: Request,
+    state: str | None = None,
+    db: Session = Depends(get_db),
+):
+    """Google ส่งผู้ใช้กลับมาที่นี่ — Hub ตรวจสิทธิ์แล้วออก authorization code.
 
-    raw = redis_client.get(f"authreq:{req_id}")
+    state ที่ Google ส่งกลับ = hub_state ที่ใช้เป็น Redis key (ใน /authorize)
+    """
+    if not state:
+        raise HTTPException(status_code=400, detail="ไม่พบ state parameter")
+
+    raw = redis_client.get(f"authreq:{state}")
     if not raw:
         raise HTTPException(status_code=400, detail="OAuth request หมดอายุ — เริ่มใหม่")
     authreq = json.loads(raw)
@@ -115,7 +128,7 @@ async def oauth_callback(request: Request, db: Session = Depends(get_db)):
     if not userinfo:
         raise HTTPException(status_code=400, detail="ไม่ได้รับข้อมูลจาก Google")
     email = userinfo["email"]
-    client_ip = request.client.host if request.client else None
+    client_ip = get_client_ip(request)
 
     # หา user ใน Hub
     user = db.query(User).filter(User.email == email).first()
@@ -166,12 +179,25 @@ async def oauth_callback(request: Request, db: Session = Depends(get_db)):
             detail="คุณไม่อยู่ใน whitelist ของระบบย่อยนี้ — ติดต่อ admin",
         )
 
-    # ผูก google_sub ครั้งแรก
+    # ผูก google_sub ครั้งแรก — ถ้ามีอยู่แล้วต้องตรงกัน (กัน account hijack)
+    google_sub = userinfo["sub"]
+    if user.google_sub and user.google_sub != google_sub:
+        log_action(
+            db, actor_id=user.id,
+            action="oauth_login_failed_google_sub_mismatch",
+            target_type="user", target_id=user.id, ip=client_ip,
+            metadata={"email": email, "subsystem_id": authreq["subsystem_id"]},
+        )
+        db.commit()
+        raise HTTPException(
+            status_code=403,
+            detail="Google account นี้ไม่ตรงกับบัญชีที่เคยใช้ login — ติดต่อ admin",
+        )
     if not user.google_sub:
-        user.google_sub = userinfo["sub"]
+        user.google_sub = google_sub
 
     # ===== ML Anomaly Detection =====
-    client_ip = request.client.host if request.client else None
+    client_ip = get_client_ip(request)
     user_agent = request.headers.get("user-agent")
 
     # 1) สกัด feature vector จาก session + history
@@ -261,8 +287,7 @@ async def oauth_callback(request: Request, db: Session = Depends(get_db)):
     db.commit()
 
     # cleanup + redirect กลับ subsystem พร้อม code + state
-    redis_client.delete(f"authreq:{req_id}")
-    request.session.pop("oauth_req_id", None)
+    redis_client.delete(f"authreq:{state}")
 
     sep = "&" if "?" in authreq["redirect_uri"] else "?"
     callback_url = (
@@ -289,8 +314,10 @@ def token_exchange(
             status_code=400, detail="grant_type ต้องเป็น 'authorization_code'"
         )
 
-    # 1. ดึง authorization code จาก Redis
-    raw = redis_client.get(f"authcode:{code}")
+    # 1. ดึง authorization code จาก Redis แบบ atomic (get + delete พร้อมกัน)
+    #    กัน race: 2 requests ใช้ code เดียวกันแล้วผ่านทั้งคู่
+    #    code ที่ผ่าน redis getdel ไปแล้วใช้ซ้ำไม่ได้แน่นอน
+    raw = redis_client.getdel(f"authcode:{code}")
     if not raw:
         raise HTTPException(
             status_code=400,
@@ -311,10 +338,8 @@ def token_exchange(
     if not verify_pkce(code_verifier, code_data["code_challenge"]):
         raise HTTPException(status_code=400, detail="PKCE verification ล้มเหลว")
 
-    # 5. ลบ code ทันที (ใช้ได้ครั้งเดียว)
-    redis_client.delete(f"authcode:{code}")
-
-    # 6. หา user แล้วออก JWT (มี audience + ข้อมูลตาม scope)
+    # 5. หา user แล้วออก JWT (มี audience + ข้อมูลตาม scope)
+    #    (code ถูกลบไปแล้วตอน getdel ที่ขั้น 1)
     user = db.query(User).filter(User.id == code_data["user_id"]).first()
     if not user:
         raise HTTPException(status_code=404, detail="ไม่พบ user")
@@ -332,7 +357,7 @@ def token_exchange(
         action="token_issued",
         target_type="subsystem",
         target_id=code_data["subsystem_id"],
-        ip=request.client.host if request.client else None,
+        ip=get_client_ip(request),
     )
     db.commit()
 

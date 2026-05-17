@@ -11,11 +11,11 @@ from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import func
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, aliased
 
 from app.database import get_db
-from app.deps import require_hub_admin
-from app.models import User, Subsystem, LoginSession, AccessList
+from app.deps import get_client_ip, require_hub_admin
+from app.models import AccessList, LoginSession, Subsystem, User
 from app.services.audit_service import log_action
 
 router = APIRouter()
@@ -64,36 +64,45 @@ def list_subsystems(
     admin: User = Depends(require_hub_admin),
     db: Session = Depends(get_db),
 ):
-    """list subsystem ทั้งหมด (กรองตาม status ได้: pending/active/suspended)."""
-    q = db.query(Subsystem)
+    """list subsystem ทั้งหมด (กรองตาม status ได้: pending/active/suspended).
+
+    ใช้ subquery + outer join นับสมาชิก whitelist + ดึง owner email
+    ครั้งเดียว (ก่อนหน้านี้เป็น N+1)
+    """
+    wl_count = (
+        db.query(
+            AccessList.subsystem_id.label("sid"),
+            func.count(AccessList.id).label("cnt"),
+        )
+        .filter(AccessList.revoked_at.is_(None))
+        .group_by(AccessList.subsystem_id)
+        .subquery()
+    )
+
+    owner = aliased(User)
+    q = (
+        db.query(Subsystem, wl_count.c.cnt, owner.email)
+        .outerjoin(wl_count, wl_count.c.sid == Subsystem.id)
+        .outerjoin(owner, owner.id == Subsystem.owner_user_id)
+    )
     if status:
         q = q.filter(Subsystem.status == status)
-    subs = q.all()
 
-    result = []
-    for s in subs:
-        user_count = (
-            db.query(func.count(AccessList.id))
-            .filter(
-                AccessList.subsystem_id == s.id,
-                AccessList.revoked_at.is_(None),
-            )
-            .scalar()
-        )
-        owner = db.query(User).filter(User.id == s.owner_user_id).first()
-        result.append({
+    return [
+        {
             "id": str(s.id),
             "name": s.name,
             "description": s.description,
             "client_id": s.client_id,
             "status": s.status,
             "scope": s.scope,
-            "whitelist_count": user_count,
-            "owner_email": owner.email if owner else None,
+            "whitelist_count": cnt or 0,
+            "owner_email": owner_email,
             "created_at": s.created_at,
             "approved_at": s.approved_at,
-        })
-    return result
+        }
+        for s, cnt, owner_email in q.all()
+    ]
 
 
 @router.get("/subsystems/pending")
@@ -141,7 +150,7 @@ def approve_subsystem(
         action="subsystem_approved",
         target_type="subsystem",
         target_id=subsystem.id,
-        ip=request.client.host if request.client else None,
+        ip=get_client_ip(request),
         metadata={"name": subsystem.name},
     )
     db.commit()
@@ -162,10 +171,19 @@ def reject_subsystem(
     admin: User = Depends(require_hub_admin),
     db: Session = Depends(get_db),
 ):
-    """ปฏิเสธ subsystem — เปลี่ยน status เป็น suspended."""
+    """ปฏิเสธ subsystem — เปลี่ยน status pending -> suspended.
+
+    ใช้กับ subsystem ที่ pending เท่านั้น — จะไม่ suspend ระบบที่ active แล้ว
+    (สำหรับ suspend ระบบ active ควรมี endpoint แยก /suspend ในอนาคต)
+    """
     subsystem = db.query(Subsystem).filter(Subsystem.id == subsystem_id).first()
     if not subsystem:
         raise HTTPException(status_code=404, detail="ไม่พบ subsystem")
+    if subsystem.status != "pending":
+        raise HTTPException(
+            status_code=400,
+            detail=f"reject ใช้กับ subsystem ที่ pending เท่านั้น (ตอนนี้: {subsystem.status})",
+        )
 
     subsystem.status = "suspended"
 
@@ -175,7 +193,7 @@ def reject_subsystem(
         action="subsystem_rejected",
         target_type="subsystem",
         target_id=subsystem.id,
-        ip=request.client.host if request.client else None,
+        ip=get_client_ip(request),
         metadata={"name": subsystem.name},
     )
     db.commit()
