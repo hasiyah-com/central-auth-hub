@@ -1,4 +1,5 @@
 """FastAPI entrypoint."""
+import os
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -8,6 +9,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from app.config import settings
 from app.database import Base, engine
 from app.routers import health, users, admin, auth, developer, secret, oauth
+from app.services.jwt_service import get_jwks
 from app.services.request_logger import RequestLoggerMiddleware
 
 
@@ -15,6 +17,14 @@ from app.services.request_logger import RequestLoggerMiddleware
 async def lifespan(app: FastAPI):
     # Create tables on startup (dev only — use Alembic migrations in production)
     Base.metadata.create_all(bind=engine)
+
+    # fail-fast ถ้าไม่มี JWT keys — ดีกว่ารอจน request แรกแล้วค่อยพัง
+    for path in (settings.jwt_private_key_path, settings.jwt_public_key_path):
+        if not os.path.exists(path):
+            raise RuntimeError(
+                f"ไม่พบ JWT key ที่ {path}. "
+                "รันก่อน: docker compose exec hub-backend python -m scripts.generate_jwt_keys"
+            )
     yield
 
 
@@ -54,12 +64,24 @@ app.include_router(users.router, prefix="/admin/users", tags=["Admin: Users"])
 app.include_router(admin.router, prefix="/admin", tags=["Admin"])
 
 
+# ============ JWKS endpoint (OIDC discovery standard path) ============
+
+@app.get("/.well-known/jwks.json", tags=["Authentication"])
+def jwks():
+    """Public key set ตาม OIDC standard path. Subsystem ใช้ verify Hub JWT.
+
+    คงตำแหน่งนี้ที่ root ตาม RFC 8414 / OIDC discovery — ไม่ผูกกับ prefix /auth
+    """
+    return get_jwks()
+
+
 @app.get("/")
 def root():
     return {
         "name": "Central Auth Hub",
-        "version": "0.4.0",
+        "version": "0.5.0",
         "docs": "/docs",
         "health": "/health",
         "login": "/auth/google/login",
+        "jwks": "/.well-known/jwks.json",
     }

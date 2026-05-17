@@ -13,10 +13,10 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.database import get_db
-from app.deps import get_current_user
+from app.deps import get_client_ip, get_current_user
 from app.models import User
 from app.services.audit_service import log_action
-from app.services.jwt_service import create_access_token, get_jwks
+from app.services.jwt_service import create_access_token
 
 router = APIRouter()
 
@@ -58,7 +58,7 @@ async def google_callback(request: Request, db: Session = Depends(get_db)):
     email = userinfo["email"]
     google_sub = userinfo["sub"]
 
-    client_ip = request.client.host if request.client else None
+    client_ip = get_client_ip(request)
 
     # หา user ใน DB (จาก 100 คนที่ seed)
     user = db.query(User).filter(User.email == email).first()
@@ -103,6 +103,21 @@ async def google_callback(request: Request, db: Session = Depends(get_db)):
         )
 
     # ผูก google_sub ครั้งแรกที่ login (ถ้ายังไม่มี)
+    # ถ้ามีอยู่แล้วต้องตรงกัน — กัน account hijack ผ่านการเปลี่ยน Google account
+    # ที่ใช้อีเมลเดียวกัน (เช่น เปิด workspace ใหม่ที่ alias ทับ)
+    if user.google_sub and user.google_sub != google_sub:
+        log_action(
+            db, actor_id=user.id,
+            action="hub_login_failed_google_sub_mismatch",
+            target_type="user", target_id=user.id, ip=client_ip,
+            metadata={"email": email, "stored_sub_prefix": user.google_sub[:8],
+                      "received_sub_prefix": google_sub[:8]},
+        )
+        db.commit()
+        raise HTTPException(
+            status_code=403,
+            detail="Google account นี้ไม่ตรงกับบัญชีที่เคยใช้ login — ติดต่อ admin",
+        )
     if not user.google_sub:
         user.google_sub = google_sub
         db.commit()
@@ -154,9 +169,5 @@ def get_me(user: User = Depends(get_current_user)):
     }
 
 
-# ============ 4. JWKS — public key ============
-
-@router.get("/.well-known/jwks.json", include_in_schema=True)
-def jwks():
-    """Public key set — subsystem ดึงไปใช้ verify JWT ที่ Hub ออกให้."""
-    return get_jwks()
+# หมายเหตุ: JWKS endpoint ย้ายไปที่ /.well-known/jwks.json ที่ root (main.py)
+# เพื่อให้ตรงกับ OIDC discovery standard (RFC 8414)

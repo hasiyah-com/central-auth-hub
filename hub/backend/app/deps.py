@@ -1,5 +1,5 @@
 """FastAPI dependencies — ใช้ร่วมกันหลาย router."""
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jose import JWTError
 from sqlalchemy.orm import Session
@@ -12,20 +12,30 @@ from app.services.jwt_service import verify_token
 bearer_scheme = HTTPBearer()
 
 
+def get_client_ip(request: Request) -> str | None:
+    """คืน IP ของ client โดยให้ความสำคัญกับ X-Forwarded-For (เมื่ออยู่หลัง proxy).
+
+    ใน production ถ้าวางหลัง nginx/cloudflare ต้องการ IP ตัวจริงเพื่อ audit + ML.
+    Docker network ก็ใช้ตัวนี้กัน 172.x.x.x ไม่ตรงกับ IP จริง
+    """
+    xff = request.headers.get("x-forwarded-for")
+    if xff:
+        return xff.split(",")[0].strip()
+    return request.client.host if request.client else None
+
+
 def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
     db: Session = Depends(get_db),
 ) -> User:
     """ตรวจสอบ JWT แล้วคืน User object ของคนที่ login อยู่.
 
-    ใช้ใน endpoint ที่ต้อง login ก่อน:
-        @router.get("/me")
-        def me(user: User = Depends(get_current_user)):
-            return user
+    verify_token() บังคับ aud = jwt_hub_audience ทำให้ subsystem token
+    ที่มี aud=client_id ไม่สามารถใช้ที่ Hub ได้
     """
     token = credentials.credentials
     try:
-        payload = verify_token(token)
+        payload = verify_token(token)   # default audience = jwt_hub_audience
     except JWTError as e:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

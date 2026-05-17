@@ -13,9 +13,10 @@ from fastapi.responses import HTMLResponse
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.deps import get_client_ip
 from app.models import SecretRetrievalToken, Subsystem
 from app.services.audit_service import log_action
-from app.services.secret_service import decrypt_secret
+from app.services.secret_service import decrypt_secret, hash_retrieval_token
 
 router = APIRouter()
 
@@ -73,9 +74,11 @@ def retrieve_secret(
     หน้านี้คืน HTML + JS ที่ลบ token ออกจาก URL ทันที — address bar
     จะแสดง /secret/retrieved (ไม่มี token) หลังโหลดเสร็จ
     """
+    # DB เก็บ HMAC ของ token — ต้อง hash ก่อน lookup
+    token_hash = hash_retrieval_token(token)
     rt = (
         db.query(SecretRetrievalToken)
-        .filter(SecretRetrievalToken.token == token)
+        .filter(SecretRetrievalToken.token == token_hash)
         .first()
     )
     if not rt:
@@ -108,7 +111,7 @@ def retrieve_secret(
         action="secret_retrieved",
         target_type="subsystem",
         target_id=rt.subsystem_id,
-        ip=request.client.host if request.client else None,
+        ip=get_client_ip(request),
     )
     db.commit()
 
