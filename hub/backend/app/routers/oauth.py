@@ -28,7 +28,9 @@ from app.models import AccessList, LoginSession, Subsystem, User
 from app.redis_client import redis_client
 from app.routers.auth import oauth          # ใช้ Authlib client ตัวเดียวกับ Week 2
 from app.services.audit_service import log_action
+from app.services.feature_extraction import extract_session_features
 from app.services.jwt_service import create_subsystem_token
+from app.services.ml_client import get_anomaly_score
 from app.services.pkce import generate_pkce_pair, verify_pkce
 from app.services.secret_service import verify_secret
 
@@ -113,15 +115,31 @@ async def oauth_callback(request: Request, db: Session = Depends(get_db)):
     if not userinfo:
         raise HTTPException(status_code=400, detail="ไม่ได้รับข้อมูลจาก Google")
     email = userinfo["email"]
+    client_ip = request.client.host if request.client else None
 
     # หา user ใน Hub
     user = db.query(User).filter(User.email == email).first()
     if not user:
+        log_action(
+            db, actor_id=None,
+            action="oauth_login_failed_unknown_email",
+            target_type="subsystem", target_id=authreq["subsystem_id"], ip=client_ip,
+            metadata={"email": email, "client_id": authreq["client_id"]},
+        )
+        db.commit()
         raise HTTPException(
             status_code=403,
             detail=f"อีเมล {email} ไม่ใช่ผู้ใช้ของมหาวิทยาลัย",
         )
     if user.status != "active":
+        log_action(
+            db, actor_id=user.id,
+            action="oauth_login_failed_inactive",
+            target_type="user", target_id=user.id, ip=client_ip,
+            metadata={"email": email, "status": user.status,
+                      "subsystem_id": authreq["subsystem_id"]},
+        )
+        db.commit()
         raise HTTPException(status_code=403, detail=f"บัญชีถูก {user.status}")
 
     # *** เช็ค Access List — user มีสิทธิ์เข้า subsystem นี้ไหม ***
@@ -135,6 +153,14 @@ async def oauth_callback(request: Request, db: Session = Depends(get_db)):
         .first()
     )
     if not access:
+        log_action(
+            db, actor_id=user.id,
+            action="oauth_login_failed_not_in_whitelist",
+            target_type="subsystem", target_id=authreq["subsystem_id"], ip=client_ip,
+            metadata={"email": email, "user_id": str(user.id),
+                      "client_id": authreq["client_id"]},
+        )
+        db.commit()
         raise HTTPException(
             status_code=403,
             detail="คุณไม่อยู่ใน whitelist ของระบบย่อยนี้ — ติดต่อ admin",
@@ -144,14 +170,68 @@ async def oauth_callback(request: Request, db: Session = Depends(get_db)):
     if not user.google_sub:
         user.google_sub = userinfo["sub"]
 
-    # บันทึก login session (Week 5 จะเพิ่ม ML scoring)
+    # ===== ML Anomaly Detection =====
+    client_ip = request.client.host if request.client else None
+    user_agent = request.headers.get("user-agent")
+
+    # 1) สกัด feature vector จาก session + history
+    features = extract_session_features(
+        db,
+        user_id=user.id,
+        ip=client_ip,
+        user_agent=user_agent,
+    )
+
+    # 2) เรียก ML service (fail-safe ถ้า ML ล่ม -> pass + 0.0)
+    ml_result = await get_anomaly_score(features)
+    anomaly_score = ml_result["anomaly_score"]
+    ml_decision = ml_result["decision"]   # ML's recommendation: pass/mfa/block
+
+    # 3) ตัดสินใจตาม policy
+    if settings.ml_shadow_mode:
+        # Shadow Mode: ปล่อยผ่านทุกคน แต่ log สิ่งที่ ML แนะนำไว้
+        if ml_decision == "block":
+            actual_decision = "would_block"
+        elif ml_decision == "mfa":
+            actual_decision = "would_mfa"
+        else:
+            actual_decision = "pass"
+    else:
+        # Enforce Mode: ทำตาม ML จริง
+        actual_decision = ml_decision
+
+    # 4) บันทึก login session พร้อม score + decision
     db.add(LoginSession(
         user_id=user.id,
         subsystem_id=authreq["subsystem_id"],
-        ip=request.client.host if request.client else None,
-        user_agent=request.headers.get("user-agent"),
-        decision="pass",
+        ip=client_ip,
+        user_agent=user_agent,
+        anomaly_score=anomaly_score,
+        decision=actual_decision,
     ))
+
+    # 5) ถ้าเป็น Enforce mode และ ML สั่ง block -> ปฏิเสธก่อนสร้าง code
+    if actual_decision == "block":
+        log_action(
+            db,
+            actor_id=user.id,
+            action="login_blocked_by_ml",
+            target_type="subsystem",
+            target_id=authreq["subsystem_id"],
+            ip=client_ip,
+            metadata={"score": anomaly_score, "features": features},
+        )
+        db.commit()
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                f"การ login ถูกบล็อกโดยระบบตรวจสอบความปลอดภัย "
+                f"(anomaly_score={anomaly_score}) — ติดต่อ admin หากเป็นเรื่องผิดพลาด"
+            ),
+        )
+
+    # (ถ้า ml_decision='mfa' ใน Enforce mode — Week 5 ยังไม่มี MFA flow
+    #  จะ implement ใน Week ถัดไป — ตอนนี้ปล่อยผ่าน + log)
 
     # สร้าง authorization code (อายุ 60 วินาที, ใช้ครั้งเดียว)
     auth_code = secrets.token_urlsafe(32)
@@ -174,7 +254,9 @@ async def oauth_callback(request: Request, db: Session = Depends(get_db)):
         action="oauth_authorized",
         target_type="subsystem",
         target_id=authreq["subsystem_id"],
-        ip=request.client.host if request.client else None,
+        ip=client_ip,
+        metadata={"anomaly_score": anomaly_score, "ml_decision": ml_decision,
+                  "actual_decision": actual_decision, "ml_error": ml_result.get("error")},
     )
     db.commit()
 
