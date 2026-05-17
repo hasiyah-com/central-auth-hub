@@ -11,18 +11,19 @@ import io
 from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr
 from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.database import get_db
-from app.deps import get_current_user, require_developer
-from app.models import AccessList, Subsystem, SecretRetrievalToken, User
+from app.deps import get_client_ip, require_developer
+from app.models import AccessList, SecretRetrievalToken, Subsystem, User
 from app.services.audit_service import log_action
 from app.services.secret_service import (
     encrypt_secret,
     generate_client_credentials,
     generate_retrieval_token,
+    hash_retrieval_token,
     hash_secret,
 )
 
@@ -55,7 +56,7 @@ class SubsystemResponse(BaseModel):
 
 
 class WhitelistAddUser(BaseModel):
-    email: str
+    email: EmailStr
     role: str = "member"
 
 
@@ -101,9 +102,10 @@ def register_subsystem(
     db.flush()   # ทำให้ได้ subsystem.id ก่อน commit
 
     # สร้าง one-time retrieval token (อายุ 15 นาที)
-    token = generate_retrieval_token()
+    # plaintext token ส่งให้ผู้ใช้ทาง URL — DB เก็บเฉพาะ HMAC ของ token
+    plaintext_token = generate_retrieval_token()
     retrieval = SecretRetrievalToken(
-        token=token,
+        token=hash_retrieval_token(plaintext_token),
         subsystem_id=subsystem.id,
         secret_encrypted=encrypt_secret(client_secret),   # encrypt ชั่วคราว
         expires_at=datetime.utcnow() + timedelta(minutes=15),
@@ -117,13 +119,13 @@ def register_subsystem(
         action="subsystem_registered",
         target_type="subsystem",
         target_id=subsystem.id,
-        ip=request.client.host if request.client else None,
+        ip=get_client_ip(request),
         metadata={"name": payload.name, "scope": payload.scope},
     )
 
     db.commit()
 
-    retrieval_url = f"http://localhost:8000/secret/retrieve?token={token}"
+    retrieval_url = f"{settings.hub_base_url}/secret/retrieve?token={plaintext_token}"
     return {
         "subsystem_id": str(subsystem.id),
         "client_id": client_id,
@@ -238,7 +240,7 @@ def upload_whitelist(
         action="whitelist_uploaded",
         target_type="subsystem",
         target_id=subsystem.id,
-        ip=request.client.host if request.client else None,
+        ip=get_client_ip(request),
         metadata={"added": len(added), "skipped": len(skipped)},
     )
     db.commit()
@@ -366,7 +368,7 @@ def add_user_to_whitelist(
         action=action,
         target_type="subsystem",
         target_id=subsystem.id,
-        ip=request.client.host if request.client else None,
+        ip=get_client_ip(request),
         metadata={"email": payload.email, "role": payload.role},
     )
     db.commit()
@@ -418,7 +420,7 @@ def remove_user_from_whitelist(
         action="whitelist_user_removed",
         target_type="subsystem",
         target_id=subsystem.id,
-        ip=request.client.host if request.client else None,
+        ip=get_client_ip(request),
         metadata={"removed_user_id": user_id},
     )
     db.commit()
