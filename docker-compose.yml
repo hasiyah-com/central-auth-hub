@@ -29,6 +29,17 @@ services:
       timeout: 5s
       retries: 5
 
+  ml-service:
+    build:
+      context: ./ml-service
+      dockerfile: Dockerfile
+    container_name: hub-ml
+    ports:
+      - "9000:9000"
+    volumes:
+      - ./ml-service:/app
+    command: uvicorn app.main:app --host 0.0.0.0 --port 9000 --reload
+
   hub-backend:
     build:
       context: ./hub/backend

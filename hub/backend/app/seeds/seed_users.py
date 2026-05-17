@@ -19,6 +19,7 @@ from faker import Faker
 from app.database import SessionLocal, Base, engine
 from app.models import (
     User, Subsystem, AccessList, LoginSession, AuditLog, SecretRetrievalToken,
+    RequestLog,
 )
 
 fake = Faker("th_TH")        # ชื่อ-สกุล ภาษาไทย สำหรับ full_name
@@ -159,6 +160,7 @@ def seed():
         db.query(AccessList).delete(synchronize_session=False)
         db.query(LoginSession).delete(synchronize_session=False)
         db.query(AuditLog).delete(synchronize_session=False)
+        db.query(RequestLog).delete(synchronize_session=False)
         db.query(Subsystem).delete(synchronize_session=False)
         db.commit()
         print("✓ ล้างตารางลูกแล้ว (access_list, login_sessions, subsystems, ...)")
