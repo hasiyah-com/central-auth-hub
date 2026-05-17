@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}เข้าสู่ระบบ — ระบบห้องสมุด{% endblock %}
+{% block content %}
+<div class="max-w-md mx-auto mt-12 bg-white rounded-xl shadow-sm border border-slate-200 p-8">
+  <div class="text-center mb-6">
+    <div class="text-5xl mb-3">📚</div>
+    <h1 class="text-2xl font-bold text-slate-900">ระบบห้องสมุด</h1>
+    <p class="text-slate-500 text-sm mt-1">Subsystem B — Senior Project</p>
+  </div>
+
+  <a href="/oauth/start"
+     class="block w-full bg-emerald-600 hover:bg-emerald-700 text-white font-medium py-3 rounded-lg text-center transition">
+    เข้าสู่ระบบด้วย Central Auth Hub
+  </a>
+
+  <div class="mt-6 bg-emerald-50 border-l-4 border-emerald-400 p-4 rounded text-sm text-slate-700">
+    <strong class="block mb-1 text-emerald-800">วิธีใช้งาน</strong>
+    คุณจะถูกพาไปที่ Central Auth Hub เพื่อ login ด้วย Google
+    ระบบจะตรวจว่าคุณอยู่ใน whitelist ของห้องสมุดหรือไม่
+    หากยังไม่อยู่ใน whitelist กรุณาติดต่อ admin
+  </div>
+</div>
+{% endblock %}

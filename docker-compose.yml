@@ -99,6 +99,45 @@ services:
       - ./hub/subsystem-dorm:/app
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
+  # ============ Subsystem B — ระบบห้องสมุด (Week 7) ============
+  postgres-library:
+    image: postgres:15-alpine
+    container_name: hub-postgres-library
+    environment:
+      POSTGRES_USER: ${LIBRARY_POSTGRES_USER:-library}
+      POSTGRES_PASSWORD: ${LIBRARY_POSTGRES_PASSWORD:-librarypass}
+      POSTGRES_DB: ${LIBRARY_POSTGRES_DB:-library_db}
+    ports:
+      - "5434:5432"   # 5432 Hub, 5433 Dorm, 5434 Library
+    volumes:
+      - postgres_library_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${LIBRARY_POSTGRES_USER:-library} -d ${LIBRARY_POSTGRES_DB:-library_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  subsystem-library:
+    build:
+      context: ./hub/subsystem-library
+      dockerfile: Dockerfile
+    container_name: hub-subsystem-library
+    env_file:
+      - ./hub/subsystem-library/.env
+    environment:
+      DATABASE_URL: postgresql+psycopg2://${LIBRARY_POSTGRES_USER:-library}:${LIBRARY_POSTGRES_PASSWORD:-librarypass}@postgres-library:5432/${LIBRARY_POSTGRES_DB:-library_db}
+    ports:
+      - "8002:8000"
+    depends_on:
+      postgres-library:
+        condition: service_healthy
+      hub-backend:
+        condition: service_started
+    volumes:
+      - ./hub/subsystem-library:/app
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
 volumes:
   postgres_data:
   postgres_dorm_data:
+  postgres_library_data:
