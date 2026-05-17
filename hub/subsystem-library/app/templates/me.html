@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% block title %}การยืมของฉัน — ระบบห้องสมุด{% endblock %}
+{% block content %}
+
+<h1 class="text-2xl font-bold mb-1">📋 การยืมของฉัน</h1>
+<p class="text-slate-500 text-sm mb-6">ประวัติการยืมทั้งหมด</p>
+
+<div class="grid md:grid-cols-2 gap-6 mb-6">
+  <!-- ข้อมูลจาก Hub -->
+  <div class="bg-white border border-slate-200 rounded-lg p-6">
+    <h2 class="font-semibold mb-4 text-slate-800">ข้อมูลจาก Hub</h2>
+    <dl class="text-sm space-y-2">
+      <div class="flex justify-between"><dt class="text-slate-500">ชื่อ</dt><dd>{{ user.full_name }}</dd></div>
+      <div class="flex justify-between"><dt class="text-slate-500">อีเมล</dt><dd>{{ user.email }}</dd></div>
+      <div class="flex justify-between"><dt class="text-slate-500">รหัส</dt><dd>{{ user.student_id or "—" }}</dd></div>
+      <div class="flex justify-between"><dt class="text-slate-500">คณะ</dt><dd>{{ user.faculty or "—" }}</dd></div>
+      <div class="flex justify-between items-center pt-2 border-t"><dt class="text-slate-500">role</dt><dd><span class="badge badge-{{ user.role_in_sub }}">{{ user.role_in_sub }}</span></dd></div>
+    </dl>
+  </div>
+
+  <div class="bg-white border border-slate-200 rounded-lg p-6">
+    <h2 class="font-semibold mb-4 text-slate-800">ข้อมูลในห้องสมุด</h2>
+    {% if member %}
+    <dl class="text-sm space-y-2">
+      <div class="flex justify-between"><dt class="text-slate-500">สถานะ</dt><dd>{{ member.status }}</dd></div>
+      <div class="flex justify-between"><dt class="text-slate-500">สมัครสมาชิก</dt><dd>{{ member.created_at.strftime("%Y-%m-%d") }}</dd></div>
+    </dl>
+    {% else %}
+    <p class="text-slate-400 text-sm">ยังไม่มีข้อมูล</p>
+    {% endif %}
+  </div>
+</div>
+
+<div class="bg-white border border-slate-200 rounded-lg p-6">
+  <h2 class="font-semibold mb-4 text-slate-800">ประวัติการยืม</h2>
+  {% if rows %}
+  <table class="w-full text-sm">
+    <thead class="text-left text-xs text-slate-500 border-b">
+      <tr>
+        <th class="py-2">หนังสือ</th>
+        <th>ขอเมื่อ</th>
+        <th>ยืม / คืน</th>
+        <th>สถานะ</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for b, book in rows %}
+      <tr class="border-b last:border-0 align-top">
+        <td class="py-3">
+          <a href="/books/{{ book.id }}" class="font-medium hover:underline">{{ book.title }}</a>
+          <div class="text-xs text-slate-500">{{ book.author }}</div>
+        </td>
+        <td class="text-slate-600 text-xs py-3">{{ b.requested_at.strftime("%Y-%m-%d") }}</td>
+        <td class="text-slate-600 text-xs py-3">
+          {% if b.borrowed_at %}
+            ยืม: {{ b.borrowed_at.strftime("%Y-%m-%d") }}<br>
+            ครบกำหนด: <span class="font-medium">{{ b.due_at.strftime("%Y-%m-%d") }}</span><br>
+            {% if b.returned_at %}
+              คืน: {{ b.returned_at.strftime("%Y-%m-%d") }}
+            {% endif %}
+          {% else %}
+            <span class="text-slate-400">—</span>
+          {% endif %}
+        </td>
+        <td class="py-3">
+          <span class="badge badge-{{ b.status }}">{{ b.status }}</span>
+        </td>
+        <td class="text-right py-3">
+          {% if b.status == "requested" %}
+          <form action="/borrow/{{ b.id }}/cancel" method="post"
+                onsubmit="return confirm('ยกเลิกคำขอนี้?');">
+            <button class="text-red-600 hover:underline text-xs">ยกเลิก</button>
+          </form>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="text-slate-400 text-sm">ยังไม่เคยยืมหนังสือ — ไปที่ <a href="/books" class="text-emerald-600 hover:underline">คลังหนังสือ</a></p>
+  {% endif %}
+</div>
+
+{% endblock %}

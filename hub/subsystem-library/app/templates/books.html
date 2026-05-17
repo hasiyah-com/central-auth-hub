@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}ค้นหาหนังสือ — ระบบห้องสมุด{% endblock %}
+{% block content %}
+
+<div class="mb-6 flex items-center justify-between">
+  <div>
+    <h1 class="text-2xl font-bold">📚 คลังหนังสือ</h1>
+    <p class="text-slate-500 text-sm">ค้นหาด้วยชื่อ ผู้แต่ง หรือ ISBN</p>
+  </div>
+  <div class="text-sm text-slate-500">พบ {{ books|length }} เล่ม</div>
+</div>
+
+<form method="get" action="/books" class="mb-6 flex gap-2">
+  <input type="text" name="q" value="{{ current_q }}" placeholder="ชื่อหนังสือ ผู้แต่ง หรือ ISBN..."
+         class="flex-1 px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:border-emerald-500">
+  <select name="category"
+          class="px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:border-emerald-500">
+    <option value="">ทุกหมวด</option>
+    {% for c in categories %}
+    <option value="{{ c }}" {% if c == current_category %}selected{% endif %}>{{ c }}</option>
+    {% endfor %}
+  </select>
+  <button type="submit" class="bg-emerald-600 hover:bg-emerald-700 text-white px-5 rounded-lg text-sm font-medium">ค้นหา</button>
+  {% if current_q or current_category %}
+  <a href="/books" class="px-3 py-2 text-slate-500 hover:text-slate-700 text-sm">ล้าง</a>
+  {% endif %}
+</form>
+
+<div class="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+  {% for book in books %}
+  <a href="/books/{{ book.id }}"
+     class="block bg-white border border-slate-200 hover:border-emerald-400 hover:shadow-sm rounded-lg p-4 transition">
+    <div class="flex items-start justify-between mb-2">
+      <div class="text-xs text-slate-500">{{ book.category or "—" }}</div>
+      {% if book.copies_available > 0 %}
+        <span class="badge badge-returned">ว่าง {{ book.copies_available }}/{{ book.copies_total }}</span>
+      {% else %}
+        <span class="badge badge-overdue">ยืมหมด</span>
+      {% endif %}
+    </div>
+    <div class="font-semibold text-slate-900 mb-1 line-clamp-2">{{ book.title }}</div>
+    <div class="text-sm text-slate-600">{{ book.author }}</div>
+    <div class="text-xs text-slate-400 mt-2 font-mono">ISBN {{ book.isbn }}</div>
+  </a>
+  {% else %}
+  <div class="col-span-full text-center py-12 text-slate-400">
+    {% if current_q or current_category %}
+      ไม่พบหนังสือที่ตรงกับการค้นหา
+    {% else %}
+      ยังไม่มีหนังสือในระบบ — รัน scripts/seed_books.py เพื่อเริ่มต้น
+    {% endif %}
+  </div>
+  {% endfor %}
+</div>
+
+{% endblock %}
