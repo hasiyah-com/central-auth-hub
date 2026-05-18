@@ -2,100 +2,196 @@
 {% block title %}รายการยืม — Librarian{% endblock %}
 {% block content %}
 
-<h1 class="text-2xl font-bold mb-1">📋 รายการยืม</h1>
-<p class="text-slate-500 text-sm mb-4">อนุมัติคำขอ / รับคืน / ดูเล่มที่เกินกำหนด</p>
+<!-- Page Header -->
+<div class="flex items-start justify-between mb-6">
+  <div>
+    <div class="flex items-center gap-2 text-sm text-slate-500 mb-2">
+      <span class="badge badge-librarian">📖 Librarian</span>
+      <span>·</span>
+      <span>จัดการห้องสมุด</span>
+    </div>
+    <h1 class="text-2xl font-extrabold text-slate-900 mb-1">รายการยืมหนังสือ</h1>
+    <p class="text-slate-500 text-sm">อนุมัติคำขอ · ปฏิเสธ · รับคืนหนังสือ</p>
+  </div>
+  <a href="/librarian/members" class="btn btn-ghost btn-sm hidden sm:inline-flex">
+    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+    สมาชิกทั้งหมด
+  </a>
+</div>
 
-<!-- Tabs -->
-<div class="flex gap-2 mb-6 text-sm flex-wrap">
-  {% for s, label in [("requested","รออนุมัติ"), ("active","กำลังยืม"), ("overdue","เกินกำหนด"), ("returned","คืนแล้ว"), ("all","ทั้งหมด")] %}
+<!-- Overdue Alert -->
+{% if overdue_count > 0 %}
+<div class="alert alert-danger mb-5">
+  <span class="alert-icon">🚨</span>
+  <div>
+    <strong>มีหนังสือเกินกำหนด {{ overdue_count }} รายการ!</strong>
+    กรุณาติดต่อสมาชิกเพื่อรับคืน —
+    <a href="/librarian/borrows?status=overdue" class="underline font-semibold">ดูรายการเกินกำหนด</a>
+  </div>
+</div>
+{% endif %}
+
+<!-- Status Filter Tabs -->
+<div class="tab-bar mb-5">
+  {% for s, label, icon in [
+    ("requested","รออนุมัติ","⏳"),
+    ("active","กำลังยืม","📖"),
+    ("overdue","เกินกำหนด","🚨"),
+    ("returned","คืนแล้ว","✅"),
+    ("all","ทั้งหมด","📋")
+  ] %}
   <a href="/librarian/borrows?status={{ s }}"
-     class="px-3 py-1.5 rounded-md transition relative
-            {{ 'bg-pink-600 text-white' if current_status == s else 'bg-white border border-slate-200 hover:bg-slate-50' }}">
+     class="tab-btn {% if current_status == s %}active{% endif %}">
+    <span>{{ icon }}</span>
     {{ label }}
     {% if s == "overdue" and overdue_count > 0 %}
-      <span class="ml-1 inline-flex items-center justify-center bg-red-500 text-white rounded-full text-xs px-1.5">{{ overdue_count }}</span>
+    <span class="tab-count danger">{{ overdue_count }}</span>
     {% endif %}
   </a>
   {% endfor %}
 </div>
 
-<div class="bg-white border border-slate-200 rounded-lg overflow-hidden">
-  <table class="w-full text-sm">
-    <thead class="bg-slate-50 text-left text-xs uppercase text-slate-500">
-      <tr>
-        <th class="px-4 py-3">ผู้ขอยืม</th>
-        <th class="px-4 py-3">หนังสือ</th>
-        <th class="px-4 py-3">ขอเมื่อ</th>
-        <th class="px-4 py-3">ยืม / กำหนดคืน</th>
-        <th class="px-4 py-3">สถานะ</th>
-        <th class="px-4 py-3 text-right">การจัดการ</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for b, book, member in rows %}
-      {% set is_overdue = (b.status == "active" and b.due_at and b.due_at < now) %}
-      <tr class="border-t border-slate-100 align-top {% if is_overdue %}bg-red-50{% endif %}">
-        <td class="px-4 py-3">
-          {% if member %}
-          <div class="font-medium">{{ member.full_name }}</div>
-          <div class="text-xs text-slate-500">{{ member.email }}</div>
-          <div class="text-xs text-slate-500">{{ member.student_id or "" }}</div>
-          {% else %}
-          <span class="text-slate-400">—</span>
-          {% endif %}
-        </td>
-        <td class="px-4 py-3">
-          <a href="/books/{{ book.id }}" class="font-medium hover:underline">{{ book.title }}</a>
-          <div class="text-xs text-slate-500">{{ book.author }}</div>
-          <div class="text-xs text-slate-400 font-mono">{{ book.isbn }}</div>
-        </td>
-        <td class="px-4 py-3 text-slate-600 text-xs">
-          {{ b.requested_at.strftime("%Y-%m-%d %H:%M") }}
-        </td>
-        <td class="px-4 py-3 text-slate-600 text-xs">
-          {% if b.borrowed_at %}
-            ยืม: {{ b.borrowed_at.strftime("%Y-%m-%d") }}<br>
-            ครบกำหนด: <span class="font-medium {% if is_overdue %}text-red-600{% endif %}">{{ b.due_at.strftime("%Y-%m-%d") }}</span>
-            {% if b.returned_at %}
-            <br>คืน: <span class="text-emerald-700">{{ b.returned_at.strftime("%Y-%m-%d") }}</span>
+<!-- Table Card -->
+<div class="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
+  {% if rows %}
+  <div class="overflow-x-auto">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>ผู้ขอยืม</th>
+          <th>หนังสือ</th>
+          <th>ขอเมื่อ</th>
+          <th>ยืม / กำหนดคืน</th>
+          <th>สถานะ</th>
+          <th class="text-right" style="min-width:160px">การจัดการ</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for b, book, member in rows %}
+        {% set is_overdue = (b.status == "active" and b.due_at and b.due_at < now) %}
+        <tr class="{% if is_overdue %}row-overdue{% elif b.status == 'requested' %}bg-amber-50/20{% endif %}">
+
+          <!-- Member info -->
+          <td>
+            {% if member %}
+            <div class="flex items-center gap-2.5">
+              <div class="avatar text-xs w-8 h-8">{{ (member.full_name or "?")[0]|upper }}</div>
+              <div class="min-w-0">
+                <div class="font-semibold text-slate-800 leading-tight">{{ member.full_name }}</div>
+                <div class="text-xs text-slate-400 truncate">{{ member.email }}</div>
+                {% if member.student_id %}
+                <div class="text-xs text-slate-400 font-mono">{{ member.student_id }}</div>
+                {% endif %}
+              </div>
+            </div>
+            {% else %}
+            <span class="text-slate-400 text-sm">—</span>
             {% endif %}
-          {% else %}
-            <span class="text-slate-400">ยังไม่ยืม</span>
-          {% endif %}
-        </td>
-        <td class="px-4 py-3">
-          {% if is_overdue %}
-            <span class="badge badge-overdue">เกินกำหนด</span>
-          {% else %}
-            <span class="badge badge-{{ b.status }}">{{ b.status }}</span>
-          {% endif %}
-        </td>
-        <td class="px-4 py-3 text-right">
-          {% if b.status == "requested" %}
-          <div class="flex gap-2 justify-end">
-            <form action="/librarian/borrows/{{ b.id }}/approve" method="post">
-              <button class="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1 rounded text-xs">อนุมัติ</button>
-            </form>
-            <form action="/librarian/borrows/{{ b.id }}/reject" method="post"
-                  onsubmit="return confirm('ปฏิเสธคำขอนี้?');">
-              <button class="bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded text-xs">ปฏิเสธ</button>
-            </form>
-          </div>
-          {% elif b.status == "active" %}
-          <form action="/librarian/borrows/{{ b.id }}/return" method="post"
-                onsubmit="return confirm('ยืนยันรับคืนหนังสือ?');">
-            <button class="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1 rounded text-xs">📚 รับคืน</button>
-          </form>
-          {% else %}
-          <span class="text-slate-400 text-xs">—</span>
-          {% endif %}
-        </td>
-      </tr>
-      {% else %}
-      <tr><td colspan="6" class="px-4 py-8 text-center text-slate-400">ไม่มีรายการในสถานะนี้</td></tr>
-      {% endfor %}
-    </tbody>
-  </table>
+          </td>
+
+          <!-- Book info -->
+          <td>
+            <div class="flex items-center gap-2.5">
+              <div class="w-8 h-10 rounded flex items-center justify-center flex-shrink-0 text-base"
+                   style="background:linear-gradient(135deg,#10b981,#059669)">
+                {% if book.category == "คอมพิวเตอร์" %}💻
+                {% elif book.category == "วิศวกรรม" %}⚙️
+                {% elif book.category == "วิทยาศาสตร์" %}🔬
+                {% elif book.category == "มนุษยศาสตร์" %}📜
+                {% elif book.category == "บริหารธุรกิจ" %}📊
+                {% else %}📚{% endif %}
+              </div>
+              <div class="min-w-0">
+                <a href="/books/{{ book.id }}" class="font-semibold text-slate-800 hover:text-emerald-700 transition-colors line-clamp-1">
+                  {{ book.title }}
+                </a>
+                <div class="text-xs text-slate-400 line-clamp-1">{{ book.author }}</div>
+                <div class="text-[10px] text-slate-400 font-mono">{{ book.isbn }}</div>
+              </div>
+            </div>
+          </td>
+
+          <!-- Request date -->
+          <td class="whitespace-nowrap">
+            <div class="text-sm text-slate-600">{{ b.requested_at.strftime("%d %b %Y") }}</div>
+            <div class="text-xs text-slate-400">{{ b.requested_at.strftime("%H:%M") }}</div>
+          </td>
+
+          <!-- Borrow / Due dates -->
+          <td class="text-xs whitespace-nowrap">
+            {% if b.borrowed_at %}
+            <div class="text-slate-600">ยืม: {{ b.borrowed_at.strftime("%d %b %Y") }}</div>
+            <div class="font-semibold {% if is_overdue %}text-red-600{% else %}text-slate-700{% endif %}">
+              ครบ: {{ b.due_at.strftime("%d %b %Y") }}
+              {% if is_overdue %} ⚠️{% endif %}
+            </div>
+            {% if b.returned_at %}
+            <div class="text-emerald-600">คืน: {{ b.returned_at.strftime("%d %b %Y") }}</div>
+            {% endif %}
+            {% else %}
+            <span class="text-slate-400">ยังไม่เริ่มยืม</span>
+            {% endif %}
+          </td>
+
+          <!-- Status -->
+          <td>
+            {% if is_overdue %}
+            <span class="badge badge-overdue">⚠️ เกินกำหนด</span>
+            {% else %}
+            <span class="badge badge-{{ b.status }}">
+              {% if b.status == "requested" %}⏳ รออนุมัติ
+              {% elif b.status == "active" %}📖 กำลังยืม
+              {% elif b.status == "returned" %}✅ คืนแล้ว
+              {% elif b.status == "cancelled" %}🚫 ยกเลิก
+              {% else %}{{ b.status }}{% endif %}
+            </span>
+            {% endif %}
+          </td>
+
+          <!-- Actions -->
+          <td class="text-right">
+            <div class="flex items-center justify-end gap-2">
+              {% if b.status == "requested" %}
+              <form action="/librarian/borrows/{{ b.id }}/approve" method="post" class="inline">
+                <button class="btn btn-success btn-xs">✅ อนุมัติ</button>
+              </form>
+              <form action="/librarian/borrows/{{ b.id }}/reject" method="post" class="inline"
+                    onsubmit="return confirm('ปฏิเสธคำขอยืมนี้?');">
+                <button class="btn btn-danger btn-xs">❌ ปฏิเสธ</button>
+              </form>
+
+              {% elif b.status == "active" %}
+              <form action="/librarian/borrows/{{ b.id }}/return" method="post" class="inline"
+                    onsubmit="return confirm('ยืนยันรับคืนหนังสือ?');">
+                <button class="btn btn-info btn-xs">
+                  📥 รับคืน{% if is_overdue %} (เกินกำหนด){% endif %}
+                </button>
+              </form>
+
+              {% else %}
+              <span class="text-slate-300 text-xs">—</span>
+              {% endif %}
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {% else %}
+  <div class="empty-state">
+    <div class="empty-state-icon">
+      {% if current_status == "requested" %}⏳
+      {% elif current_status == "active" %}📖
+      {% elif current_status == "overdue" %}✅
+      {% elif current_status == "returned" %}📚
+      {% else %}📋{% endif %}
+    </div>
+    <h3>ไม่มีรายการในสถานะนี้</h3>
+    <p>ลองเปลี่ยน filter ด้านบน</p>
+  </div>
+  {% endif %}
 </div>
 
 {% endblock %}

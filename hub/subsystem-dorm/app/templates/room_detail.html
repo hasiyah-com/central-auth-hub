@@ -2,66 +2,173 @@
 {% block title %}ห้อง {{ room.room_number }} — ระบบหอพัก{% endblock %}
 {% block content %}
 
-<a href="/rooms" class="text-sm text-indigo-600 hover:underline">← กลับหน้าห้องทั้งหมด</a>
+<!-- Breadcrumb -->
+<nav class="flex items-center gap-2 text-sm text-slate-500 mb-6">
+  <a href="/" class="hover:text-indigo-600 transition-colors">หน้าแรก</a>
+  <svg class="w-4 h-4 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+  <a href="/rooms" class="hover:text-indigo-600 transition-colors">ห้องทั้งหมด</a>
+  <svg class="w-4 h-4 text-slate-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+  <span class="text-slate-900 font-semibold">{{ room.room_number }}</span>
+</nav>
 
-<div class="mt-4 bg-white border border-slate-200 rounded-lg p-6">
-  <div class="flex items-start justify-between mb-4">
-    <div>
-      <h1 class="text-3xl font-bold">🛏️ {{ room.room_number }}</h1>
-      <p class="text-slate-500 text-sm mt-1">ตึก {{ room.building }} · ชั้น {{ room.floor }} · รองรับ {{ room.capacity }} คน</p>
+<div class="grid lg:grid-cols-3 gap-6">
+
+  <!-- Main Info Column -->
+  <div class="lg:col-span-2 space-y-6">
+
+    <!-- Room Header Card -->
+    <div class="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
+      <div class="flex items-start justify-between mb-5">
+        <div class="flex items-center gap-4">
+          <div class="w-14 h-14 bg-gradient-to-br from-indigo-100 to-violet-100 rounded-2xl flex items-center justify-center text-3xl">🛏️</div>
+          <div>
+            <h1 class="text-3xl font-extrabold text-slate-900 leading-none">{{ room.room_number }}</h1>
+            <p class="text-slate-500 text-sm mt-1.5">
+              ตึก {{ room.building }} · ชั้น {{ room.floor }} · รองรับ {{ room.capacity }} คน
+            </p>
+          </div>
+        </div>
+        <span class="badge badge-{{ room.status }} text-xs px-3 py-1.5">
+          {% if room.status == "available" %}✅ ว่าง
+          {% elif room.status == "full" %}🔴 เต็ม
+          {% else %}🔧 ซ่อมบำรุง{% endif %}
+        </span>
+      </div>
+
+      <!-- Stats Grid -->
+      <div class="grid grid-cols-2 sm:grid-cols-3 gap-3">
+        <div class="bg-slate-50 rounded-xl p-4">
+          <div class="text-xs text-slate-500 font-semibold uppercase tracking-wider mb-1">ผู้พักอยู่</div>
+          <div class="text-2xl font-extrabold text-slate-900">{{ occupancy }}</div>
+          <div class="text-xs text-slate-400 mt-0.5">จาก {{ room.capacity }} คน</div>
+        </div>
+        <div class="bg-slate-50 rounded-xl p-4">
+          <div class="text-xs text-slate-500 font-semibold uppercase tracking-wider mb-1">ที่ว่าง</div>
+          <div class="text-2xl font-extrabold {% if room.capacity - occupancy > 0 %}text-emerald-600{% else %}text-red-500{% endif %}">
+            {{ room.capacity - occupancy }}
+          </div>
+          <div class="text-xs text-slate-400 mt-0.5">ที่นั่ง</div>
+        </div>
+        <div class="bg-slate-50 rounded-xl p-4">
+          <div class="text-xs text-slate-500 font-semibold uppercase tracking-wider mb-1">ตึก / ชั้น</div>
+          <div class="text-2xl font-extrabold text-slate-900">{{ room.building }}-{{ room.floor }}</div>
+          <div class="text-xs text-slate-400 mt-0.5">Location</div>
+        </div>
+      </div>
+
+      <!-- Progress -->
+      <div class="mt-4">
+        <div class="flex justify-between text-xs text-slate-500 mb-1.5">
+          <span>การเข้าพัก</span>
+          <span>{{ occupancy }}/{{ room.capacity }} คน ({{ (occupancy/room.capacity*100)|round|int if room.capacity > 0 else 0 }}%)</span>
+        </div>
+        <div class="progress-track">
+          {% set pct = (occupancy/room.capacity*100)|round|int if room.capacity > 0 else 0 %}
+          <div class="progress-fill {% if pct >= 100 %}warn{% endif %}" style="width: {{ [pct, 100]|min }}%"></div>
+        </div>
+      </div>
     </div>
-    <span class="badge badge-{{ room.status }}">{{ room.status }}</span>
+
+    <!-- Occupants List -->
+    {% if occupants %}
+    <div class="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
+      <h2 class="font-bold text-slate-900 mb-4 flex items-center gap-2">
+        <svg class="w-5 h-5 text-indigo-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+        ผู้พักในห้องนี้ ({{ occupants|length }} คน)
+      </h2>
+      <ul class="space-y-3">
+        {% for r in occupants %}
+        <li class="flex items-center gap-3 p-3 bg-slate-50 rounded-xl">
+          <div class="avatar text-sm">{{ (r.full_name or "?")[0]|upper }}</div>
+          <div class="flex-1 min-w-0">
+            <div class="font-semibold text-slate-800 truncate">{{ r.full_name }}</div>
+            <div class="text-xs text-slate-400 truncate">{{ r.email }}</div>
+          </div>
+          {% if r.student_id %}
+          <span class="text-xs text-slate-500 bg-slate-200 px-2 py-0.5 rounded-md flex-shrink-0">{{ r.student_id }}</span>
+          {% endif %}
+        </li>
+        {% endfor %}
+      </ul>
+    </div>
+    {% endif %}
   </div>
 
-  <div class="grid md:grid-cols-2 gap-4 mb-6">
-    <div class="bg-slate-50 p-4 rounded">
-      <div class="text-xs text-slate-500 mb-1">ผู้พักปัจจุบัน</div>
-      <div class="text-2xl font-bold">{{ occupancy }} / {{ room.capacity }}</div>
+  <!-- Action Column -->
+  <div class="space-y-4">
+    <div class="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm sticky top-24">
+      <h2 class="font-bold text-slate-900 mb-4">การดำเนินการ</h2>
+
+      {% if user.role_in_sub == "staff" %}
+      <div class="alert alert-warning">
+        <span class="alert-icon">👔</span>
+        <div>
+          คุณคือ <strong>staff</strong> — ใช้หน้า
+          <a href="/staff/reservations" class="underline font-semibold">คำขอจอง</a>
+          เพื่อจัดการแทน
+        </div>
+      </div>
+
+      {% elif active_reservation %}
+      <div class="alert alert-info mb-4">
+        <span class="alert-icon">📋</span>
+        <div>
+          <strong class="block mb-0.5">คุณมี Reservation อยู่แล้ว</strong>
+          สถานะ: <span class="badge badge-{{ active_reservation.status }}">{{ active_reservation.status }}</span>
+        </div>
+      </div>
+      <a href="/me" class="btn btn-ghost w-full">
+        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>
+        ดูโปรไฟล์ → จัดการ
+      </a>
+
+      {% elif room.status != "available" or occupancy >= room.capacity %}
+      <div class="alert alert-danger">
+        <span class="alert-icon">🔒</span>
+        <div>
+          <strong class="block mb-0.5">ห้องนี้ไม่พร้อมจอง</strong>
+          {% if room.status == "maintenance" %}อยู่ระหว่างซ่อมบำรุง
+          {% elif occupancy >= room.capacity %}ผู้พักเต็มแล้ว
+          {% else %}{{ room.status }}{% endif %}
+        </div>
+      </div>
+      <a href="/rooms" class="btn btn-ghost w-full mt-3">
+        ← ดูห้องอื่น
+      </a>
+
+      {% else %}
+      <!-- Reservation Form -->
+      <div class="alert alert-success mb-4">
+        <span class="alert-icon">✅</span>
+        <div>ห้องนี้ว่าง — สามารถส่งคำขอจองได้</div>
+      </div>
+
+      <form action="/reservation/rooms/{{ room.id }}/reserve" method="post" class="space-y-4">
+        <div>
+          <label class="block text-sm font-semibold text-slate-700 mb-2">
+            เหตุผลที่ต้องการห้องนี้ <span class="text-slate-400 font-normal">(ไม่บังคับ)</span>
+          </label>
+          <textarea name="reason" rows="3"
+                    placeholder="ระบุเหตุผลหรือความต้องการพิเศษ..."
+                    class="form-textarea resize-none"></textarea>
+        </div>
+        <button type="submit" class="btn btn-primary w-full">
+          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
+          ส่งคำขอจองห้องนี้
+        </button>
+        <p class="text-xs text-slate-400 text-center">
+          หลังส่งคำขอ ต้องรอ Staff อนุมัติก่อน check-in
+        </p>
+      </form>
+      {% endif %}
     </div>
-    <div class="bg-slate-50 p-4 rounded">
-      <div class="text-xs text-slate-500 mb-1">ที่ว่าง</div>
-      <div class="text-2xl font-bold text-emerald-600">{{ room.capacity - occupancy }}</div>
-    </div>
+
+    <!-- Back button -->
+    <a href="/rooms" class="btn btn-ghost w-full">
+      <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M10 19l-7-7m0 0l7-7m-7 7h18"/></svg>
+      กลับหน้าห้องทั้งหมด
+    </a>
   </div>
-
-  {% if occupants %}
-  <h2 class="font-semibold mb-2 text-sm text-slate-700">ผู้พักในห้องนี้</h2>
-  <ul class="bg-slate-50 rounded p-3 mb-6 text-sm">
-    {% for r in occupants %}
-    <li class="py-1">{{ r.full_name }} <span class="text-slate-500">({{ r.email }})</span></li>
-    {% endfor %}
-  </ul>
-  {% endif %}
-
-  <hr class="my-4 border-slate-200">
-
-  {% if user.role_in_sub == "staff" %}
-    <div class="bg-amber-50 border-l-4 border-amber-400 p-3 rounded text-sm text-amber-800">
-      คุณคือ staff — ไม่ต้องจองห้อง ใช้หน้า
-      <a href="/staff/reservations" class="underline">📋 คำขอจอง</a> เพื่อจัดการ
-    </div>
-  {% elif active_reservation %}
-    <div class="bg-blue-50 border-l-4 border-blue-400 p-3 rounded text-sm">
-      คุณมี reservation อยู่แล้ว (สถานะ:
-      <span class="badge badge-{{ active_reservation.status if active_reservation.status != 'checked_in' else 'checked' }}">{{ active_reservation.status }}</span>)
-      — ไปที่ <a href="/me" class="underline">โปรไฟล์</a> เพื่อจัดการ
-    </div>
-  {% elif room.status != "available" %}
-    <div class="bg-red-50 border-l-4 border-red-400 p-3 rounded text-sm text-red-700">
-      ห้องนี้ไม่พร้อมจอง ({{ room.status }})
-    </div>
-  {% else %}
-    <h2 class="font-semibold mb-3">📝 ขอจองห้องนี้</h2>
-    <form action="/reservation/rooms/{{ room.id }}/reserve" method="post" class="space-y-3">
-      <textarea name="reason" rows="3" placeholder="เหตุผลที่ต้องการห้องนี้ (ไม่บังคับ)"
-                class="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:border-indigo-500"></textarea>
-      <button type="submit"
-              class="bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-2 rounded-lg font-medium">
-        ส่งคำขอจอง
-      </button>
-      <p class="text-xs text-slate-500">หลังส่งคำขอ ต้องรอ staff อนุมัติก่อนจึงจะ check-in ได้</p>
-    </form>
-  {% endif %}
 </div>
 
 {% endblock %}

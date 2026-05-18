@@ -2,90 +2,171 @@
 {% block title %}คำขอจอง — Staff{% endblock %}
 {% block content %}
 
-<h1 class="text-2xl font-bold mb-1">📋 คำขอจอง</h1>
-<p class="text-slate-500 text-sm mb-4">อนุมัติ/ปฏิเสธ/check-in การจองห้องของผู้พัก</p>
+<!-- Page Header -->
+<div class="flex items-start justify-between mb-6">
+  <div>
+    <div class="flex items-center gap-2 text-sm text-slate-500 mb-2">
+      <span class="badge badge-staff">👔 Staff</span>
+      <span>·</span>
+      <span>จัดการห้องพัก</span>
+    </div>
+    <h1 class="text-2xl font-extrabold text-slate-900 mb-1">คำขอจองห้องพัก</h1>
+    <p class="text-slate-500 text-sm">อนุมัติ · ปฏิเสธ · check-in ผู้พัก</p>
+  </div>
+  <a href="/staff/residents" class="btn btn-ghost btn-sm hidden sm:inline-flex">
+    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+    ดูผู้พักทั้งหมด
+  </a>
+</div>
 
-<!-- Tabs filter -->
-<div class="flex gap-2 mb-6 text-sm">
-  {% for s, label in [("pending","รออนุมัติ"), ("approved","อนุมัติแล้ว"), ("checked_in","check-in แล้ว"), ("rejected","ปฏิเสธ"), ("all","ทั้งหมด")] %}
+<!-- Status Filter Tabs -->
+<div class="tab-bar mb-6">
+  {% for s, label, icon in [
+    ("pending","รออนุมัติ","⏳"),
+    ("approved","อนุมัติแล้ว","✅"),
+    ("checked_in","Check-in แล้ว","🏠"),
+    ("rejected","ปฏิเสธแล้ว","❌"),
+    ("all","ทั้งหมด","📋")
+  ] %}
   <a href="/staff/reservations?status={{ s }}"
-     class="px-3 py-1.5 rounded-md transition
-            {{ 'bg-pink-600 text-white' if current_status == s else 'bg-white border border-slate-200 hover:bg-slate-50' }}">
+     class="tab-btn {% if current_status == s %}active{% endif %}">
+    <span>{{ icon }}</span>
     {{ label }}
   </a>
   {% endfor %}
 </div>
 
-<div class="bg-white border border-slate-200 rounded-lg overflow-hidden">
-  <table class="w-full text-sm">
-    <thead class="bg-slate-50 text-left text-xs uppercase text-slate-500">
-      <tr>
-        <th class="px-4 py-3">ผู้ขอจอง</th>
-        <th class="px-4 py-3">ห้อง</th>
-        <th class="px-4 py-3">วันที่ขอ</th>
-        <th class="px-4 py-3">สถานะ</th>
-        <th class="px-4 py-3">เหตุผล</th>
-        <th class="px-4 py-3 text-right">การจัดการ</th>
-      </tr>
-    </thead>
-    <tbody>
-      {% for r, room, resident in rows %}
-      <tr class="border-t border-slate-100 align-top">
-        <td class="px-4 py-3">
-          {% if resident %}
-          <div class="font-medium">{{ resident.full_name }}</div>
-          <div class="text-xs text-slate-500">{{ resident.email }}</div>
-          <div class="text-xs text-slate-500">{{ resident.student_id or "" }}</div>
-          {% else %}
-          <span class="text-slate-400">— (ยังไม่มี profile)</span>
-          {% endif %}
-        </td>
-        <td class="px-4 py-3 font-medium">
-          <a href="/rooms/{{ room.id }}" class="hover:underline">{{ room.room_number }}</a>
-          <div class="text-xs text-slate-500">ตึก {{ room.building }} ชั้น {{ room.floor }}</div>
-        </td>
-        <td class="px-4 py-3 text-slate-600 text-xs">
-          {{ r.created_at.strftime("%Y-%m-%d %H:%M") }}
-        </td>
-        <td class="px-4 py-3">
-          <span class="badge badge-{{ r.status if r.status != 'checked_in' else 'checked' }}">{{ r.status }}</span>
-        </td>
-        <td class="px-4 py-3 text-slate-600 max-w-xs">
-          <div class="line-clamp-3">{{ r.reason or "—" }}</div>
-          {% if r.status == "rejected" and r.reject_reason %}
-          <div class="mt-1 text-xs text-red-600">ปฏิเสธ: {{ r.reject_reason }}</div>
-          {% endif %}
-        </td>
-        <td class="px-4 py-3 text-right">
-          {% if r.status == "pending" %}
-          <div class="flex gap-2 justify-end items-start">
-            <form action="/staff/reservations/{{ r.id }}/approve" method="post">
-              <button class="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1 rounded text-xs">อนุมัติ</button>
-            </form>
-            <details class="relative">
-              <summary class="bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded text-xs cursor-pointer list-none">ปฏิเสธ</summary>
-              <form action="/staff/reservations/{{ r.id }}/reject" method="post"
-                    class="absolute right-0 mt-1 bg-white border border-slate-200 shadow-lg rounded p-3 z-10 w-72">
-                <textarea name="reject_reason" rows="2" required placeholder="เหตุผลที่ปฏิเสธ"
-                          class="w-full px-2 py-1 border border-slate-300 rounded text-xs mb-2"></textarea>
-                <button class="bg-red-600 text-white px-3 py-1 rounded text-xs w-full">ยืนยันการปฏิเสธ</button>
+<!-- Table Card -->
+<div class="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
+  {% if rows %}
+  <div class="overflow-x-auto">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>ผู้ขอจอง</th>
+          <th>ห้อง</th>
+          <th>วันที่ขอ</th>
+          <th>สถานะ</th>
+          <th>เหตุผล</th>
+          <th class="text-right" style="min-width:180px">การจัดการ</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for r, room, resident in rows %}
+        <tr class="{% if r.status == 'pending' %}bg-amber-50/30{% endif %}">
+          <!-- Resident info -->
+          <td>
+            {% if resident %}
+            <div class="flex items-center gap-2.5">
+              <div class="avatar text-xs w-8 h-8">{{ (resident.full_name or "?")[0]|upper }}</div>
+              <div class="min-w-0">
+                <div class="font-semibold text-slate-800 leading-tight">{{ resident.full_name }}</div>
+                <div class="text-xs text-slate-400 truncate">{{ resident.email }}</div>
+                {% if resident.student_id %}
+                <div class="text-xs text-slate-400">{{ resident.student_id }}</div>
+                {% endif %}
+              </div>
+            </div>
+            {% else %}
+            <span class="text-slate-400 text-sm">ยังไม่มี profile</span>
+            {% endif %}
+          </td>
+
+          <!-- Room -->
+          <td>
+            <a href="/rooms/{{ room.id }}" class="font-bold text-slate-900 hover:text-indigo-600 transition-colors">
+              {{ room.room_number }}
+            </a>
+            <div class="text-xs text-slate-400 mt-0.5">ตึก {{ room.building }} · ชั้น {{ room.floor }}</div>
+          </td>
+
+          <!-- Date -->
+          <td class="whitespace-nowrap">
+            <div class="text-sm text-slate-600">{{ r.created_at.strftime("%d %b %Y") }}</div>
+            <div class="text-xs text-slate-400">{{ r.created_at.strftime("%H:%M") }}</div>
+          </td>
+
+          <!-- Status -->
+          <td>
+            <span class="badge badge-{{ r.status }}">
+              {% if r.status == "pending" %}⏳ รออนุมัติ
+              {% elif r.status == "approved" %}✅ อนุมัติแล้ว
+              {% elif r.status == "checked_in" %}🏠 check-in
+              {% elif r.status == "rejected" %}❌ ปฏิเสธ
+              {% elif r.cancelled_at %}🚫 ยกเลิก
+              {% else %}{{ r.status }}{% endif %}
+            </span>
+          </td>
+
+          <!-- Reason -->
+          <td class="max-w-xs">
+            {% if r.status == "rejected" and r.reject_reason %}
+            <div class="text-xs text-red-600 font-medium">⚠️ {{ r.reject_reason }}</div>
+            {% elif r.reason %}
+            <div class="text-xs text-slate-500 line-clamp-2">{{ r.reason }}</div>
+            {% else %}
+            <span class="text-slate-300 text-xs">—</span>
+            {% endif %}
+          </td>
+
+          <!-- Actions -->
+          <td class="text-right">
+            <div class="flex items-center justify-end gap-2 flex-wrap">
+              {% if r.status == "pending" %}
+              <!-- Approve -->
+              <form action="/staff/reservations/{{ r.id }}/approve" method="post" class="inline">
+                <button type="submit" class="btn btn-success btn-xs">
+                  ✅ อนุมัติ
+                </button>
               </form>
-            </details>
-          </div>
-          {% elif r.status == "approved" %}
-          <form action="/staff/reservations/{{ r.id }}/checkin" method="post">
-            <button class="bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1 rounded text-xs">check-in</button>
-          </form>
-          {% else %}
-          <span class="text-slate-400 text-xs">—</span>
-          {% endif %}
-        </td>
-      </tr>
-      {% else %}
-      <tr><td colspan="6" class="px-4 py-8 text-center text-slate-400">ไม่มีคำขอจองในสถานะนี้</td></tr>
-      {% endfor %}
-    </tbody>
-  </table>
+              <!-- Reject with popover -->
+              <details class="relative inline-block">
+                <summary class="btn btn-danger btn-xs list-none cursor-pointer">
+                  ❌ ปฏิเสธ
+                </summary>
+                <div class="absolute right-0 mt-2 w-72 bg-white border border-slate-200 shadow-xl rounded-xl p-4 z-30">
+                  <p class="text-xs font-semibold text-slate-700 mb-2">เหตุผลที่ปฏิเสธ</p>
+                  <form action="/staff/reservations/{{ r.id }}/reject" method="post" class="space-y-2">
+                    <textarea name="reject_reason" rows="2" required
+                              placeholder="ระบุเหตุผล..."
+                              class="form-textarea text-sm resize-none"></textarea>
+                    <button type="submit" class="btn btn-danger w-full btn-sm">
+                      ยืนยันการปฏิเสธ
+                    </button>
+                  </form>
+                </div>
+              </details>
+
+              {% elif r.status == "approved" %}
+              <form action="/staff/reservations/{{ r.id }}/checkin" method="post" class="inline">
+                <button type="submit" class="btn btn-primary btn-xs">
+                  🏠 Check-in
+                </button>
+              </form>
+
+              {% else %}
+              <span class="text-slate-300 text-xs">—</span>
+              {% endif %}
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {% else %}
+  <div class="empty-state">
+    <div class="empty-state-icon">
+      {% if current_status == "pending" %}⏳
+      {% elif current_status == "approved" %}✅
+      {% elif current_status == "checked_in" %}🏠
+      {% else %}📋{% endif %}
+    </div>
+    <h3>ไม่มีคำขอจองในสถานะนี้</h3>
+    <p class="text-sm">ลองเปลี่ยน filter ด้านบน</p>
+  </div>
+  {% endif %}
 </div>
 
 {% endblock %}
