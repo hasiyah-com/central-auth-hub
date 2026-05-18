@@ -2,63 +2,173 @@
 {% block title %}หน้าแรก — ระบบหอพัก{% endblock %}
 {% block content %}
 
-<div class="mb-6">
-  <h1 class="text-2xl font-bold">สวัสดี {{ user.full_name }} 👋</h1>
-  <p class="text-slate-500 text-sm">ข้อมูลของคุณจาก Central Auth Hub</p>
+<!-- Welcome Banner -->
+<div class="relative overflow-hidden bg-gradient-to-r from-indigo-600 to-violet-700 rounded-2xl p-8 mb-8 text-white shadow-lg fade-up">
+  <div class="absolute inset-0 opacity-10">
+    <div class="absolute top-0 right-0 w-64 h-64 bg-white rounded-full -translate-y-1/2 translate-x-1/2"></div>
+    <div class="absolute bottom-0 left-0 w-48 h-48 bg-white rounded-full translate-y-1/2 -translate-x-1/2"></div>
+  </div>
+  <div class="relative z-10 flex items-start justify-between flex-wrap gap-4">
+    <div>
+      <div class="flex items-center gap-3 mb-2">
+        <div class="avatar avatar-lg" style="background:rgba(255,255,255,.2); backdrop-filter:blur(8px);">
+          {{ (user.full_name or "?")[0]|upper }}
+        </div>
+        <div>
+          <div class="text-indigo-200 text-sm font-medium">ยินดีต้อนรับ</div>
+          <h1 class="text-2xl font-extrabold leading-tight">{{ user.full_name }}</h1>
+        </div>
+      </div>
+      <div class="flex flex-wrap items-center gap-2 mt-3">
+        <span class="inline-flex items-center gap-1.5 bg-white/15 backdrop-blur-sm px-3 py-1 rounded-lg text-xs font-medium border border-white/20">
+          {{ user.email }}
+        </span>
+        {% if user.faculty %}
+        <span class="inline-flex items-center gap-1.5 bg-white/15 backdrop-blur-sm px-3 py-1 rounded-lg text-xs font-medium border border-white/20">
+          🏫 {{ user.faculty }}
+        </span>
+        {% endif %}
+        <span class="inline-flex items-center gap-1.5 bg-white/20 backdrop-blur-sm px-3 py-1 rounded-lg text-xs font-bold border border-white/20">
+          {% if user.role_in_sub == "staff" %}👔{% else %}🎓{% endif %}
+          {{ user.role_in_sub|upper }}
+        </span>
+      </div>
+    </div>
+    <div class="text-right text-indigo-200 text-xs">
+      <div class="text-sm font-semibold text-white mb-1">ระบบหอพักมหาวิทยาลัย</div>
+      <div>ข้อมูลจาก Central Auth Hub · JWT RS256</div>
+    </div>
+  </div>
 </div>
 
-<div class="grid md:grid-cols-3 gap-4 mb-6">
-  <div class="bg-white p-5 rounded-lg border border-slate-200">
-    <div class="text-xs text-slate-500 mb-1">role ในระบบหอพัก</div>
-    <div class="text-lg font-semibold"><span class="badge badge-{{ user.role_in_sub }}">{{ user.role_in_sub }}</span></div>
+<!-- Stat Cards -->
+<div class="grid sm:grid-cols-3 gap-4 mb-8 fade-up-2">
+  <div class="stat-card stat-{% if current_room %}emerald{% else %}slate{% endif %}">
+    <div class="stat-label">ห้องพักปัจจุบัน</div>
+    <div class="stat-value">
+      {% if current_room %}{{ current_room.room_number }}{% else %}<span class="text-slate-300 text-2xl">—</span>{% endif %}
+    </div>
+    <div class="stat-sub">
+      {% if current_room %}ตึก {{ current_room.building }} · ชั้น {{ current_room.floor }}{% else %}ยังไม่ได้ check-in{% endif %}
+    </div>
   </div>
-  <div class="bg-white p-5 rounded-lg border border-slate-200">
-    <div class="text-xs text-slate-500 mb-1">ห้องปัจจุบัน</div>
-    <div class="text-lg font-semibold">
-      {% if current_room %}
-        🛏️ {{ current_room.room_number }}
+
+  <div class="stat-card stat-{% if latest_reservation and latest_reservation.status == 'pending' %}amber{% elif latest_reservation and latest_reservation.status in ['approved','checked_in'] %}blue{% else %}slate{% endif %}">
+    <div class="stat-label">สถานะ Reservation</div>
+    <div class="stat-value text-xl pt-1">
+      {% if latest_reservation %}
+        <span class="badge badge-{{ latest_reservation.status }}">
+          {% if latest_reservation.status == 'pending' %}⏳ รออนุมัติ
+          {% elif latest_reservation.status == 'approved' %}✅ อนุมัติแล้ว
+          {% elif latest_reservation.status == 'checked_in' %}🏠 เข้าพักแล้ว
+          {% elif latest_reservation.status == 'rejected' %}❌ ถูกปฏิเสธ
+          {% else %}{{ latest_reservation.status }}{% endif %}
+        </span>
       {% else %}
-        <span class="text-slate-400">ยังไม่ได้ check-in</span>
+        <span class="text-slate-300 text-2xl">—</span>
       {% endif %}
     </div>
+    <div class="stat-sub">
+      {% if latest_reservation %}Reservation ล่าสุด{% else %}ยังไม่เคยจอง{% endif %}
+    </div>
   </div>
-  <div class="bg-white p-5 rounded-lg border border-slate-200">
-    <div class="text-xs text-slate-500 mb-1">สถานะ</div>
-    <div class="text-lg font-semibold">
-      {% if resident %}{{ resident.status }}{% else %}—{% endif %}
+
+  <div class="stat-card stat-indigo">
+    <div class="stat-label">Role ในระบบ</div>
+    <div class="stat-value text-xl pt-1">
+      <span class="badge badge-{{ user.role_in_sub }}">
+        {% if user.role_in_sub == "staff" %}👔 staff{% else %}🎓 resident{% endif %}
+      </span>
+    </div>
+    <div class="stat-sub">
+      {% if user.student_id %}รหัส {{ user.student_id }}{% else %}สิทธิ์เข้าใช้งาน{% endif %}
     </div>
   </div>
 </div>
 
-{% if latest_reservation %}
-<div class="bg-white p-5 rounded-lg border border-slate-200 mb-6">
-  <h2 class="font-semibold mb-3">📋 Reservation ล่าสุด</h2>
-  <div class="flex items-center justify-between">
-    <div>
-      <div class="text-sm text-slate-500">สถานะ</div>
-      <div><span class="badge badge-{{ latest_reservation.status if latest_reservation.status != 'checked_in' else 'checked' }}">{{ latest_reservation.status }}</span></div>
-    </div>
-    <a href="/me" class="text-indigo-600 hover:underline text-sm">ดูรายละเอียด →</a>
+<!-- Reservation alert -->
+{% if latest_reservation and latest_reservation.status == "rejected" and latest_reservation.reject_reason %}
+<div class="alert alert-danger mb-6 fade-up-2">
+  <span class="alert-icon">❌</span>
+  <div>
+    <strong class="block mb-0.5">คำขอจองล่าสุดถูกปฏิเสธ</strong>
+    เหตุผล: {{ latest_reservation.reject_reason }}
   </div>
-  {% if latest_reservation.status == "rejected" and latest_reservation.reject_reason %}
-  <div class="mt-3 bg-red-50 border-l-4 border-red-400 p-3 rounded text-sm text-red-700">
-    เหตุผลที่ปฏิเสธ: {{ latest_reservation.reject_reason }}
+</div>
+{% elif latest_reservation and latest_reservation.status == "pending" %}
+<div class="alert alert-warning mb-6 fade-up-2">
+  <span class="alert-icon">⏳</span>
+  <div>
+    <strong class="block mb-0.5">รอการอนุมัติจาก Staff</strong>
+    คำขอจองของคุณอยู่ระหว่างการพิจารณา — ระบบจะแจ้งผลทางหน้าโปรไฟล์
   </div>
-  {% endif %}
+</div>
+{% elif latest_reservation and latest_reservation.status == "approved" %}
+<div class="alert alert-info mb-6 fade-up-2">
+  <span class="alert-icon">✅</span>
+  <div>
+    <strong class="block mb-0.5">คำขอจองได้รับการอนุมัติแล้ว!</strong>
+    กรุณาติดต่อ Staff เพื่อทำการ check-in เข้าห้องพัก
+  </div>
 </div>
 {% endif %}
 
-<div class="grid md:grid-cols-2 gap-4">
-  <a href="/rooms" class="block bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 p-5 rounded-lg transition">
-    <div class="text-2xl mb-2">🏠</div>
-    <div class="font-semibold">ดูห้องทั้งหมด</div>
-    <div class="text-sm text-slate-600">เลือกห้องที่ต้องการจอง</div>
+<!-- Quick Actions -->
+<h2 class="text-base font-bold text-slate-700 mb-3 fade-up-3">การดำเนินการ</h2>
+<div class="grid sm:grid-cols-2 {% if user.role_in_sub == 'staff' %}lg:grid-cols-4{% else %}lg:grid-cols-3{% endif %} gap-4 fade-up-3">
+
+  <a href="/rooms" class="room-card group">
+    <div class="text-3xl mb-3">🏠</div>
+    <div class="font-bold text-slate-900 mb-1 group-hover:text-indigo-700 transition-colors">ดูห้องทั้งหมด</div>
+    <div class="text-sm text-slate-500">เลือกดูห้องว่างและส่งคำขอจอง</div>
+    <div class="mt-3 flex items-center gap-1 text-xs text-indigo-600 font-semibold">
+      ไปดูห้อง
+      <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+    </div>
   </a>
-  <a href="/me" class="block bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 p-5 rounded-lg transition">
-    <div class="text-2xl mb-2">👤</div>
-    <div class="font-semibold">โปรไฟล์ของฉัน</div>
-    <div class="text-sm text-slate-600">ดูข้อมูล + จัดการ reservation</div>
+
+  <a href="/me" class="room-card group">
+    <div class="text-3xl mb-3">👤</div>
+    <div class="font-bold text-slate-900 mb-1 group-hover:text-indigo-700 transition-colors">โปรไฟล์ของฉัน</div>
+    <div class="text-sm text-slate-500">ข้อมูลส่วนตัวและประวัติการจอง</div>
+    <div class="mt-3 flex items-center gap-1 text-xs text-indigo-600 font-semibold">
+      ดูโปรไฟล์
+      <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+    </div>
   </a>
+
+  {% if not current_room and user.role_in_sub != "staff" %}
+  <a href="/rooms" class="room-card group border-indigo-200 bg-indigo-50">
+    <div class="text-3xl mb-3">➕</div>
+    <div class="font-bold text-indigo-800 mb-1">ขอจองห้องใหม่</div>
+    <div class="text-sm text-indigo-600">ยังไม่มีห้องพัก — เริ่มจองได้เลย</div>
+    <div class="mt-3 flex items-center gap-1 text-xs text-indigo-600 font-semibold">
+      จองห้อง
+      <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+    </div>
+  </a>
+  {% endif %}
+
+  {% if user.role_in_sub == "staff" %}
+  <a href="/staff/reservations" class="room-card group border-pink-200 bg-pink-50">
+    <div class="text-3xl mb-3">📋</div>
+    <div class="font-bold text-pink-800 mb-1">คำขอจอง</div>
+    <div class="text-sm text-pink-600">อนุมัติ / ปฏิเสธ / check-in</div>
+    <div class="mt-3 flex items-center gap-1 text-xs text-pink-600 font-semibold">
+      จัดการ
+      <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+    </div>
+  </a>
+  <a href="/staff/residents" class="room-card group border-pink-200 bg-pink-50">
+    <div class="text-3xl mb-3">👥</div>
+    <div class="font-bold text-pink-800 mb-1">ผู้พักทั้งหมด</div>
+    <div class="text-sm text-pink-600">ดูรายชื่อและสถานะผู้พัก</div>
+    <div class="mt-3 flex items-center gap-1 text-xs text-pink-600 font-semibold">
+      ดูรายการ
+      <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+    </div>
+  </a>
+  {% endif %}
 </div>
 
 {% endblock %}
