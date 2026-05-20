@@ -30,6 +30,11 @@ from app.redis_client import redis_client
 from app.routers.auth import oauth          # ใช้ Authlib client ตัวเดียวกับ Week 2
 from app.services.audit_service import log_action
 from app.services.feature_extraction import extract_session_features
+from app.services.hooks import (
+    EVT_OAUTH_AUTHORIZED,
+    EVT_OAUTH_FAILURE,
+    emit,
+)
 from app.services.jwt_service import create_subsystem_token
 from app.services.ml_client import get_anomaly_score
 from app.services.pkce import generate_pkce_pair, verify_pkce
@@ -140,6 +145,9 @@ async def oauth_callback(
             metadata={"email": email, "client_id": authreq["client_id"]},
         )
         db.commit()
+        await emit(EVT_OAUTH_FAILURE, {
+            "client_id": authreq["client_id"], "reason": "unknown_email", "ip": client_ip,
+        })
         raise HTTPException(
             status_code=403,
             detail=f"อีเมล {email} ไม่ใช่ผู้ใช้ของมหาวิทยาลัย",
@@ -153,6 +161,10 @@ async def oauth_callback(
                       "subsystem_id": authreq["subsystem_id"]},
         )
         db.commit()
+        await emit(EVT_OAUTH_FAILURE, {
+            "user_id": str(user.id), "client_id": authreq["client_id"],
+            "reason": f"inactive_{user.status}", "ip": client_ip,
+        })
         raise HTTPException(status_code=403, detail=f"บัญชีถูก {user.status}")
 
     # *** เช็ค Access List — user มีสิทธิ์เข้า subsystem นี้ไหม ***
@@ -174,6 +186,10 @@ async def oauth_callback(
                       "client_id": authreq["client_id"]},
         )
         db.commit()
+        await emit(EVT_OAUTH_FAILURE, {
+            "user_id": str(user.id), "client_id": authreq["client_id"],
+            "reason": "not_in_whitelist", "ip": client_ip,
+        })
         raise HTTPException(
             status_code=403,
             detail="คุณไม่อยู่ใน whitelist ของระบบย่อยนี้ — ติดต่อ admin",
@@ -189,6 +205,10 @@ async def oauth_callback(
             metadata={"email": email, "subsystem_id": authreq["subsystem_id"]},
         )
         db.commit()
+        await emit(EVT_OAUTH_FAILURE, {
+            "user_id": str(user.id), "client_id": authreq["client_id"],
+            "reason": "google_sub_mismatch", "ip": client_ip,
+        })
         raise HTTPException(
             status_code=403,
             detail="Google account นี้ไม่ตรงกับบัญชีที่เคยใช้ login — ติดต่อ admin",
@@ -248,6 +268,10 @@ async def oauth_callback(
             metadata={"score": anomaly_score, "features": features},
         )
         db.commit()
+        await emit(EVT_OAUTH_FAILURE, {
+            "user_id": str(user.id), "client_id": authreq["client_id"],
+            "reason": "ml_blocked", "ip": client_ip, "anomaly_score": anomaly_score,
+        })
         raise HTTPException(
             status_code=403,
             detail=(
@@ -285,6 +309,13 @@ async def oauth_callback(
                   "actual_decision": actual_decision, "ml_error": ml_result.get("error")},
     )
     db.commit()
+
+    await emit(EVT_OAUTH_AUTHORIZED, {
+        "user_id": str(user.id),
+        "client_id": authreq["client_id"],
+        "subsystem_id": authreq["subsystem_id"],
+        "ip": client_ip,
+    })
 
     # cleanup + redirect กลับ subsystem พร้อม code + state
     redis_client.delete(f"authreq:{state}")

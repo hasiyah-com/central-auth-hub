@@ -6,6 +6,7 @@
 from sqlalchemy.orm import Session
 
 from app.models import AuditLog
+from app.services.hooks import EVT_AUDIT_LOGGED, EVT_AUDIT_PRE, emit_nowait
 
 
 def log_action(
@@ -31,6 +32,12 @@ def log_action(
         ip: IP address ของ actor
         metadata: ข้อมูลเพิ่มเติม (เก็บเป็น JSON)
     """
+    emit_nowait(EVT_AUDIT_PRE, {
+        "actor_id": str(actor_id) if actor_id else None,
+        "action": action,
+        "target_type": target_type,
+    })
+
     entry = AuditLog(
         actor_id=actor_id,
         action=action,
@@ -40,3 +47,10 @@ def log_action(
         metadata_json=metadata or {},
     )
     db.add(entry)
+
+    emit_nowait(EVT_AUDIT_LOGGED, {
+        "actor_id": str(actor_id) if actor_id else None,
+        "action": action,
+        "target_type": target_type,
+        "target_id": str(target_id) if target_id else None,
+    })

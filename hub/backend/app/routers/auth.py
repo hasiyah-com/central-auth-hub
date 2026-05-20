@@ -16,6 +16,12 @@ from app.database import get_db
 from app.deps import get_client_ip, get_current_user
 from app.models import User
 from app.services.audit_service import log_action
+from app.services.hooks import (
+    EVT_LOGIN_FAILURE,
+    EVT_LOGIN_PRE,
+    EVT_LOGIN_SUCCESS,
+    emit,
+)
 from app.services.jwt_service import create_access_token
 
 router = APIRouter()
@@ -36,6 +42,10 @@ oauth.register(
 @router.get("/google/login")
 async def google_login(request: Request):
     """พาผู้ใช้ไปหน้า login ของ Google."""
+    await emit(EVT_LOGIN_PRE, {
+        "ip": get_client_ip(request),
+        "user_agent": request.headers.get("user-agent"),
+    })
     redirect_uri = settings.google_redirect_uri
     return await oauth.google.authorize_redirect(request, redirect_uri)
 
@@ -70,6 +80,9 @@ async def google_callback(request: Request, db: Session = Depends(get_db)):
             metadata={"email": email, "google_sub": google_sub},
         )
         db.commit()
+        await emit(EVT_LOGIN_FAILURE, {
+            "email": email, "reason": "unknown_email", "ip": client_ip,
+        })
         raise HTTPException(
             status_code=403,
             detail=f"อีเมล {email} ไม่ใช่ผู้ใช้ของมหาวิทยาลัย",
@@ -82,6 +95,9 @@ async def google_callback(request: Request, db: Session = Depends(get_db)):
             metadata={"email": email, "status": user.status},
         )
         db.commit()
+        await emit(EVT_LOGIN_FAILURE, {
+            "email": email, "reason": f"inactive_{user.status}", "ip": client_ip,
+        })
         raise HTTPException(status_code=403, detail=f"บัญชีถูก {user.status}")
 
     # *** นโยบาย: นักศึกษาเข้าระบบกลางโดยตรงไม่ได้ ***
@@ -93,6 +109,9 @@ async def google_callback(request: Request, db: Session = Depends(get_db)):
             metadata={"email": email, "user_type": "student"},
         )
         db.commit()
+        await emit(EVT_LOGIN_FAILURE, {
+            "email": email, "reason": "student_blocked", "ip": client_ip,
+        })
         raise HTTPException(
             status_code=403,
             detail=(
@@ -114,6 +133,9 @@ async def google_callback(request: Request, db: Session = Depends(get_db)):
                       "received_sub_prefix": google_sub[:8]},
         )
         db.commit()
+        await emit(EVT_LOGIN_FAILURE, {
+            "email": email, "reason": "google_sub_mismatch", "ip": client_ip,
+        })
         raise HTTPException(
             status_code=403,
             detail="Google account นี้ไม่ตรงกับบัญชีที่เคยใช้ login — ติดต่อ admin",
@@ -133,6 +155,13 @@ async def google_callback(request: Request, db: Session = Depends(get_db)):
 
     # ออก JWT
     access_token = create_access_token(user)
+
+    await emit(EVT_LOGIN_SUCCESS, {
+        "user_id": str(user.id),
+        "email": user.email,
+        "user_type": user.user_type,
+        "ip": client_ip,
+    })
 
     return JSONResponse({
         "access_token": access_token,
