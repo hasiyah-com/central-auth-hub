@@ -9,6 +9,7 @@ from functools import lru_cache
 from jose import jwt, jwk, JWTError
 
 from app.config import settings
+from app.services.hooks import EVT_TOKEN_ISSUED, emit_nowait
 
 ISSUER = "https://hub.local"
 KEY_ID = "hub-key-1"
@@ -57,7 +58,12 @@ def create_access_token(user, audience: str | None = None) -> str:
     }
 
     headers = {"kid": KEY_ID}
-    return jwt.encode(payload, _private_key(), algorithm="RS256", headers=headers)
+    token = jwt.encode(payload, _private_key(), algorithm="RS256", headers=headers)
+    emit_nowait(EVT_TOKEN_ISSUED, {
+        "sub": payload["sub"], "aud": payload["aud"],
+        "exp": payload["exp"], "kind": "hub_direct",
+    })
+    return token
 
 
 def create_subsystem_token(
@@ -99,7 +105,13 @@ def create_subsystem_token(
             payload[key] = value
 
     headers = {"kid": KEY_ID}
-    return jwt.encode(payload, _private_key(), algorithm="RS256", headers=headers)
+    token = jwt.encode(payload, _private_key(), algorithm="RS256", headers=headers)
+    emit_nowait(EVT_TOKEN_ISSUED, {
+        "sub": payload["sub"], "aud": payload["aud"],
+        "exp": payload["exp"], "kind": "subsystem",
+        "role_in_subsystem": role_in_sub, "scope": scope,
+    })
+    return token
 
 
 def verify_token(token: str, audience: str | None = None) -> dict:

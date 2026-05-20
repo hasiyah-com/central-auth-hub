@@ -8,6 +8,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from app.config import settings
 from app.database import Base, engine
+from app.hooks import register_default_listeners
 from app.routers import health, users, admin, auth, developer, secret, oauth
 from app.services.jwt_service import get_jwks
 from app.services.request_logger import RequestLoggerMiddleware
@@ -25,6 +26,10 @@ async def lifespan(app: FastAPI):
                 f"ไม่พบ JWT key ที่ {path}. "
                 "รันก่อน: docker compose exec hub-backend python -m scripts.generate_jwt_keys"
             )
+
+    # Lifecycle hooks (event bus) — fail-safe extension points
+    register_default_listeners()
+
     yield
 
 
