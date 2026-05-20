@@ -1,0 +1,65 @@
+# Pre-commit hooks สำหรับ Central Auth Hub
+# Setup: pip install pre-commit && pre-commit install
+# Run all: pre-commit run --all-files
+
+repos:
+  # ---------- General hygiene ----------
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: check-added-large-files
+        args: ['--maxkb=500']
+      - id: check-yaml
+        exclude: ^docker-compose\.ya?ml$  # docker-compose ใช้ !reset tag custom, skip
+      - id: check-json
+        exclude: ^\.vscode/  # vscode JSON มี comment (jsonc)
+      - id: check-merge-conflict
+      - id: end-of-file-fixer
+        exclude: \.svg$
+      - id: trailing-whitespace
+        exclude: \.md$
+      - id: detect-private-key   # block commit ของ RSA/SSH/PGP key body
+
+  # ---------- Secrets scanning ----------
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.5.0
+    hooks:
+      - id: detect-secrets
+        args: ['--baseline', '.secrets.baseline']
+        exclude: |
+          (?x)^(
+            \.git/.*|
+            \.secrets\.baseline|
+            docs/sample_whitelist\.csv|
+            .*\.pyc
+          )$
+
+  # ---------- Block .env files (custom) ----------
+  - repo: local
+    hooks:
+      - id: block-env-files
+        name: Block .env files (allow .env.example only)
+        entry: python scripts/hooks/block_env_commit.py
+        language: system
+        pass_filenames: true
+        always_run: false
+
+  # ---------- Python lint + format ----------
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.8.4
+    hooks:
+      - id: ruff
+        args: ['--fix']
+        files: ^(hub/|ml-service/|scripts/).*\.py$
+      - id: ruff-format
+        files: ^(hub/|ml-service/|scripts/).*\.py$
+
+  # ---------- Python smoke test ----------
+  - repo: local
+    hooks:
+      - id: pytest-collect-hub
+        name: pytest --collect-only (hub-backend imports)
+        entry: bash -c 'cd hub/backend && python -m pytest --collect-only -q 2>&1 | tail -5 || true'
+        language: system
+        pass_filenames: false
+        files: ^hub/backend/.*\.py$
