@@ -40,3 +40,9 @@ build/
 
 # ============ Docker ============
 postgres_data/
+# auto-generated per worktree by scripts/worktree/create.sh
+docker-compose.override.yml
+
+# ============ GeoIP (MaxMind binary DB — ต้องมี license) ============
+*.mmdb
+hub/backend/data/*.mmdb
