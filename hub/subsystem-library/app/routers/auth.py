@@ -100,6 +100,7 @@ async def oauth_callback(
     except JWTError as e:
         raise HTTPException(status_code=401, detail=f"JWT ไม่ valid: {e}")
 
+    # Subsystem B ขอ scope จาก Hub เฉพาะ: email, full_name, role_in_sub, faculty, student_id
     user = CurrentUser({
         "hub_user_id": claims["sub"],
         "email": claims.get("email", ""),
@@ -107,7 +108,6 @@ async def oauth_callback(
         "role_in_sub": claims.get("role_in_subsystem", "member"),
         "faculty": claims.get("faculty"),
         "student_id": claims.get("student_id"),
-        "phone": claims.get("phone"),
     })
     member = get_or_create_member(user, db)
 
@@ -129,7 +129,6 @@ async def oauth_callback(
         "role_in_sub": user.role_in_sub,
         "faculty": user.faculty,
         "student_id": user.student_id,
-        "phone": user.phone,
     })
 
     response = RedirectResponse(url="/", status_code=302)

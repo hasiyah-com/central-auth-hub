@@ -1,3 +1,7 @@
+# ============ Design assets ============
+design-bundle/
+design-bundle.bin
+
 # ============ Secrets ============
 .env
 .env.local
@@ -40,20 +44,3 @@ build/
 
 # ============ Docker ============
 postgres_data/
-
-# ============ pre-commit / hooks ============
-.secrets.baseline.local
-
-# ============ Worktree (per-slot override, auto-generated) ============
-docker-compose.override.yml
-
-# ============ Claude Code internal ============
-.claude/settings.local.json
-.claude/worktrees/
-
-# ============ Temp / scratch files ============
-hub/backend/tmp_*.py
-
-# ============ GeoIP (MaxMind binary DB — ต้องมี license) ============
-*.mmdb
-hub/backend/data/*.mmdb
