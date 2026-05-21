@@ -1,131 +1,134 @@
 {% extends "base.html" %}
-{% block title %}การยืมของฉัน — ระบบห้องสมุด{% endblock %}
+{% block title %}โปรไฟล์ — ห้องสมุดดวงดาว{% endblock %}
 {% block content %}
 
-<!-- Page Header -->
-<div class="flex items-center justify-between mb-6">
+{# ════════════ TOPBAR ════════════ #}
+<div class="topbar">
   <div>
-    <h1 class="text-2xl font-extrabold text-slate-900 mb-1">โปรไฟล์ & การยืมของฉัน</h1>
-    <p class="text-slate-500 text-sm">ข้อมูลจาก Central Auth Hub · ประวัติการยืมหนังสือ</p>
+    <div class="crumb">โปรไฟล์ของฉัน</div>
+    <h1>โปรไฟล์ &amp; การยืมของฉัน</h1>
+    <div class="subtitle">ข้อมูลจาก Central Auth Hub · ประวัติการยืมหนังสือ</div>
+  </div>
+  <div style="display:flex; align-items:center; gap:10px;">
+    <a class="icon-btn" href="/books" title="ค้นหาหนังสือ">⌕</a>
+    <a class="user-chip" href="/me">
+      <div class="avatar {% if user.role_in_sub == 'librarian' %}avatar-librarian{% endif %}" style="width:32px; height:32px; font-size:14px;">
+        {{ (user.full_name or '?')[0]|upper }}
+      </div>
+      <div class="who">
+        <div class="name">{{ user.full_name or user.email }}</div>
+        <div class="id">{{ user.role_in_sub }}</div>
+      </div>
+    </a>
   </div>
 </div>
 
-<!-- Profile Grid -->
+{# ════════════ PROFILE GRID ════════════ #}
 <div class="grid md:grid-cols-2 gap-5 mb-8">
 
-  <!-- Hub Info -->
-  <div class="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
-    <div class="flex items-center gap-3 mb-5">
+  {# ── Hub Info ── #}
+  <div class="paper" style="padding: 24px;">
+    <div style="display:flex; align-items:center; gap:14px; margin-bottom:18px;">
       <div class="avatar avatar-lg {% if user.role_in_sub == 'librarian' %}avatar-librarian{% endif %}">
-        {{ (user.full_name or "?")[0]|upper }}
+        {{ (user.full_name or '?')[0]|upper }}
       </div>
       <div>
-        <h2 class="font-bold text-slate-900 text-lg leading-tight">{{ user.full_name }}</h2>
-        <p class="text-slate-500 text-sm mt-0.5">{{ user.email }}</p>
-        <span class="badge badge-{{ user.role_in_sub }} mt-1.5">{{ user.role_in_sub }}</span>
+        <div style="font-family:var(--font-display); font-size:20px; line-height:1.15; color:var(--ink);">
+          {{ user.full_name or '— ไม่ระบุชื่อ —' }}
+        </div>
+        <div style="font-family:var(--font-serif); font-style:italic; font-size:13px; color:var(--ink-3); margin-top:2px;">{{ user.email }}</div>
+        <span class="badge badge-{{ user.role_in_sub }}" style="margin-top:6px;">
+          {% if user.role_in_sub == 'librarian' %}⚜ บรรณารักษ์{% else %}❦ สมาชิก{% endif %}
+        </span>
       </div>
     </div>
 
-    <h3 class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">ข้อมูลจาก Hub</h3>
-    <dl class="space-y-2.5">
-      {% if user.student_id %}
-      <div class="flex items-center justify-between py-2 border-b border-slate-50">
-        <dt class="text-sm text-slate-500 flex items-center gap-2">
-          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M10 6H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V8a2 2 0 00-2-2h-5m-4 0V5a2 2 0 114 0v1m-4 0a2 2 0 104 0m-5 8a2 2 0 100-4 2 2 0 000 4zm0 0c1.306 0 2.417.835 2.83 2M9 14a3.001 3.001 0 00-2.83 2"/></svg>
-          รหัสนักศึกษา
+    <div class="orn-rule" style="margin-bottom:12px;"><span class="orn-fleur">ข้อมูลจาก Hub</span></div>
+
+    {# Display all 5 scoped fields — clearly show empty ones instead of hiding #}
+    <dl style="font-family:var(--font-serif); font-size:14px;">
+      {% set kv_pairs = [
+        ('email',       'อีเมล',         user.email),
+        ('full_name',   'ชื่อ-นามสกุล',  user.full_name),
+        ('role_in_sub', 'บทบาท',         user.role_in_sub),
+        ('faculty',     'คณะ',           user.faculty),
+        ('student_id',  'รหัสนักศึกษา',  user.student_id),
+      ] %}
+      {% for key, label, value in kv_pairs %}
+      <div style="display:flex; justify-content:space-between; align-items:baseline; padding:10px 0; border-bottom:1px dashed var(--rule);">
+        <dt style="color:var(--ink-3); letter-spacing:.05em;">
+          {{ label }}
+          <span style="font-size:10px; color:var(--ink-soft); letter-spacing:.1em; margin-left:6px;">{{ key }}</span>
         </dt>
-        <dd class="text-sm font-semibold text-slate-800">{{ user.student_id }}</dd>
+        <dd style="text-align:right; color:{% if value %}var(--ink){% else %}var(--ink-soft){% endif %};">
+          {% if value %}{{ value }}{% else %}<em style="font-style:italic; opacity:.7;">— ไม่มีข้อมูล —</em>{% endif %}
+        </dd>
       </div>
-      {% endif %}
-      {% if user.faculty %}
-      <div class="flex items-center justify-between py-2 border-b border-slate-50">
-        <dt class="text-sm text-slate-500 flex items-center gap-2">
-          <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 14l9-5-9-5-9 5 9 5z"/></svg>
-          คณะ
-        </dt>
-        <dd class="text-sm font-semibold text-slate-800">{{ user.faculty }}</dd>
-      </div>
-      {% endif %}
+      {% endfor %}
     </dl>
 
-    <div class="mt-4 p-3 bg-slate-50 rounded-xl text-xs text-slate-500 flex items-start gap-2">
-      <svg class="w-4 h-4 flex-shrink-0 text-slate-400 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-      ข้อมูลนี้มาจาก Hub ตาม JWT scope — หากต้องการแก้ไข กรุณาติดต่อ admin มหาวิทยาลัย
+    <div style="margin-top:16px; padding:12px 14px; background:var(--paper); border:1px solid var(--rule); font-family:var(--font-serif); font-size:12.5px; color:var(--ink-3); display:flex; gap:10px;">
+      <span style="color:var(--gold); flex-shrink:0;">ℹ</span>
+      <span>ข้อมูลทั้งหมดมาจาก Central Auth Hub ตาม JWT scope ที่ระบบลงทะเบียนไว้ <strong style="color:var(--ink-2); font-weight:500;">(scope: {{ kv_pairs|length }} fields)</strong> — หากต้องการแก้ไข กรุณาติดต่อ admin มหาวิทยาลัย</span>
     </div>
   </div>
 
-  <!-- Library Member Info -->
-  <div class="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm">
-    <h2 class="font-bold text-slate-900 mb-4 flex items-center gap-2">
-      <span class="text-xl">📚</span> สถานะสมาชิกห้องสมุด
-    </h2>
+  {# ── Library member info ── #}
+  <div class="paper" style="padding: 24px;">
+    <div class="orn-rule" style="margin-bottom:14px;"><span class="orn-fleur">สถานะสมาชิกห้องสมุด</span></div>
 
     {% if member %}
-    <!-- Borrow stats (computed via loop — rows is list of (Borrowing, Book) tuples) -->
     {% set ns = namespace(active=0, requested=0, returned=0) %}
     {% for b, book in rows %}
-      {% if b.status == "active" %}{% set ns.active = ns.active + 1 %}{% endif %}
-      {% if b.status == "requested" %}{% set ns.requested = ns.requested + 1 %}{% endif %}
-      {% if b.status == "returned" %}{% set ns.returned = ns.returned + 1 %}{% endif %}
+      {% if b.status == 'active' %}{% set ns.active = ns.active + 1 %}{% endif %}
+      {% if b.status == 'requested' %}{% set ns.requested = ns.requested + 1 %}{% endif %}
+      {% if b.status == 'returned' %}{% set ns.returned = ns.returned + 1 %}{% endif %}
     {% endfor %}
-    {% set active_count = ns.active %}
-    {% set requested_count = ns.requested %}
-    {% set returned_count = ns.returned %}
 
     <div class="grid grid-cols-2 gap-3 mb-5">
-      <div class="bg-emerald-50 border border-emerald-100 rounded-xl p-4 text-center">
-        <div class="text-2xl font-extrabold text-emerald-700">{{ active_count }}</div>
-        <div class="text-xs text-emerald-600 mt-0.5">กำลังยืม</div>
+      <div style="text-align:center; padding:16px; border:1px solid var(--rule); background:var(--paper);">
+        <div style="font-family:var(--font-display); font-size:30px; line-height:1; font-weight:500; color:var(--ink);">{{ ns.active }}</div>
+        <div style="font-family:var(--font-serif); font-size:11px; letter-spacing:.15em; text-transform:uppercase; color:var(--ink-3); margin-top:6px;">กำลังยืม</div>
       </div>
-      <div class="bg-amber-50 border border-amber-100 rounded-xl p-4 text-center">
-        <div class="text-2xl font-extrabold text-amber-700">{{ requested_count }}</div>
-        <div class="text-xs text-amber-600 mt-0.5">รออนุมัติ</div>
+      <div style="text-align:center; padding:16px; border:1px solid var(--rule); background:var(--paper);">
+        <div style="font-family:var(--font-display); font-size:30px; line-height:1; font-weight:500; color:var(--ink);">{{ ns.requested }}</div>
+        <div style="font-family:var(--font-serif); font-size:11px; letter-spacing:.15em; text-transform:uppercase; color:var(--ink-3); margin-top:6px;">รออนุมัติ</div>
       </div>
     </div>
 
-    <dl class="space-y-2.5">
-      <div class="flex items-center justify-between py-2 border-b border-slate-50">
-        <dt class="text-sm text-slate-500">สถานะสมาชิก</dt>
-        <dd><span class="badge badge-returned">✅ {{ member.status }}</span></dd>
+    <dl style="font-family:var(--font-serif); font-size:14px;">
+      <div style="display:flex; justify-content:space-between; padding:10px 0; border-bottom:1px dashed var(--rule);">
+        <dt style="color:var(--ink-3);">สถานะสมาชิก</dt>
+        <dd><span class="badge badge-returned">✓ {{ member.status }}</span></dd>
       </div>
-      <div class="flex items-center justify-between py-2 border-b border-slate-50">
-        <dt class="text-sm text-slate-500">สมัครสมาชิกเมื่อ</dt>
-        <dd class="text-sm font-semibold text-slate-800">{{ member.created_at.strftime("%d %b %Y") }}</dd>
+      <div style="display:flex; justify-content:space-between; padding:10px 0; border-bottom:1px dashed var(--rule);">
+        <dt style="color:var(--ink-3);">สมัครสมาชิกเมื่อ</dt>
+        <dd style="color:var(--ink);">{{ member.created_at.strftime('%d %b %Y') }}</dd>
       </div>
-      <div class="flex items-center justify-between py-2">
-        <dt class="text-sm text-slate-500">ประวัติยืมทั้งหมด</dt>
-        <dd class="text-sm font-semibold text-slate-800">{{ rows|length }} ครั้ง</dd>
+      <div style="display:flex; justify-content:space-between; padding:10px 0;">
+        <dt style="color:var(--ink-3);">ประวัติยืมทั้งหมด</dt>
+        <dd style="color:var(--ink);">{{ rows|length }} ครั้ง</dd>
       </div>
     </dl>
     {% else %}
-    <div class="empty-state py-10">
-      <div class="empty-state-icon">📚</div>
+    <div class="empty-state" style="padding: 30px 14px;">
+      <div class="empty-state-icon">❦</div>
       <h3>ยังไม่มีข้อมูลสมาชิก</h3>
       <p>เริ่มยืมหนังสือเพื่อสร้างประวัติ</p>
     </div>
     {% endif %}
 
-    {% if user.role_in_sub == "member" %}
-    <a href="/books" class="btn btn-primary w-full mt-4">
-      <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253"/></svg>
-      ไปค้นหาหนังสือ
-    </a>
+    {% if user.role_in_sub == 'member' %}
+    <a href="/books" class="btn btn-primary w-full" style="margin-top: 14px;">✦ ไปค้นหาหนังสือ</a>
     {% endif %}
   </div>
 </div>
 
-<!-- Borrow History -->
-<div class="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
-  <div class="px-6 py-5 border-b border-slate-100 flex items-center justify-between">
-    <h2 class="font-bold text-slate-900 flex items-center gap-2">
-      <svg class="w-5 h-5 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/></svg>
-      ประวัติการยืม
-    </h2>
-    <span class="text-sm text-slate-400">{{ rows|length }} รายการ</span>
-  </div>
-
+{# ════════════ BORROW HISTORY ════════════ #}
+<div class="orn-rule" style="margin-bottom:14px;"><span style="letter-spacing:.2em;">ประวัติการยืม</span></div>
+<div class="paper" style="padding:0;">
   {% if rows %}
-  <div class="overflow-x-auto">
+  <div style="overflow-x: auto;">
     <table class="data-table">
       <thead>
         <tr>
@@ -133,74 +136,61 @@
           <th>ขอเมื่อ</th>
           <th>ยืม / ครบกำหนด</th>
           <th>สถานะ</th>
-          <th class="text-right">การจัดการ</th>
+          <th style="text-align:right;">การจัดการ</th>
         </tr>
       </thead>
       <tbody>
         {% for b, book in rows %}
-        {% set is_overdue = (b.status == "active" and b.due_at and b.due_at < now) if now is defined else false %}
+        {% set is_overdue = (b.status == 'active' and b.due_at and b.due_at < now) if now is defined else false %}
         <tr class="{% if is_overdue %}row-overdue{% endif %}">
           <td>
-            <a href="/books/{{ book.id }}" class="font-semibold text-slate-900 hover:text-emerald-700 transition-colors line-clamp-1">
-              {{ book.title }}
-            </a>
-            <div class="text-xs text-slate-400 mt-0.5">{{ book.author }}</div>
-            <span class="text-[10px] text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded mt-1 inline-block">{{ book.category }}</span>
+            <a href="/books/{{ book.id }}" style="font-family:var(--font-display); font-weight:500; color:var(--ink);">{{ book.title }}</a>
+            <div style="font-family:var(--font-serif); font-style:italic; font-size:12px; color:var(--ink-3); margin-top:2px;">{{ book.author }}</div>
+            <span class="chip" style="margin-top:4px;">{{ book.category }}</span>
           </td>
-          <td class="whitespace-nowrap">
-            <div class="text-sm text-slate-600">{{ b.requested_at.strftime("%d %b %Y") }}</div>
-            <div class="text-xs text-slate-400">{{ b.requested_at.strftime("%H:%M") }}</div>
+          <td style="white-space:nowrap;">
+            <div style="color:var(--ink-2);">{{ b.requested_at.strftime('%d %b %Y') }}</div>
+            <div style="font-size:11px; color:var(--ink-3);">{{ b.requested_at.strftime('%H:%M') }}</div>
           </td>
-          <td class="text-xs whitespace-nowrap">
+          <td style="white-space:nowrap; font-size:13px;">
             {% if b.borrowed_at %}
-            <div class="text-slate-600">ยืม: {{ b.borrowed_at.strftime("%d %b %Y") }}</div>
-            <div class="font-semibold {% if is_overdue %}text-red-600{% else %}text-slate-700{% endif %}">
-              ครบ: {{ b.due_at.strftime("%d %b %Y") }}
-              {% if is_overdue %}<span class="ml-1">⚠️</span>{% endif %}
+            <div style="color:var(--ink-2);">ยืม: {{ b.borrowed_at.strftime('%d %b %Y') }}</div>
+            <div style="font-weight:500; color: {% if is_overdue %}var(--danger){% else %}var(--ink){% endif %};">
+              ครบ: {{ b.due_at.strftime('%d %b %Y') }}{% if is_overdue %} ⚠{% endif %}
             </div>
-            {% if b.returned_at %}
-            <div class="text-emerald-600">คืน: {{ b.returned_at.strftime("%d %b %Y") }}</div>
-            {% endif %}
-            {% else %}
-            <span class="text-slate-400">—</span>
-            {% endif %}
+            {% if b.returned_at %}<div style="color:var(--leaf);">คืน: {{ b.returned_at.strftime('%d %b %Y') }}</div>{% endif %}
+            {% else %}<span style="color:var(--ink-3);">—</span>{% endif %}
           </td>
           <td>
             {% if is_overdue %}
-            <span class="badge badge-overdue">⚠️ เกินกำหนด</span>
+              <span class="badge badge-overdue">⚠ เกินกำหนด</span>
             {% else %}
-            <span class="badge badge-{{ b.status }}">
-              {% if b.status == "requested" %}⏳ รออนุมัติ
-              {% elif b.status == "active" %}📖 กำลังยืม
-              {% elif b.status == "returned" %}✅ คืนแล้ว
-              {% elif b.status == "cancelled" %}🚫 ยกเลิก
-              {% else %}{{ b.status }}{% endif %}
-            </span>
+              <span class="badge badge-{{ b.status }}">
+                {% if b.status == 'requested' %}⏳ รออนุมัติ
+                {% elif b.status == 'active' %}❦ กำลังยืม
+                {% elif b.status == 'returned' %}✓ คืนแล้ว
+                {% elif b.status == 'cancelled' %}✕ ยกเลิก
+                {% else %}{{ b.status }}{% endif %}
+              </span>
             {% endif %}
           </td>
-          <td class="text-right">
-            {% if b.status == "requested" %}
-            <form action="/borrow/{{ b.id }}/cancel" method="post"
-                  onsubmit="return confirm('ยืนยันการยกเลิกคำขอนี้?');">
-              <button class="btn btn-ghost btn-xs text-red-500 hover:bg-red-50 border-red-200">
-                ยกเลิก
-              </button>
+          <td style="text-align:right;">
+            {% if b.status == 'requested' %}
+            <form action="/borrow/{{ b.id }}/cancel" method="post" style="display:inline;" onsubmit="return confirm('ยืนยันการยกเลิกคำขอนี้?');">
+              <button class="btn btn-ghost btn-xs" style="color:var(--danger); border-color:var(--danger);">ยกเลิก</button>
             </form>
-            {% else %}
-            <span class="text-slate-300 text-xs">—</span>
-            {% endif %}
+            {% else %}<span style="color:var(--ink-3); font-size:12px;">—</span>{% endif %}
           </td>
         </tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
-
   {% else %}
   <div class="empty-state">
-    <div class="empty-state-icon">📚</div>
+    <div class="empty-state-icon">❦</div>
     <h3>ยังไม่เคยยืมหนังสือ</h3>
-    <p>ไปที่ <a href="/books" class="text-emerald-600 hover:underline">คลังหนังสือ</a> เพื่อเริ่มยืม</p>
+    <p>ไปที่ <a href="/books">คลังหนังสือ</a> เพื่อเริ่มยืม</p>
   </div>
   {% endif %}
 </div>
