@@ -2,29 +2,29 @@
 {% block title %}ผู้พักทั้งหมด — Staff{% endblock %}
 {% block content %}
 
-<!-- Page Header -->
-<div class="flex items-start justify-between mb-6">
+<!-- ══════════ Page Header ══════════ -->
+<div class="flex items-start justify-between flex-wrap gap-4 mb-6">
   <div>
-    <div class="flex items-center gap-2 text-sm text-slate-500 mb-2">
-      <span class="badge badge-staff">👔 Staff</span>
-      <span>·</span>
-      <span>จัดการห้องพัก</span>
+    <div class="flex items-center gap-2 mb-3">
+      <span class="badge badge-staff">👔 STAFF</span>
+      <span style="color:#0A0A0A;">·</span>
+      <span class="mono text-xs font-extrabold" style="color:#6B6B6B; letter-spacing:.08em;">RESIDENT_DIRECTORY</span>
     </div>
-    <h1 class="text-2xl font-extrabold text-slate-900 mb-1">ผู้พักทั้งหมด</h1>
-    <p class="text-slate-500 text-sm">รายชื่อผู้ที่เคย login เข้าระบบหอพัก ({{ rows|length }} คน)</p>
+    <h1 class="display mb-1" style="font-size:34px;">ผู้พักทั้งหมด</h1>
+    <p style="color:#6B6B6B; font-size:14px;">รายชื่อผู้ที่เคย login เข้าระบบหอพัก ({{ rows|length }} คน)</p>
   </div>
-  <a href="/staff/reservations" class="btn btn-ghost btn-sm hidden sm:inline-flex">
-    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/></svg>
+  <a href="/staff/reservations" class="btn btn-outline btn-sm hidden sm:inline-flex">
+    <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/></svg>
     คำขอจอง
   </a>
 </div>
 
-<!-- Summary Stats -->
-<div class="grid sm:grid-cols-3 gap-4 mb-6">
+<!-- ══════════ Summary Stats ══════════ -->
+<div class="grid sm:grid-cols-3 gap-5 mb-6">
   {% set ns = namespace(with_room=0) %}
   {% for resident, room in rows %}{% if room %}{% set ns.with_room = ns.with_room + 1 %}{% endif %}{% endfor %}
   {% set active = ns.with_room %}
-  <div class="stat-card stat-indigo">
+  <div class="stat-card stat-primary">
     <div class="stat-label">ผู้พักทั้งหมด</div>
     <div class="stat-value">{{ rows|length }}</div>
     <div class="stat-sub">คนในระบบ</div>
@@ -34,15 +34,15 @@
     <div class="stat-value">{{ active }}</div>
     <div class="stat-sub">มี room_id แล้ว</div>
   </div>
-  <div class="stat-card stat-slate">
+  <div class="stat-card stat-yellow">
     <div class="stat-label">ยังไม่ check-in</div>
     <div class="stat-value">{{ rows|length - active }}</div>
     <div class="stat-sub">รอดำเนินการ</div>
   </div>
 </div>
 
-<!-- Table Card -->
-<div class="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
+<!-- ══════════ Table Card ══════════ -->
+<div class="card overflow-hidden" style="padding:0;">
   {% if rows %}
   <div class="overflow-x-auto">
     <table class="data-table">
@@ -59,30 +59,30 @@
       </thead>
       <tbody>
         {% for resident, room in rows %}
-        <tr class="{% if room %}bg-emerald-50/20{% endif %}">
+        <tr {% if room %}style="background:#F0FBF5;"{% endif %}>
           <!-- Name + Email -->
           <td>
             <div class="flex items-center gap-2.5">
-              <div class="avatar text-xs w-8 h-8 {% if resident.role_in_sub == 'staff' %}avatar-staff{% endif %}">
+              <div class="avatar text-xs {% if resident.role_in_sub == 'staff' %}avatar-staff{% endif %}" style="width:34px; height:34px;">
                 {{ (resident.full_name or "?")[0]|upper }}
               </div>
               <div class="min-w-0">
-                <div class="font-semibold text-slate-800 leading-tight truncate">{{ resident.full_name }}</div>
-                <div class="text-xs text-slate-400 truncate">{{ resident.email }}</div>
+                <div class="font-extrabold leading-tight truncate" style="color:#0A0A0A;">{{ resident.full_name }}</div>
+                <div class="text-xs truncate mono" style="color:#6B6B6B;">{{ resident.email }}</div>
               </div>
             </div>
           </td>
-          <td class="text-sm text-slate-600 font-mono">{{ resident.student_id or "—" }}</td>
-          <td class="text-sm text-slate-600">{{ resident.faculty or "—" }}</td>
+          <td class="text-sm mono" style="color:#0A0A0A;">{{ resident.student_id or "—" }}</td>
+          <td class="text-sm" style="color:#2F2F2F;">{{ resident.faculty or "—" }}</td>
           <td><span class="badge badge-{{ resident.role_in_sub }}">{{ resident.role_in_sub }}</span></td>
           <td>
             {% if room %}
-            <a href="/rooms/{{ room.id }}" class="font-bold text-slate-900 hover:text-indigo-600 transition-colors">
+            <a href="/rooms/{{ room.id }}" class="font-extrabold hover:underline" style="color:#0A0A0A;">
               {{ room.room_number }}
             </a>
-            <div class="text-xs text-slate-400">ตึก {{ room.building }} · ชั้น {{ room.floor }}</div>
+            <div class="text-xs mt-1 mono" style="color:#6B6B6B;">{{ room.building }}-{{ room.floor }}</div>
             {% else %}
-            <span class="text-slate-300 text-sm">ยังไม่มีห้อง</span>
+            <span class="text-sm" style="color:#9C9C9C;">ยังไม่มีห้อง</span>
             {% endif %}
           </td>
           <td>
@@ -94,10 +94,10 @@
           </td>
           <td class="whitespace-nowrap">
             {% if resident.checked_in_at %}
-            <div class="text-sm text-slate-600">{{ resident.checked_in_at.strftime("%d %b %Y") }}</div>
-            <div class="text-xs text-slate-400">{{ resident.checked_in_at.strftime("%H:%M") }}</div>
+            <div class="text-sm mono" style="color:#0A0A0A;">{{ resident.checked_in_at.strftime("%d %b %Y") }}</div>
+            <div class="text-xs mono" style="color:#9C9C9C;">{{ resident.checked_in_at.strftime("%H:%M") }}</div>
             {% else %}
-            <span class="text-slate-300 text-sm">—</span>
+            <span class="text-sm" style="color:#9C9C9C;">—</span>
             {% endif %}
           </td>
         </tr>
@@ -107,10 +107,10 @@
   </div>
 
   {% else %}
-  <div class="empty-state">
+  <div class="empty-state" style="border:none; border-radius:0;">
     <div class="empty-state-icon">👥</div>
     <h3>ยังไม่มีผู้พักในระบบ</h3>
-    <p class="text-sm">ผู้ใช้จะปรากฏที่นี่หลังจาก login ครั้งแรก</p>
+    <p>ผู้ใช้จะปรากฏที่นี่หลังจาก login ครั้งแรก</p>
   </div>
   {% endif %}
 </div>

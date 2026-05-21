@@ -2,60 +2,50 @@
 {% block title %}หน้าแรก — ระบบหอพัก{% endblock %}
 {% block content %}
 
-<!-- Welcome Banner -->
-<div class="relative overflow-hidden bg-gradient-to-r from-indigo-600 to-violet-700 rounded-2xl p-8 mb-8 text-white shadow-lg fade-up">
-  <div class="absolute inset-0 opacity-10">
-    <div class="absolute top-0 right-0 w-64 h-64 bg-white rounded-full -translate-y-1/2 translate-x-1/2"></div>
-    <div class="absolute bottom-0 left-0 w-48 h-48 bg-white rounded-full translate-y-1/2 -translate-x-1/2"></div>
-  </div>
+<!-- ══════════ Welcome Banner (ink + pop deco) ══════════ -->
+<div class="relative overflow-hidden mb-8 fade-up"
+     style="background:#0A0A0A; color:#F4F1EA; border:2px solid #0A0A0A; border-radius:8px; box-shadow:4px 4px 0 #0A0A0A; padding:28px 32px;">
+
+  <!-- Bauhaus deco -->
+  <div class="pop-circle" style="background:#FFD43B; width:140px; height:140px; right:32px; top:-32px;"></div>
+  <div class="pop-circle" style="background:#FF5BA7; width:56px; height:56px; right:184px; top:48px;"></div>
+
   <div class="relative z-10 flex items-start justify-between flex-wrap gap-4">
     <div>
-      <div class="flex items-center gap-3 mb-2">
-        <div class="avatar avatar-lg" style="background:rgba(255,255,255,.2); backdrop-filter:blur(8px);">
-          {{ (user.full_name or "?")[0]|upper }}
-        </div>
-        <div>
-          <div class="text-indigo-200 text-sm font-medium">ยินดีต้อนรับ</div>
-          <h1 class="text-2xl font-extrabold leading-tight">{{ user.full_name }}</h1>
-        </div>
-      </div>
+      <div class="chip chip-yellow mb-4" style="border-color:#F4F1EA;">WELCOME</div>
+      <h1 class="display mb-2" style="font-size:38px; color:#F4F1EA;">สวัสดี, {{ user.full_name }}</h1>
       <div class="flex flex-wrap items-center gap-2 mt-3">
-        <span class="inline-flex items-center gap-1.5 bg-white/15 backdrop-blur-sm px-3 py-1 rounded-lg text-xs font-medium border border-white/20">
-          {{ user.email }}
-        </span>
+        <span class="chip mono" style="background:transparent; color:#F4F1EA; border-color:#F4F1EA;">{{ user.email }}</span>
         {% if user.faculty %}
-        <span class="inline-flex items-center gap-1.5 bg-white/15 backdrop-blur-sm px-3 py-1 rounded-lg text-xs font-medium border border-white/20">
-          🏫 {{ user.faculty }}
-        </span>
+        <span class="chip" style="background:transparent; color:#F4F1EA; border-color:#F4F1EA;">🏫 {{ user.faculty }}</span>
         {% endif %}
-        <span class="inline-flex items-center gap-1.5 bg-white/20 backdrop-blur-sm px-3 py-1 rounded-lg text-xs font-bold border border-white/20">
-          {% if user.role_in_sub == "staff" %}👔{% else %}🎓{% endif %}
-          {{ user.role_in_sub|upper }}
+        <span class="chip" style="background:{% if user.role_in_sub == 'staff' %}#FF5BA7{% else %}#FFD43B{% endif %}; color:#0A0A0A; border-color:#F4F1EA;">
+          {% if user.role_in_sub == "staff" %}👔 STAFF{% else %}🎓 RESIDENT{% endif %}
         </span>
       </div>
     </div>
-    <div class="text-right text-indigo-200 text-xs">
-      <div class="text-sm font-semibold text-white mb-1">ระบบหอพักมหาวิทยาลัย</div>
-      <div>ข้อมูลจาก Central Auth Hub · JWT RS256</div>
+    <div class="hidden sm:block text-right" style="color:#FFD43B; font-family:'JetBrains Mono',monospace; font-size:11px;">
+      <div style="color:#F4F1EA; font-weight:700; font-size:13px;" class="mb-1">SYSTEM_STATUS · ONLINE</div>
+      <div>JWT_RS256 · CENTRAL_AUTH</div>
     </div>
   </div>
 </div>
 
-<!-- Stat Cards -->
-<div class="grid sm:grid-cols-3 gap-4 mb-8 fade-up-2">
+<!-- ══════════ Stat Cards (4 across) ══════════ -->
+<div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-5 mb-8 fade-up-2">
   <div class="stat-card stat-{% if current_room %}emerald{% else %}slate{% endif %}">
     <div class="stat-label">ห้องพักปัจจุบัน</div>
     <div class="stat-value">
-      {% if current_room %}{{ current_room.room_number }}{% else %}<span class="text-slate-300 text-2xl">—</span>{% endif %}
+      {% if current_room %}{{ current_room.room_number }}{% else %}<span style="color:#9C9C9C; font-size:22px;">—</span>{% endif %}
     </div>
     <div class="stat-sub">
       {% if current_room %}ตึก {{ current_room.building }} · ชั้น {{ current_room.floor }}{% else %}ยังไม่ได้ check-in{% endif %}
     </div>
   </div>
 
-  <div class="stat-card stat-{% if latest_reservation and latest_reservation.status == 'pending' %}amber{% elif latest_reservation and latest_reservation.status in ['approved','checked_in'] %}blue{% else %}slate{% endif %}">
+  <div class="stat-card stat-{% if latest_reservation and latest_reservation.status == 'pending' %}yellow{% elif latest_reservation and latest_reservation.status in ['approved','checked_in'] %}primary{% else %}slate{% endif %}">
     <div class="stat-label">สถานะ Reservation</div>
-    <div class="stat-value text-xl pt-1">
+    <div class="stat-value" style="font-size:18px; padding-top:4px;">
       {% if latest_reservation %}
         <span class="badge badge-{{ latest_reservation.status }}">
           {% if latest_reservation.status == 'pending' %}⏳ รออนุมัติ
@@ -65,7 +55,7 @@
           {% else %}{{ latest_reservation.status }}{% endif %}
         </span>
       {% else %}
-        <span class="text-slate-300 text-2xl">—</span>
+        <span style="color:#9C9C9C; font-size:22px;">—</span>
       {% endif %}
     </div>
     <div class="stat-sub">
@@ -73,9 +63,9 @@
     </div>
   </div>
 
-  <div class="stat-card stat-indigo">
+  <div class="stat-card stat-{% if user.role_in_sub == 'staff' %}pink{% else %}primary{% endif %}">
     <div class="stat-label">Role ในระบบ</div>
-    <div class="stat-value text-xl pt-1">
+    <div class="stat-value" style="font-size:18px; padding-top:4px;">
       <span class="badge badge-{{ user.role_in_sub }}">
         {% if user.role_in_sub == "staff" %}👔 staff{% else %}🎓 resident{% endif %}
       </span>
@@ -86,13 +76,13 @@
   </div>
 </div>
 
-<!-- Reservation alert -->
+<!-- ══════════ Reservation alert ══════════ -->
 {% if latest_reservation and latest_reservation.status == "rejected" and latest_reservation.reject_reason %}
 <div class="alert alert-danger mb-6 fade-up-2">
   <span class="alert-icon">❌</span>
   <div>
     <strong class="block mb-0.5">คำขอจองล่าสุดถูกปฏิเสธ</strong>
-    เหตุผล: {{ latest_reservation.reject_reason }}
+    <span style="color:#2F2F2F;">เหตุผล: {{ latest_reservation.reject_reason }}</span>
   </div>
 </div>
 {% elif latest_reservation and latest_reservation.status == "pending" %}
@@ -100,7 +90,7 @@
   <span class="alert-icon">⏳</span>
   <div>
     <strong class="block mb-0.5">รอการอนุมัติจาก Staff</strong>
-    คำขอจองของคุณอยู่ระหว่างการพิจารณา — ระบบจะแจ้งผลทางหน้าโปรไฟล์
+    <span style="color:#2F2F2F;">คำขอจองของคุณอยู่ระหว่างการพิจารณา — ระบบจะแจ้งผลทางหน้าโปรไฟล์</span>
   </div>
 </div>
 {% elif latest_reservation and latest_reservation.status == "approved" %}
@@ -108,64 +98,68 @@
   <span class="alert-icon">✅</span>
   <div>
     <strong class="block mb-0.5">คำขอจองได้รับการอนุมัติแล้ว!</strong>
-    กรุณาติดต่อ Staff เพื่อทำการ check-in เข้าห้องพัก
+    <span style="color:#2F2F2F;">กรุณาติดต่อ Staff เพื่อทำการ check-in เข้าห้องพัก</span>
   </div>
 </div>
 {% endif %}
 
-<!-- Quick Actions -->
-<h2 class="text-base font-bold text-slate-700 mb-3 fade-up-3">การดำเนินการ</h2>
-<div class="grid sm:grid-cols-2 {% if user.role_in_sub == 'staff' %}lg:grid-cols-4{% else %}lg:grid-cols-3{% endif %} gap-4 fade-up-3">
+<!-- ══════════ Quick Actions ══════════ -->
+<div class="flex items-center justify-between mb-4 fade-up-3">
+  <h2 class="display" style="font-size:22px;">การดำเนินการ</h2>
+  <span class="chip mono">QUICK_ACTIONS</span>
+</div>
+
+<div class="grid sm:grid-cols-2 {% if user.role_in_sub == 'staff' %}lg:grid-cols-4{% else %}lg:grid-cols-3{% endif %} gap-5 fade-up-3">
 
   <a href="/rooms" class="room-card group">
-    <div class="text-3xl mb-3">🏠</div>
-    <div class="font-bold text-slate-900 mb-1 group-hover:text-indigo-700 transition-colors">ดูห้องทั้งหมด</div>
-    <div class="text-sm text-slate-500">เลือกดูห้องว่างและส่งคำขอจอง</div>
-    <div class="mt-3 flex items-center gap-1 text-xs text-indigo-600 font-semibold">
+    <div class="text-4xl mb-3">🏠</div>
+    <div class="font-extrabold mb-1" style="color:#0A0A0A; font-size:18px; letter-spacing:-0.01em;">ดูห้องทั้งหมด</div>
+    <div class="text-sm" style="color:#6B6B6B;">เลือกดูห้องว่างและส่งคำขอจอง</div>
+    <div class="mt-4 inline-flex items-center gap-1.5 chip chip-primary">
       ไปดูห้อง
-      <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+      <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
     </div>
   </a>
 
   <a href="/me" class="room-card group">
-    <div class="text-3xl mb-3">👤</div>
-    <div class="font-bold text-slate-900 mb-1 group-hover:text-indigo-700 transition-colors">โปรไฟล์ของฉัน</div>
-    <div class="text-sm text-slate-500">ข้อมูลส่วนตัวและประวัติการจอง</div>
-    <div class="mt-3 flex items-center gap-1 text-xs text-indigo-600 font-semibold">
+    <div class="text-4xl mb-3">👤</div>
+    <div class="font-extrabold mb-1" style="color:#0A0A0A; font-size:18px; letter-spacing:-0.01em;">โปรไฟล์ของฉัน</div>
+    <div class="text-sm" style="color:#6B6B6B;">ข้อมูลส่วนตัวและประวัติการจอง</div>
+    <div class="mt-4 inline-flex items-center gap-1.5 chip chip-primary">
       ดูโปรไฟล์
-      <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+      <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
     </div>
   </a>
 
   {% if not current_room and user.role_in_sub != "staff" %}
-  <a href="/rooms" class="room-card group border-indigo-200 bg-indigo-50">
-    <div class="text-3xl mb-3">➕</div>
-    <div class="font-bold text-indigo-800 mb-1">ขอจองห้องใหม่</div>
-    <div class="text-sm text-indigo-600">ยังไม่มีห้องพัก — เริ่มจองได้เลย</div>
-    <div class="mt-3 flex items-center gap-1 text-xs text-indigo-600 font-semibold">
+  <a href="/rooms" class="room-card group" style="background:#FFD43B;">
+    <div class="text-4xl mb-3">➕</div>
+    <div class="font-extrabold mb-1" style="color:#0A0A0A; font-size:18px; letter-spacing:-0.01em;">ขอจองห้องใหม่</div>
+    <div class="text-sm" style="color:#2F2F2F;">ยังไม่มีห้องพัก — เริ่มจองได้เลย</div>
+    <div class="mt-4 inline-flex items-center gap-1.5 chip" style="background:#0A0A0A; color:#FFD43B; border-color:#0A0A0A;">
       จองห้อง
-      <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+      <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
     </div>
   </a>
   {% endif %}
 
   {% if user.role_in_sub == "staff" %}
-  <a href="/staff/reservations" class="room-card group border-pink-200 bg-pink-50">
-    <div class="text-3xl mb-3">📋</div>
-    <div class="font-bold text-pink-800 mb-1">คำขอจอง</div>
-    <div class="text-sm text-pink-600">อนุมัติ / ปฏิเสธ / check-in</div>
-    <div class="mt-3 flex items-center gap-1 text-xs text-pink-600 font-semibold">
+  <a href="/staff/reservations" class="room-card group" style="background:#FF5BA7;">
+    <div class="text-4xl mb-3">📋</div>
+    <div class="font-extrabold mb-1" style="color:#0A0A0A; font-size:18px; letter-spacing:-0.01em;">คำขอจอง</div>
+    <div class="text-sm" style="color:#2F2F2F;">อนุมัติ / ปฏิเสธ / check-in</div>
+    <div class="mt-4 inline-flex items-center gap-1.5 chip" style="background:#0A0A0A; color:#FF5BA7; border-color:#0A0A0A;">
       จัดการ
-      <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+      <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
     </div>
   </a>
-  <a href="/staff/residents" class="room-card group border-pink-200 bg-pink-50">
-    <div class="text-3xl mb-3">👥</div>
-    <div class="font-bold text-pink-800 mb-1">ผู้พักทั้งหมด</div>
-    <div class="text-sm text-pink-600">ดูรายชื่อและสถานะผู้พัก</div>
-    <div class="mt-3 flex items-center gap-1 text-xs text-pink-600 font-semibold">
+  <a href="/staff/residents" class="room-card group" style="background:#5BD8A8;">
+    <div class="text-4xl mb-3">👥</div>
+    <div class="font-extrabold mb-1" style="color:#0A0A0A; font-size:18px; letter-spacing:-0.01em;">ผู้พักทั้งหมด</div>
+    <div class="text-sm" style="color:#2F2F2F;">ดูรายชื่อและสถานะผู้พัก</div>
+    <div class="mt-4 inline-flex items-center gap-1.5 chip" style="background:#0A0A0A; color:#5BD8A8; border-color:#0A0A0A;">
       ดูรายการ
-      <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
+      <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="3"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
     </div>
   </a>
   {% endif %}
