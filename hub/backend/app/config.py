@@ -47,6 +47,10 @@ class Settings(BaseSettings):
     ml_timeout_seconds: float = 2.0
     ml_shadow_mode: bool = True   # True = log score แต่ไม่ block / False = enforce
 
+    # GeoIP (MaxMind GeoLite2 offline DB) — fail-safe ถ้าไฟล์หาย
+    # ดาวน์โหลดฟรีที่ https://www.maxmind.com/en/geolite2/signup
+    geoip_db_path: str = "/app/data/GeoLite2-Country.mmdb"
+
     # Email
     smtp_host: str = "smtp.gmail.com"
     smtp_port: int = 587
