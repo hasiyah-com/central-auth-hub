@@ -53,3 +53,7 @@ docker-compose.override.yml
 
 # ============ Temp / scratch files ============
 hub/backend/tmp_*.py
+
+# ============ GeoIP (MaxMind binary DB — ต้องมี license) ============
+*.mmdb
+hub/backend/data/*.mmdb

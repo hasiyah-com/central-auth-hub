@@ -25,6 +25,9 @@ python-multipart==0.0.12
 # ============ HTTP Client ============
 httpx==0.27.2
 
+# ============ GeoIP (MaxMind GeoLite2 offline lookup) ============
+geoip2==4.8.0
+
 # ============ Seed data ============
 faker==30.8.2
 
