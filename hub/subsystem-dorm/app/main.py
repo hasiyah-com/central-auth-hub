@@ -12,7 +12,7 @@ Login flow:
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
@@ -42,6 +42,11 @@ app.include_router(auth.router, tags=["Authentication"])
 app.include_router(pages.router, tags=["Resident Pages"])
 app.include_router(reservation.router, prefix="/reservation", tags=["Reservation"])
 app.include_router(staff.router, prefix="/staff", tags=["Staff"])
+
+
+@app.get("/app.html", response_class=FileResponse)
+def spa():
+    return FileResponse("app/static/app.html", media_type="text/html")
 
 
 @app.get("/health")

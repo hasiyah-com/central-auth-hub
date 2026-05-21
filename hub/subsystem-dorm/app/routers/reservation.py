@@ -71,7 +71,7 @@ def reserve_room(
     )
     db.commit()
 
-    return RedirectResponse(url="/me", status_code=302)
+    return RedirectResponse(url="/app.html#me", status_code=302)
 
 
 @router.post("/{reservation_id}/cancel")
@@ -114,4 +114,4 @@ def cancel_reservation(
     )
     db.commit()
 
-    return RedirectResponse(url="/me", status_code=302)
+    return RedirectResponse(url="/app.html#me", status_code=302)

@@ -5,121 +5,80 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>เข้าสู่ระบบ — ระบบหอพัก</title>
   <script src="https://cdn.tailwindcss.com"></script>
-  <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/static/style.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Anuphan:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&family=Noto+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/style.css?v=5">
 </head>
-<body class="min-h-screen bg-slate-50 flex">
+<body class="flex" style="background:#F4F1EA; height:100vh; overflow:hidden;">
 
-<!-- Left: Hero gradient panel -->
-<div class="hidden lg:flex flex-col justify-between w-[480px] flex-shrink-0
-            bg-gradient-to-br from-indigo-600 via-indigo-700 to-violet-800 text-white p-12 relative overflow-hidden">
+<!-- ══════════ LEFT — yellow brand panel with pop deco ══════════ -->
+<div class="hidden lg:flex flex-col justify-between w-[480px] flex-shrink-0 relative overflow-hidden"
+     style="background:#FFD43B; border-right:2px solid #0A0A0A; padding:36px 40px;">
 
-  <!-- Decorative circles -->
-  <div class="absolute -top-20 -right-20 w-72 h-72 bg-white/5 rounded-full"></div>
-  <div class="absolute -bottom-16 -left-16 w-64 h-64 bg-white/5 rounded-full"></div>
-  <div class="absolute top-1/2 right-8 w-32 h-32 bg-white/5 rounded-full -translate-y-1/2"></div>
+  <!-- Bauhaus decoration shapes -->
+  <div class="pop-circle" style="background:#2454FF; width:160px; height:160px; right:-30px; top:60px;"></div>
+  <div class="pop-circle" style="background:#FF5BA7; width:70px; height:70px; right:120px; top:24px;"></div>
+  <div class="pop-stripes" style="left:-20px; bottom:-20px; width:160px; height:160px;"></div>
+  <div class="pop-dots" style="left:30px; top:210px; width:130px; height:70px;"></div>
 
   <!-- Logo -->
-  <div class="relative">
-    <div class="flex items-center gap-3">
-      <div class="w-11 h-11 bg-white/20 rounded-xl flex items-center justify-center text-2xl backdrop-blur-sm">🏠</div>
-      <div>
-        <div class="font-bold text-lg leading-none">ระบบหอพัก</div>
-        <div class="text-indigo-200 text-xs mt-0.5">Subsystem A · Senior Project</div>
-      </div>
+  <div class="relative z-10 flex items-center gap-3">
+    <div class="w-12 h-12 flex items-center justify-center text-2xl"
+         style="background:#FFFFFF; border:2px solid #0A0A0A; border-radius:6px; box-shadow:3px 3px 0 #0A0A0A;">🏠</div>
+    <div>
+      <div class="font-extrabold text-lg leading-none" style="color:#0A0A0A; letter-spacing:-0.02em;">BaanU</div>
+      <div class="text-[11px] mt-1" style="color:#0A0A0A; font-family:'JetBrains Mono',monospace;">SUBSYSTEM_A · SENIOR_PROJECT</div>
     </div>
   </div>
 
   <!-- Main text -->
-  <div class="relative z-10">
-    <div class="text-6xl mb-6">🏛️</div>
-    <h1 class="text-3xl font-extrabold leading-tight mb-4">
-      จัดการที่พักอาศัย<br>
-      <span class="text-indigo-200">ง่าย สะดวก รวดเร็ว</span>
+  <div class="relative z-10" style="max-width:420px;">
+    <h1 class="display" style="font-size:44px; line-height:1.05; color:#0A0A0A; font-weight:800; margin-bottom:14px;">
+      ยินดีต้อนรับ<br>นักศึกษา
     </h1>
-    <p class="text-indigo-200 text-sm leading-relaxed mb-8">
-      ระบบจองห้องพักออนไลน์ เชื่อมต่อกับ Central Auth Hub<br>
-      รองรับ OAuth 2.0 + PKCE ปลอดภัยระดับองค์กร
+    <p style="color:#0A0A0A; line-height:1.55; font-weight:500; font-size:15px; margin-bottom:0;">
+      จัดการห้องพัก ดูข้อมูลที่พัก ติดตามคำขอจอง<br>
+      และยืนยันตัวตนผ่าน Central Auth Hub
     </p>
-
-    <!-- Feature list -->
-    <ul class="space-y-3 text-sm">
-      <li class="flex items-center gap-3">
-        <div class="w-7 h-7 bg-white/15 rounded-lg flex items-center justify-center text-base flex-shrink-0">🛏️</div>
-        <span class="text-indigo-100">ดูห้องว่างแบบ real-time พร้อมข้อมูลการเข้าพัก</span>
-      </li>
-      <li class="flex items-center gap-3">
-        <div class="w-7 h-7 bg-white/15 rounded-lg flex items-center justify-center text-base flex-shrink-0">📋</div>
-        <span class="text-indigo-100">ส่งคำขอจองและติดตามสถานะได้ทันที</span>
-      </li>
-      <li class="flex items-center gap-3">
-        <div class="w-7 h-7 bg-white/15 rounded-lg flex items-center justify-center text-base flex-shrink-0">🔒</div>
-        <span class="text-indigo-100">ข้อมูลปลอดภัยด้วย JWT RS256 + Whitelist</span>
-      </li>
-    </ul>
   </div>
 
-  <!-- Bottom badge -->
-  <div class="relative">
-    <div class="inline-flex items-center gap-2 bg-white/10 backdrop-blur-sm px-4 py-2 rounded-lg text-xs text-indigo-200 border border-white/10">
-      <svg class="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/></svg>
-      เชื่อมต่อกับ Central Auth Hub · OAuth 2.0 + PKCE
-    </div>
-  </div>
+  <div class="relative z-10"></div>
 </div>
 
-<!-- Right: Login card -->
-<div class="flex-1 flex items-center justify-center p-6 sm:p-12">
+<!-- ══════════ RIGHT — login card ══════════ -->
+<div class="flex-1 flex items-center justify-center" style="padding:24px; overflow-y:auto;">
   <div class="w-full max-w-md fade-up">
 
     <!-- Mobile logo -->
-    <div class="flex items-center gap-3 mb-8 lg:hidden">
-      <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center text-xl">🏠</div>
+    <div class="flex items-center gap-3 mb-6 lg:hidden">
+      <div class="w-11 h-11 flex items-center justify-center text-xl"
+           style="background:#FFD43B; border:2px solid #0A0A0A; border-radius:4px; box-shadow:2px 2px 0 #0A0A0A;">🏠</div>
       <div>
-        <div class="font-bold text-slate-900">ระบบหอพัก</div>
-        <div class="text-xs text-slate-500">Subsystem A · Senior Project</div>
+        <div class="font-extrabold" style="color:#0A0A0A;">BaanU</div>
+        <div class="text-xs" style="color:#6B6B6B; font-family:'JetBrains Mono',monospace;">SUBSYSTEM_A</div>
       </div>
     </div>
 
-    <div class="bg-white border border-slate-200 rounded-2xl shadow-sm p-8">
-      <div class="mb-8">
-        <h2 class="text-2xl font-extrabold text-slate-900 mb-1">เข้าสู่ระบบ</h2>
-        <p class="text-slate-500 text-sm">ยืนยันตัวตนผ่าน Central Auth Hub</p>
+    <div class="card" style="padding:26px 28px;">
+      <div style="margin-bottom:20px;">
+        <div class="chip chip-primary" style="margin-bottom:10px;">SECURE_LOGIN</div>
+        <h2 class="display" style="font-size:28px; margin-bottom:6px;">เข้าสู่ระบบ</h2>
+        <p style="color:#6B6B6B; font-size:13px;">ยืนยันตัวตนผ่าน Central Auth Hub · Google OAuth</p>
       </div>
 
       <!-- Login button -->
-      <a href="/oauth/start"
-         class="flex items-center justify-center gap-3 w-full
-                bg-indigo-600 hover:bg-indigo-700 active:scale-[.98]
-                text-white font-semibold py-3.5 rounded-xl
-                transition shadow-sm hover:shadow-indigo-200 hover:shadow-md text-[15px]">
-        <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+      <a href="/oauth/start" class="btn btn-primary w-full" style="padding:12px 18px; font-size:14px; gap:10px;">
+        <svg class="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5">
           <path stroke-linecap="round" stroke-linejoin="round" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"/>
         </svg>
         เข้าสู่ระบบด้วย Central Auth Hub
       </a>
 
-      <div class="mt-6 pt-6 border-t border-slate-100">
-        <h3 class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">ขั้นตอนการเข้าใช้งาน</h3>
-        <ol class="space-y-2.5 text-sm text-slate-600">
-          <li class="flex items-start gap-2.5">
-            <span class="flex-shrink-0 w-5 h-5 bg-indigo-100 text-indigo-700 rounded-full flex items-center justify-center font-bold text-xs">1</span>
-            คลิกปุ่มเข้าสู่ระบบ → ระบบจะพาไปที่ Central Auth Hub
-          </li>
-          <li class="flex items-start gap-2.5">
-            <span class="flex-shrink-0 w-5 h-5 bg-indigo-100 text-indigo-700 rounded-full flex items-center justify-center font-bold text-xs">2</span>
-            Login ด้วย Google บัญชีมหาวิทยาลัย
-          </li>
-          <li class="flex items-start gap-2.5">
-            <span class="flex-shrink-0 w-5 h-5 bg-indigo-100 text-indigo-700 rounded-full flex items-center justify-center font-bold text-xs">3</span>
-            ระบบตรวจ whitelist — หากยังไม่อยู่ในรายชื่อ กรุณาติดต่อ admin
-          </li>
-        </ol>
-      </div>
     </div>
 
-    <p class="mt-4 text-center text-xs text-slate-400">
-      ระบบนี้ใช้ OAuth 2.0 + PKCE · ข้อมูลปลอดภัย 100%
+    <p class="text-center mono" style="margin-top:12px; font-size:11px; color:#6B6B6B;">
+      OAUTH_2.0 + PKCE · DATA_SECURE
     </p>
   </div>
 </div>

@@ -1,16 +1,78 @@
 """Staff router — role=staff อนุมัติ/ปฏิเสธ/check-in reservation."""
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.deps import CurrentUser, get_client_ip, require_role
+from app.deps import CurrentUser, get_client_ip, get_current_user, require_role
 from app.models import Reservation, Resident, Room, _utcnow
 from app.services.audit import log_action
 
 router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
+
+
+# ─── JSON API (staff) ──────────────────────────────────────────
+
+@router.get("/api/reservations")
+def api_staff_reservations(
+    status: str = "pending",
+    staff: CurrentUser = Depends(require_role("staff")),
+    db: Session = Depends(get_db),
+):
+    q = (
+        db.query(Reservation, Room, Resident)
+        .join(Room, Room.id == Reservation.room_id)
+        .outerjoin(Resident, Resident.hub_user_id == Reservation.hub_user_id)
+        .filter(Reservation.cancelled_at.is_(None))
+    )
+    if status != "all":
+        q = q.filter(Reservation.status == status)
+    rows = q.order_by(Reservation.created_at.desc()).all()
+    return JSONResponse({
+        "current_status": status,
+        "rows": [{
+            "reservation": {
+                "id": str(r.id), "status": r.status, "reason": r.reason,
+                "reject_reason": r.reject_reason,
+                "created_at": r.created_at.isoformat() if r.created_at else None,
+                "cancelled_at": r.cancelled_at.isoformat() if r.cancelled_at else None,
+            },
+            "room": {"id": str(rm.id), "room_number": rm.room_number,
+                     "building": rm.building, "floor": rm.floor},
+            "resident": {"full_name": res.full_name, "email": res.email,
+                         "student_id": res.student_id, "faculty": res.faculty,
+                         "role_in_sub": res.role_in_sub} if res else None,
+        } for r, rm, res in rows],
+    })
+
+
+@router.get("/api/residents")
+def api_staff_residents(
+    staff: CurrentUser = Depends(require_role("staff")),
+    db: Session = Depends(get_db),
+):
+    rows = (
+        db.query(Resident, Room)
+        .outerjoin(Room, Room.id == Resident.room_id)
+        .order_by(Resident.created_at.desc())
+        .all()
+    )
+    total = len(rows)
+    with_room = sum(1 for r, rm in rows if rm)
+    return JSONResponse({
+        "stats": {"total": total, "with_room": with_room, "without_room": total - with_room},
+        "rows": [{
+            "resident": {"id": str(r.id), "full_name": r.full_name, "email": r.email,
+                         "student_id": r.student_id, "faculty": r.faculty,
+                         "role_in_sub": r.role_in_sub, "status": r.status,
+                         "checked_in_at": r.checked_in_at.isoformat() if r.checked_in_at else None,
+                         "created_at": r.created_at.isoformat() if r.created_at else None},
+            "room": {"id": str(rm.id), "room_number": rm.room_number,
+                     "building": rm.building, "floor": rm.floor} if rm else None,
+        } for r, rm in rows],
+    })
 
 
 # ============ /staff/residents ============
@@ -94,7 +156,7 @@ def approve_reservation(
         metadata={"resident_hub_user_id": str(reservation.hub_user_id)},
     )
     db.commit()
-    return RedirectResponse(url="/staff/reservations?status=pending", status_code=302)
+    return RedirectResponse(url="/app.html#reservations", status_code=302)
 
 
 # ============ reject ============
@@ -129,7 +191,7 @@ def reject_reservation(
         metadata={"reject_reason": reject_reason[:200]},
     )
     db.commit()
-    return RedirectResponse(url="/staff/reservations?status=pending", status_code=302)
+    return RedirectResponse(url="/app.html#reservations", status_code=302)
 
 
 # ============ check-in ============
@@ -199,7 +261,7 @@ def checkin_reservation(
         },
     )
     db.commit()
-    return RedirectResponse(url="/staff/reservations?status=approved", status_code=302)
+    return RedirectResponse(url="/app.html#reservations", status_code=302)
 
 
 # ============ helpers ============
