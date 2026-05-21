@@ -23,7 +23,10 @@ from app.services.secret_service import generate_client_credentials, hash_secret
 
 
 LIBRARY_CALLBACK = "http://localhost:8002/oauth/callback"
-LIBRARY_SCOPE = ["openid", "profile", "email"]
+# Scope keys ที่ Subsystem B ขอจาก Hub. ค่าเหล่านี้ต้องตรงกับ scope_field_map
+# ใน hub/backend/app/services/jwt_service.py — ถ้าใส่ key ที่ไม่อยู่ในแผนที่
+# (เช่น "openid", "profile") Hub จะข้าม ไม่ใส่ claim ใน JWT
+LIBRARY_SCOPE = ["email", "name", "student_id", "faculty"]
 SUBSYSTEM_NAME = "ระบบห้องสมุด"
 
 USERS = [
@@ -75,19 +78,22 @@ def upsert_user(db, spec: dict) -> User:
     return user
 
 
-def upsert_subsystem(db, owner: User) -> tuple[Subsystem, str]:
-    """Returns (Subsystem, plaintext_client_secret).
+def upsert_subsystem(db, owner: User, rotate: bool = False) -> tuple[Subsystem, str | None]:
+    """Returns (Subsystem, plaintext_client_secret_or_None).
 
-    Always regenerates client_secret (since the previous one isn't recoverable).
+    Default: preserve existing client_id + secret_hash on rerun
+             (only update scope, redirect_uris, status). Returns None for secret.
+    rotate=True: regenerate credentials (use only when intentionally rotating).
     """
-    client_id, client_secret = generate_client_credentials()
-
     sub = (
         db.query(Subsystem)
         .filter(Subsystem.name == SUBSYSTEM_NAME)
         .one_or_none()
     )
+
     if sub is None:
+        # First creation — must generate credentials
+        client_id, client_secret = generate_client_credentials()
         sub = Subsystem(
             name=SUBSYSTEM_NAME,
             description="Subsystem B — ระบบห้องสมุดนักศึกษา (Senior Project)",
@@ -102,15 +108,23 @@ def upsert_subsystem(db, owner: User) -> tuple[Subsystem, str]:
         db.add(sub)
         db.flush()
         print(f"[+] created subsystem: {SUBSYSTEM_NAME} id={sub.id}")
-    else:
+        return sub, client_secret
+
+    # Existing subsystem — update only the non-credential fields by default
+    sub.redirect_uris = [LIBRARY_CALLBACK]
+    sub.scope = LIBRARY_SCOPE
+    sub.status = "active"
+    sub.approved_at = sub.approved_at or datetime.utcnow()
+
+    if rotate:
+        client_id, client_secret = generate_client_credentials()
         sub.client_id = client_id
         sub.client_secret_hash = hash_secret(client_secret)
-        sub.redirect_uris = [LIBRARY_CALLBACK]
-        sub.scope = LIBRARY_SCOPE
-        sub.status = "active"
-        sub.approved_at = sub.approved_at or datetime.utcnow()
-        print(f"[=] subsystem exists, rotated client_id + secret: id={sub.id}")
-    return sub, client_secret
+        print(f"[!] subsystem exists, ROTATED client_id + secret: id={sub.id}")
+        return sub, client_secret
+
+    print(f"[=] subsystem exists, updated scope only (preserved client_id/secret): id={sub.id}")
+    return sub, None
 
 
 def upsert_access(db, sub: Subsystem, user: User, role_in_sub: str, granted_by: User):
@@ -138,11 +152,14 @@ def upsert_access(db, sub: Subsystem, user: User, role_in_sub: str, granted_by: 
 
 
 def main():
+    import sys
+    rotate = "--rotate" in sys.argv
+
     db = SessionLocal()
     try:
         users = [upsert_user(db, spec) for spec in USERS]
         librarian = users[0]  # use librarian as owner of the subsystem
-        sub, plaintext_secret = upsert_subsystem(db, owner=librarian)
+        sub, plaintext_secret = upsert_subsystem(db, owner=librarian, rotate=rotate)
         for spec, user in zip(USERS, users):
             upsert_access(db, sub, user, spec["role_in_sub"], granted_by=librarian)
         db.commit()
@@ -155,9 +172,14 @@ def main():
         db.close()
 
     print("\n" + "=" * 64)
-    print("DONE — put these in hub/subsystem-library/.env then restart container:")
-    print(f"LIBRARY_CLIENT_ID={client_id_out}")
-    print(f"LIBRARY_CLIENT_SECRET={plaintext_secret}")
+    if plaintext_secret:
+        print("DONE — put these in hub/subsystem-library/.env then restart container:")
+        print(f"LIBRARY_CLIENT_ID={client_id_out}")
+        print(f"LIBRARY_CLIENT_SECRET={plaintext_secret}")
+    else:
+        print("DONE — scope/redirect/role updated, credentials preserved.")
+        print(f"LIBRARY_CLIENT_ID={client_id_out}  (unchanged)")
+        print("(use --rotate flag if you need to regenerate the secret)")
     print("=" * 64)
 
 
