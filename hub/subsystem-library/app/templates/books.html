@@ -1,46 +1,49 @@
 {% extends "base.html" %}
-{% block title %}คลังหนังสือ — ระบบห้องสมุด{% endblock %}
+{% block title %}คลังหนังสือ — ห้องสมุดดวงดาว{% endblock %}
 {% block content %}
 
 <!-- Page Header -->
-<div class="flex items-start justify-between mb-5">
+<div class="flex items-start justify-between mb-6">
   <div>
-    <h1 class="text-2xl font-extrabold text-slate-900 mb-1">คลังหนังสือ</h1>
-    <p class="text-slate-500 text-sm">
+    <div style="font-family:var(--font-serif); font-size:11px; letter-spacing:.28em; text-transform:uppercase; color:var(--ink-3); margin-bottom:6px;">
+      Catalogue
+    </div>
+    <h1 style="font-size:36px; margin-bottom:6px;">คลังหนังสือ</h1>
+    <p style="font-family:var(--font-serif); font-style:italic; color:var(--ink-3);">
       {% if current_q or current_category %}
-        ผลการค้นหา: <strong class="text-slate-700">{{ books|length }}</strong> เล่ม
+        ผลการค้นหา: <strong style="color:var(--ink); font-weight:500;">{{ books|length }}</strong> เล่ม
       {% else %}
-        หนังสือทั้งหมด <strong class="text-slate-700">{{ books|length }}</strong> เล่ม
+        หนังสือทั้งหมด <strong style="color:var(--ink); font-weight:500;">{{ books|length }}</strong> เล่ม
       {% endif %}
     </p>
   </div>
 </div>
 
+<hr class="double-rule" style="margin-bottom:24px;">
+
 <!-- Search + Filter Bar -->
 <form method="get" action="/books" class="mb-5">
   <div class="flex gap-3 flex-wrap items-center">
-    <!-- Search input -->
-    <div class="search-wrap flex-1 min-w-[200px]">
-      <svg class="w-4 h-4 text-slate-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
+    <div class="search-wrap" style="min-width: 240px;">
+      <span style="color:var(--ink-3); font-size:18px;">⌕</span>
       <input type="text" name="q" value="{{ current_q }}"
-             placeholder="ชื่อหนังสือ, ผู้แต่ง หรือ ISBN..."
+             placeholder="ชื่อหนังสือ, ผู้แต่ง หรือ ISBN…"
              autocomplete="off">
       {% if current_q %}
       <a href="/books{% if current_category %}?category={{ current_category }}{% endif %}"
-         class="text-slate-400 hover:text-red-500 transition flex-shrink-0" title="ล้างคำค้นหา">
-        <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12"/></svg>
+         title="ล้างคำค้นหา"
+         style="color:var(--ink-3); font-family:var(--font-serif); font-size:14px; padding:0 4px;"
+         onmouseover="this.style.color='var(--danger)'" onmouseout="this.style.color='var(--ink-3)'">
+         ✕
       </a>
       {% endif %}
     </div>
 
-    <button type="submit" class="btn btn-primary btn-sm">
-      <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/></svg>
-      ค้นหา
-    </button>
+    <button type="submit" class="btn btn-primary btn-sm">⌕ ค้นหา</button>
   </div>
 
   <!-- Category pills -->
-  <div class="flex gap-2 mt-3 flex-wrap">
+  <div class="flex gap-2 mt-4 flex-wrap">
     <a href="/books{% if current_q %}?q={{ current_q }}{% endif %}"
        class="category-pill all {% if not current_category %}active{% endif %}">
       ทุกหมวด
@@ -56,64 +59,69 @@
 
 <!-- Active filter indicator -->
 {% if current_q or current_category %}
-<div class="flex items-center gap-2 mb-4 text-sm text-slate-500">
+<div style="display:flex; align-items:center; gap:8px; margin-bottom:18px; font-family:var(--font-serif); font-size:13px; color:var(--ink-3);">
   <span>กรองด้วย:</span>
-  {% if current_category %}<span class="bg-emerald-100 text-emerald-800 px-2.5 py-0.5 rounded-full text-xs font-semibold">หมวด: {{ current_category }}</span>{% endif %}
-  {% if current_q %}<span class="bg-slate-100 text-slate-700 px-2.5 py-0.5 rounded-full text-xs font-semibold">ค้นหา: "{{ current_q }}"</span>{% endif %}
-  <a href="/books" class="text-red-500 hover:underline text-xs">ล้างทั้งหมด</a>
+  {% if current_category %}<span class="chip chip-accent">หมวด: {{ current_category }}</span>{% endif %}
+  {% if current_q %}<span class="chip">ค้นหา: "{{ current_q }}"</span>{% endif %}
+  <a href="/books" style="color:var(--danger); margin-left:4px; font-size:12px;">ล้างทั้งหมด</a>
 </div>
 {% endif %}
 
 <!-- Book Grid -->
 {% if books %}
-<div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+<div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
+  {% set covers = ["#7a2e1f","#3a4a3a","#2a3a4a","#5a2a1a","#1f3a2a","#4a2418","#6a3a2a","#2a4a5a"] %}
+  {% set accents = ["#d4b574","#c9a55d","#b8924e","#d4b574","#c9a55d","#b8924e","#d4b574","#d4b574"] %}
   {% for book in books %}
+  {% set ci = loop.index0 % covers|length %}
   <a href="/books/{{ book.id }}" class="book-card {% if book.copies_available <= 0 %}out-of-stock{% endif %}">
 
     <!-- Top: Category + Availability -->
-    <div class="flex items-start justify-between mb-3">
-      <span class="text-xs text-slate-400 bg-slate-100 px-2 py-0.5 rounded-md font-medium">
-        {{ book.category or "—" }}
-      </span>
+    <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:14px;">
+      <span class="chip">{{ book.category or "—" }}</span>
       {% if book.copies_available > 0 %}
-      <span class="badge badge-returned">✅ ว่าง {{ book.copies_available }}/{{ book.copies_total }}</span>
+      <span class="badge badge-available">ว่าง {{ book.copies_available }}/{{ book.copies_total }}</span>
       {% else %}
-      <span class="badge badge-overdue">📵 ยืมหมด</span>
+      <span class="badge badge-overdue">ไม่ว่าง</span>
       {% endif %}
     </div>
 
-    <!-- Book icon + Title -->
-    <div class="flex items-start gap-3 mb-3">
-      <div class="book-spine text-lg flex-shrink-0">
-        {% if book.category == "คอมพิวเตอร์" %}💻
-        {% elif book.category == "วิศวกรรม" %}⚙️
-        {% elif book.category == "วิทยาศาสตร์" %}🔬
-        {% elif book.category == "มนุษยศาสตร์" %}📜
-        {% elif book.category == "บริหารธุรกิจ" %}📊
-        {% else %}📚{% endif %}
+    <!-- Book cover + Title -->
+    <div style="display:flex; gap:14px; margin-bottom:14px;">
+      <!-- vintage book cover -->
+      <div class="book-cover" style="width:64px; height:92px; flex-shrink:0; --cover: {{ covers[ci] }}; --cover-accent: {{ accents[ci] }};">
+        <div style="position:absolute; top:6px; left:0; right:0; text-align:center; color:{{ accents[ci] }}; font-family:var(--font-display); font-size:10px; opacity:.7;">❦</div>
+        <div style="position:absolute; inset:0; display:flex; align-items:center; justify-content:center; padding:8px; z-index:1;">
+          <div style="font-family:var(--font-display); font-size:9px; font-weight:600; color:{{ accents[ci] }}; line-height:1.15; text-align:center; text-shadow:0 1px 0 rgba(0,0,0,.4);">
+            {{ book.title[:20] }}
+          </div>
+        </div>
       </div>
-      <div class="flex-1 min-w-0">
-        <h3 class="font-bold text-slate-900 text-sm line-clamp-2 leading-snug mb-1">{{ book.title }}</h3>
-        <p class="text-xs text-slate-500 line-clamp-1">{{ book.author }}</p>
+
+      <div style="flex:1; min-width:0;">
+        <h3 style="font-family:var(--font-display); font-size:17px; font-weight:500; line-height:1.25; color:var(--ink); margin-bottom:4px;">{{ book.title }}</h3>
+        <p style="font-family:var(--font-serif); font-style:italic; font-size:13px; color:var(--ink-3); margin-bottom:2px;">โดย {{ book.author }}</p>
+        <p style="font-family:var(--font-serif); font-size:11px; color:var(--ink-soft); letter-spacing:.04em;">ISBN {{ book.isbn }}</p>
       </div>
     </div>
 
     <!-- Availability bar -->
-    <div class="mb-3">
-      <div class="progress-track">
-        {% set avail_pct = (book.copies_available / book.copies_total * 100)|round if book.copies_total > 0 else 0 %}
-        <div class="progress-fill {% if avail_pct == 0 %}warn{% endif %}"
-             style="width: {{ avail_pct }}%"></div>
-      </div>
+    <div class="progress-track" style="margin-bottom:12px;">
+      {% set avail_pct = (book.copies_available / book.copies_total * 100)|round if book.copies_total > 0 else 0 %}
+      <div class="progress-fill {% if avail_pct == 0 %}warn{% endif %}" style="width: {{ avail_pct }}%"></div>
     </div>
 
-    <!-- ISBN + action hint -->
-    <div class="flex items-center justify-between mt-auto">
-      <span class="text-[10px] text-slate-400 font-mono">{{ book.isbn }}</span>
+    <hr class="dashed-rule" style="margin: 4px 0 10px;">
+
+    <!-- Footer -->
+    <div style="display:flex; align-items:center; justify-content:space-between; margin-top:auto;">
+      <span style="font-family:var(--font-serif); font-size:11px; color:var(--ink-3); letter-spacing:.06em;">
+        {{ book.category }}
+      </span>
       {% if book.copies_available > 0 %}
-      <span class="text-xs text-emerald-600 font-semibold group-hover:text-emerald-700">ดูรายละเอียด →</span>
+      <span style="font-family:var(--font-serif); font-size:12px; color:var(--accent); font-weight:500;">ดูรายละเอียด →</span>
       {% else %}
-      <span class="text-xs text-slate-400">ไม่ว่าง</span>
+      <span style="font-family:var(--font-serif); font-size:12px; color:var(--ink-3);">ไม่ว่าง</span>
       {% endif %}
     </div>
   </a>
@@ -122,16 +130,14 @@
 
 {% else %}
 <div class="empty-state">
-  <div class="empty-state-icon">📚</div>
+  <div class="empty-state-icon">❦</div>
   {% if current_q or current_category %}
   <h3>ไม่พบหนังสือที่ตรงกัน</h3>
   <p>ลองเปลี่ยนคำค้นหาหรือหมวดหมู่</p>
-  <a href="/books" class="inline-flex items-center gap-1.5 mt-4 text-emerald-600 hover:underline text-sm font-medium">
-    ← ล้าง filter ทั้งหมด
-  </a>
+  <a href="/books" class="btn btn-ghost btn-sm" style="margin-top: 18px;">← ล้าง filter ทั้งหมด</a>
   {% else %}
   <h3>ยังไม่มีหนังสือในระบบ</h3>
-  <p>รัน <code class="bg-slate-100 px-1.5 py-0.5 rounded text-xs">scripts/seed_books.py</code> เพื่อเพิ่มหนังสือ</p>
+  <p>รัน <code style="background:var(--paper-2); padding:2px 6px; font-size:12px; border:1px solid var(--rule);">scripts/seed_books.py</code> เพื่อเพิ่มหนังสือ</p>
   {% endif %}
 </div>
 {% endif %}

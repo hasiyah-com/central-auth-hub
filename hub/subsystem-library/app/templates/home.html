@@ -1,153 +1,185 @@
 {% extends "base.html" %}
-{% block title %}หน้าแรก — ระบบห้องสมุด{% endblock %}
+{% block title %}หน้าหลัก — ห้องสมุดดวงดาว{% endblock %}
 {% block content %}
 
-<!-- Welcome Banner -->
-<div class="relative overflow-hidden bg-gradient-to-r from-emerald-600 to-teal-700 rounded-2xl p-8 mb-8 text-white shadow-lg fade-up">
-  <div class="absolute inset-0 opacity-10">
-    <div class="absolute top-0 right-0 w-64 h-64 bg-white rounded-full -translate-y-1/2 translate-x-1/2"></div>
-    <div class="absolute bottom-0 left-0 w-48 h-48 bg-white rounded-full translate-y-1/2 -translate-x-1/2"></div>
-  </div>
-  <div class="relative z-10 flex items-start justify-between flex-wrap gap-4">
-    <div>
-      <div class="flex items-center gap-3 mb-2">
-        <div class="avatar avatar-lg" style="background:rgba(255,255,255,.2); backdrop-filter:blur(8px);">
-          {{ (user.full_name or "?")[0]|upper }}
-        </div>
-        <div>
-          <div class="text-emerald-200 text-sm font-medium">ยินดีต้อนรับ</div>
-          <h1 class="text-2xl font-extrabold leading-tight">{{ user.full_name }}</h1>
-        </div>
-      </div>
-      <div class="flex flex-wrap items-center gap-2 mt-3">
-        <span class="inline-flex items-center gap-1.5 bg-white/15 backdrop-blur-sm px-3 py-1 rounded-lg text-xs font-medium border border-white/20">
-          {{ user.email }}
-        </span>
-        {% if user.faculty %}
-        <span class="inline-flex items-center gap-1.5 bg-white/15 backdrop-blur-sm px-3 py-1 rounded-lg text-xs font-medium border border-white/20">
-          🏫 {{ user.faculty }}
-        </span>
-        {% endif %}
-        <span class="inline-flex items-center gap-1.5 bg-white/20 backdrop-blur-sm px-3 py-1 rounded-lg text-xs font-bold border border-white/20">
-          {% if user.role_in_sub == "librarian" %}📖{% else %}🎓{% endif %}
-          {{ user.role_in_sub|upper }}
-        </span>
-      </div>
+{# ════════════ TOPBAR ════════════ #}
+<div class="topbar">
+  <div>
+    <div class="crumb">หน้าหลัก</div>
+    <h1>{{ greeting }}, {{ nickname }}</h1>
+    <div class="subtitle">
+      วันที่ {{ date_th.day }} {{ date_th.month }} {{ date_th.year_be }} — มีหนังสือ <strong style="color:var(--ink);">{{ active_borrows }}</strong> เล่มอยู่ในความครอบครองของคุณ
     </div>
-    <div class="text-right text-emerald-200 text-xs">
-      <div class="text-sm font-semibold text-white mb-1">ห้องสมุดมหาวิทยาลัย</div>
-      <div>ข้อมูลจาก Central Auth Hub · JWT RS256</div>
+  </div>
+  <div style="display:flex; align-items:center; gap:10px;">
+    <span class="icon-btn" title="การแจ้งเตือน (เร็วๆ นี้)" style="opacity:.6; cursor:not-allowed;">✉</span>
+    <a class="icon-btn" href="/books" title="ค้นหาหนังสือ">⌕</a>
+    <a class="user-chip" href="/me" title="โปรไฟล์">
+      <div class="avatar" style="width:32px; height:32px; font-size:14px;">{{ (nickname or '?')[0]|upper }}</div>
+      <div class="who">
+        <div class="name">{{ nickname }}</div>
+        <div class="id">{{ user.role_in_sub }}</div>
+      </div>
+    </a>
+  </div>
+</div>
+
+{# ════════════ HERO BANNER ════════════ #}
+<div class="hero-banner">
+  <div class="hero-eyebrow">❦ &nbsp; ประจำสัปดาห์</div>
+  <h2>มหกรรมหนังสือคลาสสิกไทย</h2>
+  <p>
+    พบกับการรวมตัวของวรรณกรรมไทยร่วมสมัยกว่า ๒๐๐ ชื่อ จัดแสดง ณ ห้องสมุดชั้น ๓
+    ตั้งแต่วันที่ ๒๕ พฤษภาคม – ๑๕ มิถุนายน
+  </p>
+  <a href="/books" class="btn btn-gold btn-sm" style="position:relative;">ดูรายละเอียด →</a>
+</div>
+
+{# ════════════ STAT CARDS ════════════ #}
+<div style="display:grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 28px;">
+  <div class="paper" style="padding: 20px;">
+    <div style="font-family:var(--font-serif); font-size:11px; letter-spacing:.18em; text-transform:uppercase; color:var(--ink-3); margin-bottom:6px;">หนังสือที่ยืม</div>
+    <div style="font-family:var(--font-display); font-size:36px; font-weight:500; line-height:1; color:var(--ink);">{{ active_borrows }}</div>
+    <div style="font-family:var(--font-serif); font-size:12px; color:var(--ink-3); font-style:italic; margin-top:4px;">จาก {{ max_borrows }} เล่ม</div>
+  </div>
+  <div class="paper" style="padding: 20px;">
+    <div style="font-family:var(--font-serif); font-size:11px; letter-spacing:.18em; text-transform:uppercase; color:var(--ink-3); margin-bottom:6px;">ครบกำหนดในสัปดาห์นี้</div>
+    <div style="font-family:var(--font-display); font-size:36px; font-weight:500; line-height:1; color:var(--ink);">{{ due_this_week }}</div>
+    <div style="font-family:var(--font-serif); font-size:12px; color:var(--ink-3); font-style:italic; margin-top:4px;">เล่ม</div>
+  </div>
+  <div class="paper" style="padding: 20px;">
+    <div style="font-family:var(--font-serif); font-size:11px; letter-spacing:.18em; text-transform:uppercase; color:var(--ink-3); margin-bottom:6px;">รออนุมัติ</div>
+    <div style="font-family:var(--font-display); font-size:36px; font-weight:500; line-height:1; color:var(--ink);">{{ pending_borrows }}</div>
+    <div style="font-family:var(--font-serif); font-size:12px; color:var(--ink-3); font-style:italic; margin-top:4px;">รายการ</div>
+  </div>
+  <div class="paper" style="padding: 20px;">
+    <div style="font-family:var(--font-serif); font-size:11px; letter-spacing:.18em; text-transform:uppercase; color:var(--ink-3); margin-bottom:6px;">โควต้าคงเหลือ</div>
+    <div style="font-family:var(--font-display); font-size:36px; font-weight:500; line-height:1; color:var(--ink);">{{ max_borrows - active_borrows - pending_borrows }}</div>
+    <div style="font-family:var(--font-serif); font-size:12px; color:var(--ink-3); font-style:italic; margin-top:4px;">เล่มที่ยืมได้เพิ่ม</div>
+  </div>
+</div>
+
+{# ════════════ TWO COLUMNS ════════════ #}
+<div style="display:grid; grid-template-columns: 1.4fr 1fr; gap: 28px;">
+
+  {# ───── LEFT: currently borrowed ───── #}
+  <div>
+    <div class="orn-rule" style="margin-bottom:16px;">
+      <span style="letter-spacing:.2em;">หนังสือที่กำลังยืม</span>
+    </div>
+    <div class="paper" style="padding: 0;">
+      {% if active_borrowings %}
+        {% set covers = ["#7a2e1f","#3a4a3a","#2a3a4a","#5a2a1a","#1f3a2a","#4a2418","#6a3a2a","#2a4a5a"] %}
+        {% set accents = ["#d4b574","#c9a55d","#b8924e","#d4b574","#c9a55d","#b8924e","#d4b574","#d4b574"] %}
+        {% for b, book in active_borrowings %}
+        {% set ci = loop.index0 % covers|length %}
+        {% set days_left = ((b.due_at - now) if b.due_at and now is defined else None) %}
+        <a href="/books/{{ book.id }}" style="display:flex; gap:16px; padding:18px; {% if not loop.last %}border-bottom:1px dashed var(--rule);{% endif %} text-decoration:none; color:inherit;">
+          {# book cover #}
+          <div class="book-cover" style="width:56px; height:84px; flex-shrink:0; --cover: {{ covers[ci] }}; --cover-accent: {{ accents[ci] }};">
+            <div style="position:absolute; top:4px; left:0; right:0; text-align:center; color:{{ accents[ci] }}; font-family:var(--font-display); font-size:9px; opacity:.7;">❦</div>
+            <div style="position:absolute; inset:0; display:flex; align-items:center; justify-content:center; padding:6px; z-index:1;">
+              <div style="font-family:var(--font-display); font-size:8px; font-weight:600; color:{{ accents[ci] }}; line-height:1.15; text-align:center; text-shadow:0 1px 0 rgba(0,0,0,.4);">{{ book.title[:14] }}</div>
+            </div>
+          </div>
+          <div style="flex:1; min-width:0;">
+            <div style="font-family:var(--font-display); font-size:17px; font-weight:500; color:var(--ink);">{{ book.title }}</div>
+            <div style="font-family:var(--font-serif); font-style:italic; font-size:13px; color:var(--ink-3); margin-bottom:6px;">{{ book.author }}</div>
+            <div style="display:flex; align-items:center; gap:10px; font-family:var(--font-serif); font-size:12px;">
+              <span class="status-pill status-active">กำลังยืม</span>
+              {% if b.due_at %}
+                <span style="color:var(--ink-3);">ครบกำหนด {{ b.due_at.strftime('%d %b %Y') }}</span>
+              {% endif %}
+            </div>
+          </div>
+        </a>
+        {% endfor %}
+      {% else %}
+        <div style="padding: 40px 20px; text-align: center; font-family:var(--font-serif);">
+          <div style="font-size:36px; color:var(--gold); margin-bottom:10px;">❦</div>
+          <div style="color:var(--ink-3); font-style:italic;">คุณยังไม่ได้ยืมหนังสือเล่มใด</div>
+          <a href="/books" class="btn btn-primary btn-sm" style="margin-top:14px;">ไปค้นหาหนังสือ →</a>
+        </div>
+      {% endif %}
+      {% if active_borrowings %}
+      <div style="padding: 14px; text-align: center; background: var(--paper); border-top: 1px solid var(--rule);">
+        <a href="/me" style="font-family:var(--font-serif); font-size:14px;">ดูทั้งหมด →</a>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  {# ───── RIGHT: quick actions + categories ───── #}
+  <div>
+    <div class="orn-rule" style="margin-bottom:16px;">
+      <span style="letter-spacing:.2em;">การเข้าถึงเร็ว</span>
+    </div>
+    <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 24px;">
+      <a href="/books" class="qa-tile">
+        <div class="qa-tile-ico">⌕</div>
+        <div class="qa-tile-label">ค้นหาหนังสือ</div>
+      </a>
+      <span class="qa-tile" style="opacity:.5; cursor:not-allowed;" title="เร็วๆ นี้">
+        <div class="qa-tile-ico">✦</div>
+        <div class="qa-tile-label">จองหนังสือ</div>
+      </span>
+      <a href="/me" class="qa-tile">
+        <div class="qa-tile-ico">❧</div>
+        <div class="qa-tile-label">ประวัติการยืม</div>
+      </a>
+      <span class="qa-tile" style="opacity:.5; cursor:not-allowed;" title="เร็วๆ นี้">
+        <div class="qa-tile-ico">✚</div>
+        <div class="qa-tile-label">ชำระค่าปรับ</div>
+      </span>
+    </div>
+
+    <div class="orn-rule" style="margin-bottom:16px;">
+      <span style="letter-spacing:.2em;">หมวดหมู่ยอดนิยม</span>
+    </div>
+    <div class="paper" style="padding: 4px;">
+      {% set cat_icons = ['❦','✦','✧','☙','❧','✚','❉','✤'] %}
+      {% for c in categories_top %}
+        <a class="cat-row" href="/books?category={{ c.name }}">
+          <span class="cat-ico">{{ cat_icons[loop.index0 % cat_icons|length] }}</span>
+          <span class="cat-name">{{ c.name }}</span>
+          <span class="cat-count">{{ c.count }} เล่ม</span>
+        </a>
+      {% endfor %}
+      {% if not categories_top %}
+      <div style="padding: 16px; text-align:center; color:var(--ink-3); font-family:var(--font-serif); font-style:italic; font-size:13px;">ยังไม่มีข้อมูลหมวดหมู่</div>
+      {% endif %}
     </div>
   </div>
 </div>
 
-<!-- Stat Cards -->
-<div class="grid sm:grid-cols-3 gap-4 mb-8 fade-up-2">
-  <div class="stat-card stat-emerald">
-    <div class="stat-label">กำลังยืมอยู่</div>
-    <div class="stat-value">{{ active_borrows }}</div>
-    <div class="stat-sub">จากสูงสุด {{ max_borrows }} เล่ม</div>
+{# ════════════ RECOMMENDED ════════════ #}
+{% if recommended_books %}
+<div style="margin-top: 40px;">
+  <div class="orn-rule" style="margin-bottom:22px;">
+    <span class="orn-fleur">❦</span>
+    <span style="letter-spacing:.2em;">หนังสือแนะนำสำหรับคุณ</span>
+    <span class="orn-fleur">❦</span>
   </div>
-
-  <div class="stat-card stat-{% if pending_borrows > 0 %}amber{% else %}slate{% endif %}">
-    <div class="stat-label">รออนุมัติ</div>
-    <div class="stat-value">{{ pending_borrows }}</div>
-    <div class="stat-sub">
-      {% if pending_borrows %}รอ librarian ดำเนินการ{% else %}ไม่มีคำขอค้างอยู่{% endif %}
-    </div>
-  </div>
-
-  <div class="stat-card stat-blue">
-    <div class="stat-label">โควต้าคงเหลือ</div>
-    <div class="stat-value">{{ max_borrows - active_borrows - pending_borrows }}</div>
-    <div class="stat-sub">เล่มที่ยืมได้เพิ่ม</div>
-  </div>
-</div>
-
-<!-- Borrow Quota Visual -->
-{% if user.role_in_sub == "member" %}
-<div class="quota-bar mb-8 fade-up-2">
-  <div class="flex items-center justify-between mb-2">
-    <span class="text-sm font-semibold text-emerald-800">โควต้าการยืม</span>
-    <span class="text-xs text-slate-500">{{ active_borrows + pending_borrows }}/{{ max_borrows }} เล่ม</span>
-  </div>
-  <div class="quota-dots">
-    {% for i in range(max_borrows) %}
-      <div class="quota-dot {% if i < active_borrows %}used{% elif i < active_borrows + pending_borrows %}overdue{% endif %}"></div>
+  <div style="display:grid; grid-template-columns: repeat(4, 1fr); gap: 20px;">
+    {% set covers = ["#7a2e1f","#3a4a3a","#2a3a4a","#5a2a1a"] %}
+    {% set accents = ["#d4b574","#c9a55d","#b8924e","#d4b574"] %}
+    {% for book in recommended_books %}
+    {% set ci = loop.index0 % covers|length %}
+    <a href="/books/{{ book.id }}" class="book-card">
+      <div style="display:flex; justify-content:center; margin-bottom: 14px;">
+        <div class="book-cover" style="width:120px; height:180px; --cover: {{ covers[ci] }}; --cover-accent: {{ accents[ci] }};">
+          <div style="position:absolute; top:10px; left:0; right:0; text-align:center; color:{{ accents[ci] }}; font-family:var(--font-display); font-size:13px; opacity:.75;">❦ ✦ ❦</div>
+          <div style="position:absolute; inset:0; display:flex; align-items:center; justify-content:center; padding:14px; z-index:1;">
+            <div style="font-family:var(--font-display); font-size:13px; font-weight:600; color:{{ accents[ci] }}; line-height:1.2; text-align:center; text-shadow:0 1px 0 rgba(0,0,0,.4);">{{ book.title }}</div>
+          </div>
+        </div>
+      </div>
+      <div style="font-family:var(--font-display); font-size:16px; font-weight:500; line-height:1.25; color:var(--ink); text-align:center; margin-bottom:2px;">{{ book.title }}</div>
+      <div style="font-family:var(--font-serif); font-style:italic; font-size:12px; color:var(--ink-3); text-align:center;">{{ book.author }}</div>
+    </a>
     {% endfor %}
-  </div>
-  <div class="flex gap-4 text-xs text-slate-500">
-    <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block"></span>กำลังยืม ({{ active_borrows }})</span>
-    {% if pending_borrows %}
-    <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-red-400 inline-block"></span>รออนุมัติ ({{ pending_borrows }})</span>
-    {% endif %}
-    <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-full bg-emerald-100 border border-emerald-200 inline-block"></span>ว่าง</span>
   </div>
 </div>
 {% endif %}
-
-<!-- Quick Actions -->
-<h2 class="text-base font-bold text-slate-700 mb-3 fade-up-3">การดำเนินการ</h2>
-<div class="grid sm:grid-cols-2 {% if user.role_in_sub == 'librarian' %}lg:grid-cols-4{% else %}lg:grid-cols-3{% endif %} gap-4 fade-up-3">
-
-  <a href="/books" class="book-card group">
-    <div class="text-3xl mb-3">🔍</div>
-    <div class="font-bold text-slate-900 mb-1 group-hover:text-emerald-700 transition-colors">ค้นหาหนังสือ</div>
-    <div class="text-sm text-slate-500">ดูคลังหนังสือ 30 เล่ม 6 หมวดหมู่</div>
-    <div class="mt-auto pt-3 flex items-center gap-1 text-xs text-emerald-600 font-semibold">
-      ไปค้นหา
-      <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
-    </div>
-  </a>
-
-  <a href="/me" class="book-card group">
-    <div class="text-3xl mb-3">📋</div>
-    <div class="font-bold text-slate-900 mb-1 group-hover:text-emerald-700 transition-colors">การยืมของฉัน</div>
-    <div class="text-sm text-slate-500">ดูประวัติและยกเลิก request ที่ค้างอยู่</div>
-    <div class="mt-auto pt-3 flex items-center gap-1 text-xs text-emerald-600 font-semibold">
-      ดูรายการ
-      <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
-    </div>
-  </a>
-
-  {% if user.role_in_sub == "member" and active_borrows + pending_borrows < max_borrows %}
-  <a href="/books" class="book-card group border-emerald-200 bg-emerald-50">
-    <div class="text-3xl mb-3">➕</div>
-    <div class="font-bold text-emerald-800 mb-1">ขอยืมหนังสือ</div>
-    <div class="text-sm text-emerald-600">ยังมีโควต้าเหลืออยู่ — เริ่มยืมได้เลย</div>
-    <div class="mt-auto pt-3 flex items-center gap-1 text-xs text-emerald-600 font-semibold">
-      เลือกหนังสือ
-      <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
-    </div>
-  </a>
-  {% elif user.role_in_sub == "member" %}
-  <div class="book-card border-amber-200 bg-amber-50 cursor-default">
-    <div class="text-3xl mb-3">⚠️</div>
-    <div class="font-bold text-amber-800 mb-1">โควต้าเต็มแล้ว</div>
-    <div class="text-sm text-amber-600">คืนหนังสือก่อนเพื่อยืมเล่มใหม่</div>
-  </div>
-  {% endif %}
-
-  {% if user.role_in_sub == "librarian" %}
-  <a href="/librarian/borrows" class="book-card group border-pink-200 bg-pink-50">
-    <div class="text-3xl mb-3">📋</div>
-    <div class="font-bold text-pink-800 mb-1">รายการยืม</div>
-    <div class="text-sm text-pink-600">อนุมัติ · ปฏิเสธ · รับคืน</div>
-    <div class="mt-auto pt-3 flex items-center gap-1 text-xs text-pink-600 font-semibold">
-      จัดการ
-      <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
-    </div>
-  </a>
-  <a href="/librarian/members" class="book-card group border-pink-200 bg-pink-50">
-    <div class="text-3xl mb-3">👥</div>
-    <div class="font-bold text-pink-800 mb-1">สมาชิกทั้งหมด</div>
-    <div class="text-sm text-pink-600">ดูรายชื่อและสถิติการยืม</div>
-    <div class="mt-auto pt-3 flex items-center gap-1 text-xs text-pink-600 font-semibold">
-      ดูสมาชิก
-      <svg class="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5l7 7-7 7"/></svg>
-    </div>
-  </a>
-  {% endif %}
-</div>
 
 {% endblock %}
