@@ -18,7 +18,11 @@ def get_client_ip(request: Request) -> str | None:
 
 
 class CurrentUser:
-    """ข้อมูล user ปัจจุบันจาก session cookie."""
+    """ข้อมูล user ปัจจุบันจาก session cookie.
+
+    Scope ที่ Subsystem B ขอจาก Hub: email, full_name, role_in_sub, faculty, student_id
+    (hub_user_id = JWT.sub ใช้เป็น primary key เชื่อมกับ members table)
+    """
 
     def __init__(self, data: dict):
         self.hub_user_id: str = data["hub_user_id"]
@@ -27,7 +31,6 @@ class CurrentUser:
         self.role_in_sub: str = data["role_in_sub"]
         self.faculty: str | None = data.get("faculty")
         self.student_id: str | None = data.get("student_id")
-        self.phone: str | None = data.get("phone")
 
 
 def get_current_user_optional(
@@ -78,14 +81,13 @@ def get_or_create_member(user: CurrentUser, db: Session) -> Member:
             full_name=user.full_name,
             student_id=user.student_id,
             faculty=user.faculty,
-            phone=user.phone,
             role_in_sub=user.role_in_sub,
             status="active",
         )
         db.add(member)
         db.flush()
     else:
-        # sync profile จาก JWT claim
+        # sync profile จาก JWT claim (เฉพาะ scope ที่ Subsystem B ขอ)
         member.email = user.email
         member.full_name = user.full_name
         member.role_in_sub = user.role_in_sub
@@ -93,8 +95,6 @@ def get_or_create_member(user: CurrentUser, db: Session) -> Member:
             member.student_id = user.student_id
         if user.faculty:
             member.faculty = user.faculty
-        if user.phone:
-            member.phone = user.phone
     return member
 
 
