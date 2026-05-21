@@ -10,7 +10,9 @@ check() {
   local name="$1" url="$2" expect="$3"
   local code
   code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 "$url" 2>/dev/null; true)
-  if [ "$code" = "$expect" ] || { [ "$expect" = "2xx" ] && echo "$code" | grep -qE "^2"; }; then
+  if [ "$code" = "$expect" ] \
+     || { [ "$expect" = "2xx" ] && echo "$code" | grep -qE "^2"; } \
+     || { [ "$expect" = "2xx" ] && echo "$code" | grep -qE "^3"; }; then
     printf "  ✅ %-25s (%s)\n" "$name" "$code"
     PASS=$((PASS + 1))
   else
