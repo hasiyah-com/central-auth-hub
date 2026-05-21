@@ -2,6 +2,21 @@
 
 Quick-ref สำหรับรัน Claude Code sessions ขนานบน git worktree พร้อม Docker stack แยก
 
+## ⚠️ Policy: Single-stack Docker (Strategy A — 2026-05-21)
+
+**Docker stack รันได้แค่ใน main repo เท่านั้น** — worktrees ใช้สำหรับแยก code/branch (Claude session) อย่างเดียว ไม่ start `up.sh` ใน worktree
+
+**เหตุผล:** ฐานข้อมูลแยก namespace ต่อ stack → test ไม่ consistent (ต้อง seed user ใหม่ทุก worktree, Gmail admin ไม่อยู่ใน worktree DB, OAuth callback ชี้ผิด port — ดู B33)
+
+**Workflow ที่ใช้จริง:**
+- เปิด Claude Code session ใน worktree → แก้ code (git branch แยก)
+- ทดสอบรัน Docker ที่ **main** เสมอ (port 8000)
+- Merge เข้า main เมื่อเสร็จ
+
+**Worktree stacks สคริปต์** (`up.sh`, `down.sh`) — เก็บไว้สำหรับกรณีพิเศษ เช่น breaking schema migration ที่ต้องการ DB แยกจริงๆ ไม่ใช้ปกติ
+
+---
+
 ## Slots + port allocation
 
 | Slot      | Offset | Hub  | Dorm | Lib  | ML   | PG   | PG-Dorm | PG-Lib | Redis |
