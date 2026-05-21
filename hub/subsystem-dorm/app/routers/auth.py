@@ -47,7 +47,7 @@ def login_page(
 ):
     """หน้า login — ถ้า login อยู่แล้ว redirect ไปหน้าแรก."""
     if user is not None:
-        return RedirectResponse(url="/", status_code=302)
+        return RedirectResponse(url="/app.html", status_code=302)
     return templates.TemplateResponse("login.html", {"request": request})
 
 
@@ -155,7 +155,7 @@ async def oauth_callback(
         "phone": user.phone,
     })
 
-    response = RedirectResponse(url="/", status_code=302)
+    response = RedirectResponse(url="/app.html", status_code=302)
     response.set_cookie(
         key=settings.session_cookie_name,
         value=session_token,
