@@ -30,6 +30,7 @@ from app.redis_client import redis_client
 from app.routers.auth import oauth          # ใช้ Authlib client ตัวเดียวกับ Week 2
 from app.services.audit_service import log_action
 from app.services.feature_extraction import extract_session_features
+from app.services.geoip import lookup_country
 from app.services.jwt_service import create_subsystem_token
 from app.services.ml_client import get_anomaly_score
 from app.services.pkce import generate_pkce_pair, verify_pkce
@@ -200,12 +201,16 @@ async def oauth_callback(
     client_ip = get_client_ip(request)
     user_agent = request.headers.get("user-agent")
 
+    # 0) GeoIP lookup — fail-safe (None ถ้า DB หาย / private IP / lookup error)
+    geo_country = lookup_country(client_ip)
+
     # 1) สกัด feature vector จาก session + history
     features = extract_session_features(
         db,
         user_id=user.id,
         ip=client_ip,
         user_agent=user_agent,
+        geo_country=geo_country,
     )
 
     # 2) เรียก ML service (fail-safe ถ้า ML ล่ม -> pass + 0.0)
@@ -232,6 +237,7 @@ async def oauth_callback(
         subsystem_id=authreq["subsystem_id"],
         ip=client_ip,
         user_agent=user_agent,
+        geo_country=geo_country,
         anomaly_score=anomaly_score,
         decision=actual_decision,
     ))
