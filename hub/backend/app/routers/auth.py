@@ -142,7 +142,21 @@ async def google_callback(request: Request, db: Session = Depends(get_db)):
         )
     if not user.google_sub:
         user.google_sub = google_sub
-        db.commit()
+
+    # Sync display name from Google (source of truth) on every login.
+    # Keeps the Hub user's full_name up to date with whatever the user shows
+    # in their Google account.
+    google_name = (userinfo.get("name") or "").strip()
+    if google_name and google_name != (user.full_name or "").strip():
+        old_name = user.full_name
+        user.full_name = google_name
+        log_action(
+            db, actor_id=user.id,
+            action="profile_synced_from_google",
+            target_type="user", target_id=user.id, ip=client_ip,
+            metadata={"field": "full_name", "old": old_name, "new": google_name},
+        )
+    db.commit()
 
     # log การ login สำเร็จ
     log_action(

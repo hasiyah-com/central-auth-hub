@@ -217,6 +217,21 @@ async def oauth_callback(
     if not user.google_sub:
         user.google_sub = google_sub
 
+    # ===== Sync profile fields from Google userinfo =====
+    # Google's userinfo is the source of truth for display name.
+    # We update on every login so users see their real name in subsystems
+    # instead of any placeholder set during pre-provisioning.
+    google_name = (userinfo.get("name") or "").strip()
+    if google_name and google_name != (user.full_name or "").strip():
+        old_name = user.full_name
+        user.full_name = google_name
+        log_action(
+            db, actor_id=user.id,
+            action="profile_synced_from_google",
+            target_type="user", target_id=user.id, ip=client_ip,
+            metadata={"field": "full_name", "old": old_name, "new": google_name},
+        )
+
     # ===== ML Anomaly Detection =====
     client_ip = get_client_ip(request)
     user_agent = request.headers.get("user-agent")
