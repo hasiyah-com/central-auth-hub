@@ -21,8 +21,16 @@ fi
 
 echo ""
 echo "=== Pre-commit Check ==="
+# Try pre-commit on PATH first, then fall back to python -m pre_commit
+PRECOMMIT_CMD=""
 if command -v pre-commit &>/dev/null; then
-  if pre-commit run --all-files 2>&1; then
+  PRECOMMIT_CMD="pre-commit"
+elif python -m pre_commit --version &>/dev/null; then
+  PRECOMMIT_CMD="python -m pre_commit"
+fi
+
+if [ -n "$PRECOMMIT_CMD" ]; then
+  if $PRECOMMIT_CMD run --all-files 2>&1; then
     echo "  All checks passed ✅"
   else
     echo ""
@@ -30,7 +38,7 @@ if command -v pre-commit &>/dev/null; then
     exit 1
   fi
 else
-  echo "  (pre-commit not installed — run: pip install pre-commit && pre-commit install)"
+  echo "  (pre-commit not installed — run: pip install pre-commit detect-secrets && python -m pre_commit install)"
 fi
 
 echo ""

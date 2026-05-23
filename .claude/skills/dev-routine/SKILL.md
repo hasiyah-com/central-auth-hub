@@ -103,18 +103,20 @@ REFACTOR ปรับโค้ดให้สะอาด (rename, extract, simp
 
 ### Run commands (Hub backend)
 
+Container WORKDIR = `/app` (COPY from `./hub/backend` → `/app`) — รัน pytest จาก `.` ภายใน container
+
 ```bash
 # รัน test ทั้งหมด
-docker compose exec hub-backend pytest hub/backend/ -v
+docker compose exec hub-backend pytest . -v
 
 # รันเฉพาะไฟล์
-docker compose exec hub-backend pytest hub/backend/tests/test_auth.py -v
+docker compose exec hub-backend pytest tests/test_auth.py -v
 
 # รัน + แสดง print output
-docker compose exec hub-backend pytest hub/backend/ -v -s
+docker compose exec hub-backend pytest . -v -s
 
 # รัน + stop ที่ fail แรก
-docker compose exec hub-backend pytest hub/backend/ -x
+docker compose exec hub-backend pytest . -x
 ```
 
 ### Test file convention
@@ -137,7 +139,7 @@ hub/backend/tests/
 
 ## Evening Routine (เลิกงาน)
 
-1. **`docker compose exec hub-backend pytest hub/backend/ -v`** — ต้อง pass ทุกตัวก่อน commit (TDD rule)
+1. **`docker compose exec hub-backend pytest . -v`** — ต้อง pass ทุกตัวก่อน commit (TDD rule)
 2. **`bash scripts/routine/eod.sh`** — shows diff + pre-commit result
 3. Fix any pre-commit errors (ruff format, detect-secrets)
 4. Stage specific files: `git add hub/backend/app/routers/...` (never `git add .` or `git add -A`)
