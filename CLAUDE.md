@@ -706,16 +706,16 @@ docker compose exec ml-service python -m scripts.train_model
 - ถ้า test fail → อ่าน traceback เต็ม อย่าเดาหรือข้าม
 - test คือ source of truth — test fail = งานยังไม่เสร็จ
 
-**Run commands:**
+**Run commands** — container WORKDIR=`/app`, run pytest จาก `.`:
 ```bash
 # รัน test ทั้งหมด
-docker compose exec hub-backend pytest hub/backend/ -v
+docker compose exec hub-backend pytest . -v
 
 # รันเฉพาะไฟล์ + stop ที่ fail แรก
-docker compose exec hub-backend pytest hub/backend/tests/test_auth.py -x -v
+docker compose exec hub-backend pytest tests/test_auth.py -x -v
 
 # แสดง print output (debug)
-docker compose exec hub-backend pytest hub/backend/ -v -s
+docker compose exec hub-backend pytest . -v -s
 ```
 
 **Test file layout** (`hub/backend/tests/`):
