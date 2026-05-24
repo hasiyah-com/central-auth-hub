@@ -1,4 +1,5 @@
 """Audit logger ของ Subsystem B."""
+
 from sqlalchemy.orm import Session
 
 from app.models import LibraryAuditLog
@@ -14,12 +15,18 @@ def log_action(
     ip: str | None = None,
     metadata: dict | None = None,
 ) -> None:
-    """เพิ่ม audit log entry (caller commit เอง)."""
-    db.add(LibraryAuditLog(
-        actor_hub_user_id=actor_hub_user_id,
-        action=action,
-        target_type=target_type,
-        target_id=target_id,
-        ip=ip,
-        metadata_json=metadata or {},
-    ))
+    """เพิ่ม audit log entry — caller **ต้อง** เรียก db.commit() เองหลังจากนี้.
+
+    ฟังก์ชันนี้แค่ db.add() เท่านั้น ไม่ commit ให้ เพื่อให้ caller ผูกรวม
+    audit log + state change เป็น atomic transaction เดียวกันได้.
+    """
+    db.add(
+        LibraryAuditLog(
+            actor_hub_user_id=actor_hub_user_id,
+            action=action,
+            target_type=target_type,
+            target_id=target_id,
+            ip=ip,
+            metadata_json=metadata or {},
+        )
+    )

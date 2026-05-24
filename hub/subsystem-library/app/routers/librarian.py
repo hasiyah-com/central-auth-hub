@@ -1,9 +1,11 @@
 """Librarian router — อนุมัติ request → ส่งหนังสือ + รับคืน + ดู overdue."""
+
 from datetime import timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
+from sqlalchemy import func, update
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -18,6 +20,7 @@ templates = Jinja2Templates(directory="app/templates")
 
 # ============ /librarian/members ============
 
+
 @router.get("/members", response_class=HTMLResponse)
 def list_members(
     request: Request,
@@ -26,26 +29,27 @@ def list_members(
 ):
     """list สมาชิกทั้งหมด + จำนวนยืม active."""
     members = db.query(Member).order_by(Member.created_at.desc()).all()
-    # นับ active ต่อคน
-    active_count = {}
-    for m in members:
-        active_count[str(m.id)] = (
-            db.query(Borrowing)
-            .filter(
-                Borrowing.hub_user_id == m.hub_user_id,
-                Borrowing.status.in_(["requested", "active"]),
-            )
-            .count()
-        )
-    return templates.TemplateResponse("librarian/members.html", {
-        "request": request,
-        "user": librarian,
-        "members": members,
-        "active_count": active_count,
-    })
+    # B10: aggregate ครั้งเดียวแทน N+1 — group by hub_user_id
+    counts = dict(
+        db.query(Borrowing.hub_user_id, func.count(Borrowing.id))
+        .filter(Borrowing.status.in_(["requested", "active"]))
+        .group_by(Borrowing.hub_user_id)
+        .all()
+    )
+    active_count = {str(m.id): counts.get(m.hub_user_id, 0) for m in members}
+    return templates.TemplateResponse(
+        "librarian/members.html",
+        {
+            "request": request,
+            "user": librarian,
+            "members": members,
+            "active_count": active_count,
+        },
+    )
 
 
 # ============ /librarian/borrows ============
+
 
 @router.get("/borrows", response_class=HTMLResponse)
 def list_borrows(
@@ -78,17 +82,21 @@ def list_borrows(
         .count()
     )
 
-    return templates.TemplateResponse("librarian/borrows.html", {
-        "request": request,
-        "user": librarian,
-        "rows": rows,
-        "current_status": status,
-        "overdue_count": overdue_count,
-        "now": now,
-    })
+    return templates.TemplateResponse(
+        "librarian/borrows.html",
+        {
+            "request": request,
+            "user": librarian,
+            "rows": rows,
+            "current_status": status,
+            "overdue_count": overdue_count,
+            "now": now,
+        },
+    )
 
 
 # ============ approve ============
+
 
 @router.post("/borrows/{borrowing_id}/approve")
 def approve_borrow(
@@ -109,8 +117,23 @@ def approve_borrow(
         )
 
     book = db.query(Book).filter(Book.id == borrowing.book_id).first()
-    if not book or book.copies_available <= 0:
-        raise HTTPException(status_code=400, detail="ไม่มี copy ว่างแล้ว")
+    if not book:
+        raise HTTPException(status_code=400, detail="ไม่พบหนังสือ")
+
+    # B1: atomic decrement — ป้องกัน race ที่ librarian 2 คน approve เล่มเดียวกัน
+    # พร้อมกัน → copies_available ติดลบ (oversell)
+    # UPDATE ... WHERE copies_available > 0 → DB ตัดสินใจครั้งเดียว
+    result = db.execute(
+        update(Book)
+        .where(Book.id == borrowing.book_id, Book.copies_available > 0)
+        .values(copies_available=Book.copies_available - 1)
+    )
+    if result.rowcount == 0:
+        raise HTTPException(
+            status_code=400,
+            detail="ไม่มี copy ว่างแล้ว — มี librarian อนุมัติก่อนหน้านี้",
+        )
+    db.refresh(book)  # sync in-memory ให้ตรงกับ DB หลัง UPDATE
 
     now = _utcnow()
     borrowing.status = "active"
@@ -118,8 +141,6 @@ def approve_borrow(
     borrowing.borrowed_at = now
     borrowing.due_at = now + timedelta(days=settings.default_borrow_days)
     borrowing.approved_by_hub_user_id = librarian.hub_user_id
-
-    book.copies_available -= 1
 
     log_action(
         db,
@@ -140,6 +161,7 @@ def approve_borrow(
 
 
 # ============ reject (during requested) ============
+
 
 @router.post("/borrows/{borrowing_id}/reject")
 def reject_borrow(
@@ -174,6 +196,7 @@ def reject_borrow(
 
 # ============ return ============
 
+
 @router.post("/borrows/{borrowing_id}/return")
 def receive_return(
     borrowing_id: str,
@@ -197,8 +220,14 @@ def receive_return(
     borrowing.returned_at = now
     borrowing.received_by_hub_user_id = librarian.hub_user_id
 
+    # B1: atomic increment, clamp ที่ copies_total — กัน race + กัน overflow
     if book is not None:
-        book.copies_available = min(book.copies_total, book.copies_available + 1)
+        db.execute(
+            update(Book)
+            .where(Book.id == book.id, Book.copies_available < Book.copies_total)
+            .values(copies_available=Book.copies_available + 1)
+        )
+        db.refresh(book)
 
     log_action(
         db,
@@ -220,10 +249,9 @@ def receive_return(
 
 # ============ helpers ============
 
+
 def _get_borrowing(db: Session, borrowing_id: str) -> Borrowing:
-    borrowing = (
-        db.query(Borrowing).filter(Borrowing.id == borrowing_id).first()
-    )
+    borrowing = db.query(Borrowing).filter(Borrowing.id == borrowing_id).first()
     if not borrowing:
         raise HTTPException(status_code=404, detail="ไม่พบ borrowing")
     return borrowing

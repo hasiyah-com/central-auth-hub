@@ -1,10 +1,11 @@
 """FastAPI dependencies."""
+
 from fastapi import Cookie, Depends, HTTPException, Request, status
 from fastapi.responses import RedirectResponse
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.config import settings
-from app.database import get_db
 from app.models import Member
 from app.services.session import load_session
 
@@ -34,9 +35,7 @@ class CurrentUser:
 
 
 def get_current_user_optional(
-    session_cookie: str | None = Cookie(
-        None, alias=settings.session_cookie_name
-    ),
+    session_cookie: str | None = Cookie(None, alias=settings.session_cookie_name),
 ) -> CurrentUser | None:
     data = load_session(session_cookie)
     if not data:
@@ -57,6 +56,7 @@ def get_current_user(
 
 def require_role(*allowed_roles: str):
     """factory dependency ตรวจ role."""
+
     def _check(user: CurrentUser = Depends(get_current_user)) -> CurrentUser:
         if user.role_in_sub not in allowed_roles:
             raise HTTPException(
@@ -64,16 +64,13 @@ def require_role(*allowed_roles: str):
                 detail=f"ต้องเป็น role: {' หรือ '.join(allowed_roles)}",
             )
         return user
+
     return _check
 
 
 def get_or_create_member(user: CurrentUser, db: Session) -> Member:
     """หา member จาก hub_user_id — สร้างใหม่ถ้ายังไม่มี."""
-    member = (
-        db.query(Member)
-        .filter(Member.hub_user_id == user.hub_user_id)
-        .first()
-    )
+    member = db.query(Member).filter(Member.hub_user_id == user.hub_user_id).first()
     if member is None:
         member = Member(
             hub_user_id=user.hub_user_id,
@@ -85,7 +82,22 @@ def get_or_create_member(user: CurrentUser, db: Session) -> Member:
             status="active",
         )
         db.add(member)
-        db.flush()
+        # B3: race condition — login พร้อมกัน 2 devices/tabs จะ pass `is None`
+        # ทั้งคู่ → INSERT 2 row บน hub_user_id (unique) → IntegrityError
+        # rollback แล้ว query ใหม่ — ตัวที่ insert ก่อนจะอยู่ใน DB แล้ว
+        try:
+            db.flush()
+        except IntegrityError:
+            db.rollback()
+            member = (
+                db.query(Member).filter(Member.hub_user_id == user.hub_user_id).first()
+            )
+            if member is None:
+                # ไม่น่าเกิด — fallback กันไว้
+                raise HTTPException(
+                    status_code=500,
+                    detail="ไม่สามารถสร้าง/หา member ได้ — ลอง login ใหม่",
+                )
     else:
         # sync profile จาก JWT claim (เฉพาะ scope ที่ Subsystem B ขอ)
         member.email = user.email

@@ -1,6 +1,8 @@
 """Borrow router — member ขอยืม + ยกเลิก request."""
-from fastapi import APIRouter, Depends, Form, HTTPException, Request
+
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import RedirectResponse
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -32,9 +34,7 @@ def request_borrow(
     if book.status != "active":
         raise HTTPException(status_code=400, detail="หนังสือเล่มนี้ไม่พร้อมให้ยืม")
     if book.copies_available <= 0:
-        raise HTTPException(
-            status_code=400, detail="ไม่มี copy ว่างของหนังสือเล่มนี้"
-        )
+        raise HTTPException(status_code=400, detail="ไม่มี copy ว่างของหนังสือเล่มนี้")
 
     # มี request/active ของเล่มนี้อยู่แล้วไหม
     existing = (
@@ -47,9 +47,7 @@ def request_borrow(
         .first()
     )
     if existing:
-        raise HTTPException(
-            status_code=400, detail="คุณมีการยืม/ขอยืมหนังสือเล่มนี้อยู่แล้ว"
-        )
+        raise HTTPException(status_code=400, detail="คุณมีการยืม/ขอยืมหนังสือเล่มนี้อยู่แล้ว")
 
     # นับการยืม active ของผู้ใช้
     active_count = (
@@ -75,7 +73,16 @@ def request_borrow(
         status="requested",
     )
     db.add(borrowing)
-    db.flush()
+    # B2: partial unique index จะปฏิเสธถ้ามี requested/active อยู่แล้ว
+    # (กรณี race condition — request ยิงพร้อมกัน 2 tabs เลย bypass การเช็ค Python ข้างบน)
+    try:
+        db.flush()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail="คุณมีการยืม/ขอยืมหนังสือเล่มนี้อยู่แล้ว (ส่งคำขอซ้ำพร้อมกัน)",
+        )
 
     log_action(
         db,
