@@ -2,11 +2,20 @@
 
 ไม่มี FK ไป Hub: hub_user_id เก็บเป็น UUID อิสระ (จาก JWT.sub)
 """
+
 import uuid
 from datetime import datetime, timezone
 
 from sqlalchemy import (
-    Column, DateTime, ForeignKey, Integer, JSON, String, Text,
+    Column,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    JSON,
+    String,
+    Text,
+    text,
 )
 from sqlalchemy.dialects.postgresql import INET, UUID
 
@@ -24,6 +33,7 @@ def _utcnow():
 
 class Book(Base):
     """หนังสือในห้องสมุด (seed 30 เล่ม ตอน setup)."""
+
     __tablename__ = "books"
 
     id = uuid_pk()
@@ -47,6 +57,7 @@ class Member(Base):
     Scope จาก Hub (5 fields ที่จัดเก็บ): email, full_name, role_in_sub, faculty, student_id
     + hub_user_id จาก JWT.sub ใช้เป็น identifier เชื่อมกลับ Hub
     """
+
     __tablename__ = "members"
 
     id = uuid_pk()
@@ -56,8 +67,8 @@ class Member(Base):
     student_id = Column(String(50), nullable=True)
     faculty = Column(String(100), nullable=True)
 
-    role_in_sub = Column(String(50), nullable=False)   # member / librarian
-    status = Column(String(20), default="active", index=True)   # active/suspended
+    role_in_sub = Column(String(50), nullable=False)  # member / librarian
+    status = Column(String(20), default="active", index=True)  # active/suspended
 
     created_at = Column(DateTime, default=_utcnow)
     updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
@@ -72,11 +83,14 @@ class Borrowing(Base):
 
     Overdue คำนวณตอน query: status='active' AND due_at < NOW()
     """
+
     __tablename__ = "borrowings"
 
     id = uuid_pk()
     hub_user_id = Column(UUID(as_uuid=True), nullable=False, index=True)
-    book_id = Column(UUID(as_uuid=True), ForeignKey("books.id"), nullable=False, index=True)
+    book_id = Column(
+        UUID(as_uuid=True), ForeignKey("books.id"), nullable=False, index=True
+    )
 
     status = Column(String(20), default="requested", index=True)
     # requested / active / returned / cancelled
@@ -86,18 +100,35 @@ class Borrowing(Base):
     approved_at = Column(DateTime, nullable=True)
     approved_by_hub_user_id = Column(UUID(as_uuid=True), nullable=True)
 
-    borrowed_at = Column(DateTime, nullable=True)   # = approved_at, แต่เก็บแยกไว้สำหรับชัดเจน
+    borrowed_at = Column(DateTime, nullable=True)  # = approved_at, แต่เก็บแยกไว้สำหรับชัดเจน
     due_at = Column(DateTime, nullable=True, index=True)
 
     returned_at = Column(DateTime, nullable=True)
-    received_by_hub_user_id = Column(UUID(as_uuid=True), nullable=True)  # librarian ที่รับคืน
+    received_by_hub_user_id = Column(
+        UUID(as_uuid=True), nullable=True
+    )  # librarian ที่รับคืน
 
     cancelled_at = Column(DateTime, nullable=True)
     cancel_reason = Column(Text, nullable=True)
 
+    # B2: partial unique index — กัน race ที่ user ยิงขอยืมเล่มเดียวกันพร้อมกัน
+    # 2 tabs/devices. PostgreSQL จะปฏิเสธ INSERT ที่ 2 ด้วย IntegrityError
+    # โดยอนุญาตให้มี requested/active ของ (user, book) คู่เดียวเท่านั้น
+    # (returned/cancelled ไม่นับ — user ยืมซ้ำได้หลังคืน)
+    __table_args__ = (
+        Index(
+            "uq_borrowings_active_per_user_book",
+            "hub_user_id",
+            "book_id",
+            unique=True,
+            postgresql_where=text("status IN ('requested', 'active')"),
+        ),
+    )
+
 
 class LibraryAuditLog(Base):
     """audit log ของ Subsystem B — ทุก state-changing action."""
+
     __tablename__ = "library_audit_logs"
 
     id = uuid_pk()

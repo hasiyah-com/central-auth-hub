@@ -1,5 +1,8 @@
 """Member pages — search books, see borrows."""
-from datetime import datetime, timedelta
+
+from datetime import datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
+
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
@@ -17,10 +20,44 @@ templates = Jinja2Templates(directory="app/templates")
 
 # ── Helpers for Thai date / greeting ───────────────────
 _THAI_MONTHS = [
-    "มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน",
-    "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม",
+    "มกราคม",
+    "กุมภาพันธ์",
+    "มีนาคม",
+    "เมษายน",
+    "พฤษภาคม",
+    "มิถุนายน",
+    "กรกฎาคม",
+    "สิงหาคม",
+    "กันยายน",
+    "ตุลาคม",
+    "พฤศจิกายน",
+    "ธันวาคม",
 ]
 _THAI_DIGITS = str.maketrans("0123456789", "๐๑๒๓๔๕๖๗๘๙")
+
+# B4: Bangkok tz สำหรับ display (DB ยังเก็บ naive UTC ตามมาตรฐานโปรเจค)
+_BANGKOK_TZ = ZoneInfo("Asia/Bangkok")
+
+
+def _now_utc_naive() -> datetime:
+    """Naive UTC สำหรับ query DB (column type คือ DateTime ไม่มี tz)."""
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
+def _now_bangkok() -> datetime:
+    """tz-aware Bangkok สำหรับแสดงผล (greeting + date)."""
+    return datetime.now(_BANGKOK_TZ)
+
+
+def _short_display_name(user) -> str:
+    """B9: ป้องกัน IndexError ถ้า full_name เป็น whitespace ล้วน."""
+    parts = (user.full_name or "").strip().split()
+    if parts:
+        return parts[0]
+    email = user.email or ""
+    if "@" in email:
+        return email.split("@")[0] or "user"
+    return email or "user"
 
 
 def _thai_date_pieces(d: datetime) -> dict:
@@ -51,12 +88,11 @@ def home(
     if user is None:
         return RedirectResponse(url="/login", status_code=302)
 
-    now = datetime.utcnow()
+    now = _now_utc_naive()
     week_ahead = now + timedelta(days=7)
+    now_th = _now_bangkok()
 
-    member = (
-        db.query(Member).filter(Member.hub_user_id == user.hub_user_id).first()
-    )
+    member = db.query(Member).filter(Member.hub_user_id == user.hub_user_id).first()
     active_borrows = (
         db.query(Borrowing)
         .filter(
@@ -122,30 +158,33 @@ def home(
     )
     recommended_books = [b for b, _ in pop_rows]
 
-    # Thai date + greeting
-    date_th = _thai_date_pieces(now)
-    greeting = _greeting((now.hour + 7) % 24)  # shift UTC → Bangkok
+    # Thai date + greeting — ใช้ Bangkok tz ตรงๆ ไม่ต้องบวก offset
+    date_th = _thai_date_pieces(now_th)
+    greeting = _greeting(now_th.hour)
 
-    # Use the part before "@" as a short display name
-    nickname = (user.full_name or "").strip().split()[0] if user.full_name else (user.email or "").split("@")[0]
+    # Use a short display name — B9: ป้องกัน whitespace-only full_name
+    nickname = _short_display_name(user)
 
-    return templates.TemplateResponse("home.html", {
-        "request": request,
-        "user": user,
-        "member": member,
-        "active_borrows": active_borrows,
-        "active_borrows_count": active_borrows,
-        "pending_borrows": pending_borrows,
-        "max_borrows": settings.max_borrows_per_member,
-        "active_borrowings": active_borrowings,
-        "due_this_week": due_this_week,
-        "categories_top": categories_top,
-        "recommended_books": recommended_books,
-        "date_th": date_th,
-        "greeting": greeting,
-        "nickname": nickname,
-        "active_nav": "home",
-    })
+    return templates.TemplateResponse(
+        "home.html",
+        {
+            "request": request,
+            "user": user,
+            "member": member,
+            "active_borrows": active_borrows,
+            "active_borrows_count": active_borrows,
+            "pending_borrows": pending_borrows,
+            "max_borrows": settings.max_borrows_per_member,
+            "active_borrowings": active_borrowings,
+            "due_this_week": due_this_week,
+            "categories_top": categories_top,
+            "recommended_books": recommended_books,
+            "date_th": date_th,
+            "greeting": greeting,
+            "nickname": nickname,
+            "active_nav": "home",
+        },
+    )
 
 
 @router.get("/books", response_class=HTMLResponse)
@@ -188,15 +227,18 @@ def list_books(
         if row[0]
     ]
 
-    return templates.TemplateResponse("books.html", {
-        "request": request,
-        "user": user,
-        "books": books,
-        "categories": categories,
-        "current_q": q,
-        "current_category": category,
-        "active_nav": "catalog",
-    })
+    return templates.TemplateResponse(
+        "books.html",
+        {
+            "request": request,
+            "user": user,
+            "books": books,
+            "categories": categories,
+            "current_q": q,
+            "current_category": category,
+            "active_nav": "catalog",
+        },
+    )
 
 
 @router.get("/books/{book_id}", response_class=HTMLResponse)
@@ -235,15 +277,18 @@ def book_detail(
         .count()
     )
 
-    return templates.TemplateResponse("book_detail.html", {
-        "request": request,
-        "user": user,
-        "book": book,
-        "active_borrowing": active,
-        "active_count": active_count,
-        "max_borrows": settings.max_borrows_per_member,
-        "active_nav": "catalog",
-    })
+    return templates.TemplateResponse(
+        "book_detail.html",
+        {
+            "request": request,
+            "user": user,
+            "book": book,
+            "active_borrowing": active,
+            "active_count": active_count,
+            "max_borrows": settings.max_borrows_per_member,
+            "active_nav": "catalog",
+        },
+    )
 
 
 @router.get("/me", response_class=HTMLResponse)
@@ -256,9 +301,7 @@ def me(
     if user is None:
         return RedirectResponse(url="/login", status_code=302)
 
-    member = (
-        db.query(Member).filter(Member.hub_user_id == user.hub_user_id).first()
-    )
+    member = db.query(Member).filter(Member.hub_user_id == user.hub_user_id).first()
     rows = (
         db.query(Borrowing, Book)
         .join(Book, Book.id == Borrowing.book_id)
@@ -267,10 +310,13 @@ def me(
         .all()
     )
 
-    return templates.TemplateResponse("me.html", {
-        "request": request,
-        "user": user,
-        "member": member,
-        "rows": rows,
-        "active_nav": "loans",
-    })
+    return templates.TemplateResponse(
+        "me.html",
+        {
+            "request": request,
+            "user": user,
+            "member": member,
+            "rows": rows,
+            "active_nav": "loans",
+        },
+    )
