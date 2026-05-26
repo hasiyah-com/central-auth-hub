@@ -1,6 +1,8 @@
 """Reservation router — resident จองห้อง + ยกเลิก."""
+
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
 from fastapi.responses import RedirectResponse
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -58,7 +60,17 @@ def reserve_room(
         reason=reason.strip() or None,
     )
     db.add(reservation)
-    db.flush()
+
+    # ── D2 FIX: handle race จาก partial unique index ─────────────────────
+    # ถ้า user ยิงคำขอจองพร้อมกัน 2 tabs → DB จะ reject อันที่ 2
+    try:
+        db.flush()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail="มีการขอจองห้องพร้อมกัน — กรุณาลองใหม่",
+        )
 
     log_action(
         db,
