@@ -1,4 +1,6 @@
 """Configuration ของ Subsystem A (ระบบหอพัก)."""
+
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -7,12 +9,10 @@ class Settings(BaseSettings):
 
     # App
     app_env: str = "development"
-    session_secret_key: str = "dev-secret-change-me"
+    session_secret_key: str = "dev-secret-change-me"  # pragma: allowlist secret
 
     # Database (postgres-dorm container)
-    database_url: str = (
-        "postgresql+psycopg2://dorm:dormpass@postgres-dorm:5432/dorm_db"
-    )
+    database_url: str = "postgresql+psycopg2://dorm:dormpass@postgres-dorm:5432/dorm_db"  # pragma: allowlist secret
 
     # OAuth client credentials (จาก Hub Developer Portal)
     dorm_client_id: str = ""
@@ -29,12 +29,37 @@ class Settings(BaseSettings):
     # Session cookie
     session_cookie_name: str = "dorm_session"
     session_max_age_seconds: int = 3600
-    session_cookie_secure: bool = False    # dev: false, prod: true (HTTPS)
+    session_cookie_secure: bool = False  # dev: false, prod: true (HTTPS)
 
     @property
     def jwt_issuer(self) -> str:
         """Issuer ใน JWT ที่ Hub ออก (คงที่)."""
         return "https://hub.local"
+
+    # ── D6 FIX: production config validation (fail-fast) ──────────────────
+    @model_validator(mode="after")
+    def validate_production(self):
+        """ปฏิเสธ start ถ้า APP_ENV=production แต่ยังใช้ค่า default ที่ไม่ปลอดภัย."""
+        if self.app_env == "production":
+            errors = []
+            if (
+                self.session_secret_key == "dev-secret-change-me"
+            ):  # pragma: allowlist secret
+                errors.append(
+                    "session_secret_key ยังเป็นค่า default — ต้องสร้างใหม่ใน production"
+                )
+            if not self.session_cookie_secure:
+                errors.append("session_cookie_secure ต้อง True ใน production (HTTPS)")
+            if not self.dorm_client_secret:
+                errors.append("dorm_client_secret ต้องไม่ว่างใน production")
+            if not self.dorm_client_id:
+                errors.append("dorm_client_id ต้องไม่ว่างใน production")
+            if errors:
+                raise ValueError(
+                    "❌ Production config validation failed:\n  - "
+                    + "\n  - ".join(errors)
+                )
+        return self
 
 
 settings = Settings()
