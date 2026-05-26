@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# test_workflow.sh — Smoke test all 6 services
+# test_workflow.sh — Smoke test all 7 services
 # Run BEFORE and AFTER each dev session to catch regressions
 # Exit 0 = all pass, Exit 1 = at least one fail
 
@@ -30,6 +30,7 @@ check "Hub /health/db"         "http://localhost:8000/health/db"                
 check "Hub JWKS"               "http://localhost:8000/.well-known/jwks.json"     "200"
 check "Subsystem A (dorm)"     "http://localhost:8001/"                          "2xx"
 check "Subsystem B (library)"  "http://localhost:8002/"                          "2xx"
+check "Frontend Admin"         "http://localhost:3000/"                          "2xx"
 check "ML /health"             "http://localhost:9000/health"                    "200"
 
 echo ""
