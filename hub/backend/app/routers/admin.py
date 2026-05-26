@@ -6,22 +6,25 @@ Endpoints:
   GET  /admin/subsystems/pending           -> เฉพาะที่รออนุมัติ
   POST /admin/subsystems/{id}/approve       -> อนุมัติ subsystem
   POST /admin/subsystems/{id}/reject        -> ปฏิเสธ subsystem
+  GET  /admin/audit                         -> audit log viewer (filtered, paginated)
 """
+
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import func
 from sqlalchemy.orm import Session, aliased
 
 from app.database import get_db
 from app.deps import get_client_ip, require_hub_admin
-from app.models import AccessList, LoginSession, Subsystem, User
+from app.models import AccessList, AuditLog, LoginSession, Subsystem, User
 from app.services.audit_service import log_action
 
 router = APIRouter()
 
 
 # ============ Overview KPIs ============
+
 
 @router.get("/overview")
 def admin_overview(
@@ -30,13 +33,17 @@ def admin_overview(
 ):
     """KPI สรุปสำหรับหน้า Overview Dashboard. (admin only)"""
     total_users = db.query(func.count(User.id)).scalar()
-    active_users = db.query(func.count(User.id)).filter(User.status == "active").scalar()
+    active_users = (
+        db.query(func.count(User.id)).filter(User.status == "active").scalar()
+    )
     subsystems_count = db.query(func.count(Subsystem.id)).scalar()
     active_subsystems = (
         db.query(func.count(Subsystem.id)).filter(Subsystem.status == "active").scalar()
     )
     pending_subsystems = (
-        db.query(func.count(Subsystem.id)).filter(Subsystem.status == "pending").scalar()
+        db.query(func.count(Subsystem.id))
+        .filter(Subsystem.status == "pending")
+        .scalar()
     )
     total_logins = db.query(func.count(LoginSession.id)).scalar()
     blocked = (
@@ -57,6 +64,7 @@ def admin_overview(
 
 
 # ============ Subsystem list ============
+
 
 @router.get("/subsystems")
 def list_subsystems(
@@ -126,6 +134,7 @@ def list_pending_subsystems(
 
 
 # ============ Approve / Reject ============
+
 
 @router.post("/subsystems/{subsystem_id}/approve")
 def approve_subsystem(
@@ -203,4 +212,64 @@ def reject_subsystem(
         "name": subsystem.name,
         "status": "suspended",
         "message": f"ปฏิเสธ '{subsystem.name}' แล้ว",
+    }
+
+
+# ============ Audit log viewer ============
+
+
+@router.get("/audit")
+def list_audit_logs(
+    action: str | None = Query(
+        None, description="filter by action (e.g. subsystem_approved)"
+    ),
+    actor_id: str | None = Query(None, description="filter by actor user_id"),
+    target_type: str | None = Query(
+        None, description="filter by target_type (user/subsystem/etc.)"
+    ),
+    skip: int = 0,
+    limit: int = Query(50, ge=1, le=500),
+    admin: User = Depends(require_hub_admin),
+    db: Session = Depends(get_db),
+):
+    """List audit logs (admin only) — paginated, newest first, with optional filters.
+
+    Joins users on actor_id to surface the actor's email — UI-friendly without
+    a second roundtrip. Actor may be NULL (system action) → email returns None.
+    """
+    q = (
+        db.query(AuditLog, User.email)
+        .outerjoin(User, AuditLog.actor_id == User.id)
+        .order_by(AuditLog.created_at.desc())
+    )
+    if action:
+        q = q.filter(AuditLog.action == action)
+    if actor_id:
+        q = q.filter(AuditLog.actor_id == actor_id)
+    if target_type:
+        q = q.filter(AuditLog.target_type == target_type)
+
+    total = q.count()
+    rows = q.offset(skip).limit(limit).all()
+
+    items = [
+        {
+            "id": str(log.id),
+            "actor_id": str(log.actor_id) if log.actor_id else None,
+            "actor_email": email,
+            "action": log.action,
+            "target_type": log.target_type,
+            "target_id": str(log.target_id) if log.target_id else None,
+            "ip": str(log.ip) if log.ip else None,
+            "metadata": log.metadata_json,
+            "created_at": log.created_at.isoformat() if log.created_at else None,
+        }
+        for log, email in rows
+    ]
+
+    return {
+        "items": items,
+        "total": total,
+        "skip": skip,
+        "limit": limit,
     }
