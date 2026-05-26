@@ -1,10 +1,11 @@
 """FastAPI dependencies — โหลด session, ตรวจ role."""
+
 from fastapi import Cookie, Depends, HTTPException, Request, status
 from fastapi.responses import RedirectResponse
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.config import settings
-from app.database import get_db
 from app.models import Resident
 from app.services.session import load_session
 
@@ -31,9 +32,7 @@ class CurrentUser:
 
 
 def get_current_user_optional(
-    session_cookie: str | None = Cookie(
-        None, alias=settings.session_cookie_name
-    ),
+    session_cookie: str | None = Cookie(None, alias=settings.session_cookie_name),
 ) -> CurrentUser | None:
     """อ่าน session — คืน None ถ้าไม่ได้ login (สำหรับหน้า login เป็นต้น)."""
     data = load_session(session_cookie)
@@ -62,6 +61,7 @@ def require_role(*allowed_roles: str):
         # หรือ
         def view(user: CurrentUser = Depends(require_role("staff"))):
     """
+
     def _check(user: CurrentUser = Depends(get_current_user)) -> CurrentUser:
         if user.role_in_sub not in allowed_roles:
             raise HTTPException(
@@ -69,20 +69,21 @@ def require_role(*allowed_roles: str):
                 detail=f"ต้องเป็น role: {' หรือ '.join(allowed_roles)}",
             )
         return user
+
     return _check
 
 
-def get_or_create_resident(
-    user: CurrentUser, db: Session
-) -> Resident:
+def get_or_create_resident(user: CurrentUser, db: Session) -> Resident:
     """หา resident row จาก hub_user_id — สร้างใหม่ถ้ายังไม่มี (ครั้งแรกที่ login).
 
     เรียกหลังจาก login สำเร็จ — sync ข้อมูล profile จาก JWT claims
+
+    D3 FIX: handle race ถ้า user login พร้อมกัน 2 device →
+            ทั้งคู่อาจ pass `if resident is None` → ใช้ try/except IntegrityError
+            แล้ว re-query หลัง rollback
     """
     resident = (
-        db.query(Resident)
-        .filter(Resident.hub_user_id == user.hub_user_id)
-        .first()
+        db.query(Resident).filter(Resident.hub_user_id == user.hub_user_id).first()
     )
     if resident is None:
         resident = Resident(
@@ -96,7 +97,22 @@ def get_or_create_resident(
             status="active",
         )
         db.add(resident)
-        db.flush()
+        try:
+            db.flush()
+        except IntegrityError:
+            # อีก request สร้าง resident ไปแล้ว — rollback แล้ว re-query
+            db.rollback()
+            resident = (
+                db.query(Resident)
+                .filter(Resident.hub_user_id == user.hub_user_id)
+                .first()
+            )
+            if resident is None:
+                # ไม่น่าเกิด — INTEGRITY error แต่ไม่เจอใน DB
+                raise HTTPException(
+                    status_code=500,
+                    detail="ไม่สามารถสร้าง resident ได้ — ลอง login อีกครั้ง",
+                )
     else:
         # sync ข้อมูลล่าสุดจาก JWT (อาจเปลี่ยน เช่น เปลี่ยน role ใน Hub access_list)
         resident.email = user.email
