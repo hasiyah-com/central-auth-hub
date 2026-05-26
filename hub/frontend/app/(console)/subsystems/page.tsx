@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { Topbar } from "@/components/Topbar";
 import { DataTable, type Column } from "@/components/DataTable";
 import { Badge } from "@/components/Badge";
@@ -129,7 +130,7 @@ export default function SubsystemsPage() {
     <>
       <Topbar title="ระบบย่อย" />
       <main className="p-8 max-w-7xl mx-auto w-full">
-        <div className="mb-5 flex items-center gap-2">
+        <div className="mb-5 flex items-center gap-2 flex-wrap">
           {[
             ["", "ทั้งหมด"],
             ["pending", "รออนุมัติ"],
@@ -149,6 +150,12 @@ export default function SubsystemsPage() {
               {label}
             </button>
           ))}
+          <Link
+            href="/subsystems/pending"
+            className="ml-auto px-3 py-1.5 rounded-lg text-sm font-medium bg-brand-50 text-brand-700 border border-brand-200 hover:bg-brand-100"
+          >
+            หน้าอนุมัติแบบละเอียด →
+          </Link>
         </div>
 
         {msg && (
