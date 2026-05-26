@@ -137,3 +137,24 @@ class SecretRetrievalToken(Base):
     expires_at = Column(DateTime, nullable=False)
     used_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class MLFeedback(Base):
+    """Admin feedback สำหรับ ML false/true positive — ใช้เป็น ground truth ตอน retrain.
+
+    1 session = 1 label (unique constraint) แก้ทับได้ผ่าน PUT-semantics ใน POST endpoint.
+    """
+    __tablename__ = "ml_feedback"
+
+    id = uuid_pk()
+    session_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("login_sessions.id"),
+        unique=True,
+        index=True,
+        nullable=False,
+    )
+    label = Column(String(20), nullable=False)   # false_positive | true_positive | normal_confirmed
+    note = Column(Text, nullable=True)
+    marked_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)

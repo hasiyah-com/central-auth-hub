@@ -1,4 +1,5 @@
 """FastAPI entrypoint."""
+
 import os
 from contextlib import asynccontextmanager
 
@@ -9,7 +10,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from app.config import settings
 from app.database import Base, engine
 from app.hooks import register_default_listeners
-from app.routers import health, users, admin, auth, developer, secret, oauth
+from app.routers import health, users, admin, ml_admin, auth, developer, secret, oauth
 from app.services.jwt_service import get_jwks
 from app.services.request_logger import RequestLoggerMiddleware
 
@@ -53,7 +54,11 @@ app.add_middleware(SessionMiddleware, secret_key=settings.secret_key)
 # CORS — allow frontend during development
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:3001", "http://localhost:3002"],
+    allow_origins=[
+        "http://localhost:3000",
+        "http://localhost:3001",
+        "http://localhost:3002",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -67,9 +72,11 @@ app.include_router(developer.router, prefix="/developer", tags=["Developer Porta
 app.include_router(secret.router, prefix="/secret", tags=["Secret Retrieval"])
 app.include_router(users.router, prefix="/admin/users", tags=["Admin: Users"])
 app.include_router(admin.router, prefix="/admin", tags=["Admin"])
+app.include_router(ml_admin.router, prefix="/admin/ml", tags=["Admin · ML"])
 
 
 # ============ JWKS endpoint (OIDC discovery standard path) ============
+
 
 @app.get("/.well-known/jwks.json", tags=["Authentication"])
 def jwks():
