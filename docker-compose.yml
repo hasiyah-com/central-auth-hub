@@ -135,6 +135,26 @@ services:
       - ./hub/subsystem-library:/app
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
+  # ============ Hub Admin Frontend — Next.js (Week 8) ============
+  hub-frontend:
+    build:
+      context: ./hub/frontend
+      dockerfile: Dockerfile
+    container_name: hub-frontend
+    environment:
+      NEXT_PUBLIC_HUB_URL: ${NEXT_PUBLIC_HUB_URL:-http://localhost:8000}
+      HUB_INTERNAL_URL: http://hub-backend:8000
+      NODE_ENV: ${NODE_ENV:-development}
+    ports:
+      - "3000:3000"
+    depends_on:
+      hub-backend:
+        condition: service_started
+    volumes:
+      - ./hub/frontend:/app
+      - /app/node_modules
+      - /app/.next
+
 volumes:
   postgres_data:
   postgres_dorm_data:
