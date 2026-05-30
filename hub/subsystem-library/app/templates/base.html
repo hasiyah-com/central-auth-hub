@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Trirong:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400;1,500&family=Sarabun:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/static/style.css?v=vintage-2026-05-22b">
+  <link rel="stylesheet" href="/static/style.css?v=vintage-2026-05-27-logout">
 </head>
 <body>
 
@@ -93,6 +93,15 @@
       <div class="sidebar-quote-mark">❦</div>
       <em>"หนังสือคือเพื่อนที่ซื่อสัตย์ที่สุดของมนุษย์"</em>
       <div class="sidebar-quote-by">— เออร์เนสต์ เฮมิงเวย์</div>
+    </div>
+
+    {# ── Section: ออกจากระบบ ── #}
+    <div class="nav-section sidebar-foot">
+      <a href="/logout" class="nav-item nav-logout"
+         onclick="return confirm('ยืนยันออกจากระบบ?');">
+        <span class="nav-ico">⎋</span>
+        <span>ออกจากระบบ</span>
+      </a>
     </div>
   </aside>
 

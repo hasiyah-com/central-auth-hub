@@ -804,6 +804,23 @@ footer.bg-white {
 .sidebar-quote em { color: var(--ink-2); font-style: italic; }
 .sidebar-quote-by { margin-top: 6px; opacity: .7; }
 
+/* Logout — placed at the bottom of the sidebar, separated by a thin rule */
+.sidebar-foot {
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px dashed var(--rule);
+}
+.nav-logout {
+  color: var(--ink-3);
+}
+.nav-logout .nav-ico { color: var(--ink-3); }
+.nav-logout:hover {
+  background: color-mix(in oklab, var(--danger, #a23a2a) 10%, transparent);
+  color: var(--danger, #a23a2a);
+  border-left-color: var(--danger, #a23a2a);
+}
+.nav-logout:hover .nav-ico { color: var(--danger, #a23a2a); }
+
 /* main content area (next to sidebar) */
 .main-area {
   padding: 36px 48px;
