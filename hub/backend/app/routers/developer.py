@@ -6,6 +6,7 @@ Endpoints:
   POST /developer/subsystems/{id}/whitelist -> upload whitelist CSV
   GET  /developer/subsystems/{id}/whitelist -> ดู whitelist ปัจจุบัน
 """
+
 import csv
 import io
 from datetime import datetime, timedelta
@@ -18,7 +19,9 @@ from app.config import settings
 from app.database import get_db
 from app.deps import get_client_ip, require_developer
 from app.models import AccessList, SecretRetrievalToken, Subsystem, User
+from app.rate_limiter import limiter
 from app.services.audit_service import log_action
+from app.services.email_service import send_secret_retrieval_email
 from app.services.secret_service import (
     encrypt_secret,
     generate_client_credentials,
@@ -31,12 +34,21 @@ router = APIRouter()
 
 # scope ที่อนุญาตให้ subsystem ขอได้
 ALLOWED_SCOPES = {
-    "email", "name", "student_id", "employee_id",
-    "faculty", "major", "year", "position", "phone", "address",
+    "email",
+    "name",
+    "student_id",
+    "employee_id",
+    "faculty",
+    "major",
+    "year",
+    "position",
+    "phone",
+    "address",
 }
 
 
 # ============ Schemas ============
+
 
 class SubsystemCreate(BaseModel):
     name: str
@@ -62,7 +74,9 @@ class WhitelistAddUser(BaseModel):
 
 # ============ 1. ลงทะเบียน subsystem ============
 
+
 @router.post("/subsystems")
+@limiter.limit(settings.rate_limit_register)
 def register_subsystem(
     payload: SubsystemCreate,
     request: Request,
@@ -92,14 +106,14 @@ def register_subsystem(
         name=payload.name,
         description=payload.description,
         client_id=client_id,
-        client_secret_hash=hash_secret(client_secret),   # เก็บ hash เท่านั้น
+        client_secret_hash=hash_secret(client_secret),  # เก็บ hash เท่านั้น
         redirect_uris=payload.redirect_uris,
         scope=payload.scope,
         status="pending",
         owner_user_id=user.id,
     )
     db.add(subsystem)
-    db.flush()   # ทำให้ได้ subsystem.id ก่อน commit
+    db.flush()  # ทำให้ได้ subsystem.id ก่อน commit
 
     # สร้าง one-time retrieval token (อายุ 15 นาที)
     # plaintext token ส่งให้ผู้ใช้ทาง URL — DB เก็บเฉพาะ HMAC ของ token
@@ -107,7 +121,7 @@ def register_subsystem(
     retrieval = SecretRetrievalToken(
         token=hash_retrieval_token(plaintext_token),
         subsystem_id=subsystem.id,
-        secret_encrypted=encrypt_secret(client_secret),   # encrypt ชั่วคราว
+        secret_encrypted=encrypt_secret(client_secret),  # encrypt ชั่วคราว
         expires_at=datetime.utcnow() + timedelta(minutes=15),
     )
     db.add(retrieval)
@@ -126,20 +140,46 @@ def register_subsystem(
     db.commit()
 
     retrieval_url = f"{settings.hub_base_url}/secret/retrieve?token={plaintext_token}"
-    return {
+
+    # ส่ง secret retrieval link ทาง email ของผู้ลงทะเบียน
+    # ปลอดภัยกว่าการแสดงบนหน้าจอ (กันคนข้างหลังเห็น)
+    # ถ้า SMTP ไม่ตั้งค่า / ส่งล้มเหลว → fallback คืน URL ตรงในกรณี dev mode
+    email_ok = send_secret_retrieval_email(
+        to_email=user.email,
+        subsystem_name=subsystem.name,
+        retrieval_url=retrieval_url,
+        expires_at=retrieval.expires_at,
+        client_id=client_id,
+    )
+
+    response: dict = {
         "subsystem_id": str(subsystem.id),
         "client_id": client_id,
         "status": "pending",
         "message": "ลงทะเบียนสำเร็จ — รอ admin อนุมัติ",
-        "secret_retrieval_url": retrieval_url,
-        "note": (
-            "ในระบบจริง URL นี้จะถูกส่งทาง email — "
-            "ลิงก์หมดอายุใน 15 นาที และดู client_secret ได้เพียงครั้งเดียว"
-        ),
     }
+
+    if email_ok:
+        response["secret_delivery"] = "email"  # pragma: allowlist secret
+        response["secret_sent_to"] = user.email  # pragma: allowlist secret
+        response["note"] = (
+            f"ลิงก์ดู client_secret ถูกส่งไปที่ {user.email} แล้ว — "
+            "ตรวจสอบ inbox + จดเก็บภายใน 15 นาที (ดูได้ครั้งเดียว)"
+        )
+    else:
+        # Fallback dev mode — ส่งคืน URL ใน response (ไม่ปลอดภัยใน production)
+        response["secret_delivery"] = "url"  # pragma: allowlist secret
+        response["secret_retrieval_url"] = retrieval_url  # pragma: allowlist secret
+        response["warning"] = (
+            "Email ส่งไม่สำเร็จ (SMTP ไม่ตั้งค่า หรือ error) — "
+            "ใช้ลิงก์นี้ดู secret ทันที (ครั้งเดียว, 15 นาที)"
+        )
+
+    return response
 
 
 # ============ 2. ดู subsystem ของฉัน ============
+
 
 @router.get("/subsystems", response_model=list[SubsystemResponse])
 def my_subsystems(
@@ -163,6 +203,7 @@ def my_subsystems(
 
 
 # ============ 3. upload whitelist CSV ============
+
 
 @router.post("/subsystems/{subsystem_id}/whitelist")
 def upload_whitelist(
@@ -192,7 +233,7 @@ def upload_whitelist(
         )
 
     # อ่าน + parse CSV
-    content = file.file.read().decode("utf-8-sig")   # utf-8-sig รองรับ BOM จาก Excel
+    content = file.file.read().decode("utf-8-sig")  # utf-8-sig รองรับ BOM จาก Excel
     reader = csv.DictReader(io.StringIO(content))
     if "email" not in (reader.fieldnames or []):
         raise HTTPException(status_code=400, detail="CSV ต้องมี column 'email'")
@@ -226,12 +267,14 @@ def upload_whitelist(
             continue
 
         # เพิ่มเข้า access_list
-        db.add(AccessList(
-            subsystem_id=subsystem.id,
-            user_id=target.id,
-            role_in_sub=role,
-            granted_by=user.id,
-        ))
+        db.add(
+            AccessList(
+                subsystem_id=subsystem.id,
+                user_id=target.id,
+                role_in_sub=role,
+                granted_by=user.id,
+            )
+        )
         added.append(email)
 
     log_action(
@@ -255,6 +298,7 @@ def upload_whitelist(
 
 
 # ============ 4. ดู whitelist ปัจจุบัน ============
+
 
 @router.get("/subsystems/{subsystem_id}/whitelist")
 def get_whitelist(
@@ -298,6 +342,7 @@ def get_whitelist(
 
 # ============ 5. เพิ่ม user ทีละคน (หลังลงทะเบียนแล้ว) ============
 
+
 def _get_owned_subsystem(subsystem_id: str, user: User, db: Session) -> Subsystem:
     """helper — หา subsystem ที่ user เป็นเจ้าของ (ใช้ซ้ำหลาย endpoint)."""
     subsystem = (
@@ -306,9 +351,7 @@ def _get_owned_subsystem(subsystem_id: str, user: User, db: Session) -> Subsyste
         .first()
     )
     if not subsystem:
-        raise HTTPException(
-            status_code=404, detail="ไม่พบ subsystem หรือคุณไม่ใช่เจ้าของ"
-        )
+        raise HTTPException(status_code=404, detail="ไม่พบ subsystem หรือคุณไม่ใช่เจ้าของ")
     return subsystem
 
 
@@ -354,12 +397,14 @@ def add_user_to_whitelist(
         existing.granted_by = user.id
         action = "whitelist_user_restored"
     else:
-        db.add(AccessList(
-            subsystem_id=subsystem.id,
-            user_id=target.id,
-            role_in_sub=payload.role,
-            granted_by=user.id,
-        ))
+        db.add(
+            AccessList(
+                subsystem_id=subsystem.id,
+                user_id=target.id,
+                role_in_sub=payload.role,
+                granted_by=user.id,
+            )
+        )
         action = "whitelist_user_added"
 
     log_action(
@@ -382,6 +427,7 @@ def add_user_to_whitelist(
 
 
 # ============ 6. ลบ user ออกจาก whitelist ============
+
 
 @router.delete("/subsystems/{subsystem_id}/whitelist/{user_id}")
 def remove_user_from_whitelist(

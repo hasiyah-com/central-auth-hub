@@ -1,4 +1,5 @@
 """Application configuration loaded from environment."""
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # default ที่ห้ามใช้ใน production — ถ้าเจอตัวเหล่านี้ + app_env=production จะ fail-fast
@@ -13,11 +14,11 @@ class Settings(BaseSettings):
 
     # App
     app_env: str = "development"
-    secret_key: str = "dev-secret-change-me"          # session middleware + HMAC
+    secret_key: str = "dev-secret-change-me"  # session middleware + HMAC
     # คีย์แยกสำหรับ encrypt client_secret ใน DB (ห้ามใช้ secret_key เดียวกัน)
     # ถ้าว่างใน development จะ fallback ไปใช้ secret_key พร้อม warning
     secret_encryption_key: str = ""
-    hub_base_url: str = "http://localhost:8000"       # ใช้สร้าง one-time URL
+    hub_base_url: str = "http://localhost:8000"  # ใช้สร้าง one-time URL
     # ปิด Swagger UI ใน production — กันคนภายนอกเห็น API tree
     enable_docs: bool = True
 
@@ -42,10 +43,27 @@ class Settings(BaseSettings):
     # OAuth flow (subsystem) — callback ที่ Google ส่งกลับตอน subsystem login
     oauth_callback_uri: str = "http://localhost:8000/oauth/callback"
 
+    # Admin frontend (Week 8 — Next.js) — ถ้าเซตและ user เป็น hub_admin
+    # /auth/google/callback จะ redirect ไป {admin_frontend_url}/auth/callback?token=...
+    # แทนการคืน JSON ตรง ๆ (เพื่อ flow login ผ่าน browser ของ admin dashboard)
+    admin_frontend_url: str = "http://localhost:3000"
+
+    # CORS — comma-separated origin list (dev default = localhost:3000-3002)
+    # Production: ตั้งเป็น https://admin.<domain>,https://dorm.<domain>,... และตัด localhost ออก
+    cors_allow_origins: str = (
+        "http://localhost:3000,http://localhost:3001,http://localhost:3002"
+    )
+
+    # Rate limit (per-IP) — slowapi
+    # คา่ default เผื่อให้ admin gh + dev convenience; production ลดได้
+    rate_limit_login: str = "10/minute"  # /auth/google/login + callback
+    rate_limit_token: str = "20/minute"  # /oauth/token + /oauth/authorize
+    rate_limit_register: str = "5/minute"  # /developer/subsystems POST
+
     # ML Service
     ml_service_url: str = "http://ml-service:9000"
     ml_timeout_seconds: float = 2.0
-    ml_shadow_mode: bool = True   # True = log score แต่ไม่ block / False = enforce
+    ml_shadow_mode: bool = True  # True = log score แต่ไม่ block / False = enforce
 
     # GeoIP (MaxMind GeoLite2 offline DB) — fail-safe ถ้าไฟล์หาย
     # ดาวน์โหลดฟรีที่ https://www.maxmind.com/en/geolite2/signup

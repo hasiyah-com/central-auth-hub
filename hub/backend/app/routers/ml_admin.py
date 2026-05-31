@@ -6,6 +6,7 @@ Endpoints:
   GET  /admin/ml/threshold/preview                  -> จำลอง threshold ใหม่กับ scores ที่มีอยู่
   GET  /admin/ml/users/{user_id}/sessions           -> timeline session ของ user คนเดียว
 """
+
 from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -16,9 +17,10 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.database import get_db
 from app.deps import get_client_ip, require_hub_admin
-from app.models import LoginSession, MLFeedback, User
+from app.models import LoginSession, MLFeedback, Subsystem, User
 from app.services.audit_service import log_action
 from app.services.feature_extraction import browser_family
+from app.services.ip_blacklist import add_to_blacklist, remove_from_blacklist
 
 router = APIRouter()
 
@@ -28,6 +30,7 @@ _DEFAULT_MFA = 0.40
 
 
 # ============ P1-4: Overview KPIs ============
+
 
 @router.get("/overview")
 def ml_overview(
@@ -44,11 +47,7 @@ def ml_overview(
     cutoff = now - timedelta(days=days)
 
     # ดึงทุก session ในช่วงเวลา — ใช้ Python bucket (หลีกเลี่ยง edge case ของ Numeric(3,2))
-    sessions = (
-        db.query(LoginSession)
-        .filter(LoginSession.created_at >= cutoff)
-        .all()
-    )
+    sessions = db.query(LoginSession).filter(LoginSession.created_at >= cutoff).all()
     total_logins = len(sessions)
 
     # Score histogram — 10 buckets [0.0-0.1, 0.1-0.2, ..., 0.9-1.0]
@@ -68,10 +67,12 @@ def ml_overview(
         d = s.decision or "unknown"
         decision_counter[d] = decision_counter.get(d, 0) + 1
 
-    # Top 20 anomalies — join User เพื่อดึง email
+    # Top 20 anomalies — join User เพื่อดึง email + outer-join Subsystem
+    # (subsystem_id อาจเป็น NULL กรณี Hub-direct login = "ระบบหลัก")
     top_rows = (
-        db.query(LoginSession, User)
+        db.query(LoginSession, User, Subsystem)
         .join(User, User.id == LoginSession.user_id)
+        .outerjoin(Subsystem, Subsystem.id == LoginSession.subsystem_id)
         .filter(
             LoginSession.created_at >= cutoff,
             LoginSession.anomaly_score.is_not(None),
@@ -83,14 +84,23 @@ def ml_overview(
     top_anomalies = [
         {
             "session_id": str(sess.id),
+            "user_id": str(u.id),
             "user_email": u.email,
+            "subsystem_name": sub.name if sub else None,  # None = Hub-direct
+            "subsystem_id": str(sub.id) if sub else None,
             "score": float(sess.anomaly_score),
             "decision": sess.decision,
             "ip": str(sess.ip) if sess.ip else None,
             "geo_country": sess.geo_country,
+            "geo_city": sess.geo_city,
+            "os_name": sess.os_name,
+            "browser": sess.browser,
+            "device_type": sess.device_type,
+            "is_attack_ip": sess.is_attack_ip,
+            "is_account_takeover": sess.is_account_takeover,
             "created_at": sess.created_at,
         }
-        for sess, u in top_rows
+        for sess, u, sub in top_rows
     ]
 
     return {
@@ -114,8 +124,9 @@ def ml_overview(
 
 # ============ P1-5: Feedback loop ============
 
+
 class FeedbackBody(BaseModel):
-    label: str   # false_positive | true_positive | normal_confirmed
+    label: str  # false_positive | true_positive | normal_confirmed
     note: str | None = None
 
 
@@ -145,9 +156,7 @@ def add_feedback(
         raise HTTPException(status_code=404, detail="ไม่พบ login session")
 
     # Upsert
-    existing = (
-        db.query(MLFeedback).filter(MLFeedback.session_id == sess.id).first()
-    )
+    existing = db.query(MLFeedback).filter(MLFeedback.session_id == sess.id).first()
     if existing:
         existing.label = body.label
         existing.note = body.note
@@ -163,6 +172,13 @@ def add_feedback(
         )
         db.add(existing)
         action_name = "ml_feedback_added"
+
+    # Sync ground truth label → login_sessions.is_account_takeover
+    # (ตรงกับ RBA dataset ของ Wiefling 2022 — "Is Account Takeover" column)
+    if body.label == "true_positive":
+        sess.is_account_takeover = True
+    elif body.label in ("false_positive", "normal_confirmed"):
+        sess.is_account_takeover = False
 
     log_action(
         db,
@@ -185,12 +201,69 @@ def add_feedback(
     }
 
 
+# ============ P1-5b: Toggle Attack IP ============
+
+
+@router.post("/sessions/{session_id}/toggle-attack-ip")
+def toggle_attack_ip(
+    session_id: str,
+    request: Request,
+    admin: User = Depends(require_hub_admin),
+    db: Session = Depends(get_db),
+):
+    """Toggle is_attack_ip flag สำหรับ session (admin mark IP ว่าเป็น attacker).
+
+    ตรงกับ RBA dataset ของ Wiefling 2022 — "Is Attack IP" column.
+    """
+    sess = db.query(LoginSession).filter(LoginSession.id == session_id).first()
+    if not sess:
+        raise HTTPException(status_code=404, detail="ไม่พบ login session")
+
+    new_val = not sess.is_attack_ip
+    sess.is_attack_ip = new_val
+
+    # Sync IP Blacklist — mark → เพิ่มเข้า blacklist, unmark → ลบออก
+    session_ip = str(sess.ip) if sess.ip else None
+    if session_ip:
+        if new_val:
+            add_to_blacklist(
+                db,
+                session_ip,
+                reason="Marked from ML dashboard",
+                added_by_id=str(admin.id),
+            )
+        else:
+            remove_from_blacklist(db, session_ip)
+
+    log_action(
+        db,
+        actor_id=admin.id,
+        action="attack_ip_toggled",
+        target_type="login_session",
+        target_id=sess.id,
+        ip=get_client_ip(request),
+        metadata={"is_attack_ip": new_val, "session_ip": session_ip},
+    )
+    db.commit()
+
+    return {
+        "session_id": session_id,
+        "is_attack_ip": new_val,
+        "blacklist_synced": session_ip is not None,
+    }
+
+
 # ============ P1-6: Threshold preview ============
+
 
 @router.get("/threshold/preview")
 def threshold_preview(
-    block: float = Query(_DEFAULT_BLOCK, ge=0.0, le=1.0, description="proposed block threshold"),
-    mfa: float = Query(_DEFAULT_MFA, ge=0.0, le=1.0, description="proposed mfa threshold"),
+    block: float = Query(
+        _DEFAULT_BLOCK, ge=0.0, le=1.0, description="proposed block threshold"
+    ),
+    mfa: float = Query(
+        _DEFAULT_MFA, ge=0.0, le=1.0, description="proposed mfa threshold"
+    ),
     days: int = Query(30, ge=1, le=365, description="จำนวนวันย้อนหลัง"),
     admin: User = Depends(require_hub_admin),
     db: Session = Depends(get_db),
@@ -274,6 +347,7 @@ def threshold_preview(
 
 # ============ P1-7: Per-user session timeline ============
 
+
 @router.get("/users/{user_id}/sessions")
 def user_session_timeline(
     user_id: str,
@@ -316,11 +390,18 @@ def user_session_timeline(
             "sessions": [
                 {
                     "id": str(sess.id),
-                    "score": float(sess.anomaly_score) if sess.anomaly_score is not None else None,
+                    "score": float(sess.anomaly_score)
+                    if sess.anomaly_score is not None
+                    else None,
                     "decision": sess.decision,
                     "ip": str(sess.ip) if sess.ip else None,
                     "geo_country": sess.geo_country,
-                    "browser": browser_family(sess.user_agent),
+                    "geo_city": sess.geo_city,
+                    "os_name": sess.os_name,
+                    "browser": sess.browser or browser_family(sess.user_agent),
+                    "device_type": sess.device_type,
+                    "is_attack_ip": sess.is_attack_ip,
+                    "is_account_takeover": sess.is_account_takeover,
                     "created_at": sess.created_at,
                     "feedback_label": fb.label if fb else None,
                 }

@@ -1,13 +1,21 @@
 """SQLAlchemy models matching the Hub Database schema."""
+
 import uuid
 from datetime import datetime
 
 from sqlalchemy import (
-    Boolean, Column, DateTime, ForeignKey, Integer,
-    String, Text, UniqueConstraint, JSON, Numeric
+    Boolean,
+    Column,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    JSON,
+    Numeric,
 )
 from sqlalchemy.dialects.postgresql import UUID, ARRAY, INET
-from sqlalchemy.orm import relationship
 
 from app.database import Base
 
@@ -18,16 +26,19 @@ def uuid_pk():
 
 class User(Base):
     """ผู้ใช้ในระบบ (seed 100 คนตอน setup)"""
+
     __tablename__ = "users"
 
     id = uuid_pk()
     google_sub = Column(String(255), unique=True, nullable=True, index=True)
     email = Column(String(255), unique=True, nullable=False, index=True)
     full_name = Column(String(255), nullable=False)
-    user_type = Column(String(20), nullable=False, index=True)  # student/teacher/staff/admin
+    user_type = Column(
+        String(20), nullable=False, index=True
+    )  # student/teacher/staff/admin
 
     # University info
-    identifier = Column(String(50), index=True)   # student_id / employee_id
+    identifier = Column(String(50), index=True)  # student_id / employee_id
     faculty = Column(String(100), index=True)
     major = Column(String(100))
     year_or_position = Column(String(50))
@@ -37,7 +48,9 @@ class User(Base):
     address = Column(Text)
 
     # Metadata
-    status = Column(String(20), default="active", index=True)  # active/suspended/deleted
+    status = Column(
+        String(20), default="active", index=True
+    )  # active/suspended/deleted
     is_hub_admin = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -45,6 +58,7 @@ class User(Base):
 
 class Subsystem(Base):
     """ระบบย่อยที่ลงทะเบียนกับ Hub"""
+
     __tablename__ = "subsystems"
 
     id = uuid_pk()
@@ -54,7 +68,9 @@ class Subsystem(Base):
     client_secret_hash = Column(Text, nullable=False)
     redirect_uris = Column(ARRAY(Text), nullable=False)
     scope = Column(ARRAY(String), nullable=False)
-    status = Column(String(20), default="pending", index=True)  # pending/active/suspended
+    status = Column(
+        String(20), default="pending", index=True
+    )  # pending/active/suspended
     owner_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"))
     created_at = Column(DateTime, default=datetime.utcnow)
     approved_at = Column(DateTime, nullable=True)
@@ -62,20 +78,30 @@ class Subsystem(Base):
 
 class AccessList(Base):
     """Whitelist ของ user ที่เข้าถึงแต่ละ subsystem ได้"""
+
     __tablename__ = "access_list"
     __table_args__ = (UniqueConstraint("subsystem_id", "user_id"),)
 
     id = uuid_pk()
-    subsystem_id = Column(UUID(as_uuid=True), ForeignKey("subsystems.id"), nullable=False, index=True)
-    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True)
-    role_in_sub = Column(String(50))   # e.g., resident/staff/admin per subsystem
+    subsystem_id = Column(
+        UUID(as_uuid=True), ForeignKey("subsystems.id"), nullable=False, index=True
+    )
+    user_id = Column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True
+    )
+    role_in_sub = Column(String(50))  # e.g., resident/staff/admin per subsystem
     granted_by = Column(UUID(as_uuid=True), ForeignKey("users.id"))
     granted_at = Column(DateTime, default=datetime.utcnow)
     revoked_at = Column(DateTime, nullable=True)
 
 
 class LoginSession(Base):
-    """บันทึกทุก login (สำหรับ audit + ML training)"""
+    """บันทึกทุก login (สำหรับ audit + ML training).
+
+    Columns ตรงกับ RBA dataset ของ Wiefling et al. (2022) เพื่อให้
+    เปรียบเทียบกับงานวิจัยต้นฉบับได้โดยตรง.
+    """
+
     __tablename__ = "login_sessions"
 
     id = uuid_pk()
@@ -85,17 +111,30 @@ class LoginSession(Base):
     user_agent = Column(Text)
     geo_country = Column(String(50))
     geo_city = Column(String(100))
+
+    # Parsed จาก user_agent (ตรงกับ RBA dataset columns)
+    os_name = Column(String(100))  # "Windows 10", "iOS 16.0", "Android 13"
+    browser = Column(String(100))  # "Chrome 120.0.3538", "Firefox 115.0"
+    device_type = Column(String(20))  # "mobile", "desktop", "tablet", "bot"
+
+    # ML
     anomaly_score = Column(Numeric(3, 2))
-    decision = Column(String(20))   # pass/mfa/block
+    decision = Column(String(20))  # pass/mfa/block/would_mfa/would_block
+
+    # Ground truth labels (ตรงกับ RBA dataset columns)
+    is_attack_ip = Column(Boolean, default=False)  # IP อยู่ใน blacklist
+    is_account_takeover = Column(Boolean, default=False)  # admin ยืนยันว่าเป็น attacker จริง
+
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
 
 
 class AuditLog(Base):
     """ทุกการกระทำของ admin + ระบบ"""
+
     __tablename__ = "audit_logs"
 
     id = uuid_pk()
-    actor_id = Column(UUID(as_uuid=True), nullable=True)   # NULL ถ้าเป็น system
+    actor_id = Column(UUID(as_uuid=True), nullable=True)  # NULL ถ้าเป็น system
     action = Column(String(100), nullable=False, index=True)
     target_type = Column(String(50))
     target_id = Column(UUID(as_uuid=True), nullable=True)
@@ -110,6 +149,7 @@ class RequestLog(Base):
     หมายเหตุ: user_id ไม่มี FK constraint — เก็บได้แม้ user ถูกลบไปแล้ว
              (สำหรับ failed login ที่ไม่มี user_id ก็ใส่ NULL)
     """
+
     __tablename__ = "request_logs"
 
     id = uuid_pk()
@@ -126,14 +166,17 @@ class RequestLog(Base):
 
 class SecretRetrievalToken(Base):
     """One-time link สำหรับให้นักพัฒนาดู client_secret ครั้งเดียว"""
+
     __tablename__ = "secret_retrieval_tokens"
 
     id = uuid_pk()
     # เก็บเป็น HMAC-SHA256 ของ plaintext token (hex 64 chars) — ไม่เก็บ plaintext
     # ถ้า DB หลุดก็เอา token ที่นี่ไป retrieve ไม่ได้
     token = Column(String(128), unique=True, nullable=False, index=True)
-    subsystem_id = Column(UUID(as_uuid=True), ForeignKey("subsystems.id"), nullable=False)
-    secret_encrypted = Column(Text, nullable=False)   # AES-encrypted, ลบหลังดู
+    subsystem_id = Column(
+        UUID(as_uuid=True), ForeignKey("subsystems.id"), nullable=False
+    )
+    secret_encrypted = Column(Text, nullable=False)  # AES-encrypted, ลบหลังดู
     expires_at = Column(DateTime, nullable=False)
     used_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -144,6 +187,7 @@ class MLFeedback(Base):
 
     1 session = 1 label (unique constraint) แก้ทับได้ผ่าน PUT-semantics ใน POST endpoint.
     """
+
     __tablename__ = "ml_feedback"
 
     id = uuid_pk()
@@ -154,7 +198,46 @@ class MLFeedback(Base):
         index=True,
         nullable=False,
     )
-    label = Column(String(20), nullable=False)   # false_positive | true_positive | normal_confirmed
+    label = Column(
+        String(20), nullable=False
+    )  # false_positive | true_positive | normal_confirmed
     note = Column(Text, nullable=True)
     marked_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class ApiAlert(Base):
+    """Rule-based API anomaly alerts — ตรวจจับพฤติกรรม API ผิดปกติหลัง login.
+
+    อ้างอิง: OWASP API Security Top 10 (2023) API4 — Unrestricted Resource Consumption
+             NIST SP 800-228 — Guidelines for API Protection
+    """
+
+    __tablename__ = "api_alerts"
+
+    id = uuid_pk()
+    rule = Column(String(50), nullable=False, index=True)
+    # e.g. "excessive_requests", "high_error_rate", "unauthorized_probing", "bot_pattern"
+    severity = Column(String(20), nullable=False)  # warning | critical
+    ip = Column(INET, index=True)
+    user_id = Column(UUID(as_uuid=True), nullable=True, index=True)
+    detail = Column(JSON)
+    # e.g. {"count": 150, "window_sec": 60, "threshold": 100, "sample_paths": [...]}
+    resolved = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+
+
+class IpBlacklist(Base):
+    """รายการ IP ที่ admin ยืนยันว่าเป็น attacker — เช็คอัตโนมัติตอน login.
+
+    อ้างอิง: Wiefling et al. (2022) RBA dataset — "Is Attack IP" column
+             NIST SP 800-228 — API protection guidelines
+    """
+
+    __tablename__ = "ip_blacklist"
+
+    id = uuid_pk()
+    ip_address = Column(String(50), unique=True, nullable=False, index=True)
+    reason = Column(Text, nullable=True)
+    added_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)

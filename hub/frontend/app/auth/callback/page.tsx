@@ -1,36 +1,66 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 export default function CallbackPage() {
   const router = useRouter();
   const params = useSearchParams();
   const [error, setError] = useState<string | null>(null);
+  // กัน React StrictMode รัน effect ซ้ำใน dev (2x mount) — ใช้ ref guard
+  const ran = useRef(false);
 
   useEffect(() => {
+    if (ran.current) return;
+    ran.current = true;
+
     const token = params.get("token");
     if (!token) {
       setError("ไม่ได้รับ token จาก Hub — กรุณา login ใหม่");
       return;
     }
 
-    // POST token → /api/set-token → set httpOnly cookie → redirect
-    fetch("/api/set-token", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ token }),
-    })
-      .then(async (res) => {
-        if (!res.ok) {
-          const body = await res.json().catch(() => ({}));
-          throw new Error(body.error || `set-token failed: ${res.status}`);
+    (async () => {
+      try {
+        // 1) ลบ cookie เก่าออกก่อน (กัน admin cookie ติดมาแล้ว set ทับไม่ได้)
+        await fetch("/api/set-token", {
+          method: "DELETE",
+          credentials: "include",
+        }).catch(() => null);
+
+        // 2) Set cookie ใหม่จาก token ใน URL
+        const setRes = await fetch("/api/set-token", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ token }),
+        });
+        if (!setRes.ok) {
+          const body = await setRes.json().catch(() => ({}));
+          throw new Error(body.error || `set-token failed: ${setRes.status}`);
         }
-        // ลบ token ออกจาก URL ก่อน redirect (เผื่อ history)
+
+        // 3) ลบ token ออกจาก URL (history hygiene)
         window.history.replaceState({}, "", "/auth/callback");
-        router.replace("/dashboard");
-      })
-      .catch((e) => setError(e.message));
+
+        // 4) อ่าน profile → route ตาม role
+        const me = await fetch("/api/me", { credentials: "include" })
+          .then((r) => (r.ok ? r.json() : null))
+          .catch(() => null);
+
+        const isAdmin =
+          me?.is_hub_admin === true || me?.user_type === "admin";
+        const dest = isAdmin ? "/dashboard" : "/developer/subsystems";
+
+        // ใช้ window.location.href แทน router.replace
+        // เพื่อ full reload — กัน RSC cache ของ middleware เก่า
+        window.location.href = dest;
+      } catch (e) {
+        const err = e as { message?: string };
+        setError(err.message || "set-token failed");
+        ran.current = false; // ให้ retry ได้ถ้ากดใหม่
+      }
+    })();
   }, [params, router]);
 
   return (

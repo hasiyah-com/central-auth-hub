@@ -16,13 +16,16 @@ export async function GET() {
   if (!payload) {
     return NextResponse.json({ error: "invalid token" }, { status: 401 });
   }
+  // JWT ของ Hub ใช้ key "name" (= user.full_name) — ไม่ใช่ "full_name"
+  // is_hub_admin ไม่ได้อยู่ใน JWT claim → infer จาก user_type === "admin"
   return NextResponse.json({
     sub: payload.sub,
     email: payload.email,
-    full_name: payload.full_name || null,
+    full_name: payload.name || payload.full_name || null,
     user_type: payload.user_type || null,
     faculty: payload.faculty || null,
-    is_hub_admin: payload.is_hub_admin ?? false,
+    is_hub_admin:
+      payload.is_hub_admin === true || payload.user_type === "admin",
     exp: payload.exp,
   });
 }
