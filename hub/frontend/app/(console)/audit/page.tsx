@@ -40,8 +40,12 @@ function actionTone(action: string): "brand" | "good" | "warn" | "danger" | "def
 function formatTime(iso: string | null): string {
   if (!iso) return "—";
   // Server stores UTC; display in Asia/Bangkok per project convention.
+  // FastAPI ส่ง naive datetime (เช่น "2026-05-29T11:14:26" ไม่มี Z) —
+  // new Date() จะตีความเป็น local time → เพี้ยน 7 ชม.
+  // บังคับ append "Z" ถ้ายังไม่มี timezone marker
   try {
-    const d = new Date(iso);
+    const hasTz = /[+-]\d{2}:?\d{2}$|Z$/i.test(iso);
+    const d = new Date(hasTz ? iso : iso + "Z");
     return d.toLocaleString("th-TH", {
       timeZone: "Asia/Bangkok",
       year: "numeric",
@@ -50,6 +54,7 @@ function formatTime(iso: string | null): string {
       hour: "2-digit",
       minute: "2-digit",
       second: "2-digit",
+      hour12: false,
     });
   } catch {
     return iso;

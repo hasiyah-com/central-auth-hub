@@ -9,10 +9,12 @@
 export type JwtPayload = {
   sub: string;
   email: string;
+  // Hub JWT ใช้ "name" (= user.full_name) — เก็บไว้ทั้งสองชื่อเผื่อเปลี่ยน
+  name?: string;
   full_name?: string;
-  user_type?: string;
+  user_type?: string;     // student / teacher / staff / admin
   faculty?: string;
-  is_hub_admin?: boolean;
+  is_hub_admin?: boolean; // อาจไม่มีใน claim — fallback ไปใช้ user_type === "admin"
   aud: string;
   exp: number;
   iat: number;
@@ -43,3 +45,16 @@ export function isExpired(payload: JwtPayload | null): boolean {
 }
 
 export const TOKEN_COOKIE = "hub_token";
+
+// ── Role helpers (used by middleware + Sidebar) ─────────────
+// hub_admin (DB column) ตัดสินใจสิทธิ์ Admin Console
+// user_type ∈ {student, teacher, staff, admin} ตัดสินใจสิทธิ์ Developer Portal
+export function isAdmin(payload: JwtPayload | null | undefined): boolean {
+  if (!payload) return false;
+  return payload.is_hub_admin === true || payload.user_type === "admin";
+}
+
+export function isDeveloper(payload: JwtPayload | null | undefined): boolean {
+  if (!payload) return false;
+  return ["teacher", "staff", "admin"].includes(payload.user_type ?? "");
+}

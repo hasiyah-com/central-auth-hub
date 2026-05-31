@@ -60,3 +60,4 @@ hub/backend/tmp_*.py
 
 # ============ GeoIP database (download separately, large binary) ============
 hub/backend/data/*.mmdb
+hub/frontend/tsconfig.tsbuildinfo

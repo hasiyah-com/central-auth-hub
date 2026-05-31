@@ -3,16 +3,75 @@
 import os
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware.sessions import SessionMiddleware
+from starlette.responses import Response
 
 from app.config import settings
 from app.database import Base, engine
 from app.hooks import register_default_listeners
-from app.routers import health, users, admin, ml_admin, auth, developer, secret, oauth
+from app.rate_limiter import limiter
+from app.routers import (
+    health,
+    users,
+    admin,
+    ml_admin,
+    api_alerts,
+    ip_blacklist,
+    auth,
+    developer,
+    secret,
+    oauth,
+)
 from app.services.jwt_service import get_jwks
 from app.services.request_logger import RequestLoggerMiddleware
+from app.services import api_guard_scheduler
+
+
+# ============ Security Headers Middleware ============
+# OWASP recommended headers — กัน clickjacking, MIME-sniff, XSS, info leak
+# CSP ผ่อนสำหรับ /docs (Swagger UI ต้องการ inline script + CDN)
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        response: Response = await call_next(request)
+        # ป้องกัน MIME type sniffing
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        # กัน clickjacking (frame embed)
+        response.headers.setdefault("X-Frame-Options", "DENY")
+        # ปิดข้อมูล referer ไป cross-origin
+        response.headers.setdefault(
+            "Referrer-Policy", "strict-origin-when-cross-origin"
+        )
+        # ปิด API ที่ไม่ใช้ — กัน fingerprint
+        response.headers.setdefault(
+            "Permissions-Policy",
+            "geolocation=(), microphone=(), camera=(), payment=()",
+        )
+        # HSTS — เฉพาะ production ที่เป็น HTTPS แล้ว
+        if settings.app_env == "production":
+            response.headers.setdefault(
+                "Strict-Transport-Security",
+                "max-age=31536000; includeSubDomains",
+            )
+        # CSP — relax /docs (Swagger ใช้ inline + CDN), เข้มใน production
+        path = request.url.path
+        if path.startswith("/docs") or path.startswith("/redoc"):
+            csp = (
+                "default-src 'self'; "
+                "img-src 'self' data: https://fastapi.tiangolo.com; "
+                "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+                "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+                "font-src 'self' https://cdn.jsdelivr.net"
+            )
+        else:
+            csp = "default-src 'self'; frame-ancestors 'none'; base-uri 'self'"
+        response.headers.setdefault("Content-Security-Policy", csp)
+        return response
 
 
 @asynccontextmanager
@@ -31,7 +90,13 @@ async def lifespan(app: FastAPI):
     # Lifecycle hooks (event bus) — fail-safe extension points
     register_default_listeners()
 
+    # API Guard — auto-scan request_logs ทุก 5 นาที (NIST SP 800-228)
+    api_guard_scheduler.start(interval_sec=300, scan_window_min=5)
+
     yield
+
+    # Cleanup
+    api_guard_scheduler.stop()
 
 
 app = FastAPI(
@@ -45,23 +110,44 @@ app = FastAPI(
     openapi_url="/openapi.json" if settings.enable_docs else None,
 )
 
+# ── Rate limiter setup (must be first to register state + handler) ──
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+app.add_middleware(SlowAPIMiddleware)
+
+# Security headers — OWASP recommended (CSP, HSTS, X-Frame-Options, etc.)
+app.add_middleware(SecurityHeadersMiddleware)
+
 # Request logger — log ทุก HTTP request ลง request_logs (skip /health, /docs)
 app.add_middleware(RequestLoggerMiddleware)
 
 # Session middleware — จำเป็นสำหรับ Authlib OAuth (เก็บ state ระหว่าง flow)
-app.add_middleware(SessionMiddleware, secret_key=settings.secret_key)
+# - https_only: production เท่านั้น (dev เป็น HTTP)
+# - same_site: lax พอสำหรับ OAuth redirect (strict จะตัด state cookie ตอน redirect กลับ)
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=settings.secret_key,
+    https_only=(settings.app_env == "production"),
+    same_site="lax",
+    max_age=60 * 60,  # 1 ชม. — กัน session ค้างนาน
+)
 
-# CORS — allow frontend during development
+# CORS — env-driven (production ตัด localhost ออก ผ่าน CORS_ALLOW_ORIGINS)
+_cors_origins = [
+    o.strip()
+    for o in getattr(settings, "cors_allow_origins", "").split(",")
+    if o.strip()
+] or [
+    "http://localhost:3000",
+    "http://localhost:3001",
+    "http://localhost:3002",
+]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-        "http://localhost:3001",
-        "http://localhost:3002",
-    ],
+    allow_origins=_cors_origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "Accept", "Origin"],
 )
 
 # Routers
@@ -73,6 +159,12 @@ app.include_router(secret.router, prefix="/secret", tags=["Secret Retrieval"])
 app.include_router(users.router, prefix="/admin/users", tags=["Admin: Users"])
 app.include_router(admin.router, prefix="/admin", tags=["Admin"])
 app.include_router(ml_admin.router, prefix="/admin/ml", tags=["Admin · ML"])
+app.include_router(
+    api_alerts.router, prefix="/admin/api-alerts", tags=["Admin · API Alerts"]
+)
+app.include_router(
+    ip_blacklist.router, prefix="/admin/ip-blacklist", tags=["Admin · IP Blacklist"]
+)
 
 
 # ============ JWKS endpoint (OIDC discovery standard path) ============

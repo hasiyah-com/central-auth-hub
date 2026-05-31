@@ -1,5 +1,6 @@
 # ============ Web Framework ============
-fastapi==0.115.0
+# bump to 0.118+ → starlette > 0.40 → fix CVE-2024-47874 + CVE-2025-54121
+fastapi==0.118.0
 uvicorn[standard]==0.32.0
 
 # ============ Database ============
@@ -11,19 +12,31 @@ alembic==1.13.3
 redis==5.2.0
 
 # ============ Auth & Security ============
-python-jose[cryptography]==3.3.0
+# python-jose 3.4.0 → fix PYSEC-2024-232/233 (algorithm confusion)
+python-jose[cryptography]==3.4.0
 argon2-cffi==23.1.0
-authlib==1.3.2
+# authlib 1.6.12 → fix CVE-2026-44681 (signature bypass) + 9 อื่น ๆ
+authlib==1.6.12
 itsdangerous==2.2.0
+# Rate limiting (per-IP) — กัน brute-force / OAuth abuse
+slowapi==0.1.9
 
 # ============ Config & Validation ============
 pydantic[email]==2.9.2
 pydantic-settings==2.6.0
-python-dotenv==1.0.1
-python-multipart==0.0.12
+# python-dotenv 1.2.2 → fix CVE-2026-28684
+python-dotenv==1.2.2
+# python-multipart 0.0.27 → fix 4 CVEs (DoS / file upload bypass)
+python-multipart==0.0.27
 
 # ============ HTTP Client ============
 httpx==0.27.2
+
+# ============ Known transitive vulnerabilities (รอ upstream แก้) ============
+# pyasn1 0.4.8 (CVE-2026-30922) — python-jose pin <0.5 → upgrade ทั้งคู่พร้อมกัน
+# starlette 0.48.0 (CVE-2025-62727, PYSEC-2026-161) — fastapi 0.118 pin <0.49
+# ecdsa 0.19.2 (CVE-2024-23342) — ยังไม่มี fix upstream
+# พิจารณาย้าย python-jose → PyJWT + cryptography (no ecdsa dep) ใน Week ถัดไป
 
 # ============ GeoIP (MaxMind GeoLite2 offline lookup) ============
 geoip2==4.8.0
@@ -33,8 +46,11 @@ faker==30.8.2
 
 # ============ Email ============
 aiosmtplib==3.0.2
-jinja2==3.1.4
+# jinja2 3.1.6 → fix CVE-2024-56201, CVE-2024-56326, CVE-2025-27516 (template sandbox bypass)
+jinja2==3.1.6
 
-# ============ Testing ============
+# ============ Testing (dev only — not deployed in production) ============
+# pytest CVE-2025-71176 = tmp-file race ตอนรันเทสต์ ผลกระทบต่ำ + dev-only
+# คงเวอร์ชั่นเดิมเพื่อ compatibility กับ pytest-asyncio
 pytest==8.3.3
 pytest-asyncio==0.24.0

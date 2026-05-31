@@ -14,6 +14,7 @@ Flow:
   GET /oauth/pkce-helper   -> สร้างคู่ code_verifier/code_challenge
   GET /oauth/test-callback -> หน้าจำลอง redirect_uri ของ subsystem
 """
+
 import json
 import secrets
 
@@ -25,12 +26,19 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.database import get_db
 from app.deps import get_client_ip
+from app.rate_limiter import limiter
 from app.models import AccessList, LoginSession, Subsystem, User
 from app.redis_client import redis_client
-from app.routers.auth import oauth          # ใช้ Authlib client ตัวเดียวกับ Week 2
+from app.routers.auth import oauth  # ใช้ Authlib client ตัวเดียวกับ Week 2
 from app.services.audit_service import log_action
-from app.services.feature_extraction import extract_session_features
+from app.services.feature_extraction import (
+    extract_session_features,
+    parse_browser,
+    parse_device_type,
+    parse_os_name,
+)
 from app.services.geoip import lookup_country
+from app.services.ip_blacklist import is_blacklisted
 from app.services.hooks import (
     EVT_OAUTH_AUTHORIZED,
     EVT_OAUTH_FAILURE,
@@ -43,13 +51,15 @@ from app.services.secret_service import verify_secret
 
 router = APIRouter()
 
-AUTH_REQUEST_TTL = 600   # OAuth request เก็บใน Redis 10 นาที
-AUTH_CODE_TTL = 60       # authorization code อายุ 60 วินาที
+AUTH_REQUEST_TTL = 600  # OAuth request เก็บใน Redis 10 นาที
+AUTH_CODE_TTL = 60  # authorization code อายุ 60 วินาที
 
 
 # ============ 1. /oauth/authorize — จุดเริ่มต้น ============
 
+
 @router.get("/authorize")
+@limiter.limit(settings.rate_limit_token)
 async def authorize(
     request: Request,
     client_id: str,
@@ -87,14 +97,16 @@ async def authorize(
     redis_client.setex(
         f"authreq:{hub_state}",
         AUTH_REQUEST_TTL,
-        json.dumps({
-            "client_id": client_id,
-            "redirect_uri": redirect_uri,
-            "state": state,                  # state ของ subsystem (ส่งกลับตอน redirect)
-            "code_challenge": code_challenge,
-            "subsystem_id": str(subsystem.id),
-            "scope": subsystem.scope,        # ใช้ scope ที่ลงทะเบียนไว้
-        }),
+        json.dumps(
+            {
+                "client_id": client_id,
+                "redirect_uri": redirect_uri,
+                "state": state,  # state ของ subsystem (ส่งกลับตอน redirect)
+                "code_challenge": code_challenge,
+                "subsystem_id": str(subsystem.id),
+                "scope": subsystem.scope,  # ใช้ scope ที่ลงทะเบียนไว้
+            }
+        ),
     )
 
     # 4. ส่ง hub_state ของเราไปกับ Google — Authlib จะเก็บใน session
@@ -106,7 +118,9 @@ async def authorize(
 
 # ============ 2. /oauth/callback — Google ส่งกลับ ============
 
+
 @router.get("/callback")
+@limiter.limit(settings.rate_limit_token)
 async def oauth_callback(
     request: Request,
     state: str | None = None,
@@ -140,32 +154,51 @@ async def oauth_callback(
     user = db.query(User).filter(User.email == email).first()
     if not user:
         log_action(
-            db, actor_id=None,
+            db,
+            actor_id=None,
             action="oauth_login_failed_unknown_email",
-            target_type="subsystem", target_id=authreq["subsystem_id"], ip=client_ip,
+            target_type="subsystem",
+            target_id=authreq["subsystem_id"],
+            ip=client_ip,
             metadata={"email": email, "client_id": authreq["client_id"]},
         )
         db.commit()
-        await emit(EVT_OAUTH_FAILURE, {
-            "client_id": authreq["client_id"], "reason": "unknown_email", "ip": client_ip,
-        })
+        await emit(
+            EVT_OAUTH_FAILURE,
+            {
+                "client_id": authreq["client_id"],
+                "reason": "unknown_email",
+                "ip": client_ip,
+            },
+        )
         raise HTTPException(
             status_code=403,
             detail=f"อีเมล {email} ไม่ใช่ผู้ใช้ของมหาวิทยาลัย",
         )
     if user.status != "active":
         log_action(
-            db, actor_id=user.id,
+            db,
+            actor_id=user.id,
             action="oauth_login_failed_inactive",
-            target_type="user", target_id=user.id, ip=client_ip,
-            metadata={"email": email, "status": user.status,
-                      "subsystem_id": authreq["subsystem_id"]},
+            target_type="user",
+            target_id=user.id,
+            ip=client_ip,
+            metadata={
+                "email": email,
+                "status": user.status,
+                "subsystem_id": authreq["subsystem_id"],
+            },
         )
         db.commit()
-        await emit(EVT_OAUTH_FAILURE, {
-            "user_id": str(user.id), "client_id": authreq["client_id"],
-            "reason": f"inactive_{user.status}", "ip": client_ip,
-        })
+        await emit(
+            EVT_OAUTH_FAILURE,
+            {
+                "user_id": str(user.id),
+                "client_id": authreq["client_id"],
+                "reason": f"inactive_{user.status}",
+                "ip": client_ip,
+            },
+        )
         raise HTTPException(status_code=403, detail=f"บัญชีถูก {user.status}")
 
     # *** เช็ค Access List — user มีสิทธิ์เข้า subsystem นี้ไหม ***
@@ -180,17 +213,28 @@ async def oauth_callback(
     )
     if not access:
         log_action(
-            db, actor_id=user.id,
+            db,
+            actor_id=user.id,
             action="oauth_login_failed_not_in_whitelist",
-            target_type="subsystem", target_id=authreq["subsystem_id"], ip=client_ip,
-            metadata={"email": email, "user_id": str(user.id),
-                      "client_id": authreq["client_id"]},
+            target_type="subsystem",
+            target_id=authreq["subsystem_id"],
+            ip=client_ip,
+            metadata={
+                "email": email,
+                "user_id": str(user.id),
+                "client_id": authreq["client_id"],
+            },
         )
         db.commit()
-        await emit(EVT_OAUTH_FAILURE, {
-            "user_id": str(user.id), "client_id": authreq["client_id"],
-            "reason": "not_in_whitelist", "ip": client_ip,
-        })
+        await emit(
+            EVT_OAUTH_FAILURE,
+            {
+                "user_id": str(user.id),
+                "client_id": authreq["client_id"],
+                "reason": "not_in_whitelist",
+                "ip": client_ip,
+            },
+        )
         raise HTTPException(
             status_code=403,
             detail="คุณไม่อยู่ใน whitelist ของระบบย่อยนี้ — ติดต่อ admin",
@@ -200,16 +244,24 @@ async def oauth_callback(
     google_sub = userinfo["sub"]
     if user.google_sub and user.google_sub != google_sub:
         log_action(
-            db, actor_id=user.id,
+            db,
+            actor_id=user.id,
             action="oauth_login_failed_google_sub_mismatch",
-            target_type="user", target_id=user.id, ip=client_ip,
+            target_type="user",
+            target_id=user.id,
+            ip=client_ip,
             metadata={"email": email, "subsystem_id": authreq["subsystem_id"]},
         )
         db.commit()
-        await emit(EVT_OAUTH_FAILURE, {
-            "user_id": str(user.id), "client_id": authreq["client_id"],
-            "reason": "google_sub_mismatch", "ip": client_ip,
-        })
+        await emit(
+            EVT_OAUTH_FAILURE,
+            {
+                "user_id": str(user.id),
+                "client_id": authreq["client_id"],
+                "reason": "google_sub_mismatch",
+                "ip": client_ip,
+            },
+        )
         raise HTTPException(
             status_code=403,
             detail="Google account นี้ไม่ตรงกับบัญชีที่เคยใช้ login — ติดต่อ admin",
@@ -226,9 +278,12 @@ async def oauth_callback(
         old_name = user.full_name
         user.full_name = google_name
         log_action(
-            db, actor_id=user.id,
+            db,
+            actor_id=user.id,
             action="profile_synced_from_google",
-            target_type="user", target_id=user.id, ip=client_ip,
+            target_type="user",
+            target_id=user.id,
+            ip=client_ip,
             metadata={"field": "full_name", "old": old_name, "new": google_name},
         )
 
@@ -251,7 +306,7 @@ async def oauth_callback(
     # 2) เรียก ML service (fail-safe ถ้า ML ล่ม -> pass + 0.0)
     ml_result = await get_anomaly_score(features)
     anomaly_score = ml_result["anomaly_score"]
-    ml_decision = ml_result["decision"]   # ML's recommendation: pass/mfa/block
+    ml_decision = ml_result["decision"]  # ML's recommendation: pass/mfa/block
 
     # 3) ตัดสินใจตาม policy
     if settings.ml_shadow_mode:
@@ -266,16 +321,25 @@ async def oauth_callback(
         # Enforce Mode: ทำตาม ML จริง
         actual_decision = ml_decision
 
-    # 4) บันทึก login session พร้อม score + decision
-    db.add(LoginSession(
-        user_id=user.id,
-        subsystem_id=authreq["subsystem_id"],
-        ip=client_ip,
-        user_agent=user_agent,
-        geo_country=geo_country,
-        anomaly_score=anomaly_score,
-        decision=actual_decision,
-    ))
+    # 4) เช็ค IP Blacklist (Wiefling 2022 — "Is Attack IP" column)
+    attack_ip = is_blacklisted(db, client_ip)
+
+    # 5) บันทึก login session พร้อม score + decision + parsed UA fields
+    db.add(
+        LoginSession(
+            user_id=user.id,
+            subsystem_id=authreq["subsystem_id"],
+            ip=client_ip,
+            user_agent=user_agent,
+            geo_country=geo_country,
+            os_name=parse_os_name(user_agent),
+            browser=parse_browser(user_agent),
+            device_type=parse_device_type(user_agent),
+            anomaly_score=anomaly_score,
+            decision=actual_decision,
+            is_attack_ip=attack_ip,
+        )
+    )
 
     # 5) ถ้าเป็น Enforce mode และ ML สั่ง block -> ปฏิเสธก่อนสร้าง code
     if actual_decision == "block":
@@ -289,10 +353,16 @@ async def oauth_callback(
             metadata={"score": anomaly_score, "features": features},
         )
         db.commit()
-        await emit(EVT_OAUTH_FAILURE, {
-            "user_id": str(user.id), "client_id": authreq["client_id"],
-            "reason": "ml_blocked", "ip": client_ip, "anomaly_score": anomaly_score,
-        })
+        await emit(
+            EVT_OAUTH_FAILURE,
+            {
+                "user_id": str(user.id),
+                "client_id": authreq["client_id"],
+                "reason": "ml_blocked",
+                "ip": client_ip,
+                "anomaly_score": anomaly_score,
+            },
+        )
         raise HTTPException(
             status_code=403,
             detail=(
@@ -309,14 +379,16 @@ async def oauth_callback(
     redis_client.setex(
         f"authcode:{auth_code}",
         AUTH_CODE_TTL,
-        json.dumps({
-            "user_id": str(user.id),
-            "client_id": authreq["client_id"],
-            "subsystem_id": authreq["subsystem_id"],
-            "code_challenge": authreq["code_challenge"],
-            "scope": authreq["scope"],
-            "role_in_sub": access.role_in_sub,
-        }),
+        json.dumps(
+            {
+                "user_id": str(user.id),
+                "client_id": authreq["client_id"],
+                "subsystem_id": authreq["subsystem_id"],
+                "code_challenge": authreq["code_challenge"],
+                "scope": authreq["scope"],
+                "role_in_sub": access.role_in_sub,
+            }
+        ),
     )
 
     log_action(
@@ -326,17 +398,24 @@ async def oauth_callback(
         target_type="subsystem",
         target_id=authreq["subsystem_id"],
         ip=client_ip,
-        metadata={"anomaly_score": anomaly_score, "ml_decision": ml_decision,
-                  "actual_decision": actual_decision, "ml_error": ml_result.get("error")},
+        metadata={
+            "anomaly_score": anomaly_score,
+            "ml_decision": ml_decision,
+            "actual_decision": actual_decision,
+            "ml_error": ml_result.get("error"),
+        },
     )
     db.commit()
 
-    await emit(EVT_OAUTH_AUTHORIZED, {
-        "user_id": str(user.id),
-        "client_id": authreq["client_id"],
-        "subsystem_id": authreq["subsystem_id"],
-        "ip": client_ip,
-    })
+    await emit(
+        EVT_OAUTH_AUTHORIZED,
+        {
+            "user_id": str(user.id),
+            "client_id": authreq["client_id"],
+            "subsystem_id": authreq["subsystem_id"],
+            "ip": client_ip,
+        },
+    )
 
     # cleanup + redirect กลับ subsystem พร้อม code + state
     redis_client.delete(f"authreq:{state}")
@@ -350,7 +429,9 @@ async def oauth_callback(
 
 # ============ 3. /oauth/token — แลก code เป็น JWT (server-to-server) ============
 
+
 @router.post("/token")
+@limiter.limit(settings.rate_limit_token)
 def token_exchange(
     request: Request,
     grant_type: str = Form(...),
@@ -423,6 +504,7 @@ def token_exchange(
 
 
 # ============ ตัวช่วยทดสอบ (dev only) ============
+
 
 @router.get("/pkce-helper")
 def pkce_helper():

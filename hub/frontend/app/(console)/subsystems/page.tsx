@@ -68,13 +68,18 @@ export default function SubsystemsPage() {
       key: "name",
       header: "ระบบย่อย",
       render: (s) => (
-        <div>
-          <div className="font-semibold text-ink-900">{s.name}</div>
+        <a
+          href={`/subsystems/${s.id}`}
+          className="block hover:bg-ink-50 -mx-2 px-2 py-1 rounded transition group"
+        >
+          <div className="font-semibold text-ink-900 group-hover:underline">
+            {s.name} <span className="text-ink-400 text-xs">→</span>
+          </div>
           <div className="text-xs text-ink-500 font-mono">{s.client_id}</div>
           {s.description && (
             <div className="text-xs text-ink-400 mt-0.5">{s.description}</div>
           )}
-        </div>
+        </a>
       ),
     },
     {
