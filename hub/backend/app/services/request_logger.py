@@ -12,10 +12,11 @@
   - ถ้า log fail ไม่ทำให้ request ล่ม (try/except)
   - skip endpoint ที่ไม่ควร log (health, docs, openapi)
 """
+
 import time
 
 from fastapi import Request
-from jose import JWTError
+from jwt.exceptions import InvalidTokenError as JWTError
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.database import SessionLocal

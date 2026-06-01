@@ -1,7 +1,8 @@
 """FastAPI dependencies — ใช้ร่วมกันหลาย router."""
+
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from jose import JWTError
+from jwt.exceptions import InvalidTokenError as JWTError
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -35,7 +36,7 @@ def get_current_user(
     """
     token = credentials.credentials
     try:
-        payload = verify_token(token)   # default audience = jwt_hub_audience
+        payload = verify_token(token)  # default audience = jwt_hub_audience
     except JWTError as e:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

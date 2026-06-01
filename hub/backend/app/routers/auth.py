@@ -7,6 +7,8 @@ Flow (Week 2 — Hub <-> Google เท่านั้น ยังไม่ร�
   4. GET /.well-known/jwks.json -> public key สำหรับ verify
 """
 
+from datetime import datetime
+
 from authlib.integrations.starlette_client import OAuth, OAuthError
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import JSONResponse, RedirectResponse
@@ -246,20 +248,20 @@ async def google_callback(request: Request, db: Session = Depends(get_db)):
         actual_decision = ml_decision
 
     # 4) บันทึก login_session (subsystem_id=None = Hub-direct)
-    db.add(
-        LoginSession(
-            user_id=user.id,
-            subsystem_id=None,
-            ip=client_ip,
-            user_agent=user_agent,
-            geo_country=geo_country,
-            os_name=parse_os_name(user_agent),
-            browser=parse_browser(user_agent),
-            device_type=parse_device_type(user_agent),
-            anomaly_score=anomaly_score,
-            decision=actual_decision,
-        )
+    login_session = LoginSession(
+        user_id=user.id,
+        subsystem_id=None,
+        ip=client_ip,
+        user_agent=user_agent,
+        geo_country=geo_country,
+        os_name=parse_os_name(user_agent),
+        browser=parse_browser(user_agent),
+        device_type=parse_device_type(user_agent),
+        anomaly_score=anomaly_score,
+        decision=actual_decision,
     )
+    db.add(login_session)
+    db.flush()  # ต้องการ login_session.id สำหรับ MFA challenge
 
     # 5) Enforce mode + decision=block → ปฏิเสธ ก่อนออก JWT
     if actual_decision == "block":
@@ -290,8 +292,59 @@ async def google_callback(request: Request, db: Session = Depends(get_db)):
             ),
         )
 
-    # (decision='mfa' ใน Enforce mode — MFA flow ยังไม่ implement
-    #  ปล่อยผ่าน + log ไว้ทำต่อ Week 9-10)
+    # 6) Enforce mode + decision=mfa → สร้าง MFA challenge + redirect ไป /auth/mfa
+    if actual_decision == "mfa":
+        from datetime import timedelta
+
+        from app.models import MFAChallenge
+        from app.services.mfa_service import generate_otp, hash_otp, send_otp_email
+
+        otp = generate_otp()
+        expires_at = datetime.utcnow() + timedelta(minutes=5)
+        challenge = MFAChallenge(
+            user_id=user.id,
+            login_session_id=login_session.id,
+            code_hash=hash_otp(otp),
+            method="email",
+            expires_at=expires_at,
+        )
+        db.add(challenge)
+        log_action(
+            db,
+            actor_id=user.id,
+            action="mfa_challenge_issued",
+            target_type="user",
+            target_id=user.id,
+            ip=client_ip,
+            metadata={
+                "session_id": str(login_session.id),
+                "method": "email",
+                "score": anomaly_score,
+            },
+        )
+        db.commit()
+        db.refresh(challenge)
+
+        # ส่ง email (fail-safe — ถ้า SMTP ไม่ตั้งค่าจะ log warning)
+        send_otp_email(user.email, otp, expires_at)
+
+        # Redirect frontend ไปหน้ารับ OTP
+        if settings.admin_frontend_url:
+            return RedirectResponse(
+                f"{settings.admin_frontend_url}/auth/mfa?challenge={challenge.id}",
+                status_code=302,
+            )
+        # API client fallback
+        return JSONResponse(
+            {
+                "mfa_required": True,
+                "challenge_id": str(challenge.id),
+                "method": "email",
+                "expires_at": expires_at.isoformat(),
+                "message": "กรุณาตรวจ email + กรอก OTP ที่ /auth/mfa",
+            },
+            status_code=202,
+        )
 
     # log การ login สำเร็จ
     log_action(

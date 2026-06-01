@@ -117,9 +117,17 @@ class LoginSession(Base):
     browser = Column(String(100))  # "Chrome 120.0.3538", "Firefox 115.0"
     device_type = Column(String(20))  # "mobile", "desktop", "tablet", "bot"
 
-    # ML
-    anomaly_score = Column(Numeric(3, 2))
-    decision = Column(String(20))  # pass/mfa/block/would_mfa/would_block
+    # ML (Isolation Forest — Layer 3)
+    anomaly_score = Column(Numeric(3, 2))  # 0.00–1.00 จาก IForest
+
+    # Hybrid RBA 4-Layer Risk Scoring (Freeman 2016, F-RBA 2024)
+    risk_score = Column(Numeric(4, 3))  # 0.000–1.000 aggregated จาก 4 ชั้น
+    risk_breakdown = Column(
+        JSON
+    )  # {"rule": 0.3, "behavior": 0.2, "iforest": 0.1, "iforest_raw": 0.45}
+    risk_reasons = Column(JSON)  # ["is_new_device (+0.30)", "hours_diff=12 (+0.40)"]
+
+    decision = Column(String(20))  # allow/warn/challenge/block/would_*
 
     # Ground truth labels (ตรงกับ RBA dataset columns)
     is_attack_ip = Column(Boolean, default=False)  # IP อยู่ใน blacklist
@@ -204,6 +212,38 @@ class MLFeedback(Base):
     note = Column(Text, nullable=True)
     marked_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class MFAChallenge(Base):
+    """Multi-Factor Auth challenge — Email OTP (อนาคต TOTP).
+
+    Flow:
+      1. ML decision = "mfa" → backend สร้าง MFAChallenge + ส่ง OTP ทาง email
+      2. user กรอก OTP ใน /auth/mfa frontend → POST /mfa/verify
+      3. ถ้าถูก: mark used_at + ออก JWT จริง
+      4. ถ้าผิด: attempts++; ถ้า attempts >= MAX → lockout
+
+    1 login_session = 1 active challenge (latest)
+    """
+
+    __tablename__ = "mfa_challenges"
+
+    id = uuid_pk()
+    user_id = Column(
+        UUID(as_uuid=True), ForeignKey("users.id"), index=True, nullable=False
+    )
+    login_session_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("login_sessions.id"),
+        index=True,
+        nullable=False,
+    )
+    code_hash = Column(String(64), nullable=False)  # HMAC-SHA256 hex ของ OTP
+    method = Column(String(20), default="email", nullable=False)  # email / totp
+    expires_at = Column(DateTime, nullable=False)
+    used_at = Column(DateTime, nullable=True)
+    attempts = Column(Integer, default=0, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
 
 
 class ApiAlert(Base):

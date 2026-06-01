@@ -6,6 +6,7 @@
 - encrypt secret ชั่วคราวสำหรับ one-time retrieval link
 - HMAC token ของ retrieval URL (เก็บใน DB เป็น hash เท่านั้น)
 """
+
 import base64
 import hashlib
 import hmac
@@ -14,7 +15,7 @@ import secrets
 from functools import lru_cache
 
 from argon2 import PasswordHasher
-from cryptography.fernet import Fernet
+from cryptography.fernet import Fernet, MultiFernet
 
 from app.config import settings
 
@@ -25,6 +26,7 @@ _ph = PasswordHasher()
 
 
 # ============ สร้าง credentials ============
+
 
 def generate_client_credentials() -> tuple[str, str]:
     """สร้าง client_id และ client_secret แบบสุ่มที่ปลอดภัย.
@@ -63,6 +65,7 @@ def hash_retrieval_token(plaintext_token: str) -> str:
 
 # ============ Hash (สำหรับเก็บ client_secret ใน DB) ============
 
+
 def hash_secret(secret: str) -> str:
     """Hash client_secret ด้วย Argon2id — เก็บค่านี้ใน DB (ไม่เก็บ plaintext)."""
     return _ph.hash(secret)
@@ -82,29 +85,69 @@ def verify_secret(hashed: str, secret: str) -> bool:
 
 # ============ Encrypt (สำหรับ one-time retrieval) ============
 
-@lru_cache(maxsize=1)
-def _fernet() -> Fernet:
-    """Fernet key จาก SECRET_ENCRYPTION_KEY ใน .env.
 
-    Production: ต้องตั้ง SECRET_ENCRYPTION_KEY (validate_production() ใน config.py
-    บังคับไว้แล้ว). Dev: fallback ไปใช้ secret_key พร้อม warning.
+def _derive_fernet_key(passphrase: str) -> bytes:
+    """SHA256(passphrase) → 32 bytes → base64url = Fernet key (44 chars)."""
+    digest = hashlib.sha256(passphrase.encode()).digest()
+    return base64.urlsafe_b64encode(digest)
+
+
+@lru_cache(maxsize=1)
+def _fernet() -> MultiFernet:
+    """Build MultiFernet — encrypt ด้วย primary, decrypt ลองทุก key.
+
+    Order ของ keys ใน MultiFernet:
+      [0] = primary (encrypt + decrypt try first)
+      [1:] = legacy (decrypt fallback ถ้า [0] fail)
+
+    ระหว่าง rotation:
+      - ตั้ง SECRET_ENCRYPTION_KEY = new_key (primary)
+      - ตั้ง SECRET_ENCRYPTION_KEYS_LEGACY = old_key (decrypt fallback)
+      - ระหว่าง grace period: new ciphertext ใช้ new_key, old ciphertext ยัง decrypt ได้
+      - หลัง re-encrypt loop เสร็จ: ลบ legacy ออกจาก env
+
+    Production: validate_production() บังคับว่า secret_encryption_key ต้องมีค่า
+    Dev: fallback ใช้ secret_key พร้อม warning
     """
-    enc_key = settings.secret_encryption_key
-    if not enc_key:
+    primary = settings.secret_encryption_key
+    if not primary:
         log.warning(
             "SECRET_ENCRYPTION_KEY ว่าง — fallback ใช้ SECRET_KEY สำหรับ encrypt "
             "(dev เท่านั้น). Production ต้องตั้งค่าใหม่"
         )
-        enc_key = settings.secret_key
-    key = hashlib.sha256(enc_key.encode()).digest()
-    return Fernet(base64.urlsafe_b64encode(key))
+        primary = settings.secret_key
+
+    keys: list[Fernet] = [Fernet(_derive_fernet_key(primary))]
+    # Append legacy keys (verify-only — สำหรับ decrypt ของเก่า)
+    for legacy in (settings.secret_encryption_keys_legacy or "").split(","):
+        legacy = legacy.strip()
+        if not legacy or legacy == primary:
+            continue
+        try:
+            keys.append(Fernet(_derive_fernet_key(legacy)))
+        except Exception as e:
+            log.warning("Skip invalid legacy Fernet key: %s", e)
+
+    return MultiFernet(keys)
 
 
 def encrypt_secret(secret: str) -> str:
-    """Encrypt client_secret ก่อนเก็บใน secret_retrieval_tokens (ลบหลังดูแล้ว)."""
+    """Encrypt client_secret ด้วย primary key (MultiFernet ใช้ key แรกเสมอ)."""
     return _fernet().encrypt(secret.encode()).decode()
 
 
 def decrypt_secret(ciphertext: str) -> str:
-    """ถอดรหัส secret ตอน developer คลิก retrieval link."""
+    """ถอดรหัส — ลอง primary ก่อน → fallback ทีละ legacy key.
+
+    ใช้ตอน developer คลิก retrieval link หรือ rotation script re-encrypt
+    """
     return _fernet().decrypt(ciphertext.encode()).decode()
+
+
+def rotate_ciphertext(ciphertext: str) -> str:
+    """Re-encrypt ciphertext เก่า → ใช้ primary key.
+
+    เรียกตอน rotation: decrypt ด้วย legacy key + encrypt ด้วย primary
+    ทำเองโดย MultiFernet.rotate() (atomic — decrypt+encrypt ในขั้นเดียว)
+    """
+    return _fernet().rotate(ciphertext.encode()).decode()

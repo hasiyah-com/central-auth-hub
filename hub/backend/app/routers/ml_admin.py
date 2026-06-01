@@ -98,6 +98,11 @@ def ml_overview(
             "device_type": sess.device_type,
             "is_attack_ip": sess.is_attack_ip,
             "is_account_takeover": sess.is_account_takeover,
+            "risk_score": float(sess.risk_score)
+            if sess.risk_score is not None
+            else None,
+            "risk_breakdown": sess.risk_breakdown,
+            "risk_reasons": sess.risk_reasons,
             "created_at": sess.created_at,
         }
         for sess, u, sub in top_rows
@@ -402,6 +407,11 @@ def user_session_timeline(
                     "device_type": sess.device_type,
                     "is_attack_ip": sess.is_attack_ip,
                     "is_account_takeover": sess.is_account_takeover,
+                    "risk_score": float(sess.risk_score)
+                    if sess.risk_score is not None
+                    else None,
+                    "risk_breakdown": sess.risk_breakdown,
+                    "risk_reasons": sess.risk_reasons,
                     "created_at": sess.created_at,
                     "feedback_label": fb.label if fb else None,
                 }

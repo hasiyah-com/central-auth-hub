@@ -18,6 +18,11 @@ class Settings(BaseSettings):
     # คีย์แยกสำหรับ encrypt client_secret ใน DB (ห้ามใช้ secret_key เดียวกัน)
     # ถ้าว่างใน development จะ fallback ไปใช้ secret_key พร้อม warning
     secret_encryption_key: str = ""
+    # Legacy Fernet keys สำหรับ rotation grace period (decrypt fallback)
+    # Format: comma-separated รหัส (base64 url-safe) ที่เคยใช้
+    # MultiFernet: encrypt ใช้ secret_encryption_key (primary)
+    #              decrypt ลอง primary ก่อน → fallback ทีละตัวใน legacy list
+    secret_encryption_keys_legacy: str = ""
     hub_base_url: str = "http://localhost:8000"  # ใช้สร้าง one-time URL
     # ปิด Swagger UI ใน production — กันคนภายนอกเห็น API tree
     enable_docs: bool = True
@@ -30,8 +35,16 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "RS256"
     jwt_access_token_expire_minutes: int = 60
     jwt_refresh_token_expire_days: int = 30
+    # Active key (Hub ใช้ sign token ใหม่)
     jwt_private_key_path: str = "/app/keys/jwt_private.pem"
     jwt_public_key_path: str = "/app/keys/jwt_public.pem"
+    # kid ของ active key — เขียนใน JWT header + JWKS
+    jwt_active_kid: str = "hub-key-1"
+    # Extra public keys (verify-only) สำหรับ key rotation grace period
+    # Format: "kid1:/path/pub1.pem,kid2:/path/pub2.pem"
+    # Token ที่ sign ด้วย kid เก่า verify ผ่านจน expired (60 นาที)
+    # ขั้น finalize ของ rotation: ลบ kid เก่าออกจาก list นี้
+    jwt_extra_public_keys: str = ""
     # audience ของ token ที่ Hub ออกใช้กับ Hub เอง (กัน subsystem token ใช้ที่ Hub)
     jwt_hub_audience: str = "hub.internal"
 

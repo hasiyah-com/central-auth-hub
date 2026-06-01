@@ -19,6 +19,9 @@ type BaseRow = {
   device_type: string | null;
   is_attack_ip: boolean;
   is_account_takeover: boolean;
+  risk_score: number | null;
+  risk_breakdown: { rule: number; behavior: number; iforest: number; iforest_raw: number } | null;
+  risk_reasons: string[] | null;
   created_at: string;
 };
 
@@ -90,7 +93,7 @@ export function AnomalyTable<T extends BaseRow>({
                 </th>
               )}
               <th className="px-4 py-3 text-left text-[11px] font-bold text-ink-500 uppercase tracking-wider w-[140px]">
-                Score
+                Risk Score
               </th>
               <th className="px-4 py-3 text-left text-[11px] font-bold text-ink-500 uppercase tracking-wider w-[110px]">
                 Decision
@@ -142,7 +145,7 @@ export function AnomalyTable<T extends BaseRow>({
                     </td>
                   )}
                   <td className="px-4 py-3 text-ink-700">
-                    <ScoreCell score={row.score} />
+                    <ScoreCell score={row.risk_score ?? row.score} iforestRaw={row.score} />
                   </td>
                   <td className="px-4 py-3">
                     <Badge tone={DECISION_TONE[row.decision || "unknown"] || "default"}>
@@ -225,22 +228,27 @@ function UserCell({ row }: { row: BaseRow & Record<string, unknown> }) {
   );
 }
 
-function ScoreCell({ score }: { score: number | null }) {
+function ScoreCell({ score, iforestRaw }: { score: number | null; iforestRaw: number | null }) {
   if (score === null) return <span className="text-ink-400">—</span>;
   const pct = Math.round(score * 100);
   const color =
-    score >= 0.7 ? "bg-rose-500" : score >= 0.4 ? "bg-amber-500" : "bg-emerald-500";
+    score >= 0.8 ? "bg-rose-500" : score >= 0.5 ? "bg-amber-500" : score >= 0.3 ? "bg-yellow-400" : "bg-emerald-500";
   return (
     <div>
       <div className="flex items-baseline gap-1">
         <span className="font-mono text-base font-bold text-ink-900 tabular-nums">
-          {score.toFixed(2)}
+          {score.toFixed(3)}
         </span>
-        <span className="text-[10px] text-ink-400">/ 1.00</span>
+        <span className="text-[10px] text-ink-400">risk</span>
       </div>
       <div className="mt-1 h-1.5 w-24 bg-ink-100 rounded-full overflow-hidden">
         <div className={`h-full ${color}`} style={{ width: `${pct}%` }} />
       </div>
+      {iforestRaw != null && iforestRaw !== score && (
+        <div className="text-[9px] text-ink-400 mt-0.5 font-mono">
+          IF: {iforestRaw.toFixed(2)}
+        </div>
+      )}
     </div>
   );
 }
