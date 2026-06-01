@@ -35,6 +35,7 @@ export function middleware(req: NextRequest) {
     pathname.startsWith("/_next") ||
     pathname === "/favicon.ico"
   ) {
+    // /auth/* รวม /auth/mfa — ปล่อยผ่านเพราะ user ยังไม่ได้ login จริง (ยัง verify OTP)
     return NextResponse.next();
   }
 

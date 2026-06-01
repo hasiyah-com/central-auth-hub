@@ -45,8 +45,8 @@ from app.services.hooks import (
     emit,
 )
 from app.services.jwt_service import create_subsystem_token
-from app.services.ml_client import get_anomaly_score
 from app.services.pkce import generate_pkce_pair, verify_pkce
+from app.security.risk_engine import evaluate_login_risk
 from app.services.secret_service import verify_secret
 
 router = APIRouter()
@@ -287,14 +287,15 @@ async def oauth_callback(
             metadata={"field": "full_name", "old": old_name, "new": google_name},
         )
 
-    # ===== ML Anomaly Detection =====
+    # ===== Hybrid RBA 4-Layer Risk Scoring =====
+    # อ้างอิง: Freeman 2016, Wiefling 2022, F-RBA 2024, NIST SP 800-63B-4
     client_ip = get_client_ip(request)
     user_agent = request.headers.get("user-agent")
 
     # 0) GeoIP lookup — fail-safe (None ถ้า DB หาย / private IP / lookup error)
     geo_country = lookup_country(client_ip)
 
-    # 1) สกัด feature vector จาก session + history
+    # 1) สกัด feature vector จาก session + history (12 features)
     features = extract_session_features(
         db,
         user_id=user.id,
@@ -303,28 +304,22 @@ async def oauth_callback(
         geo_country=geo_country,
     )
 
-    # 2) เรียก ML service (fail-safe ถ้า ML ล่ม -> pass + 0.0)
-    ml_result = await get_anomaly_score(features)
-    anomaly_score = ml_result["anomaly_score"]
-    ml_decision = ml_result["decision"]  # ML's recommendation: pass/mfa/block
+    # 2) 4-Layer Risk Engine (Rule → Behavior → IForest → Aggregation)
+    risk = await evaluate_login_risk(
+        features=features,
+        user_id=str(user.id),
+        ip=client_ip,
+        geo_country=geo_country,
+        db=db,
+        shadow_mode=settings.ml_shadow_mode,
+    )
+    risk_score = risk["score"]
+    actual_decision = risk["decision"]
+    risk_reasons = risk["reasons"]
+    risk_breakdown = risk["breakdown"]
+    anomaly_score = risk_breakdown.get("iforest_raw", 0.0)
 
-    # 3) ตัดสินใจตาม policy
-    if settings.ml_shadow_mode:
-        # Shadow Mode: ปล่อยผ่านทุกคน แต่ log สิ่งที่ ML แนะนำไว้
-        if ml_decision == "block":
-            actual_decision = "would_block"
-        elif ml_decision == "mfa":
-            actual_decision = "would_mfa"
-        else:
-            actual_decision = "pass"
-    else:
-        # Enforce Mode: ทำตาม ML จริง
-        actual_decision = ml_decision
-
-    # 4) เช็ค IP Blacklist (Wiefling 2022 — "Is Attack IP" column)
-    attack_ip = is_blacklisted(db, client_ip)
-
-    # 5) บันทึก login session พร้อม score + decision + parsed UA fields
+    # 3) บันทึก login session พร้อม 4-layer risk data
     db.add(
         LoginSession(
             user_id=user.id,
@@ -336,21 +331,28 @@ async def oauth_callback(
             browser=parse_browser(user_agent),
             device_type=parse_device_type(user_agent),
             anomaly_score=anomaly_score,
+            risk_score=risk_score,
+            risk_breakdown=risk_breakdown,
+            risk_reasons=risk_reasons,
             decision=actual_decision,
-            is_attack_ip=attack_ip,
+            is_attack_ip=is_blacklisted(db, client_ip),
         )
     )
 
-    # 5) ถ้าเป็น Enforce mode และ ML สั่ง block -> ปฏิเสธก่อนสร้าง code
+    # 4) Block decision → ปฏิเสธ login
     if actual_decision == "block":
         log_action(
             db,
             actor_id=user.id,
-            action="login_blocked_by_ml",
+            action="login_blocked_by_risk_engine",
             target_type="subsystem",
             target_id=authreq["subsystem_id"],
             ip=client_ip,
-            metadata={"score": anomaly_score, "features": features},
+            metadata={
+                "risk_score": risk_score,
+                "breakdown": risk_breakdown,
+                "reasons": risk_reasons,
+            },
         )
         db.commit()
         await emit(
@@ -358,21 +360,21 @@ async def oauth_callback(
             {
                 "user_id": str(user.id),
                 "client_id": authreq["client_id"],
-                "reason": "ml_blocked",
+                "reason": "risk_blocked",
                 "ip": client_ip,
-                "anomaly_score": anomaly_score,
+                "risk_score": risk_score,
             },
         )
         raise HTTPException(
             status_code=403,
             detail=(
                 f"การ login ถูกบล็อกโดยระบบตรวจสอบความปลอดภัย "
-                f"(anomaly_score={anomaly_score}) — ติดต่อ admin หากเป็นเรื่องผิดพลาด"
+                f"(risk_score={risk_score:.3f}, reasons={risk_reasons}) "
+                f"— ติดต่อ admin หากเป็นเรื่องผิดพลาด"
             ),
         )
 
-    # (ถ้า ml_decision='mfa' ใน Enforce mode — Week 5 ยังไม่มี MFA flow
-    #  จะ implement ใน Week ถัดไป — ตอนนี้ปล่อยผ่าน + log)
+    # (challenge decision → Week 9-10 MFA flow — ตอนนี้ปล่อยผ่าน + log)
 
     # สร้าง authorization code (อายุ 60 วินาที, ใช้ครั้งเดียว)
     auth_code = secrets.token_urlsafe(32)
@@ -399,10 +401,11 @@ async def oauth_callback(
         target_id=authreq["subsystem_id"],
         ip=client_ip,
         metadata={
+            "risk_score": risk_score,
             "anomaly_score": anomaly_score,
-            "ml_decision": ml_decision,
-            "actual_decision": actual_decision,
-            "ml_error": ml_result.get("error"),
+            "decision": actual_decision,
+            "breakdown": risk_breakdown,
+            "reasons": risk_reasons,
         },
     )
     db.commit()

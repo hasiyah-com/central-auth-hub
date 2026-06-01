@@ -9,7 +9,8 @@ sqlalchemy==2.0.36
 psycopg2-binary==2.9.10
 
 # ============ Auth & Security ============
-python-jose[cryptography]==3.3.0
+# Migrated from python-jose → PyJWT (ลด CVE transitive ecdsa+pyasn1)
+PyJWT[crypto]==2.12.0
 itsdangerous==2.2.0
 
 # ============ HTTP Client (server-to-server กับ Hub) ============

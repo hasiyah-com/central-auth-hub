@@ -1,92 +1,143 @@
-"""JWT service — sign และ verify token ด้วย RS256 (asymmetric key).
+"""JWT service — sign/verify ด้วย RS256 + JWK Set rotation (RFC 7517 §6).
 
-- Hub ใช้ private key sign token
-- Subsystem ใช้ public key (จาก JWKS endpoint) verify token
+Multi-kid support สำหรับ zero-downtime key rotation:
+  - **Active key** (`settings.jwt_active_kid`) ใช้ sign token ใหม่
+  - **Extra public keys** (`settings.jwt_extra_public_keys`) — verify-only,
+    สำหรับ token ที่ sign ด้วย key เก่ายัง valid อยู่
+  - JWKS endpoint คืนทุก kid → subsystem verify ได้ทั้งคู่
+
+Rotation flow:
+  T+0:  begin    — เพิ่ม new key เป็น extra (verify only); active = old
+  T+5m: activate — สลับ active = new; old อยู่ใน extra (verify only)
+  T+65m: finalize — ลบ old ออกจาก extra (ทุก token เก่า expired แล้ว 60min TTL)
+
+Migration note: Migrated from `python-jose` → `PyJWT` (เพื่อตัด ecdsa/pyasn1 CVE)
 """
+
+from __future__ import annotations
+
+import base64
+import logging
 from datetime import datetime, timedelta, timezone
 from functools import lru_cache
 
-from jose import jwt, jwk, JWTError
+import jwt
+from cryptography.hazmat.primitives.serialization import load_pem_public_key
+from jwt.exceptions import InvalidTokenError as JWTError  # backwards-compat alias
 
 from app.config import settings
 from app.services.hooks import EVT_TOKEN_ISSUED, emit_nowait
 
+log = logging.getLogger(__name__)
 ISSUER = "https://hub.local"
-KEY_ID = "hub-key-1"
 
 
-# ============ โหลด key (cache ไว้ ไม่อ่านไฟล์ซ้ำ) ============
+# ============ Key loading ============
 
-@lru_cache
-def _private_key() -> str:
-    with open(settings.jwt_private_key_path, "r") as f:
+
+def _read(path: str) -> str:
+    with open(path, "r") as f:
         return f.read()
 
 
 @lru_cache
-def _public_key() -> str:
-    with open(settings.jwt_public_key_path, "r") as f:
-        return f.read()
+def _active_private_key() -> str:
+    return _read(settings.jwt_private_key_path)
 
 
-# ============ สร้าง / ตรวจสอบ token ============
+def _public_pem_for(kid: str) -> str | None:
+    """Resolve kid → public key PEM. Restart container เพื่อ pick up change."""
+    if kid == settings.jwt_active_kid:
+        return _read(settings.jwt_public_key_path)
+    # ค้นใน extra (format "kid1:/path/pub1.pem,kid2:/path/pub2.pem")
+    for entry in (settings.jwt_extra_public_keys or "").split(","):
+        entry = entry.strip()
+        if not entry or ":" not in entry:
+            continue
+        ekid, epath = entry.split(":", 1)
+        if ekid.strip() == kid:
+            try:
+                return _read(epath.strip())
+            except OSError as e:
+                log.warning(
+                    "Failed to read extra public key %s @ %s: %s", kid, epath, e
+                )
+                return None
+    return None
+
+
+def _all_public_keys() -> dict[str, str]:
+    """{kid: pem} — active + all extras. ใช้สำหรับ JWKS endpoint."""
+    keys: dict[str, str] = {
+        settings.jwt_active_kid: _read(settings.jwt_public_key_path)
+    }
+    for entry in (settings.jwt_extra_public_keys or "").split(","):
+        entry = entry.strip()
+        if not entry or ":" not in entry:
+            continue
+        ekid, epath = entry.split(":", 1)
+        ekid = ekid.strip()
+        epath = epath.strip()
+        if ekid == settings.jwt_active_kid:
+            continue  # already added
+        try:
+            keys[ekid] = _read(epath)
+        except OSError as e:
+            log.warning("Skip extra public key %s @ %s: %s", ekid, epath, e)
+    return keys
+
+
+# ============ Sign ============
+
 
 def create_access_token(user, audience: str | None = None) -> str:
-    """สร้าง JWT access token สำหรับ user ที่ login กับ Hub โดยตรง.
-
-    audience = client_id ของ subsystem (ถ้าเป็น token สำหรับ subsystem)
-               หรือ None = token ของ Hub เอง (จะตั้ง aud = jwt_hub_audience)
-
-    การแยก audience สำคัญมาก — กัน subsystem token มาใช้กับ Hub endpoint
-    เพราะ verify_token() ที่ Hub จะบังคับเช็ค aud = jwt_hub_audience
-    """
+    """สร้าง JWT Hub-direct (aud = hub.internal โดย default)."""
     now = datetime.now(timezone.utc)
     expire = now + timedelta(minutes=settings.jwt_access_token_expire_minutes)
-
     payload = {
-        # Standard claims
         "iss": ISSUER,
         "sub": str(user.id),
         "aud": audience or settings.jwt_hub_audience,
         "iat": int(now.timestamp()),
         "exp": int(expire.timestamp()),
-        # User data
         "email": user.email,
         "name": user.full_name,
         "user_type": user.user_type,
         "faculty": user.faculty,
     }
-
-    headers = {"kid": KEY_ID}
-    token = jwt.encode(payload, _private_key(), algorithm="RS256", headers=headers)
-    emit_nowait(EVT_TOKEN_ISSUED, {
-        "sub": payload["sub"], "aud": payload["aud"],
-        "exp": payload["exp"], "kind": "hub_direct",
-    })
+    token = jwt.encode(
+        payload,
+        _active_private_key(),
+        algorithm="RS256",
+        headers={"kid": settings.jwt_active_kid},
+    )
+    emit_nowait(
+        EVT_TOKEN_ISSUED,
+        {
+            "sub": payload["sub"],
+            "aud": payload["aud"],
+            "exp": payload["exp"],
+            "kind": "hub_direct",
+            "kid": settings.jwt_active_kid,
+        },
+    )
     return token
 
 
 def create_subsystem_token(
     user, client_id: str, scope: list[str], role_in_sub: str
 ) -> str:
-    """สร้าง JWT สำหรับ subsystem — ใส่ข้อมูล user เฉพาะ field ที่อยู่ใน scope.
-
-    นี่คือหัวใจของ "Scope-based Data Access":
-    subsystem ได้รับเฉพาะข้อมูลที่ลงทะเบียนขอไว้เท่านั้น
-    """
+    """JWT สำหรับ subsystem — เฉพาะ field ใน scope."""
     now = datetime.now(timezone.utc)
     expire = now + timedelta(minutes=settings.jwt_access_token_expire_minutes)
-
     payload = {
         "iss": ISSUER,
         "sub": str(user.id),
-        "aud": client_id,                    # token นี้ใช้ได้เฉพาะ subsystem นี้
+        "aud": client_id,
         "iat": int(now.timestamp()),
         "exp": int(expire.timestamp()),
         "role_in_subsystem": role_in_sub,
     }
-
-    # map scope -> field ของ user (ใส่เฉพาะที่ subsystem ขอ)
     scope_field_map = {
         "email": ("email", user.email),
         "name": ("name", user.full_name),
@@ -101,41 +152,87 @@ def create_subsystem_token(
     }
     for s in scope:
         if s in scope_field_map:
-            key, value = scope_field_map[s]
-            payload[key] = value
+            k, v = scope_field_map[s]
+            payload[k] = v
 
-    headers = {"kid": KEY_ID}
-    token = jwt.encode(payload, _private_key(), algorithm="RS256", headers=headers)
-    emit_nowait(EVT_TOKEN_ISSUED, {
-        "sub": payload["sub"], "aud": payload["aud"],
-        "exp": payload["exp"], "kind": "subsystem",
-        "role_in_subsystem": role_in_sub, "scope": scope,
-    })
+    token = jwt.encode(
+        payload,
+        _active_private_key(),
+        algorithm="RS256",
+        headers={"kid": settings.jwt_active_kid},
+    )
+    emit_nowait(
+        EVT_TOKEN_ISSUED,
+        {
+            "sub": payload["sub"],
+            "aud": payload["aud"],
+            "exp": payload["exp"],
+            "kind": "subsystem",
+            "role_in_subsystem": role_in_sub,
+            "scope": scope,
+            "kid": settings.jwt_active_kid,
+        },
+    )
     return token
 
 
-def verify_token(token: str, audience: str | None = None) -> dict:
-    """ตรวจสอบ JWT — คืน payload ถ้า valid, raise JWTError ถ้าไม่ valid.
+# ============ Verify ============
 
-    audience: ค่าที่คาดหวังใน aud claim. ถ้า None จะใช้ jwt_hub_audience
-              (กัน subsystem token หลุดมาใช้ที่ Hub).
+
+def verify_token(token: str, audience: str | None = None) -> dict:
+    """ตรวจ JWT — lookup public key ตาม `kid` ใน header.
+
+    รองรับ rotation: token ที่ sign ด้วย kid เก่ายัง verify ผ่านถ้า kid อยู่ใน
+    extra_public_keys (ระหว่าง grace period)
     """
     expected_aud = audience or settings.jwt_hub_audience
+    try:
+        header = jwt.get_unverified_header(token)
+    except Exception as e:
+        raise JWTError(f"Bad JWT header: {e}") from e
+
+    kid = header.get("kid") or settings.jwt_active_kid
+    pub_pem = _public_pem_for(kid)
+    if not pub_pem:
+        raise JWTError(f"Unknown signing key kid={kid!r}")
+
     return jwt.decode(
         token,
-        _public_key(),
+        pub_pem,
         algorithms=["RS256"],
-        issuer=ISSUER,
         audience=expected_aud,
-        options={"verify_aud": True},
+        issuer=ISSUER,
+        options={"verify_aud": True, "verify_iss": True, "verify_exp": True},
     )
 
 
-# ============ JWKS — public key สำหรับให้ subsystem verify ============
+# ============ JWKS ============
+
+
+def _b64url_uint(n: int) -> str:
+    """base64url-encode integer (RFC 7515 Appendix C)."""
+    b = n.to_bytes((n.bit_length() + 7) // 8, "big")
+    return base64.urlsafe_b64encode(b).rstrip(b"=").decode("ascii")
+
+
+def _to_jwk(kid: str, pem: str) -> dict:
+    """แปลง RSA public key PEM → JWK dict (RFC 7517)."""
+    pub = load_pem_public_key(pem.encode())
+    n = pub.public_numbers()
+    return {
+        "kty": "RSA",
+        "use": "sig",
+        "kid": kid,
+        "alg": "RS256",
+        "n": _b64url_uint(n.n),
+        "e": _b64url_uint(n.e),
+    }
+
 
 def get_jwks() -> dict:
-    """คืน JWKS (JSON Web Key Set) — subsystem ดึงไปใช้ verify token."""
-    key = jwk.construct(_public_key(), algorithm="RS256")
-    jwk_dict = key.to_dict()
-    jwk_dict.update({"use": "sig", "kid": KEY_ID, "alg": "RS256"})
-    return {"keys": [jwk_dict]}
+    """คืน JWK Set — ทุก kid ที่ valid (active + extras).
+
+    Subsystem cache JWKS แล้ว match `kid` จาก JWT header — รองรับ rotation
+    โดยไม่ต้อง restart subsystem (จะดึง JWKS ใหม่ตอน cache หมดอายุ 10 นาที)
+    """
+    return {"keys": [_to_jwk(kid, pem) for kid, pem in _all_public_keys().items()]}

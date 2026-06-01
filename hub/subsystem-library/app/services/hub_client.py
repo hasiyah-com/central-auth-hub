@@ -2,15 +2,19 @@
 
 ดู docstring เต็มที่ Subsystem A (`subsystem-dorm/app/services/hub_client.py`)
 """
+
 import base64
 import hashlib
 import secrets
 import time
 from urllib.parse import urlencode
 
+import json
+
 import httpx
-from jose import jwt as jose_jwt
-from jose.exceptions import JWTError
+import jwt as pyjwt
+from jwt.algorithms import RSAAlgorithm
+from jwt.exceptions import InvalidTokenError as JWTError
 
 from app.config import settings
 
@@ -76,17 +80,20 @@ async def verify_hub_jwt(token: str) -> dict:
     """ตรวจ JWT — verify signature + iss + aud=client_id ของเรา."""
     jwks = await _fetch_jwks()
 
-    header = jose_jwt.get_unverified_header(token)
+    # PyJWT API — get_unverified_header + convert JWK dict → RSA key
+    header = pyjwt.get_unverified_header(token)
     kid = header.get("kid")
     matched = next((k for k in jwks["keys"] if k.get("kid") == kid), None)
     if not matched:
         raise JWTError(f"ไม่พบ public key สำหรับ kid={kid}")
 
-    return jose_jwt.decode(
+    public_key = RSAAlgorithm.from_jwk(json.dumps(matched))
+
+    return pyjwt.decode(
         token,
-        matched,
+        public_key,
         algorithms=["RS256"],
         issuer=settings.jwt_issuer,
         audience=settings.library_client_id,
-        options={"verify_aud": True, "verify_iss": True},
+        options={"verify_aud": True, "verify_iss": True, "verify_exp": True},
     )

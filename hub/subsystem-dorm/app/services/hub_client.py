@@ -5,15 +5,19 @@ Subsystem A คุยกับ Hub 3 จุด:
   2. /oauth/token      — แลก code เป็น JWT (server-to-server ใช้ HUB_INTERNAL_URL)
   3. /.well-known/jwks.json — ดึง public key มา verify JWT (cache)
 """
+
 import base64
 import hashlib
 import secrets
 import time
 from urllib.parse import urlencode
 
+import json
+
 import httpx
-from jose import jwt as jose_jwt
-from jose.exceptions import JWTError
+import jwt as pyjwt
+from jwt.algorithms import RSAAlgorithm
+from jwt.exceptions import InvalidTokenError as JWTError
 
 from app.config import settings
 
@@ -23,6 +27,7 @@ _jwks_cache: dict = {"data": None, "fetched_at": 0}
 
 
 # ============ PKCE ============
+
 
 def generate_pkce_pair() -> tuple[str, str]:
     """สร้าง (code_verifier, code_challenge) ตาม RFC 7636.
@@ -37,6 +42,7 @@ def generate_pkce_pair() -> tuple[str, str]:
 
 
 # ============ Authorization URL (browser redirect) ============
+
 
 def build_authorize_url(state: str, code_challenge: str) -> str:
     """สร้าง URL ที่ browser จะ redirect ไป Hub /oauth/authorize.
@@ -53,6 +59,7 @@ def build_authorize_url(state: str, code_challenge: str) -> str:
 
 
 # ============ Token Exchange (server-to-server) ============
+
 
 async def exchange_code_for_token(code: str, code_verifier: str) -> dict:
     """POST /oauth/token แลก authorization code → JWT.
@@ -75,6 +82,7 @@ async def exchange_code_for_token(code: str, code_verifier: str) -> dict:
 
 
 # ============ JWKS + JWT verify ============
+
 
 async def _fetch_jwks() -> dict:
     """ดึง JWKS จาก Hub (cache 10 นาที)."""
@@ -102,18 +110,21 @@ async def verify_hub_jwt(token: str) -> dict:
     """
     jwks = await _fetch_jwks()
 
-    # หา key ที่ kid ตรงกับ header ของ token
-    header = jose_jwt.get_unverified_header(token)
+    # หา key ที่ kid ตรงกับ header ของ token (PyJWT API)
+    header = pyjwt.get_unverified_header(token)
     kid = header.get("kid")
     matched = next((k for k in jwks["keys"] if k.get("kid") == kid), None)
     if not matched:
         raise JWTError(f"ไม่พบ public key สำหรับ kid={kid}")
 
-    return jose_jwt.decode(
+    # PyJWT รับ key object — convert JWK dict → RSA public key ก่อน
+    public_key = RSAAlgorithm.from_jwk(json.dumps(matched))
+
+    return pyjwt.decode(
         token,
-        matched,
+        public_key,
         algorithms=["RS256"],
         issuer=settings.jwt_issuer,
         audience=settings.dorm_client_id,
-        options={"verify_aud": True, "verify_iss": True},
+        options={"verify_aud": True, "verify_iss": True, "verify_exp": True},
     )

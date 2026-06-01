@@ -19,6 +19,9 @@ export type Anomaly = {
   device_type: string | null;
   is_attack_ip: boolean;
   is_account_takeover: boolean;
+  risk_score: number | null;
+  risk_breakdown: { rule: number; behavior: number; iforest: number; iforest_raw: number } | null;
+  risk_reasons: string[] | null;
   created_at: string;
 };
 
@@ -34,6 +37,9 @@ export type UserSession = {
   device_type: string | null;
   is_attack_ip: boolean;
   is_account_takeover: boolean;
+  risk_score: number | null;
+  risk_breakdown: { rule: number; behavior: number; iforest: number; iforest_raw: number } | null;
+  risk_reasons: string[] | null;
   created_at: string;
   feedback_label: string | null;
 };
@@ -90,9 +96,14 @@ export type FeedbackResponse = {
 // ── Constants ──
 
 export const DECISION_TONE: Record<string, "good" | "warn" | "danger" | "default"> = {
+  allow: "good",
   pass: "good",
+  warn: "warn",
+  challenge: "warn",
   mfa: "warn",
   block: "danger",
+  would_warn: "warn",
+  would_challenge: "warn",
   would_mfa: "warn",
   would_block: "danger",
   unknown: "default",

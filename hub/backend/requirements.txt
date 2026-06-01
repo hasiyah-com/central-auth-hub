@@ -12,8 +12,9 @@ alembic==1.13.3
 redis==5.2.0
 
 # ============ Auth & Security ============
-# python-jose 3.4.0 → fix PYSEC-2024-232/233 (algorithm confusion)
-python-jose[cryptography]==3.4.0
+# PyJWT 2.12+ → ทดแทน python-jose (Auth0-backed) + fix PYSEC-2026-120
+# ตัด ecdsa, pyasn1 ออกจาก tree → ลด CVE หลายตัว
+PyJWT[crypto]==2.12.0
 argon2-cffi==23.1.0
 # authlib 1.6.12 → fix CVE-2026-44681 (signature bypass) + 9 อื่น ๆ
 authlib==1.6.12
@@ -33,10 +34,8 @@ python-multipart==0.0.27
 httpx==0.27.2
 
 # ============ Known transitive vulnerabilities (รอ upstream แก้) ============
-# pyasn1 0.4.8 (CVE-2026-30922) — python-jose pin <0.5 → upgrade ทั้งคู่พร้อมกัน
 # starlette 0.48.0 (CVE-2025-62727, PYSEC-2026-161) — fastapi 0.118 pin <0.49
-# ecdsa 0.19.2 (CVE-2024-23342) — ยังไม่มี fix upstream
-# พิจารณาย้าย python-jose → PyJWT + cryptography (no ecdsa dep) ใน Week ถัดไป
+# (ecdsa + pyasn1 ตัดไปแล้วหลัง migrate → PyJWT)
 
 # ============ GeoIP (MaxMind GeoLite2 offline lookup) ============
 geoip2==4.8.0

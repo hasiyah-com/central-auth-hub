@@ -76,27 +76,60 @@ export function SessionDetailPanel({ session, onFeedbackSaved, hideUserLink }: P
     }
   }
 
-  const scorePct = Math.round(score * 100);
-  const scoreColor =
-    score >= 0.7 ? "bg-rose-500" : score >= 0.4 ? "bg-amber-500" : "bg-emerald-500";
+  const riskScore = session.risk_score ?? score;
+  const riskPct = Math.round(riskScore * 100);
+  const riskColor =
+    riskScore >= 0.8 ? "bg-rose-500" : riskScore >= 0.5 ? "bg-amber-500" : riskScore >= 0.3 ? "bg-yellow-400" : "bg-emerald-500";
   const deviceIcon = DEVICE_ICON[session.device_type || "unknown"] || DEVICE_ICON.unknown;
+  const bd = session.risk_breakdown;
 
   return (
     <div className="space-y-6">
-      {/* ── 1. Score header ── */}
+      {/* ── 1. Risk Score header ── */}
       <div>
         <div className="flex items-center gap-4">
           <span className="text-4xl font-extrabold tabular-nums text-ink-900">
-            {score.toFixed(2)}
+            {riskScore.toFixed(3)}
           </span>
           <Badge tone={DECISION_TONE[session.decision || "unknown"] || "default"}>
             {(session.decision || "unknown").toUpperCase()}
           </Badge>
         </div>
         <div className="mt-2 h-2 w-full bg-ink-100 rounded-full overflow-hidden">
-          <div className={`h-full ${scoreColor}`} style={{ width: `${scorePct}%` }} />
+          <div className={`h-full ${riskColor}`} style={{ width: `${riskPct}%` }} />
         </div>
-        <div className="mt-1 text-[10px] text-ink-400">Anomaly Score · 0.00 – 1.00</div>
+        <div className="mt-1 text-[10px] text-ink-400">
+          Risk Score (4-Layer) · 0.000 – 1.000
+          {score != null && <span className="ml-2">| IForest raw: {score.toFixed(2)}</span>}
+        </div>
+
+        {/* Risk Breakdown — 3 layers */}
+        {bd && (
+          <div className="mt-3 grid grid-cols-3 gap-2">
+            <BreakdownBar label="Rule" value={bd.rule} max={1} color="bg-blue-500" />
+            <BreakdownBar label="Behavior" value={bd.behavior} max={1} color="bg-purple-500" />
+            <BreakdownBar label="IForest" value={bd.iforest} max={0.4} color="bg-amber-500" />
+          </div>
+        )}
+
+        {/* Risk Reasons */}
+        {session.risk_reasons && session.risk_reasons.length > 0 && (
+          <div className="mt-3 p-3 rounded-lg bg-ink-50 border border-ink-200">
+            <div className="text-[10px] font-bold text-ink-400 uppercase tracking-wider mb-1">
+              Reasons
+            </div>
+            <div className="flex flex-wrap gap-1">
+              {session.risk_reasons.map((r, i) => (
+                <span
+                  key={i}
+                  className="px-2 py-0.5 rounded bg-ink-200 text-[11px] font-mono text-ink-700"
+                >
+                  {r}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* ── 2. Detail grid ── */}
@@ -286,6 +319,31 @@ function DetailRow({
       </div>
       <div className={`mt-0.5 text-ink-900 ${mono ? "font-mono text-xs" : ""}`}>
         {value}
+      </div>
+    </div>
+  );
+}
+
+function BreakdownBar({
+  label,
+  value,
+  max,
+  color,
+}: {
+  label: string;
+  value: number;
+  max: number;
+  color: string;
+}) {
+  const pct = Math.round((value / max) * 100);
+  return (
+    <div>
+      <div className="flex items-baseline justify-between mb-1">
+        <span className="text-[10px] font-bold text-ink-500 uppercase">{label}</span>
+        <span className="text-xs font-mono font-bold text-ink-900">{value.toFixed(2)}</span>
+      </div>
+      <div className="h-1.5 bg-ink-100 rounded-full overflow-hidden">
+        <div className={`h-full ${color}`} style={{ width: `${Math.min(pct, 100)}%` }} />
       </div>
     </div>
   );
