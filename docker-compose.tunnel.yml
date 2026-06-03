@@ -1,0 +1,21 @@
+# Overlay: Cloudflare Quick Tunnel (Mode A — demo / dev exposure)
+#
+# Use:
+#   docker compose -f docker-compose.yml -f docker-compose.tunnel.yml up -d cloudflared
+#
+# หลังจาก up: docker logs hub-tunnel | grep "trycloudflare.com"
+# จะได้ URL แบบ https://<random>.trycloudflare.com
+#
+# จากนั้น:
+#   1. เพิ่ม URL ใน Google Console: <URL>/auth/google/callback
+#   2. แก้ .env: GOOGLE_REDIRECT_URI, HUB_BASE_URL, ADMIN_FRONTEND_URL → URL ใหม่
+#   3. docker compose up -d --force-recreate hub-backend hub-frontend
+services:
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: hub-tunnel
+    command: tunnel --no-autoupdate --url http://hub-backend:8000
+    depends_on:
+      - hub-backend
+    restart: unless-stopped
+    # ไม่ต้อง expose port — cloudflared dial out only

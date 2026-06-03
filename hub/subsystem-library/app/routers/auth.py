@@ -165,15 +165,33 @@ async def oauth_callback(
         _log_failed_login(db, request, reason="jwt_verify_failed", detail=str(e))
         raise HTTPException(status_code=401, detail=f"JWT ไม่ valid: {e}")
 
-    # Subsystem B ขอ scope จาก Hub เฉพาะ: email, full_name, role_in_sub, faculty, student_id
+    # รับทุก field ที่ Hub อาจส่งตาม scope (กันเสีย data ตอน scope ขยาย)
+    SCOPE_FIELDS_LIB = [
+        "student_id",
+        "employee_id",
+        "faculty",
+        "major",
+        "year",
+        "position",
+        "phone",
+        "address",
+    ]
+    provided_scope = [f for f in SCOPE_FIELDS_LIB if claims.get(f) is not None]
     user = CurrentUser(
         {
             "hub_user_id": claims["sub"],
             "email": claims.get("email", ""),
             "full_name": claims.get("name", ""),
             "role_in_sub": claims.get("role_in_subsystem", "member"),
-            "faculty": claims.get("faculty"),
             "student_id": claims.get("student_id"),
+            "employee_id": claims.get("employee_id"),
+            "faculty": claims.get("faculty"),
+            "major": claims.get("major"),
+            "year": claims.get("year"),
+            "position": claims.get("position"),
+            "phone": claims.get("phone"),
+            "address": claims.get("address"),
+            "provided_scope": provided_scope,
         }
     )
     member = get_or_create_member(user, db)
@@ -195,8 +213,15 @@ async def oauth_callback(
             "email": user.email,
             "full_name": user.full_name,
             "role_in_sub": user.role_in_sub,
-            "faculty": user.faculty,
             "student_id": user.student_id,
+            "employee_id": user.employee_id,
+            "faculty": user.faculty,
+            "major": user.major,
+            "year": user.year,
+            "position": user.position,
+            "phone": user.phone,
+            "address": user.address,
+            "provided_scope": user.provided_scope,
         }
     )
 
@@ -211,7 +236,7 @@ async def oauth_callback(
 
 
 @router.get("/logout")
-def logout(
+async def logout(
     request: Request,
     user: CurrentUser | None = Depends(get_current_user_optional),
     db: Session = Depends(get_db),
@@ -226,6 +251,8 @@ def logout(
             metadata={"email": user.email},
         )
         db.commit()
+        # แจ้ง Hub (fail-safe — ไม่ block logout local)
+        await hub_client.notify_hub_logout(user.hub_user_id)
 
     response = RedirectResponse(url="/login", status_code=302)
     response.delete_cookie(settings.session_cookie_name, path="/")

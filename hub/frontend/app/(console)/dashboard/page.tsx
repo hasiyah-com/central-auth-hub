@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { Topbar } from "@/components/Topbar";
 import { StatsCard } from "@/components/StatsCard";
 import { clientFetch } from "@/lib/api";
@@ -13,21 +14,49 @@ type Overview = {
 
 type UserCount = Record<string, number>;
 
+type NotifCount = {
+  total: number;
+  unread?: number; // admin คนปัจจุบันยังไม่อ่าน (banner ใช้ตัวนี้)
+  by_category: {
+    approval_requests: number;
+    ml_anomaly: number;
+    api_alerts: number;
+    subsystem_health: number;
+  };
+};
+
+const CATEGORY_LABELS: Record<string, { label: string; icon: string }> = {
+  approval_requests: { label: "คำขอ Approve", icon: "📋" },
+  ml_anomaly: { label: "ML Anomaly", icon: "🧠" },
+  api_alerts: { label: "API Alerts", icon: "🛡️" },
+  subsystem_health: { label: "Subsystem ล่ม", icon: "🟢" },
+};
+
 export default function DashboardPage() {
   const [data, setData] = useState<Overview | null>(null);
   const [counts, setCounts] = useState<UserCount | null>(null);
+  const [notif, setNotif] = useState<NotifCount | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     Promise.all([
       clientFetch<Overview>("/admin/overview"),
       clientFetch<UserCount>("/admin/users/count"),
+      clientFetch<NotifCount>("/admin/notifications/count").catch(() => null),
     ])
-      .then(([ov, ct]) => {
+      .then(([ov, ct, nc]) => {
         setData(ov);
         setCounts(ct);
+        if (nc) setNotif(nc);
       })
       .catch((e) => setError(e.detail || "โหลดข้อมูลไม่สำเร็จ"));
+
+    const t = setInterval(() => {
+      clientFetch<NotifCount>("/admin/notifications/count")
+        .then(setNotif)
+        .catch(() => {});
+    }, 30_000);
+    return () => clearInterval(t);
   }, []);
 
   return (
@@ -42,6 +71,52 @@ export default function DashboardPage() {
 
         {!data && !error && (
           <div className="text-ink-400 text-sm">กำลังโหลด…</div>
+        )}
+
+        {/* Notifications Banner — แสดงเฉพาะถ้ามี unread ที่ admin ยังไม่ดู */}
+        {notif && (notif.unread ?? 0) > 0 && (
+          <Link
+            href="/notifications"
+            className="block mb-6 bg-gradient-to-r from-amber-50 to-orange-50 border-2 border-amber-300 rounded-xl p-5 hover:border-amber-500 hover:shadow-md transition group"
+          >
+            <div className="flex items-start gap-4">
+              <div className="text-3xl animate-pulse">🔔</div>
+              <div className="flex-1">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-xs font-bold text-amber-900 uppercase tracking-wider">
+                    Action Required
+                  </span>
+                  <span className="px-2 py-0.5 rounded-full bg-amber-200 text-amber-900 text-[11px] font-bold">
+                    {notif.unread}
+                  </span>
+                </div>
+                <h3 className="text-lg font-extrabold text-amber-900">
+                  มี <span className="tabular-nums">{notif.unread}</span> แจ้งเตือนยังไม่อ่าน
+                </h3>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {Object.entries(notif.by_category)
+                    .filter(([, c]) => c > 0)
+                    .map(([key, c]) => {
+                      const info = CATEGORY_LABELS[key];
+                      if (!info) return null;
+                      return (
+                        <span
+                          key={key}
+                          className="inline-flex items-center gap-1 px-2 py-1 rounded bg-white border border-amber-200 text-[11px] font-semibold text-amber-900"
+                        >
+                          <span>{info.icon}</span>
+                          <span>{info.label}</span>
+                          <span className="ml-1 font-mono text-amber-700">×{c}</span>
+                        </span>
+                      );
+                    })}
+                </div>
+              </div>
+              <div className="text-amber-700 group-hover:text-amber-900 font-bold text-2xl transition">
+                →
+              </div>
+            </div>
+          </Link>
         )}
 
         {data && (

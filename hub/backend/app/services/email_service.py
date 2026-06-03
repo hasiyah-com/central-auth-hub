@@ -169,3 +169,235 @@ CLIENT_ID: {client_id}
         html=html,
         text_fallback=text,
     )
+
+
+# ─────────────────────────────────────────────────────────────
+# Admin Revoke notifications (Level 1: notify, Level 2: challenge, Level 3: ban)
+# ─────────────────────────────────────────────────────────────
+
+
+def send_revoke_notification(
+    to_email: str,
+    full_name: str | None,
+    subsystem_name: str | None,
+    when: datetime,
+    reason: str = "Force logout by admin",
+    can_relogin: bool = True,
+) -> bool:
+    """Level 1/3: แจ้ง user ว่า session ถูก admin ปิด.
+
+    can_relogin=True (Level 1) → "ยัง login ใหม่ได้ปกติ"
+    can_relogin=False (Level 3) → "ไม่สามารถ login ใหม่ได้ — ติดต่อ admin"
+    """
+    where = subsystem_name or "Central Auth Hub"
+    when_str = when.strftime("%d/%m/%Y %H:%M UTC")
+    name = full_name or to_email
+
+    if can_relogin:
+        action_box = "<strong>คุณยัง <span style='color:#15803d'>login ใหม่ได้ปกติ</span></strong> — ไม่ต้องทำอะไรเพิ่ม"
+        subject_suffix = "session ถูกปิด"
+    else:
+        action_box = (
+            "<strong style='color:#b91c1c'>คุณ login ใหม่ไม่ได้</strong> — ติดต่อ admin"
+            f" ที่ <a href='mailto:{settings.email_from}' style='color:#1d4ed8;'>{settings.email_from}</a>"
+            " เพื่อขอเปิดสิทธิ์กลับ"
+        )
+        subject_suffix = "บัญชีถูกระงับ"
+
+    html = f"""<!doctype html>
+<html lang="th"><body style="margin:0;padding:0;background:#f8fafc;font-family:'Sarabun','Helvetica Neue',Arial,sans-serif;color:#0f172a;">
+<table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="background:#f8fafc;padding:40px 16px;">
+<tr><td align="center">
+<table role="presentation" cellpadding="0" cellspacing="0" width="560" style="max-width:560px;background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 4px 12px rgba(15,23,42,0.08);">
+  <tr><td style="background:linear-gradient(135deg,#f59e0b 0%,#b45309 100%);padding:32px;color:#fff;">
+    <div style="font-size:11px;letter-spacing:0.18em;text-transform:uppercase;opacity:0.85;">Central Auth Hub · Security Notice</div>
+    <div style="font-size:22px;font-weight:800;margin-top:6px;">⚠ Session ถูกปิดโดย Admin</div>
+  </td></tr>
+  <tr><td style="padding:28px 32px;">
+    <p style="margin:0 0 12px;font-size:15px;">สวัสดีคุณ <strong>{name}</strong>,</p>
+    <p style="margin:0 0 16px;font-size:14px;line-height:1.6;color:#334155;">
+      session ของคุณใน <strong>{where}</strong> ถูกปิดโดย admin เวลา <strong>{when_str}</strong>.
+    </p>
+    <div style="background:#fef3c7;border:1px solid #fde68a;border-radius:10px;padding:14px 16px;margin:16px 0;font-size:13px;color:#92400e;">
+      <strong>เหตุผล:</strong> {reason}<br>{action_box}
+    </div>
+    <p style="margin:16px 0 0;font-size:13px;color:#475569;line-height:1.6;">
+      <strong>ถ้าไม่ใช่คุณที่ใช้งาน:</strong>
+      <ol style="margin:6px 0 0 18px;padding:0;line-height:1.7;">
+        <li>เปลี่ยนรหัสผ่าน Google ทันที</li>
+        <li>เปิด 2FA ของ Google</li>
+        <li>ติดต่อ admin ที่ <a href="mailto:{settings.email_from}" style="color:#1d4ed8;">{settings.email_from}</a></li>
+      </ol>
+    </p>
+  </td></tr>
+  <tr><td style="padding:14px 32px 28px;font-size:11px;color:#94a3b8;border-top:1px solid #f1f5f9;">
+    Central Auth Hub · ข้อความนี้ส่งอัตโนมัติ
+  </td></tr>
+</table>
+</td></tr></table>
+</body></html>"""
+
+    text = f"""[Central Auth Hub] {subject_suffix}
+
+session ของคุณใน "{where}" ถูกปิดเวลา {when_str}.
+เหตุผล: {reason}
+"""
+    text += (
+        "คุณยัง login ใหม่ได้ปกติ — ไม่ต้องทำอะไรเพิ่ม\n"
+        if can_relogin
+        else "คุณ login ใหม่ไม่ได้ — ติดต่อ admin เพื่อเปิดสิทธิ์กลับ\n"
+    )
+
+    return _send_html_email(
+        to=to_email,
+        subject=f"[Central Auth Hub] {subject_suffix} — {where}",
+        html=html,
+        text_fallback=text,
+    )
+
+
+def send_change_request_decision(
+    to_email: str,
+    full_name: str | None,
+    subsystem_name: str,
+    request_type: str,
+    decision: str,  # "approved" | "rejected"
+    reviewer_email: str,
+    note: str | None = None,
+) -> bool:
+    """แจ้ง dev ว่า change request ของเขาถูก approve หรือ reject."""
+    is_approved = decision == "approved"
+    color = "#15803d" if is_approved else "#b91c1c"
+    bg = "#dcfce7" if is_approved else "#fee2e2"
+    icon = "✅" if is_approved else "🛑"
+    label = "Approved" if is_approved else "Rejected"
+    type_label_map = {
+        "rotate_secret": "Rotate Client Secret",  # pragma: allowlist secret
+        "edit_scope": "แก้ไข Scope",
+        "edit_allowed_roles": "แก้ไข Allowed Roles",
+        "edit_redirect_uris": "แก้ไข Redirect URIs",
+    }
+    type_label = type_label_map.get(request_type, request_type)
+    name = full_name or to_email
+    note_html = (
+        f'<div style="background:#fef3c7;border:1px solid #fde68a;border-radius:8px;'
+        f'padding:12px 14px;margin:14px 0;font-size:13px;color:#78350f;">'
+        f"<strong>หมายเหตุจาก admin:</strong><br>{note}</div>"
+        if note
+        else ""
+    )
+
+    html = f"""<!doctype html>
+<html lang="th"><body style="margin:0;padding:0;background:#f8fafc;font-family:'Sarabun','Helvetica Neue',Arial,sans-serif;color:#0f172a;">
+<table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="background:#f8fafc;padding:40px 16px;">
+<tr><td align="center">
+<table role="presentation" cellpadding="0" cellspacing="0" width="560" style="max-width:560px;background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 4px 12px rgba(15,23,42,0.08);">
+  <tr><td style="background:{bg};padding:32px;text-align:center;">
+    <div style="font-size:48px;line-height:1;">{icon}</div>
+    <div style="font-size:22px;font-weight:800;color:{color};margin-top:10px;">Change Request {label}</div>
+  </td></tr>
+  <tr><td style="padding:24px 32px;">
+    <p style="margin:0 0 12px;font-size:15px;">สวัสดีคุณ <strong>{name}</strong>,</p>
+    <p style="margin:0 0 14px;font-size:14px;line-height:1.6;color:#334155;">
+      Request ของคุณสำหรับ <strong>{subsystem_name}</strong> ถูก
+      <strong style="color:{color}">{label}</strong> โดย admin
+    </p>
+    <table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;font-size:13px;color:#475569;margin:14px 0;">
+      <tr><td style="padding:4px 0;width:120px;">Subsystem:</td><td style="padding:4px 0;color:#0f172a;font-weight:600;">{subsystem_name}</td></tr>
+      <tr><td style="padding:4px 0;">Request type:</td><td style="padding:4px 0;color:#0f172a;font-weight:600;">{type_label}</td></tr>
+      <tr><td style="padding:4px 0;">Reviewed by:</td><td style="padding:4px 0;color:#0f172a;font-family:monospace;">{reviewer_email}</td></tr>
+    </table>
+    {note_html}
+  </td></tr>
+  <tr><td style="padding:14px 32px 28px;font-size:11px;color:#94a3b8;border-top:1px solid #f1f5f9;">
+    Central Auth Hub · Developer Portal change request workflow
+  </td></tr>
+</table>
+</td></tr></table>
+</body></html>"""
+
+    text = f"""[Central Auth Hub] Change Request {label}
+
+Subsystem: {subsystem_name}
+Type: {type_label}
+Decision: {label}
+Reviewed by: {reviewer_email}
+{('Note: ' + note) if note else ''}
+"""
+    return _send_html_email(
+        to=to_email,
+        subject=f"[Central Auth Hub] {icon} {label}: {type_label} — {subsystem_name}",
+        html=html,
+        text_fallback=text,
+    )
+
+
+def send_identity_challenge(
+    to_email: str,
+    full_name: str | None,
+    confirm_url: str,
+    expires_at: datetime,
+    reason: str = "admin_revoked",
+) -> bool:
+    """Level 2: ส่งลิงก์ confirm — user ต้องคลิกก่อน login ใหม่ได้."""
+    expires_str = expires_at.strftime("%d/%m/%Y %H:%M UTC")
+    name = full_name or to_email
+
+    html = f"""<!doctype html>
+<html lang="th"><body style="margin:0;padding:0;background:#f8fafc;font-family:'Sarabun','Helvetica Neue',Arial,sans-serif;color:#0f172a;">
+<table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="background:#f8fafc;padding:40px 16px;">
+<tr><td align="center">
+<table role="presentation" cellpadding="0" cellspacing="0" width="560" style="max-width:560px;background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 4px 12px rgba(15,23,42,0.08);">
+  <tr><td style="background:linear-gradient(135deg,#dc2626 0%,#7f1d1d 100%);padding:32px;color:#fff;">
+    <div style="font-size:11px;letter-spacing:0.18em;text-transform:uppercase;opacity:0.85;">Central Auth Hub · Identity Verification Required</div>
+    <div style="font-size:22px;font-weight:800;margin-top:6px;">🔒 ยืนยันตัวตนเพื่อ login ต่อ</div>
+  </td></tr>
+  <tr><td style="padding:28px 32px;">
+    <p style="margin:0 0 12px;font-size:15px;">สวัสดีคุณ <strong>{name}</strong>,</p>
+    <p style="margin:0 0 16px;font-size:14px;line-height:1.6;color:#334155;">
+      Admin ตรวจพบกิจกรรมที่อาจผิดปกติในบัญชีของคุณ
+      จึงปิด session ทั้งหมดและขอให้ยืนยันตัวตนก่อน login ใหม่.
+    </p>
+    <p style="margin:0 0 20px;font-size:14px;line-height:1.6;color:#475569;">
+      คลิกปุ่มด้านล่างเพื่อยืนยันว่า <strong>คุณคือเจ้าของบัญชีจริง</strong> —
+      ลิงก์ใช้ได้ครั้งเดียว หมดอายุ <strong>{expires_str}</strong>.
+    </p>
+    <table role="presentation" cellpadding="0" cellspacing="0" style="margin:24px 0;">
+      <tr><td style="background:#0f172a;border-radius:10px;">
+        <a href="{confirm_url}" style="display:inline-block;padding:14px 28px;color:#fff;font-weight:700;font-size:14px;text-decoration:none;">
+          → ยืนยันว่าเป็นฉัน
+        </a>
+      </td></tr>
+    </table>
+    <div style="background:#fef2f2;border:1px solid #fecaca;border-radius:10px;padding:14px 16px;margin:20px 0;font-size:13px;color:#991b1b;">
+      <strong>⚠ ถ้าไม่ใช่คุณที่กำลังพยายาม login:</strong>
+      <ol style="margin:6px 0 0 18px;padding:0;line-height:1.7;">
+        <li>อย่าคลิกปุ่มด้านบน</li>
+        <li>เปลี่ยนรหัสผ่าน Google ทันที + เปิด 2FA</li>
+        <li>ติดต่อ admin ที่ <a href="mailto:{settings.email_from}" style="color:#1d4ed8;">{settings.email_from}</a></li>
+      </ol>
+    </div>
+    <p style="font-size:11px;color:#94a3b8;margin:18px 0 0;">Reason code: {reason}</p>
+  </td></tr>
+  <tr><td style="padding:14px 32px 28px;font-size:11px;color:#94a3b8;border-top:1px solid #f1f5f9;">
+    Central Auth Hub · One-time identity challenge
+  </td></tr>
+</table>
+</td></tr></table>
+</body></html>"""
+
+    text = f"""[Central Auth Hub] ยืนยันตัวตนเพื่อ login ต่อ
+
+Admin ตรวจพบกิจกรรมผิดปกติ — กรุณายืนยันตัวตนก่อน login ใหม่
+คลิกลิงก์ด้านล่าง (ใช้ครั้งเดียว, หมดอายุ {expires_str}):
+{confirm_url}
+
+ถ้าไม่ใช่คุณ → เปลี่ยนรหัส Google + ติดต่อ admin
+"""
+
+    return _send_html_email(
+        to=to_email,
+        subject="[Central Auth Hub] ยืนยันตัวตนเพื่อ login ต่อ",
+        html=html,
+        text_fallback=text,
+    )

@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import base64
 import logging
+import uuid
 from datetime import datetime, timedelta, timezone
 from functools import lru_cache
 
@@ -26,10 +27,55 @@ from cryptography.hazmat.primitives.serialization import load_pem_public_key
 from jwt.exceptions import InvalidTokenError as JWTError  # backwards-compat alias
 
 from app.config import settings
+from app.redis_client import redis_client
 from app.services.hooks import EVT_TOKEN_ISSUED, emit_nowait
 
 log = logging.getLogger(__name__)
 ISSUER = "https://hub.local"
+
+# ============ Revocation list (Redis) ============
+# Pattern: token's jti → key "jwt:revoked:{jti}" with TTL=remaining exp
+# verify_token() ตรวจ key นี้หลัง decode → raise ถ้าเจอ
+# Subsystem ตรวจตาม JWKS เท่านั้น → revocation ตรวจที่ Hub endpoints เท่านั้น
+# (subsystem ยังคง verify offline ได้เร็ว แต่ revoke จะมีผลตอน user เรียก Hub API ต่อ)
+
+_REVOKE_PREFIX = "jwt:revoked:"
+
+
+def _redis_key(jti: str) -> str:
+    return f"{_REVOKE_PREFIX}{jti}"
+
+
+def revoke_jti(jti: str, exp_unix: int) -> bool:
+    """Revoke JWT โดย jti — TTL = remaining time จนถึง exp.
+
+    ถ้า exp ผ่านไปแล้ว → ไม่ต้อง revoke (verify จะ reject อยู่แล้ว)
+    """
+    if not jti:
+        return False
+    now = int(datetime.now(timezone.utc).timestamp())
+    ttl = exp_unix - now
+    if ttl <= 0:
+        return False
+    try:
+        redis_client.set(_redis_key(jti), "1", ex=ttl)
+        return True
+    except Exception as e:
+        log.warning("revoke_jti redis failed: %r", e)
+        return False
+
+
+def is_revoked(jti: str) -> bool:
+    """ตรวจว่า jti อยู่ใน revocation list ไหม."""
+    if not jti:
+        return False
+    try:
+        return redis_client.exists(_redis_key(jti)) == 1
+    except Exception as e:
+        # fail-open: ถ้า Redis ล่ม ปล่อยผ่าน (กัน Hub fail ทั้งระบบ)
+        # ถ้าต้องการ fail-closed ให้ raise ที่นี่แทน
+        log.warning("is_revoked redis failed (fail-open): %r", e)
+        return False
 
 
 # ============ Key loading ============
@@ -90,16 +136,21 @@ def _all_public_keys() -> dict[str, str]:
 # ============ Sign ============
 
 
-def create_access_token(user, audience: str | None = None) -> str:
-    """สร้าง JWT Hub-direct (aud = hub.internal โดย default)."""
+def create_access_token(user, audience: str | None = None) -> tuple[str, str]:
+    """สร้าง JWT Hub-direct (aud = hub.internal โดย default).
+
+    Returns (token, jti) — caller เก็บ jti ไว้ใน LoginSession เพื่อ force-revoke ภายหลัง
+    """
     now = datetime.now(timezone.utc)
     expire = now + timedelta(minutes=settings.jwt_access_token_expire_minutes)
+    jti = uuid.uuid4().hex
     payload = {
         "iss": ISSUER,
         "sub": str(user.id),
         "aud": audience or settings.jwt_hub_audience,
         "iat": int(now.timestamp()),
         "exp": int(expire.timestamp()),
+        "jti": jti,
         "email": user.email,
         "name": user.full_name,
         "user_type": user.user_type,
@@ -117,25 +168,31 @@ def create_access_token(user, audience: str | None = None) -> str:
             "sub": payload["sub"],
             "aud": payload["aud"],
             "exp": payload["exp"],
+            "jti": jti,
             "kind": "hub_direct",
             "kid": settings.jwt_active_kid,
         },
     )
-    return token
+    return token, jti
 
 
 def create_subsystem_token(
     user, client_id: str, scope: list[str], role_in_sub: str
-) -> str:
-    """JWT สำหรับ subsystem — เฉพาะ field ใน scope."""
+) -> tuple[str, str]:
+    """JWT สำหรับ subsystem — เฉพาะ field ใน scope.
+
+    Returns (token, jti)
+    """
     now = datetime.now(timezone.utc)
     expire = now + timedelta(minutes=settings.jwt_access_token_expire_minutes)
+    jti = uuid.uuid4().hex
     payload = {
         "iss": ISSUER,
         "sub": str(user.id),
         "aud": client_id,
         "iat": int(now.timestamp()),
         "exp": int(expire.timestamp()),
+        "jti": jti,
         "role_in_subsystem": role_in_sub,
     }
     scope_field_map = {
@@ -167,13 +224,14 @@ def create_subsystem_token(
             "sub": payload["sub"],
             "aud": payload["aud"],
             "exp": payload["exp"],
+            "jti": jti,
             "kind": "subsystem",
             "role_in_subsystem": role_in_sub,
             "scope": scope,
             "kid": settings.jwt_active_kid,
         },
     )
-    return token
+    return token, jti
 
 
 # ============ Verify ============
@@ -196,7 +254,7 @@ def verify_token(token: str, audience: str | None = None) -> dict:
     if not pub_pem:
         raise JWTError(f"Unknown signing key kid={kid!r}")
 
-    return jwt.decode(
+    payload = jwt.decode(
         token,
         pub_pem,
         algorithms=["RS256"],
@@ -204,6 +262,12 @@ def verify_token(token: str, audience: str | None = None) -> dict:
         issuer=ISSUER,
         options={"verify_aud": True, "verify_iss": True, "verify_exp": True},
     )
+    # Revocation check — หลัง decode ผ่านถึงจะตรวจ
+    # (กัน Redis hit ตอน token ผิด signature/aud — ลด attack surface)
+    jti = payload.get("jti")
+    if jti and is_revoked(jti):
+        raise JWTError("token has been revoked")
+    return payload
 
 
 # ============ JWKS ============

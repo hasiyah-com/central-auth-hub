@@ -81,6 +81,30 @@ async def exchange_code_for_token(code: str, code_verifier: str) -> dict:
         return r.json()
 
 
+# ============ Back-channel logout (notify Hub) ============
+
+
+async def notify_hub_logout(hub_user_id: str) -> bool:
+    """แจ้ง Hub ว่า user logout แล้ว — server-to-server, fail-safe.
+
+    Hub จะ mark logout_at บน LoginSession ล่าสุดของ (user, subsystem นี้).
+    ถ้า Hub down / network error → return False (logout ของ subsystem ยังทำต่อ)
+    """
+    try:
+        async with httpx.AsyncClient(timeout=3.0) as client:
+            r = await client.post(
+                f"{settings.hub_internal_url}/oauth/logout",
+                data={
+                    "client_id": settings.dorm_client_id,
+                    "client_secret": settings.dorm_client_secret,
+                    "hub_user_id": hub_user_id,
+                },
+            )
+            return r.status_code == 200
+    except Exception:
+        return False
+
+
 # ============ JWKS + JWT verify ============
 
 

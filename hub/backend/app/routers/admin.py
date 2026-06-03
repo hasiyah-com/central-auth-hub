@@ -1,24 +1,76 @@
 """Admin router — overview KPIs + subsystem approval.
 
 Endpoints:
-  GET  /admin/overview                     -> KPI สรุป
-  GET  /admin/subsystems                   -> list ทุก subsystem
-  GET  /admin/subsystems/pending           -> เฉพาะที่รออนุมัติ
-  POST /admin/subsystems/{id}/approve       -> อนุมัติ subsystem
-  POST /admin/subsystems/{id}/reject        -> ปฏิเสธ subsystem
-  GET  /admin/audit                         -> audit log viewer (filtered, paginated)
+  GET  /admin/overview                          -> KPI สรุป
+  GET  /admin/subsystems                        -> list ทุก subsystem
+  GET  /admin/subsystems/pending                -> เฉพาะที่รออนุมัติ
+  GET  /admin/subsystems/{id}/active-sessions   -> users กำลังใช้งานอยู่ตอนนี้
+  POST /admin/subsystems/{id}/approve            -> อนุมัติ subsystem
+  POST /admin/subsystems/{id}/reject             -> ปฏิเสธ subsystem
+  POST /admin/subsystems/{id}/suspend            -> ระงับใช้งาน subsystem (active → suspended)
+  POST /admin/subsystems/{id}/resume             -> เปิดใช้งานใหม่ (suspended → active)
+  GET  /admin/audit                              -> audit log viewer (filtered, paginated)
 """
 
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from pydantic import BaseModel
 from sqlalchemy import func
 from sqlalchemy.orm import Session, aliased
 
+from app.config import settings
 from app.database import get_db
 from app.deps import get_client_ip, require_hub_admin
-from app.models import AccessList, AuditLog, LoginSession, Subsystem, User
+from app.models import (
+    AccessList,
+    ApiAlert,
+    AuditLog,
+    LoginSession,
+    Subsystem,
+    SubsystemChangeRequest,
+    User,
+)
 from app.services.audit_service import log_action
+from app.services.change_request_service import apply_approved
+from app.services.email_service import (
+    send_identity_challenge,
+    send_revoke_notification,
+    send_secret_retrieval_email,
+)
+from app.services.identity_challenge import create_challenge
+from app.services.jwt_service import revoke_jti
+from app.services.webhook_dispatcher import send_access_revoked
+from app.services.subsystem_health import get_status as get_health_status
+from app.redis_client import redis_client
+
+
+# ============ Notification read state (Redis-backed per admin) ============
+
+_NOTIF_READ_PREFIX = "notif:read:"
+_NOTIF_READ_TTL_SEC = 60 * 60 * 24 * 30  # 30 วัน
+
+
+def _notif_read_key(admin_id) -> str:
+    return f"{_NOTIF_READ_PREFIX}{admin_id}"
+
+
+def _notif_marker(category: str, item_id: str) -> str:
+    return f"{category}:{item_id}"
+
+
+def _get_read_set(admin_id) -> set[str]:
+    """Set ของ category:item_id ที่ admin คนนี้ mark อ่านแล้ว."""
+    try:
+        members = redis_client.smembers(_notif_read_key(admin_id))
+        return set(members or [])
+    except Exception:
+        return set()
+
+
+def _is_read(admin_id, read_set: set[str], category: str, item_id: str) -> bool:
+    return _notif_marker(category, item_id) in read_set
+
 
 router = APIRouter()
 
@@ -104,10 +156,15 @@ def list_subsystems(
             "client_id": s.client_id,
             "status": s.status,
             "scope": s.scope,
+            "redirect_uris": list(s.redirect_uris or []),
+            "allowed_roles": list(s.allowed_roles or []),
+            "access_revoke_webhook_url": s.access_revoke_webhook_url,
+            "previous_secret_expires_at": s.previous_secret_expires_at,
             "whitelist_count": cnt or 0,
             "owner_email": owner_email,
             "created_at": s.created_at,
             "approved_at": s.approved_at,
+            "health": get_health_status(str(s.id)),  # None ถ้ายังไม่เคยเช็ค
         }
         for s, cnt, owner_email in q.all()
     ]
@@ -212,6 +269,1142 @@ def reject_subsystem(
         "name": subsystem.name,
         "status": "suspended",
         "message": f"ปฏิเสธ '{subsystem.name}' แล้ว",
+    }
+
+
+# ============ Suspend / Resume ============
+
+
+@router.post("/subsystems/{subsystem_id}/suspend")
+def suspend_subsystem(
+    subsystem_id: str,
+    request: Request,
+    admin: User = Depends(require_hub_admin),
+    db: Session = Depends(get_db),
+):
+    """ระงับการใช้งาน subsystem ที่ active แล้ว → status='suspended'.
+
+    หลังจากนี้ /oauth/authorize จะ reject — token เก่ายังใช้ได้ถึงหมดอายุ
+    (force-revoke session ทำในข้อ 6 ต่อ)
+    """
+    subsystem = db.query(Subsystem).filter(Subsystem.id == subsystem_id).first()
+    if not subsystem:
+        raise HTTPException(status_code=404, detail="ไม่พบ subsystem")
+    if subsystem.status != "active":
+        raise HTTPException(
+            status_code=400,
+            detail=f"suspend ใช้กับ subsystem ที่ active เท่านั้น (ตอนนี้: {subsystem.status})",
+        )
+
+    subsystem.status = "suspended"
+    log_action(
+        db,
+        actor_id=admin.id,
+        action="subsystem_suspended",
+        target_type="subsystem",
+        target_id=subsystem.id,
+        ip=get_client_ip(request),
+        metadata={"name": subsystem.name},
+    )
+    db.commit()
+    return {
+        "id": str(subsystem.id),
+        "name": subsystem.name,
+        "status": "suspended",
+        "message": f"ระงับ '{subsystem.name}' แล้ว — login ใหม่จะถูกปฏิเสธ",
+    }
+
+
+@router.post("/subsystems/{subsystem_id}/resume")
+def resume_subsystem(
+    subsystem_id: str,
+    request: Request,
+    admin: User = Depends(require_hub_admin),
+    db: Session = Depends(get_db),
+):
+    """เปิดใช้งาน subsystem ที่ถูก suspended → status='active'."""
+    subsystem = db.query(Subsystem).filter(Subsystem.id == subsystem_id).first()
+    if not subsystem:
+        raise HTTPException(status_code=404, detail="ไม่พบ subsystem")
+    if subsystem.status != "suspended":
+        raise HTTPException(
+            status_code=400,
+            detail=f"resume ใช้กับ subsystem ที่ suspended เท่านั้น (ตอนนี้: {subsystem.status})",
+        )
+
+    subsystem.status = "active"
+    if not subsystem.approved_at:
+        subsystem.approved_at = datetime.utcnow()
+    log_action(
+        db,
+        actor_id=admin.id,
+        action="subsystem_resumed",
+        target_type="subsystem",
+        target_id=subsystem.id,
+        ip=get_client_ip(request),
+        metadata={"name": subsystem.name},
+    )
+    db.commit()
+    return {
+        "id": str(subsystem.id),
+        "name": subsystem.name,
+        "status": "active",
+        "message": f"เปิดใช้งาน '{subsystem.name}' อีกครั้ง",
+    }
+
+
+# ============ Active sessions (users กำลังใช้งานอยู่) ============
+
+
+@router.get("/subsystems/{subsystem_id}/active-sessions")
+def list_active_sessions(
+    subsystem_id: str,
+    admin: User = Depends(require_hub_admin),
+    db: Session = Depends(get_db),
+):
+    """แสดง user ที่กำลัง active ใน subsystem นี้ (login แล้วยังไม่ logout + ไม่หมดอายุ JWT).
+
+    เกณฑ์ active:
+      - logout_at IS NULL
+      - created_at อยู่ใน JWT expire window (จริงๆ user อาจปิด browser แต่ token ยังใช้ได้)
+    """
+    subsystem = db.query(Subsystem).filter(Subsystem.id == subsystem_id).first()
+    if not subsystem:
+        raise HTTPException(status_code=404, detail="ไม่พบ subsystem")
+
+    cutoff = datetime.utcnow() - timedelta(
+        minutes=settings.jwt_access_token_expire_minutes
+    )
+
+    rows = (
+        db.query(LoginSession, User.email, User.full_name, User.user_type)
+        .outerjoin(User, User.id == LoginSession.user_id)
+        .filter(
+            LoginSession.subsystem_id == subsystem.id,
+            LoginSession.logout_at.is_(None),
+            LoginSession.created_at >= cutoff,
+            # ตัด session ที่ถูก block ออก — ไม่ถือว่า active
+            LoginSession.decision.notin_(["block", "would_block"]),
+        )
+        .order_by(LoginSession.created_at.desc())
+        .all()
+    )
+
+    now = datetime.utcnow()
+    return {
+        "subsystem": {"id": str(subsystem.id), "name": subsystem.name},
+        "count": len(rows),
+        "sessions": [
+            {
+                "session_id": str(sess.id),
+                "user_id": str(sess.user_id) if sess.user_id else None,
+                "user_email": email,
+                "full_name": full_name,
+                "user_type": user_type,
+                "ip": str(sess.ip) if sess.ip else None,
+                "geo_country": sess.geo_country,
+                "geo_city": sess.geo_city,
+                "browser": sess.browser,
+                "os_name": sess.os_name,
+                "device_type": sess.device_type,
+                "decision": sess.decision,
+                "login_at": sess.created_at.isoformat() if sess.created_at else None,
+                "duration_sec": int((now - sess.created_at).total_seconds())
+                if sess.created_at
+                else 0,
+            }
+            for sess, email, full_name, user_type in rows
+        ],
+    }
+
+
+# ============ Subsystem activity stats ============
+
+
+@router.get("/subsystems/{subsystem_id}/stats")
+def subsystem_stats(
+    subsystem_id: str,
+    days: int = Query(7, ge=1, le=90, description="กี่วันย้อนหลัง"),
+    admin: User = Depends(require_hub_admin),
+    db: Session = Depends(get_db),
+):
+    """KPI ของ subsystem — login counts, decision breakdown, unique users, active session count.
+
+    ใช้ที่:
+      - หน้า admin /subsystems/{id} แสดง section "ภาพรวม"
+    """
+    subsystem = db.query(Subsystem).filter(Subsystem.id == subsystem_id).first()
+    if not subsystem:
+        raise HTTPException(status_code=404, detail="ไม่พบ subsystem")
+
+    now = datetime.utcnow()
+    cutoff = now - timedelta(days=days)
+
+    base = db.query(LoginSession).filter(
+        LoginSession.subsystem_id == subsystem.id,
+        LoginSession.created_at >= cutoff,
+    )
+    total_logins = base.count()
+
+    # decision breakdown
+    decision_rows = (
+        db.query(LoginSession.decision, func.count(LoginSession.id))
+        .filter(
+            LoginSession.subsystem_id == subsystem.id,
+            LoginSession.created_at >= cutoff,
+        )
+        .group_by(LoginSession.decision)
+        .all()
+    )
+    decision_breakdown = {(d or "unknown"): c for d, c in decision_rows}
+
+    # unique users
+    unique_users = (
+        db.query(func.count(func.distinct(LoginSession.user_id)))
+        .filter(
+            LoginSession.subsystem_id == subsystem.id,
+            LoginSession.created_at >= cutoff,
+        )
+        .scalar()
+        or 0
+    )
+
+    # active sessions ตอนนี้ (logout_at NULL + within JWT window)
+    jwt_cutoff = now - timedelta(minutes=settings.jwt_access_token_expire_minutes)
+    active_now = (
+        db.query(func.count(LoginSession.id))
+        .filter(
+            LoginSession.subsystem_id == subsystem.id,
+            LoginSession.logout_at.is_(None),
+            LoginSession.created_at >= jwt_cutoff,
+            LoginSession.decision.notin_(["block", "would_block"]),
+        )
+        .scalar()
+        or 0
+    )
+
+    # daily login counts (last N days)
+    daily_rows = (
+        db.query(
+            func.date(LoginSession.created_at).label("d"),
+            func.count(LoginSession.id).label("cnt"),
+        )
+        .filter(
+            LoginSession.subsystem_id == subsystem.id,
+            LoginSession.created_at >= cutoff,
+        )
+        .group_by("d")
+        .order_by("d")
+        .all()
+    )
+    daily = [
+        {
+            "date": (d.isoformat() if hasattr(d, "isoformat") else str(d)),
+            "count": int(c),
+        }
+        for d, c in daily_rows
+    ]
+
+    return {
+        "subsystem": {"id": str(subsystem.id), "name": subsystem.name},
+        "range": {
+            "days": days,
+            "from": cutoff.isoformat(),
+            "to": now.isoformat(),
+        },
+        "total_logins": total_logins,
+        "unique_users": unique_users,
+        "active_now": active_now,
+        "decision_breakdown": decision_breakdown,
+        "daily": daily,
+    }
+
+
+# ============ Per-subsystem audit log ============
+
+
+@router.get("/subsystems/{subsystem_id}/audit")
+def subsystem_audit(
+    subsystem_id: str,
+    action: str | None = Query(None, description="filter by action"),
+    skip: int = 0,
+    limit: int = Query(50, ge=1, le=200),
+    admin: User = Depends(require_hub_admin),
+    db: Session = Depends(get_db),
+):
+    """Audit log เฉพาะ subsystem นี้ (target_id = subsystem_id) — paginated.
+
+    ตรงกับ /admin/audit แต่ filter ฝั่ง server (เลิกพึ่ง client filter)
+    """
+    subsystem = db.query(Subsystem).filter(Subsystem.id == subsystem_id).first()
+    if not subsystem:
+        raise HTTPException(status_code=404, detail="ไม่พบ subsystem")
+
+    q = (
+        db.query(AuditLog, User.email)
+        .outerjoin(User, AuditLog.actor_id == User.id)
+        .filter(
+            AuditLog.target_type == "subsystem",
+            AuditLog.target_id == subsystem.id,
+        )
+        .order_by(AuditLog.created_at.desc())
+    )
+    if action:
+        q = q.filter(AuditLog.action == action)
+
+    total = q.count()
+    rows = q.offset(skip).limit(limit).all()
+
+    return {
+        "subsystem": {"id": str(subsystem.id), "name": subsystem.name},
+        "total": total,
+        "skip": skip,
+        "limit": limit,
+        "items": [
+            {
+                "id": str(log.id),
+                "actor_id": str(log.actor_id) if log.actor_id else None,
+                "actor_email": email,
+                "action": log.action,
+                "ip": str(log.ip) if log.ip else None,
+                "metadata": log.metadata_json,
+                "created_at": log.created_at.isoformat() if log.created_at else None,
+            }
+            for log, email in rows
+        ],
+    }
+
+
+# ============ Force-revoke session ============
+
+
+_VALID_REVOKE_LEVELS = {"notify", "challenge", "ban"}
+
+
+@router.post("/subsystems/{subsystem_id}/sessions/{session_id}/revoke")
+def revoke_session(
+    subsystem_id: str,
+    session_id: str,
+    request: Request,
+    level: str = Query(
+        "challenge",
+        pattern="^(notify|challenge|ban)$",
+        description=(
+            "Revoke level: "
+            "notify = ปิด session + email แจ้ง (login ใหม่ได้ทันที), "
+            "challenge = ปิด session + ต้องคลิก confirm link ใน email ก่อน login ใหม่, "
+            "ban = ปิด session + ลบ user ออกจาก whitelist (login ใหม่ไม่ได้จนกว่า admin จะเพิ่มกลับ)"
+        ),
+    ),
+    admin: User = Depends(require_hub_admin),
+    db: Session = Depends(get_db),
+):
+    """บังคับให้ session ของ user หลุดทันที — มี 3 ระดับให้เลือก.
+
+    การทำงานหลักทุก level:
+      1. mark login_sessions.logout_at = NOW()
+      2. ใส่ jti ลง Redis revocation list (JWT ใช้ Hub API ต่อไม่ได้)
+      3. ยิง webhook ให้ subsystem ลบ local session
+
+    เพิ่มเติมตาม level:
+      - notify   → email แจ้ง user (can_relogin=True)
+      - challenge → สร้าง identity challenge + email confirm link
+      - ban      → ลบจาก access_list (revoked_at=NOW) + email แจ้ง (can_relogin=False)
+    """
+    if level not in _VALID_REVOKE_LEVELS:
+        raise HTTPException(
+            status_code=400, detail=f"level ต้องเป็น {sorted(_VALID_REVOKE_LEVELS)}"
+        )
+
+    sess = (
+        db.query(LoginSession)
+        .filter(
+            LoginSession.id == session_id,
+            LoginSession.subsystem_id == subsystem_id,
+        )
+        .first()
+    )
+    if not sess:
+        raise HTTPException(status_code=404, detail="ไม่พบ session")
+    if sess.logout_at is not None:
+        raise HTTPException(status_code=400, detail="session นี้ปิดไปแล้ว")
+
+    # 1. mark logout
+    sess.logout_at = datetime.utcnow()
+
+    # 2. revoke jti ถ้ามี — TTL = jwt expire (60min default)
+    revoked_jwt = False
+    if sess.jti:
+        exp_unix = int(
+            (
+                sess.created_at
+                + timedelta(minutes=settings.jwt_access_token_expire_minutes)
+            ).timestamp()
+        )
+        revoked_jwt = revoke_jti(sess.jti, exp_unix)
+
+    # ดึง user + subsystem ครั้งเดียว
+    target_user = (
+        db.query(User).filter(User.id == sess.user_id).first() if sess.user_id else None
+    )
+    subsystem = (
+        db.query(Subsystem).filter(Subsystem.id == sess.subsystem_id).first()
+        if sess.subsystem_id
+        else None
+    )
+    subsystem_name = subsystem.name if subsystem else None
+
+    # 3. Level-specific action
+    extra_actions: dict = {}
+    if level == "ban" and target_user and subsystem:
+        # ลบจาก access_list (soft delete)
+        from app.models import AccessList  # local import
+
+        entry = (
+            db.query(AccessList)
+            .filter(
+                AccessList.subsystem_id == subsystem.id,
+                AccessList.user_id == target_user.id,
+                AccessList.revoked_at.is_(None),
+            )
+            .first()
+        )
+        if entry:
+            entry.revoked_at = datetime.utcnow()
+            extra_actions["whitelist_removed"] = True
+
+    challenge_url: str | None = None
+    if level == "challenge" and target_user:
+        try:
+            plaintext_token, _expires = create_challenge(
+                str(target_user.id), reason="admin_revoked"
+            )
+            challenge_url = (
+                f"{settings.hub_base_url}/auth/confirm-identity?token={plaintext_token}"
+            )
+            extra_actions["challenge_created"] = True
+        except Exception as e:
+            extra_actions["challenge_error"] = str(e)
+
+    log_action(
+        db,
+        actor_id=admin.id,
+        action=f"session_force_revoked_{level}",
+        target_type="login_session",
+        target_id=sess.id,
+        ip=get_client_ip(request),
+        metadata={
+            "level": level,
+            "user_id": str(sess.user_id) if sess.user_id else None,
+            "subsystem_id": str(sess.subsystem_id) if sess.subsystem_id else None,
+            "jti_revoked": revoked_jwt,
+            "had_jti": sess.jti is not None,
+            **extra_actions,
+        },
+    )
+    db.commit()
+
+    # 4. Webhook: บอก subsystem ให้ลบ local session ของ user คนนี้ทันที
+    if subsystem and sess.user_id:
+        try:
+            send_access_revoked(
+                subsystem,
+                {
+                    "hub_user_id": str(sess.user_id),
+                    "revoked_by": str(admin.id),
+                    "reason": f"session_force_revoked_{level}",
+                },
+            )
+        except Exception:
+            pass  # logged inside dispatcher
+
+    # 5. Email user
+    email_sent = False
+    if target_user and target_user.email:
+        try:
+            if level == "challenge" and challenge_url:
+                from app.services.identity_challenge import CHALLENGE_TTL_MIN
+
+                email_sent = send_identity_challenge(
+                    to_email=target_user.email,
+                    full_name=target_user.full_name,
+                    confirm_url=challenge_url,
+                    expires_at=datetime.utcnow() + timedelta(minutes=CHALLENGE_TTL_MIN),
+                    reason="admin_revoked",
+                )
+            else:
+                email_sent = send_revoke_notification(
+                    to_email=target_user.email,
+                    full_name=target_user.full_name,
+                    subsystem_name=subsystem_name,
+                    when=sess.logout_at,
+                    reason=f"admin {admin.email} กด revoke ({level})",
+                    can_relogin=(level == "notify"),
+                )
+        except Exception:
+            email_sent = False
+
+    return {
+        "session_id": str(sess.id),
+        "level": level,
+        "logout_at": sess.logout_at.isoformat(),
+        "jti_revoked": revoked_jwt,
+        "email_sent": email_sent,
+        "whitelist_removed": extra_actions.get("whitelist_removed", False),
+        "challenge_created": extra_actions.get("challenge_created", False),
+        "message": {
+            "notify": "ปิด session + แจ้งทาง email แล้ว (user login ใหม่ได้ปกติ)",
+            "challenge": "ปิด session + ส่ง link confirm ทาง email (user ต้องคลิกก่อน login ใหม่ได้)",
+            "ban": "ปิด session + ลบจาก whitelist (user login ใหม่ไม่ได้)",
+        }[level],
+    }
+
+
+# ============ Change Request Approval Workflow ============
+
+
+@router.get("/notifications")
+def list_notifications(
+    admin: User = Depends(require_hub_admin),
+    db: Session = Depends(get_db),
+):
+    """รวมการแจ้งเตือนทุกประเภท — สำหรับหน้า /notifications.
+
+    Categories:
+      - approval_requests : SubsystemChangeRequest status=pending
+      - ml_anomaly        : LoginSession ที่ risk_score ≥ 0.7 ใน 24h
+      - api_alerts        : ApiAlert ที่ยังไม่ resolved
+      - subsystem_health  : Subsystem ที่ Redis health = down/degraded
+    """
+    now = datetime.utcnow()
+    cutoff_24h = now - timedelta(hours=24)
+    read_set = _get_read_set(admin.id)
+
+    # 1) Approval requests (pending)
+    pending_reqs_q = (
+        db.query(
+            SubsystemChangeRequest,
+            Subsystem.name.label("sub_name"),
+            User.email.label("req_email"),
+        )
+        .join(Subsystem, Subsystem.id == SubsystemChangeRequest.subsystem_id)
+        .outerjoin(User, User.id == SubsystemChangeRequest.requested_by)
+        .filter(SubsystemChangeRequest.status == "pending")
+        .order_by(SubsystemChangeRequest.created_at.desc())
+    )
+    pending_total = pending_reqs_q.count()
+    pending_items = [
+        {
+            "id": str(req.id),
+            "title": f"{req.request_type.replace('_', ' ').title()} · {sub_name}",
+            "subtitle": f"by {req_email or 'unknown'}",
+            "created_at": req.created_at.isoformat() if req.created_at else None,
+            "severity": "warning",
+            "meta": {"request_type": req.request_type},
+            "is_read": _is_read(admin.id, read_set, "approval_requests", str(req.id)),
+        }
+        for req, sub_name, req_email in pending_reqs_q.limit(20).all()
+    ]
+
+    # 1b) Recent admin overrides (approved + auto-applied within 24h)
+    override_q = (
+        db.query(
+            SubsystemChangeRequest,
+            Subsystem.name.label("sub_name"),
+            User.email.label("req_email"),
+        )
+        .join(Subsystem, Subsystem.id == SubsystemChangeRequest.subsystem_id)
+        .outerjoin(User, User.id == SubsystemChangeRequest.requested_by)
+        .filter(
+            SubsystemChangeRequest.status == "approved",
+            SubsystemChangeRequest.reviewed_at >= cutoff_24h,
+            # auto-approved by admin = reviewer_id == requested_by
+            SubsystemChangeRequest.reviewer_id == SubsystemChangeRequest.requested_by,
+        )
+        .order_by(SubsystemChangeRequest.reviewed_at.desc())
+    )
+    override_total = override_q.count()
+    override_items = [
+        {
+            "id": str(req.id),
+            "title": f"🛡️ Admin Override · {req.request_type.replace('_', ' ').title()} · {sub_name}",
+            "subtitle": f"by {req_email or 'unknown'}",
+            "created_at": req.reviewed_at.isoformat() if req.reviewed_at else None,
+            "severity": "info",
+            "meta": {"request_type": req.request_type, "override": True},
+            "is_read": _is_read(admin.id, read_set, "admin_overrides", str(req.id)),
+        }
+        for req, sub_name, req_email in override_q.limit(20).all()
+    ]
+
+    # 2) ML anomaly — ใช้ threshold เดียวกับ Telegram alert
+    #    (alert_ml_warning_threshold = 0.5 default · ตัวที่เห็นใน Telegram)
+    ml_threshold = float(settings.alert_ml_warning_threshold)
+    ml_critical = float(settings.alert_ml_critical_threshold)
+    ml_q = (
+        db.query(
+            LoginSession,
+            User.email.label("user_email"),
+            Subsystem.name.label("sub_name"),
+        )
+        .outerjoin(User, User.id == LoginSession.user_id)
+        .outerjoin(Subsystem, Subsystem.id == LoginSession.subsystem_id)
+        .filter(
+            LoginSession.created_at >= cutoff_24h,
+            LoginSession.risk_score.is_not(None),
+            LoginSession.risk_score >= ml_threshold,
+        )
+        .order_by(LoginSession.created_at.desc())
+    )
+    ml_total = ml_q.count()
+    ml_items = [
+        {
+            "id": str(sess.id),
+            "title": f"High risk login · score {float(sess.risk_score):.2f}",
+            "subtitle": f"{user_email or '?'} → {sub_name or 'Hub-direct'}",
+            "created_at": sess.created_at.isoformat() if sess.created_at else None,
+            "severity": (
+                "critical" if float(sess.risk_score or 0) >= ml_critical else "warning"
+            ),
+            "meta": {
+                "session_id": str(sess.id),
+                "decision": sess.decision,
+                "ip": str(sess.ip) if sess.ip else None,
+            },
+            "is_read": _is_read(admin.id, read_set, "ml_anomaly", str(sess.id)),
+        }
+        for sess, user_email, sub_name in ml_q.limit(20).all()
+    ]
+
+    # 3) API alerts (ยังไม่ resolved)
+    api_q = (
+        db.query(ApiAlert)
+        .filter(ApiAlert.resolved.is_(False))
+        .order_by(ApiAlert.created_at.desc())
+    )
+    api_total = api_q.count()
+    api_items = [
+        {
+            "id": str(a.id),
+            "title": f"{a.rule.replace('_', ' ').title()} · {a.ip}",
+            "subtitle": (
+                f"count {(a.detail or {}).get('count', '?')} · "
+                f"window {(a.detail or {}).get('window_sec', '?')}s"
+            ),
+            "created_at": a.created_at.isoformat() if a.created_at else None,
+            "severity": a.severity,
+            "meta": {"rule": a.rule, "ip": str(a.ip)},
+            "is_read": _is_read(admin.id, read_set, "api_alerts", str(a.id)),
+        }
+        for a in api_q.limit(20).all()
+    ]
+
+    # 4) Subsystem health (Redis cache: status != online)
+    health_items: list[dict] = []
+    health_total = 0
+    subsystems_active = db.query(Subsystem).filter(Subsystem.status == "active").all()
+    for sub in subsystems_active:
+        h = get_health_status(str(sub.id))
+        if h and h.get("status") in ("down", "degraded"):
+            health_total += 1
+            if len(health_items) < 20:
+                health_items.append(
+                    {
+                        "id": str(sub.id),
+                        "title": f"{sub.name} · {h.get('status').upper()}",
+                        "subtitle": (
+                            h.get("error") or f"latency {h.get('latency_ms', '?')}ms"
+                        ),
+                        "created_at": h.get("checked_at"),
+                        "severity": (
+                            "critical" if h.get("status") == "down" else "warning"
+                        ),
+                        "meta": {
+                            "subsystem_id": str(sub.id),
+                            "url": h.get("url"),
+                        },
+                        "is_read": _is_read(
+                            admin.id, read_set, "subsystem_health", str(sub.id)
+                        ),
+                    }
+                )
+
+    total = pending_total + ml_total + api_total + health_total + override_total
+
+    # นับ unread per category — Sidebar badge ใช้ตัวนี้ (ลดลงเมื่อ admin กดอ่าน)
+    def _unread(items: list[dict]) -> int:
+        return sum(1 for x in items if not x.get("is_read"))
+
+    unread_by_category = {
+        "approval_requests": _unread(pending_items),
+        "admin_overrides": _unread(override_items),
+        "ml_anomaly": _unread(ml_items),
+        "api_alerts": _unread(api_items),
+        "subsystem_health": _unread(health_items),
+    }
+    unread_in_view = sum(unread_by_category.values())
+
+    return {
+        "total": total,
+        "unread_in_view": unread_in_view,
+        "unread_by_category": unread_by_category,
+        "categories": {
+            "approval_requests": {
+                "label": "คำขอจาก Developer (รอ review)",
+                "icon": "📋",
+                "count": pending_total,
+                "items": pending_items,
+                "link": "/pending-requests",
+            },
+            "admin_overrides": {
+                "label": "Admin Override (24h ล่าสุด)",
+                "icon": "🛡️",
+                "count": override_total,
+                "items": override_items,
+                "link": "/pending-requests",
+            },
+            "ml_anomaly": {
+                "label": "ML Anomaly Login",
+                "icon": "🧠",
+                "count": ml_total,
+                "items": ml_items,
+                "link": "/ml",
+            },
+            "api_alerts": {
+                "label": "API Security Alerts",
+                "icon": "🛡️",
+                "count": api_total,
+                "items": api_items,
+                "link": "/api-alerts",
+            },
+            "subsystem_health": {
+                "label": "Subsystem ล่ม / ช้า",
+                "icon": "🟢",
+                "count": health_total,
+                "items": health_items,
+                "link": "/subsystems",
+            },
+        },
+    }
+
+
+class NotifMarkBody(BaseModel):
+    items: list[dict]  # [{"category": "...", "id": "..."}]
+
+
+@router.post("/notifications/mark-read")
+def notifications_mark_read(
+    body: NotifMarkBody,
+    admin: User = Depends(require_hub_admin),
+):
+    """เพิ่มรายการเข้า read set (per-admin Redis)."""
+    if not body.items:
+        return {"marked": 0}
+    markers = [
+        _notif_marker(i.get("category", ""), str(i.get("id", "")))
+        for i in body.items
+        if i.get("category") and i.get("id")
+    ]
+    if not markers:
+        return {"marked": 0}
+    try:
+        redis_client.sadd(_notif_read_key(admin.id), *markers)
+        # refresh TTL กัน Redis เก็บค้างถาวร
+        redis_client.expire(_notif_read_key(admin.id), _NOTIF_READ_TTL_SEC)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"redis error: {e}")
+    return {"marked": len(markers)}
+
+
+@router.post("/notifications/mark-unread")
+def notifications_mark_unread(
+    body: NotifMarkBody,
+    admin: User = Depends(require_hub_admin),
+):
+    """ลบ marker ออกจาก read set."""
+    if not body.items:
+        return {"unmarked": 0}
+    markers = [
+        _notif_marker(i.get("category", ""), str(i.get("id", "")))
+        for i in body.items
+        if i.get("category") and i.get("id")
+    ]
+    if not markers:
+        return {"unmarked": 0}
+    try:
+        removed = redis_client.srem(_notif_read_key(admin.id), *markers) or 0
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"redis error: {e}")
+    return {"unmarked": int(removed)}
+
+
+@router.post("/notifications/clear-all")
+def notifications_clear_all(
+    admin: User = Depends(require_hub_admin),
+    db: Session = Depends(get_db),
+):
+    """Mark **ทุกอันที่กำลังเห็นใน notification feed** ว่า read.
+
+    ดึง items จาก /notifications logic แบบเดียว — ไม่ลบ Redis set เก่า
+    """
+    # Re-use logic ง่ายๆ ด้วยการเรียก inline:
+    payload = (
+        list_notifications.__wrapped__(admin=admin, db=db)
+        if hasattr(list_notifications, "__wrapped__")
+        else list_notifications(admin=admin, db=db)
+    )
+    markers: list[str] = []
+    for cat_key, cat in (payload.get("categories") or {}).items():
+        for item in cat.get("items", []):
+            markers.append(_notif_marker(cat_key, str(item["id"])))
+    if not markers:
+        return {"marked": 0}
+    try:
+        redis_client.sadd(_notif_read_key(admin.id), *markers)
+        redis_client.expire(_notif_read_key(admin.id), _NOTIF_READ_TTL_SEC)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"redis error: {e}")
+    return {"marked": len(markers)}
+
+
+@router.get("/notifications/count")
+def notifications_count(
+    admin: User = Depends(require_hub_admin),
+    db: Session = Depends(get_db),
+):
+    """Count summary — ใช้ใน sidebar badge + dashboard banner (poll ทุก 30s).
+
+    Returns:
+      - total: จำนวนรวมในระบบ (ไม่เกี่ยวกับ read state)
+      - unread: จำนวนที่ admin คนนี้ยังไม่อ่าน (รวมทุก category)
+      - by_category: total ต่อ category
+    """
+    # ใช้ logic เดียวกับ /notifications เพื่อให้ unread ตรงกัน
+    full = list_notifications(admin=admin, db=db)
+    return {
+        "total": full["total"],
+        "unread": full.get("unread_in_view", full["total"]),
+        # total ต่อ category (สำหรับ tab counter)
+        "by_category": {k: cat["count"] for k, cat in full["categories"].items()},
+        # unread ต่อ category (สำหรับ sidebar badge)
+        "unread_by_category": full.get("unread_by_category", {}),
+    }
+
+
+@router.get("/notifications/_count_legacy")
+def notifications_count_legacy(
+    admin: User = Depends(require_hub_admin),
+    db: Session = Depends(get_db),
+):
+    """Legacy fast counter — ไม่ใช้แล้ว (เก็บไว้กัน external call)."""
+    now = datetime.utcnow()
+    cutoff_24h = now - timedelta(hours=24)
+
+    pending = (
+        db.query(func.count(SubsystemChangeRequest.id))
+        .filter(SubsystemChangeRequest.status == "pending")
+        .scalar()
+        or 0
+    )
+    overrides = (
+        db.query(func.count(SubsystemChangeRequest.id))
+        .filter(
+            SubsystemChangeRequest.status == "approved",
+            SubsystemChangeRequest.reviewed_at >= cutoff_24h,
+            SubsystemChangeRequest.reviewer_id == SubsystemChangeRequest.requested_by,
+        )
+        .scalar()
+        or 0
+    )
+    ml = (
+        db.query(func.count(LoginSession.id))
+        .filter(
+            LoginSession.created_at >= cutoff_24h,
+            LoginSession.risk_score.is_not(None),
+            LoginSession.risk_score >= float(settings.alert_ml_warning_threshold),
+        )
+        .scalar()
+        or 0
+    )
+    api = (
+        db.query(func.count(ApiAlert.id)).filter(ApiAlert.resolved.is_(False)).scalar()
+        or 0
+    )
+    # health = scan Redis
+    health = 0
+    for sub in db.query(Subsystem).filter(Subsystem.status == "active").all():
+        h = get_health_status(str(sub.id))
+        if h and h.get("status") in ("down", "degraded"):
+            health += 1
+
+    return {
+        "total": pending + overrides + ml + api + health,
+        "by_category": {
+            "approval_requests": pending,
+            "admin_overrides": overrides,
+            "ml_anomaly": ml,
+            "api_alerts": api,
+            "subsystem_health": health,
+        },
+    }
+
+
+@router.get("/change-requests/count")
+def change_requests_count(
+    admin: User = Depends(require_hub_admin),
+    db: Session = Depends(get_db),
+):
+    """นับ pending requests — ใช้ใน sidebar badge + dashboard widget."""
+    pending = (
+        db.query(func.count(SubsystemChangeRequest.id))
+        .filter(SubsystemChangeRequest.status == "pending")
+        .scalar()
+        or 0
+    )
+    by_type_rows = (
+        db.query(
+            SubsystemChangeRequest.request_type, func.count(SubsystemChangeRequest.id)
+        )
+        .filter(SubsystemChangeRequest.status == "pending")
+        .group_by(SubsystemChangeRequest.request_type)
+        .all()
+    )
+    return {
+        "pending": pending,
+        "by_type": {t: int(c) for t, c in by_type_rows},
+    }
+
+
+@router.get("/change-requests")
+def list_change_requests(
+    status: str | None = Query(None, pattern="^(pending|approved|rejected|cancelled)$"),
+    subsystem_id: str | None = None,
+    skip: int = 0,
+    limit: int = Query(50, ge=1, le=200),
+    admin: User = Depends(require_hub_admin),
+    db: Session = Depends(get_db),
+):
+    """ดูรายการ change request — default = pending."""
+    q = (
+        db.query(
+            SubsystemChangeRequest,
+            Subsystem.name.label("subsystem_name"),
+            User.email.label("requested_by_email"),
+        )
+        .join(Subsystem, Subsystem.id == SubsystemChangeRequest.subsystem_id)
+        .outerjoin(User, User.id == SubsystemChangeRequest.requested_by)
+        .order_by(SubsystemChangeRequest.created_at.desc())
+    )
+    if status:
+        q = q.filter(SubsystemChangeRequest.status == status)
+    else:
+        q = q.filter(SubsystemChangeRequest.status == "pending")
+    if subsystem_id:
+        q = q.filter(SubsystemChangeRequest.subsystem_id == subsystem_id)
+
+    total = q.count()
+    rows = q.offset(skip).limit(limit).all()
+
+    return {
+        "total": total,
+        "skip": skip,
+        "limit": limit,
+        "items": [
+            {
+                "id": str(req.id),
+                "subsystem_id": str(req.subsystem_id),
+                "subsystem_name": sub_name,
+                "requested_by": str(req.requested_by),
+                "requested_by_email": req_email,
+                "request_type": req.request_type,
+                "payload": req.payload,
+                "status": req.status,
+                "reviewer_id": str(req.reviewer_id) if req.reviewer_id else None,
+                "reviewer_note": req.reviewer_note,
+                "created_at": req.created_at.isoformat() if req.created_at else None,
+                "reviewed_at": req.reviewed_at.isoformat() if req.reviewed_at else None,
+            }
+            for req, sub_name, req_email in rows
+        ],
+    }
+
+
+class ReviewBody(BaseModel):
+    note: str | None = None
+
+
+@router.post("/change-requests/{request_id}/approve")
+def approve_change_request(
+    request_id: str,
+    body: ReviewBody,
+    request: Request,
+    admin: User = Depends(require_hub_admin),
+    db: Session = Depends(get_db),
+):
+    """Approve a pending request → apply การเปลี่ยนแปลงจริง.
+
+    ถ้าเป็น rotate_secret → ส่ง email พร้อม one-time link ให้ requester
+    """
+    req = (
+        db.query(SubsystemChangeRequest)
+        .filter(SubsystemChangeRequest.id == request_id)
+        .first()
+    )
+    if not req:
+        raise HTTPException(status_code=404, detail="ไม่พบ request")
+    if req.status != "pending":
+        raise HTTPException(
+            status_code=400,
+            detail=f"request นี้ปิดไปแล้ว (status={req.status})",
+        )
+
+    subsystem = db.query(Subsystem).filter(Subsystem.id == req.subsystem_id).first()
+    if not subsystem:
+        raise HTTPException(status_code=404, detail="subsystem หาย")
+
+    # Apply change
+    try:
+        result = apply_approved(db, req, subsystem)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"apply ล้มเหลว: {e}")
+
+    req.status = "approved"
+    req.reviewer_id = admin.id
+    req.reviewer_note = (body.note or "").strip() or None
+    req.reviewed_at = datetime.utcnow()
+
+    log_action(
+        db,
+        actor_id=admin.id,
+        action="change_request_approved",
+        target_type="subsystem",
+        target_id=subsystem.id,
+        ip=get_client_ip(request),
+        metadata={
+            "request_id": str(req.id),
+            "request_type": req.request_type,
+            "applied_result": result,
+        },
+    )
+    db.commit()
+
+    # Email requester
+    requester = db.query(User).filter(User.id == req.requested_by).first()
+    email_sent = False
+    if requester and requester.email:
+        try:
+            if req.request_type == "rotate_secret":
+                # ส่ง one-time retrieval link ผ่าน email
+                from datetime import datetime as _dt
+
+                expires_at = _dt.fromisoformat(result["retrieval_expires_at"])
+                email_sent = send_secret_retrieval_email(
+                    to_email=requester.email,
+                    subsystem_name=subsystem.name,
+                    retrieval_url=result["retrieval_url"],
+                    expires_at=expires_at,
+                    client_id=subsystem.client_id,
+                )
+            else:
+                # ใช้ email_service.send_change_request_decision (Phase 4)
+                from app.services.email_service import (
+                    send_change_request_decision,
+                )
+
+                email_sent = send_change_request_decision(
+                    to_email=requester.email,
+                    full_name=requester.full_name,
+                    subsystem_name=subsystem.name,
+                    request_type=req.request_type,
+                    decision="approved",
+                    reviewer_email=admin.email,
+                    note=req.reviewer_note,
+                )
+        except Exception:
+            email_sent = False
+
+    return {
+        "id": str(req.id),
+        "status": "approved",
+        "applied_result": result,
+        "email_sent": email_sent,
+        "message": f"Approve เรียบร้อย · type={req.request_type}",
+    }
+
+
+@router.post("/change-requests/{request_id}/reject")
+def reject_change_request(
+    request_id: str,
+    body: ReviewBody,
+    request: Request,
+    admin: User = Depends(require_hub_admin),
+    db: Session = Depends(get_db),
+):
+    """Reject a pending request — ไม่ apply, email dev พร้อม reason."""
+    req = (
+        db.query(SubsystemChangeRequest)
+        .filter(SubsystemChangeRequest.id == request_id)
+        .first()
+    )
+    if not req:
+        raise HTTPException(status_code=404, detail="ไม่พบ request")
+    if req.status != "pending":
+        raise HTTPException(
+            status_code=400,
+            detail=f"request นี้ปิดไปแล้ว (status={req.status})",
+        )
+    if not body.note or not body.note.strip():
+        raise HTTPException(
+            status_code=400,
+            detail="กรุณาใส่ note อธิบายเหตุผลที่ reject",
+        )
+
+    req.status = "rejected"
+    req.reviewer_id = admin.id
+    req.reviewer_note = body.note.strip()
+    req.reviewed_at = datetime.utcnow()
+
+    subsystem = db.query(Subsystem).filter(Subsystem.id == req.subsystem_id).first()
+
+    log_action(
+        db,
+        actor_id=admin.id,
+        action="change_request_rejected",
+        target_type="subsystem",
+        target_id=req.subsystem_id,
+        ip=get_client_ip(request),
+        metadata={
+            "request_id": str(req.id),
+            "request_type": req.request_type,
+            "note": req.reviewer_note,
+        },
+    )
+    db.commit()
+
+    # Email requester
+    requester = db.query(User).filter(User.id == req.requested_by).first()
+    email_sent = False
+    if requester and requester.email and subsystem:
+        try:
+            from app.services.email_service import send_change_request_decision
+
+            email_sent = send_change_request_decision(
+                to_email=requester.email,
+                full_name=requester.full_name,
+                subsystem_name=subsystem.name,
+                request_type=req.request_type,
+                decision="rejected",
+                reviewer_email=admin.email,
+                note=req.reviewer_note,
+            )
+        except Exception:
+            email_sent = False
+
+    return {
+        "id": str(req.id),
+        "status": "rejected",
+        "email_sent": email_sent,
+        "message": "Reject เรียบร้อย — แจ้ง requester ทาง email แล้ว",
     }
 
 

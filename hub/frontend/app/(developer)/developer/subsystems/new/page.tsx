@@ -38,6 +38,8 @@ export default function NewSubsystemPage() {
   const [description, setDescription] = useState("");
   const [redirectUris, setRedirectUris] = useState<string[]>([""]);
   const [scope, setScope] = useState<Set<string>>(new Set(["email", "name"]));
+  const [allowedRoles, setAllowedRoles] = useState("user");
+  const [webhookUrl, setWebhookUrl] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<RegisterResponse | null>(null);
@@ -75,6 +77,15 @@ export default function NewSubsystemPage() {
       return;
     }
 
+    const rolesArr = allowedRoles
+      .split(/[\s,]+/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+    if (rolesArr.length === 0) {
+      setError("ต้องระบุ allowed_roles อย่างน้อย 1 ตัว");
+      return;
+    }
+
     setBusy(true);
     try {
       const r = await clientFetch<RegisterResponse>("/developer/subsystems", {
@@ -84,6 +95,8 @@ export default function NewSubsystemPage() {
           description: description.trim() || null,
           redirect_uris: cleanUris,
           scope: Array.from(scope),
+          allowed_roles: rolesArr,
+          access_revoke_webhook_url: webhookUrl.trim() || null,
         }),
       });
       setResult(r);
@@ -335,6 +348,50 @@ export default function NewSubsystemPage() {
                 );
               })}
             </div>
+          </div>
+
+          {/* Allowed roles */}
+          <div>
+            <label className="block text-xs font-bold uppercase tracking-wider text-ink-500 mb-2">
+              Allowed Roles ใน subsystem <span className="text-rose-500">*</span>
+            </label>
+            <p className="text-[11px] text-ink-500 mb-3">
+              บทบาทที่ระบบยอมรับ — ใช้ตรวจสอบเวลา admin เพิ่ม user เข้า whitelist
+              <br />
+              เช่น <code className="bg-ink-100 px-1 rounded">resident, teacher, staff</code>{" "}
+              หรือ <code className="bg-ink-100 px-1 rounded">member, librarian</code>
+            </p>
+            <input
+              type="text"
+              required
+              placeholder="resident, teacher, staff"
+              value={allowedRoles}
+              onChange={(e) => setAllowedRoles(e.target.value)}
+              className="w-full px-3 py-2 rounded-lg border border-ink-200 focus:outline-none focus:border-brand-500 font-mono text-[12px]"
+            />
+          </div>
+
+          {/* Webhook URL (optional) */}
+          <div>
+            <label className="block text-xs font-bold uppercase tracking-wider text-ink-500 mb-2">
+              Access-revoke Webhook URL{" "}
+              <span className="text-ink-400 normal-case">(optional)</span>
+            </label>
+            <p className="text-[11px] text-ink-500 mb-3">
+              URL ที่ Hub จะ POST แจ้งเตือนเมื่อมี user ถูก revoke ออกจาก whitelist
+              <br />
+              ปล่อยว่าง = Hub จะใช้{" "}
+              <code className="bg-ink-100 px-1 rounded">
+                {`{origin ของ redirect_uri[0]}/internal/access-revoked`}
+              </code>
+            </p>
+            <input
+              type="url"
+              placeholder="(ปล่อยว่างได้)"
+              value={webhookUrl}
+              onChange={(e) => setWebhookUrl(e.target.value)}
+              className="w-full px-3 py-2 rounded-lg border border-ink-200 focus:outline-none focus:border-brand-500 font-mono text-[12px]"
+            />
           </div>
 
           {/* Submit */}

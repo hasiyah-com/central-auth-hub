@@ -45,15 +45,30 @@
 
     <div class="orn-rule" style="margin-bottom:12px;"><span class="orn-fleur">ข้อมูลจาก Hub</span></div>
 
-    {# Display all 5 scoped fields — clearly show empty ones instead of hiding #}
+    {# Display เฉพาะ field ที่ scope ปัจจุบันขอ — email/name/role ติดมาเสมอ #}
     <dl style="font-family:var(--font-serif); font-size:14px;">
+      {# Required fields — ติดมาในทุก scope #}
       {% set kv_pairs = [
-        ('email',       'อีเมล',         user.email),
-        ('full_name',   'ชื่อ-นามสกุล',  user.full_name),
-        ('role_in_sub', 'บทบาท',         user.role_in_sub),
-        ('faculty',     'คณะ',           user.faculty),
-        ('student_id',  'รหัสนักศึกษา',  user.student_id),
+        ('email',       'อีเมล',           user.email),
+        ('full_name',   'ชื่อ-นามสกุล',    user.full_name),
+        ('role_in_sub', 'บทบาท',           user.role_in_sub),
       ] %}
+      {# Optional — เพิ่มเฉพาะถ้า scope ขอจริง #}
+      {% set all_optional = [
+        ('student_id',  'รหัสนักศึกษา',    member.student_id if member else None),
+        ('employee_id', 'รหัสบุคลากร',     member.employee_id if member else None),
+        ('faculty',     'คณะ',             member.faculty if member else None),
+        ('major',       'สาขา',            member.major if member else None),
+        ('year',        'ชั้นปี',          member.year if member else None),
+        ('position',    'ตำแหน่ง',         member.position if member else None),
+        ('phone',       'โทรศัพท์',        member.phone if member else None),
+        ('address',     'ที่อยู่',         member.address if member else None),
+      ] %}
+      {% for key, label, value in all_optional %}
+        {% if key in user.provided_scope %}
+          {% set _ = kv_pairs.append((key, label, value)) %}
+        {% endif %}
+      {% endfor %}
       {% for key, label, value in kv_pairs %}
       <div style="display:flex; justify-content:space-between; align-items:baseline; padding:10px 0; border-bottom:1px dashed var(--rule);">
         <dt style="color:var(--ink-3); letter-spacing:.05em;">

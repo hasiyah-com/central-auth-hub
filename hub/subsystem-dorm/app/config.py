@@ -31,6 +31,12 @@ class Settings(BaseSettings):
     session_max_age_seconds: int = 3600
     session_cookie_secure: bool = False  # dev: false, prod: true (HTTPS)
 
+    # Webhook back-channel — ต้องเป็นคีย์เดียวกับ Hub WEBHOOK_SHARED_KEY
+    # ปล่อยว่าง = ปฏิเสธ webhook ทุกตัว (subsystem ต้อง pull จาก Hub แทน)
+    hub_webhook_shared_key: str = ""
+    # tolerance สำหรับ X-Hub-Timestamp (วินาที) — กัน replay attack
+    webhook_max_age_sec: int = 300
+
     @property
     def jwt_issuer(self) -> str:
         """Issuer ใน JWT ที่ Hub ออก (คงที่)."""

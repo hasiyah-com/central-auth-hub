@@ -14,10 +14,30 @@ type IpEntry = {
   created_at: string | null;
 };
 
-type ListResponse = { data: IpEntry[]; total: number };
+type ListResponse = {
+  data: IpEntry[];
+  total: number;
+  skip: number;
+  limit: number;
+};
+
+type IpsumResult = {
+  ok: boolean;
+  fetched?: number;
+  new_inserted?: number;
+  skipped_existing?: number;
+  elapsed_sec?: number;
+  error?: string;
+};
+
+const PAGE_SIZE = 50;
 
 export default function IpBlacklistPage() {
   const [entries, setEntries] = useState<IpEntry[]>([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(0);
+  const [search, setSearch] = useState("");
+  const [searchDraft, setSearchDraft] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   // Add form
@@ -30,14 +50,70 @@ export default function IpBlacklistPage() {
   const [uploadBusy, setUploadBusy] = useState(false);
   const [uploadMsg, setUploadMsg] = useState<string | null>(null);
 
+  // Refresh ipsum
+  const [refreshBusy, setRefreshBusy] = useState(false);
+
   const load = useCallback(() => {
     setError(null);
-    clientFetch<ListResponse>("/admin/ip-blacklist")
-      .then((res) => setEntries(res.data))
+    const qs = new URLSearchParams({
+      skip: String(page * PAGE_SIZE),
+      limit: String(PAGE_SIZE),
+    });
+    if (search.trim()) qs.set("search", search.trim());
+    clientFetch<ListResponse>(`/admin/ip-blacklist?${qs.toString()}`)
+      .then((res) => {
+        setEntries(res.data);
+        setTotal(res.total);
+      })
       .catch((e) => setError(e.detail || "โหลดข้อมูลไม่สำเร็จ"));
-  }, []);
+  }, [page, search]);
 
   useEffect(load, [load]);
+
+  async function handleRefreshIpsum() {
+    if (
+      !confirm(
+        "Refresh ipsum feed ตอนนี้?\n\n" +
+          "ระบบจะดาวน์โหลด threat-intel L5 ล่าสุดจาก GitHub แล้ว upsert ลง DB"
+      )
+    )
+      return;
+    setRefreshBusy(true);
+    setMsg(null);
+    try {
+      const r = await clientFetch<IpsumResult>(
+        "/admin/ip-blacklist/refresh-ipsum",
+        { method: "POST" }
+      );
+      if (r.ok) {
+        setMsg({
+          kind: "ok",
+          text:
+            `✓ Refresh สำเร็จ — fetched ${r.fetched}, ` +
+            `เพิ่มใหม่ ${r.new_inserted}, ซ้ำ ${r.skipped_existing} ` +
+            `(${r.elapsed_sec}s)`,
+        });
+        load();
+      } else {
+        setMsg({ kind: "err", text: `Refresh fail: ${r.error}` });
+      }
+    } catch (e) {
+      const err = e as { detail?: string };
+      setMsg({ kind: "err", text: err.detail || "refresh ไม่สำเร็จ" });
+    } finally {
+      setRefreshBusy(false);
+    }
+  }
+
+  function applySearch() {
+    setPage(0);
+    setSearch(searchDraft);
+  }
+  function clearSearch() {
+    setSearchDraft("");
+    setSearch("");
+    setPage(0);
+  }
 
   async function handleAdd(e: React.FormEvent) {
     e.preventDefault();
@@ -105,14 +181,25 @@ export default function IpBlacklistPage() {
       <Topbar title="IP Blacklist" />
       <main className="p-8 max-w-5xl mx-auto w-full">
         {/* Header */}
-        <div className="mb-6">
-          <h2 className="text-sm font-bold text-ink-500 uppercase tracking-wider">
-            IP Blacklist Management
-          </h2>
-          <p className="text-xs text-ink-400 mt-1">
-            IP ที่อยู่ใน blacklist จะถูกตั้ง is_attack_ip = true อัตโนมัติตอน login
-            (Wiefling 2022)
-          </p>
+        <div className="mb-6 flex items-end justify-between gap-3 flex-wrap">
+          <div>
+            <h2 className="text-sm font-bold text-ink-500 uppercase tracking-wider">
+              IP Blacklist Management
+            </h2>
+            <p className="text-xs text-ink-400 mt-1">
+              IP ที่อยู่ใน blacklist จะถูกตั้ง is_attack_ip = true อัตโนมัติตอน login
+              (Wiefling 2022)
+            </p>
+          </div>
+          <button
+            onClick={handleRefreshIpsum}
+            disabled={refreshBusy}
+            className="px-4 py-2 rounded-lg bg-brand-600 hover:bg-brand-700 text-white text-sm font-semibold disabled:opacity-50 transition flex items-center gap-2"
+            title="ดาวน์โหลด ipsum L5 ล่าสุดจาก GitHub"
+          >
+            <span className={refreshBusy ? "animate-spin" : ""}>🔄</span>
+            {refreshBusy ? "กำลัง refresh…" : "Refresh ipsum"}
+          </button>
         </div>
 
         {error && (
@@ -125,10 +212,14 @@ export default function IpBlacklistPage() {
         <div className="mb-6">
           <StatsCard
             label="IPs in Blacklist"
-            value={String(entries.length)}
-            sub="ตรวจจับอัตโนมัติเมื่อ login"
+            value={total.toLocaleString("en-US")}
+            sub={
+              search
+                ? `แสดง ${entries.length} ที่ตรงกับ "${search}"`
+                : "ตรวจจับอัตโนมัติเมื่อ login"
+            }
             icon="🚫"
-            tone={entries.length > 0 ? "danger" : "good"}
+            tone={total > 0 ? "danger" : "good"}
           />
         </div>
 
@@ -198,9 +289,46 @@ export default function IpBlacklistPage() {
 
         {/* IP list */}
         <section>
-          <h3 className="text-xs font-bold text-ink-500 uppercase tracking-wider mb-3">
-            รายการ · {entries.length} IPs
-          </h3>
+          <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
+            <h3 className="text-xs font-bold text-ink-500 uppercase tracking-wider">
+              รายการ · {total.toLocaleString("en-US")} IPs
+              {search && (
+                <span className="text-brand-700 normal-case ml-2">
+                  · ค้นหา &quot;{search}&quot;
+                </span>
+              )}
+            </h3>
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                applySearch();
+              }}
+              className="flex items-center gap-2"
+            >
+              <input
+                type="text"
+                value={searchDraft}
+                onChange={(e) => setSearchDraft(e.target.value)}
+                placeholder="ค้นหา IP / reason"
+                className="px-3 py-1.5 rounded-lg border border-ink-200 text-xs font-mono w-[200px] focus:outline-none focus:border-brand-500"
+              />
+              <button
+                type="submit"
+                className="px-3 py-1.5 rounded-lg bg-ink-900 hover:bg-ink-700 text-white text-xs font-semibold"
+              >
+                ค้นหา
+              </button>
+              {search && (
+                <button
+                  type="button"
+                  onClick={clearSearch}
+                  className="px-2 py-1.5 rounded-lg border border-ink-200 hover:bg-ink-50 text-xs text-ink-600"
+                >
+                  ✕
+                </button>
+              )}
+            </form>
+          </div>
           <div className="bg-white rounded-xl border border-ink-200 overflow-hidden shadow-sm">
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
@@ -262,6 +390,53 @@ export default function IpBlacklistPage() {
                 </tbody>
               </table>
             </div>
+
+            {/* Pagination footer */}
+            {total > PAGE_SIZE && (
+              <div className="flex items-center justify-between gap-3 px-4 py-3 border-t border-ink-100 bg-ink-50/50 text-xs">
+                <span className="text-ink-600 font-mono">
+                  {page * PAGE_SIZE + 1}–
+                  {Math.min((page + 1) * PAGE_SIZE, total)} / {total.toLocaleString("en-US")}
+                </span>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setPage(0)}
+                    disabled={page === 0}
+                    className="px-2 py-1 rounded border border-ink-200 hover:bg-white disabled:opacity-40"
+                    title="หน้าแรก"
+                  >
+                    ⏮
+                  </button>
+                  <button
+                    onClick={() => setPage((p) => Math.max(0, p - 1))}
+                    disabled={page === 0}
+                    className="px-3 py-1 rounded border border-ink-200 hover:bg-white disabled:opacity-40 font-semibold"
+                  >
+                    ← ก่อนหน้า
+                  </button>
+                  <span className="text-ink-500 font-mono px-2">
+                    หน้า {page + 1} / {Math.max(1, Math.ceil(total / PAGE_SIZE))}
+                  </span>
+                  <button
+                    onClick={() => setPage((p) => p + 1)}
+                    disabled={(page + 1) * PAGE_SIZE >= total}
+                    className="px-3 py-1 rounded border border-ink-200 hover:bg-white disabled:opacity-40 font-semibold"
+                  >
+                    ถัดไป →
+                  </button>
+                  <button
+                    onClick={() =>
+                      setPage(Math.max(0, Math.ceil(total / PAGE_SIZE) - 1))
+                    }
+                    disabled={(page + 1) * PAGE_SIZE >= total}
+                    className="px-2 py-1 rounded border border-ink-200 hover:bg-white disabled:opacity-40"
+                    title="หน้าสุดท้าย"
+                  >
+                    ⏭
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </section>
       </main>

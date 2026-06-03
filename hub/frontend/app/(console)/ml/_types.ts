@@ -55,6 +55,8 @@ export type Overview = {
   meta: {
     shadow_mode: boolean;
     thresholds: { block: number; mfa: number };
+    sort?: "score" | "recent";
+    limit?: number;
   };
 };
 

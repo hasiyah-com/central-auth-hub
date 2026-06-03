@@ -61,6 +61,26 @@ async def exchange_code_for_token(code: str, code_verifier: str) -> dict:
         return r.json()
 
 
+async def notify_hub_logout(hub_user_id: str) -> bool:
+    """แจ้ง Hub ว่า user logout — server-to-server, fail-safe.
+
+    Hub mark logout_at บน LoginSession ล่าสุดของ (user, subsystem นี้).
+    """
+    try:
+        async with httpx.AsyncClient(timeout=3.0) as client:
+            r = await client.post(
+                f"{settings.hub_internal_url}/oauth/logout",
+                data={
+                    "client_id": settings.library_client_id,
+                    "client_secret": settings.library_client_secret,
+                    "hub_user_id": hub_user_id,
+                },
+            )
+            return r.status_code == 200
+    except Exception:
+        return False
+
+
 async def _fetch_jwks() -> dict:
     now = time.time()
     if _jwks_cache["data"] and (now - _jwks_cache["fetched_at"]) < _JWKS_CACHE_TTL:

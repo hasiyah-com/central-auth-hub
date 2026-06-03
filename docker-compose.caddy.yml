@@ -1,0 +1,31 @@
+# Overlay: Caddy reverse proxy + Let's Encrypt HTTPS (Mode C — production)
+#
+# Use:
+#   docker compose -f docker-compose.yml -f docker-compose.caddy.yml up -d
+#
+# Prereq:
+#   1. แก้ Caddyfile — แทน <DOMAIN> ด้วย domain จริง
+#   2. ชี้ DNS A record ของ hub./admin./dorm./library.<DOMAIN> → server IP
+#   3. server เปิด port 80 + 443
+services:
+  caddy:
+    image: caddy:2-alpine
+    container_name: hub-caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"   # HTTP/3 (QUIC)
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data         # Let's Encrypt certs + state (persist)
+      - caddy_config:/config     # Caddy auto-managed config
+    depends_on:
+      - hub-backend
+      - hub-frontend
+      - subsystem-dorm
+      - subsystem-library
+
+volumes:
+  caddy_data:
+  caddy_config:

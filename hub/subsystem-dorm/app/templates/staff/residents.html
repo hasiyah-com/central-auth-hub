@@ -86,11 +86,17 @@
             {% endif %}
           </td>
           <td>
+            {% if resident.hub_access_revoked_at %}
+            <span class="badge" style="background:#fee2e2; color:#991b1b; border:1px solid #fca5a5;" title="Hub revoke whitelist แล้ว — login ใหม่ไม่ได้">
+              ⛔ Hub-revoked
+            </span>
+            {% else %}
             <span class="badge badge-{% if resident.status == 'checked_in' %}checked_in{% elif resident.status == 'active' %}active{% else %}{{ resident.status }}{% endif %}">
               {% if resident.status == "checked_in" %}🏠 check-in
               {% elif resident.status == "active" %}✅ active
               {% else %}{{ resident.status }}{% endif %}
             </span>
+            {% endif %}
           </td>
           <td class="whitespace-nowrap">
             {% if resident.checked_in_at %}

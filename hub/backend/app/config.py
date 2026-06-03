@@ -89,6 +89,39 @@ class Settings(BaseSettings):
     smtp_password: str = ""
     email_from: str = "noreply@hub.local"
 
+    # ── Webhook back-channel (Hub → Subsystem) ──
+    # shared HMAC key สำหรับ sign payload — subsystem มี key เดียวกันใน config
+    # ปล่อยว่าง = ปิด webhook channel (subsystem ต้องใช้ cron sync แทน)
+    webhook_shared_key: str = ""
+
+    # ── Structured Logging ──
+    # json = production (ส่งเข้า ELK/Loki/Datadog ได้) / text = dev อ่านง่าย
+    log_format: str = "text"
+    log_level: str = "INFO"
+
+    # ── Alerting (webhook + email) ──
+    # webhook URL — Slack incoming-webhook / Discord webhook / generic JSON sink
+    # ปล่อยว่าง = ปิด webhook channel (ยังคง log + email ได้)
+    alert_webhook_url: str = ""
+    # Telegram Bot API — ต้องใส่ทั้ง 2 ตัวถึงจะทำงาน
+    # bot token จาก @BotFather, chat_id ได้จาก @userinfobot หรือ getUpdates
+    alert_telegram_bot_token: str = ""
+    alert_telegram_chat_id: str = ""
+    # email ปลายทาง (admin / oncall) — ปล่อยว่าง = ปิด email channel
+    alert_email_to: str = ""
+    # ระดับขั้นต่ำที่จะส่งจริง — info | warning | critical
+    # info ใช้สำหรับ debug; default warning ปิด info noise
+    alert_min_severity: str = "warning"
+    # cooldown ต่อ (kind, key) นาที — กัน flood ซ้ำๆ จาก rule เดียว
+    # 0 = ไม่ dedup (ใช้ debug); 60 = ส่งซ้ำได้หลังครบ 1 ชม.
+    alert_cooldown_minutes: int = 60
+
+    # ML risk score thresholds สำหรับ fire alert
+    # >= critical → severity=critical (ส่งแน่นอน)
+    # >= warning → severity=warning (filter ด้วย alert_min_severity)
+    alert_ml_critical_threshold: float = 0.70
+    alert_ml_warning_threshold: float = 0.50
+
     def validate_production(self) -> None:
         """fail-fast ถ้า prod ยังใช้ default ที่ไม่ปลอดภัย."""
         if self.app_env != "production":

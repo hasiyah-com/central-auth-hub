@@ -145,6 +145,10 @@ services:
       NEXT_PUBLIC_HUB_URL: ${NEXT_PUBLIC_HUB_URL:-http://localhost:8000}
       HUB_INTERNAL_URL: http://hub-backend:8000
       NODE_ENV: ${NODE_ENV:-development}
+      # Force polling watcher — แก้ปัญหา Next.js ไม่ detect file change
+      # บน Windows + Docker mount (inotify ข้าม WSL/Hyper-V ไม่ทำงาน)
+      WATCHPACK_POLLING: "true"
+      CHOKIDAR_USEPOLLING: "true"
     ports:
       - "3000:3000"
     depends_on:

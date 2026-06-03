@@ -16,7 +16,14 @@ from app.config import settings
 from app.database import Base, engine
 from app.hooks import register_default_listeners
 from app.rate_limiter import limiter
-from app.routers import (
+
+# Init structured logging *ก่อน* import router/service อื่น
+# กัน log line ที่เกิดขึ้นตอน import (เช่น auto-discover) หลุดเป็น default format
+from app.services.structured_logger import setup_logging  # noqa: E402
+
+setup_logging(fmt=settings.log_format, level=settings.log_level)
+
+from app.routers import (  # noqa: E402
     health,
     users,
     admin,
@@ -28,9 +35,12 @@ from app.routers import (
     secret,
     oauth,
 )
-from app.services.jwt_service import get_jwks
-from app.services.request_logger import RequestLoggerMiddleware
-from app.services import api_guard_scheduler
+from app.services.jwt_service import get_jwks  # noqa: E402
+from app.services.request_id import RequestIdMiddleware  # noqa: E402
+from app.services.request_logger import RequestLoggerMiddleware  # noqa: E402
+from app.services import api_guard_scheduler  # noqa: E402
+from app.services import subsystem_health  # noqa: E402
+from app.services import ipsum_refresh  # noqa: E402
 
 
 # ============ Security Headers Middleware ============
@@ -93,10 +103,18 @@ async def lifespan(app: FastAPI):
     # API Guard — auto-scan request_logs ทุก 5 นาที (NIST SP 800-228)
     api_guard_scheduler.start(interval_sec=300, scan_window_min=5)
 
+    # Subsystem health — ping /health ของ subsystem ที่ active ทุก 5 นาที
+    subsystem_health.start()
+
+    # ipsum threat-intel refresh — ดาวน์โหลด L5 IPs ทุก 24 ชม.
+    ipsum_refresh.start()
+
     yield
 
     # Cleanup
     api_guard_scheduler.stop()
+    subsystem_health.stop()
+    ipsum_refresh.stop()
 
 
 app = FastAPI(
@@ -120,6 +138,10 @@ app.add_middleware(SecurityHeadersMiddleware)
 
 # Request logger — log ทุก HTTP request ลง request_logs (skip /health, /docs)
 app.add_middleware(RequestLoggerMiddleware)
+
+# Request-ID + structured-log context — ต้องอยู่ "นอก" RequestLogger (เพื่อให้
+# log line ใน middleware ถัดเข้าไปได้ rid) → add ทีหลัง = outer
+app.add_middleware(RequestIdMiddleware)
 
 # Session middleware — จำเป็นสำหรับ Authlib OAuth (เก็บ state ระหว่าง flow)
 # - https_only: production เท่านั้น (dev เป็น HTTP)

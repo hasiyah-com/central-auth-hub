@@ -10,7 +10,7 @@ Endpoints:
 import csv
 import io
 
-from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, UploadFile, File
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -30,11 +30,34 @@ class AddIpBody(BaseModel):
 
 @router.get("")
 def list_blacklist(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=500),
+    search: str | None = Query(
+        None, description="filter ip_address หรือ reason (substring)"
+    ),
     admin: User = Depends(require_hub_admin),
     db: Session = Depends(get_db),
 ):
-    """แสดงรายการ IP blacklist ทั้งหมด."""
-    entries = db.query(IpBlacklist).order_by(IpBlacklist.created_at.desc()).all()
+    """แสดงรายการ IP blacklist — paginated + search.
+
+    Query params:
+      - skip: offset (default 0)
+      - limit: page size (default 50, max 500)
+      - search: filter IP หรือ reason
+    """
+    q = db.query(IpBlacklist)
+    if search and search.strip():
+        s = f"%{search.strip()}%"
+        from sqlalchemy import or_
+
+        q = q.filter(
+            or_(
+                IpBlacklist.ip_address.ilike(s),
+                IpBlacklist.reason.ilike(s),
+            )
+        )
+    total = q.count()
+    entries = q.order_by(IpBlacklist.created_at.desc()).offset(skip).limit(limit).all()
     return {
         "data": [
             {
@@ -46,7 +69,9 @@ def list_blacklist(
             }
             for e in entries
         ],
-        "total": len(entries),
+        "total": total,
+        "skip": skip,
+        "limit": limit,
     }
 
 
@@ -166,3 +191,34 @@ def remove_ip(
     db.commit()
 
     return {"deleted": ip_addr}
+
+
+# ============ Manual trigger ipsum refresh (admin only) ============
+
+
+@router.post("/refresh-ipsum")
+async def refresh_ipsum_now(
+    request: Request,
+    admin: User = Depends(require_hub_admin),
+    db: Session = Depends(get_db),
+):
+    """Trigger ipsum L5 refresh ทันที (ไม่ต้องรอ background scheduler 24 ชม.).
+
+    ใช้ logic เดียวกับ scheduler — ดาวน์โหลด + upsert + log
+    """
+    from app.services.ipsum_refresh import _refresh_once
+
+    result = await _refresh_once()
+
+    log_action(
+        db,
+        actor_id=admin.id,
+        action="ip_blacklist_ipsum_refreshed",
+        target_type="ip_blacklist",
+        target_id=None,
+        ip=get_client_ip(request),
+        metadata=result,
+    )
+    db.commit()
+
+    return result

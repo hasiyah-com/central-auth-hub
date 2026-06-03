@@ -3,6 +3,7 @@
 Run once before starting Hub:
     docker compose exec hub-backend python -m scripts.generate_jwt_keys
 """
+
 import os
 
 from cryptography.hazmat.primitives import serialization
@@ -43,7 +44,7 @@ def generate():
 
     os.chmod(private_path, 0o600)
 
-    print(f"✅ สร้าง key สำเร็จ:")
+    print("✅ สร้าง key สำเร็จ:")
     print(f"   private: {private_path}")
     print(f"   public:  {public_path}")
 

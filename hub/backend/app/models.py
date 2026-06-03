@@ -68,6 +68,18 @@ class Subsystem(Base):
     client_secret_hash = Column(Text, nullable=False)
     redirect_uris = Column(ARRAY(Text), nullable=False)
     scope = Column(ARRAY(String), nullable=False)
+    # Previous client_secret hash (grace period 24h หลัง rotate)
+    # /oauth/token จะลอง verify primary ก่อน → ถ้าไม่ผ่านลอง legacy
+    # หลัง expires_at ผ่าน → caller ลบ field นี้
+    previous_client_secret_hash = Column(Text, nullable=True)
+    previous_secret_expires_at = Column(DateTime, nullable=True)
+    # Roles ที่ allowed สำหรับ access_list.role_in_sub
+    # ระบบหอพัก: [resident, teacher, staff] / ห้องสมุด: [member, librarian]
+    # ถ้าว่าง = ใช้ default ["user"] (backward compat กับ subsystem เก่า)
+    allowed_roles = Column(ARRAY(String), nullable=False, server_default="{user}")
+    # URL ให้ Hub fire webhook ตอน revoke access (back-channel)
+    # ถ้าว่าง = Hub จะ derive จาก redirect_uris[0] origin
+    access_revoke_webhook_url = Column(Text, nullable=True)
     status = Column(
         String(20), default="pending", index=True
     )  # pending/active/suspended
@@ -134,6 +146,11 @@ class LoginSession(Base):
     is_account_takeover = Column(Boolean, default=False)  # admin ยืนยันว่าเป็น attacker จริง
 
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    # NULL = session ยังเปิด / มีค่า = ปิดเมื่อ subsystem แจ้ง logout (back-channel)
+    logout_at = Column(DateTime, nullable=True, index=True)
+    # JWT identifier (jti claim) ของ token ที่ออกให้ session นี้
+    # ใช้สำหรับ force-revoke ผ่าน jwt_service.revoke_jti()
+    jti = Column(String(64), nullable=True, index=True)
 
 
 class AuditLog(Base):
@@ -170,6 +187,43 @@ class RequestLog(Base):
     duration_ms = Column(Integer)
     error_detail = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
+
+
+class SubsystemChangeRequest(Base):
+    """Pending change request — sensitive operation ที่ต้องได้ admin approve ก่อน apply.
+
+    Workflow:
+      1. dev call /developer/.../rotate-secret หรือ PATCH ที่กระทบ scope/roles/redirect
+      2. backend สร้าง row status=pending แทนการ apply ตรง
+      3. admin เห็นใน /admin/pending-requests → approve/reject
+      4. approve → apply ของจริง + ส่ง email ให้ dev
+      5. reject → mark + email พร้อม reason
+
+    Request types ที่รองรับ:
+      - rotate_secret          (payload: {})
+      - edit_scope             (payload: {"scope": [...]})
+      - edit_allowed_roles     (payload: {"allowed_roles": [...]})
+      - edit_redirect_uris     (payload: {"redirect_uris": [...]})
+    """
+
+    __tablename__ = "subsystem_change_requests"
+
+    id = uuid_pk()
+    subsystem_id = Column(
+        UUID(as_uuid=True), ForeignKey("subsystems.id"), nullable=False, index=True
+    )
+    requested_by = Column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True
+    )
+    request_type = Column(String(50), nullable=False, index=True)
+    payload = Column(JSON, nullable=False)  # ค่าใหม่ที่ dev ต้องการ
+    status = Column(
+        String(20), default="pending", nullable=False, index=True
+    )  # pending / approved / rejected / cancelled
+    reviewer_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
+    reviewer_note = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+    reviewed_at = Column(DateTime, nullable=True)
 
 
 class SecretRetrievalToken(Base):
