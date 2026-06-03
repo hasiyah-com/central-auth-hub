@@ -35,13 +35,21 @@ _DEFAULT_MFA = 0.40
 @router.get("/overview")
 def ml_overview(
     days: int = Query(7, ge=1, le=365, description="จำนวนวันย้อนหลัง"),
+    sort: str = Query(
+        "score",
+        pattern="^(score|recent)$",
+        description="score = Top Anomalies (เรียง anomaly_score DESC) / recent = Recent Sessions (เรียงเวลาล่าสุด)",
+    ),
+    limit: int = Query(20, ge=1, le=100, description="จำนวน session ที่คืน"),
     admin: User = Depends(require_hub_admin),
     db: Session = Depends(get_db),
 ):
     """KPI สรุป ML สำหรับ admin dashboard:
     - score histogram 10 buckets
     - decision breakdown
-    - top 20 anomalies เรียงตาม score DESC
+    - sessions list — เลือกได้ระหว่าง:
+        sort=score  → Top Anomalies (เรียง score DESC, เฉพาะที่มี score)
+        sort=recent → Recent Sessions (เรียงเวลาล่าสุด, รวม session ใหม่ทุก score)
     """
     now = datetime.utcnow()
     cutoff = now - timedelta(days=days)
@@ -67,20 +75,23 @@ def ml_overview(
         d = s.decision or "unknown"
         decision_counter[d] = decision_counter.get(d, 0) + 1
 
-    # Top 20 anomalies — join User เพื่อดึง email + outer-join Subsystem
+    # Sessions list — join User เพื่อดึง email + outer-join Subsystem
     # (subsystem_id อาจเป็น NULL กรณี Hub-direct login = "ระบบหลัก")
-    top_rows = (
+    # ── sort=score (เดิม): เฉพาะ session ที่มี anomaly_score, เรียง score DESC
+    # ── sort=recent (ใหม่): ทุก session, เรียง created_at DESC (เห็น session ใหม่ทันที)
+    q = (
         db.query(LoginSession, User, Subsystem)
         .join(User, User.id == LoginSession.user_id)
         .outerjoin(Subsystem, Subsystem.id == LoginSession.subsystem_id)
-        .filter(
-            LoginSession.created_at >= cutoff,
-            LoginSession.anomaly_score.is_not(None),
-        )
-        .order_by(LoginSession.anomaly_score.desc())
-        .limit(20)
-        .all()
+        .filter(LoginSession.created_at >= cutoff)
     )
+    if sort == "score":
+        q = q.filter(LoginSession.anomaly_score.is_not(None)).order_by(
+            LoginSession.anomaly_score.desc()
+        )
+    else:  # recent
+        q = q.order_by(LoginSession.created_at.desc())
+    top_rows = q.limit(limit).all()
     top_anomalies = [
         {
             "session_id": str(sess.id),
@@ -88,7 +99,10 @@ def ml_overview(
             "user_email": u.email,
             "subsystem_name": sub.name if sub else None,  # None = Hub-direct
             "subsystem_id": str(sub.id) if sub else None,
-            "score": float(sess.anomaly_score),
+            # sort=recent อาจมี session ที่ยังไม่ score (NULL) → คืน 0.0
+            "score": float(sess.anomaly_score)
+            if sess.anomaly_score is not None
+            else 0.0,
             "decision": sess.decision,
             "ip": str(sess.ip) if sess.ip else None,
             "geo_country": sess.geo_country,
@@ -123,6 +137,8 @@ def ml_overview(
         "meta": {
             "shadow_mode": settings.ml_shadow_mode,
             "thresholds": {"block": _DEFAULT_BLOCK, "mfa": _DEFAULT_MFA},
+            "sort": sort,
+            "limit": limit,
         },
     }
 

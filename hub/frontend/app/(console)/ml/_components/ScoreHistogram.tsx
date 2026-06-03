@@ -8,16 +8,20 @@ type Props = {
 
 export function ScoreHistogram({ histogram }: Props) {
   const histMax = Math.max(...histogram.map((b) => b.count), 1);
+  const BAR_AREA_PX = 200; // ความสูง bar area (px) — fixed กัน flex-1 collapse
 
   return (
     <section className="mb-8">
       <h3 className="text-xs font-bold text-ink-500 uppercase tracking-wider mb-3">
-        Score Distribution · 10 buckets
+        Score Distribution · 10 buckets · max={histMax}
       </h3>
       <div className="bg-white rounded-xl border border-ink-200 shadow-sm p-6">
-        <div className="flex items-end gap-2 h-56">
+        <div className="flex items-end gap-2">
           {histogram.map((b, i) => {
-            const height = (b.count / histMax) * 100;
+            const heightPx =
+              b.count > 0
+                ? Math.max(4, (b.count / histMax) * BAR_AREA_PX)
+                : 0;
             const isHigh = i >= 7;
             const isMfa = i >= 4 && i < 7;
             const color = isHigh
@@ -29,17 +33,18 @@ export function ScoreHistogram({ histogram }: Props) {
               <div
                 key={b.bucket}
                 className="flex-1 flex flex-col items-center gap-2 group"
+                title={`${b.bucket}: ${b.count}`}
               >
                 <div className="text-[11px] font-mono tabular-nums text-ink-600 font-bold">
                   {b.count}
                 </div>
-                <div className="w-full flex-1 flex items-end">
+                <div
+                  className="w-full flex flex-col justify-end"
+                  style={{ height: `${BAR_AREA_PX}px` }}
+                >
                   <div
                     className={`w-full rounded-t-md ${color} transition-all duration-500 group-hover:opacity-80`}
-                    style={{
-                      height: `${Math.max(height, b.count > 0 ? 3 : 0)}%`,
-                    }}
-                    title={`${b.bucket}: ${b.count}`}
+                    style={{ height: `${heightPx}px` }}
                   />
                 </div>
                 <div className="text-[10px] font-mono tabular-nums text-ink-400">

@@ -14,6 +14,7 @@
 ทุกกฎไม่กระทบ ML anomaly_score — เป็นระบบแยกอิสระ
 """
 
+import logging
 import statistics
 from datetime import datetime, timedelta
 
@@ -21,6 +22,15 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.models import ApiAlert, RequestLog
+from app.services.alert_service import send_alert
+
+log = logging.getLogger(__name__)
+
+
+# map ApiAlert.severity (warning|critical) → alert_service severity
+def _severity_to_alert(sev: str) -> str:
+    return "critical" if sev == "critical" else "warning"
+
 
 # ============ Thresholds (ปรับได้ตาม environment) ============
 
@@ -245,6 +255,23 @@ def scan_and_persist(db: Session, minutes: int = 5) -> list[ApiAlert]:
         db.commit()
         for a in persisted:
             db.refresh(a)
+        # Fire alerts (fail-safe — webhook/email error ห้าม rollback alert ใน DB)
+        for a in persisted:
+            try:
+                send_alert(
+                    severity=_severity_to_alert(a.severity),
+                    kind=f"api_guard.{a.rule}",
+                    key=str(a.ip),
+                    title=f"{a.rule.replace('_', ' ').title()} — {a.ip}",
+                    detail={
+                        "rule": a.rule,
+                        "ip": str(a.ip),
+                        "user_id": str(a.user_id) if a.user_id else None,
+                        **(a.detail or {}),
+                    },
+                )
+            except Exception as e:
+                log.exception("alert dispatch failed for ApiAlert %s: %r", a.id, e)
 
     return persisted
 

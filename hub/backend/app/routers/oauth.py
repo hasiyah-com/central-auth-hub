@@ -17,6 +17,7 @@ Flow:
 
 import json
 import secrets
+from datetime import datetime
 
 from authlib.integrations.starlette_client import OAuthError
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
@@ -30,7 +31,10 @@ from app.rate_limiter import limiter
 from app.models import AccessList, LoginSession, Subsystem, User
 from app.redis_client import redis_client
 from app.routers.auth import oauth  # ใช้ Authlib client ตัวเดียวกับ Week 2
+from app.services.alert_service import maybe_alert_ml_risk
 from app.services.audit_service import log_action
+from app.services.identity_challenge import is_user_challenged
+from app.services.subsystem_health import get_status as get_health_status
 from app.services.feature_extraction import (
     extract_session_features,
     parse_browser,
@@ -78,6 +82,33 @@ async def authorize(
         raise HTTPException(
             status_code=403,
             detail=f"subsystem ยังเป็น '{subsystem.status}' — รอ admin อนุมัติก่อน",
+        )
+
+    # 1b. Pre-flight health check — ถ้า subsystem ล่ม อย่าให้ user เสียเวลาผ่าน Google
+    #     แสดงหน้า maintenance HTML แทน redirect ไป Google
+    #     (ใช้ cache ของ background ping ที่อ่าน Redis — fast path, ไม่ ping จริง)
+    health = get_health_status(str(subsystem.id))
+    if health and health.get("status") == "down":
+        log_action(
+            db,
+            actor_id=None,
+            action="oauth_preflight_subsystem_down",
+            target_type="subsystem",
+            target_id=subsystem.id,
+            ip=get_client_ip(request),
+            metadata={
+                "client_id": client_id,
+                "redirect_uri": redirect_uri,
+                "health": health,
+            },
+        )
+        db.commit()
+        return HTMLResponse(
+            content=_maintenance_html(
+                subsystem_name=subsystem.name,
+                health=health,
+            ),
+            status_code=503,
         )
 
     # 2. ตรวจ redirect_uri ต้องตรงกับที่ลงทะเบียน (กัน open redirect)
@@ -240,6 +271,35 @@ async def oauth_callback(
             detail="คุณไม่อยู่ใน whitelist ของระบบย่อยนี้ — ติดต่อ admin",
         )
 
+    # *** เช็ค identity challenge — admin เคย Revoke Level 2 ไหม? ***
+    if is_user_challenged(str(user.id)):
+        log_action(
+            db,
+            actor_id=user.id,
+            action="oauth_login_blocked_by_identity_challenge",
+            target_type="user",
+            target_id=user.id,
+            ip=client_ip,
+            metadata={"email": email, "client_id": authreq["client_id"]},
+        )
+        db.commit()
+        await emit(
+            EVT_OAUTH_FAILURE,
+            {
+                "user_id": str(user.id),
+                "client_id": authreq["client_id"],
+                "reason": "identity_challenge_pending",
+                "ip": client_ip,
+            },
+        )
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "ระบบกำลังรอคุณยืนยันตัวตน — กรุณาคลิกลิงก์ใน email ที่ส่งให้ก่อน login "
+                "(ถ้า email หาย ติดต่อ admin)"
+            ),
+        )
+
     # ผูก google_sub ครั้งแรก — ถ้ามีอยู่แล้วต้องตรงกัน (กัน account hijack)
     google_sub = userinfo["sub"]
     if user.google_sub and user.google_sub != google_sub:
@@ -318,6 +378,23 @@ async def oauth_callback(
     risk_reasons = risk["reasons"]
     risk_breakdown = risk["breakdown"]
     anomaly_score = risk_breakdown.get("iforest_raw", 0.0)
+
+    # 2.5) Alert admin ทาง Telegram/email ถ้า score เกิน threshold
+    # (fail-safe — ส่ง alert ไม่ได้ห้าม block flow login)
+    subsystem_for_alert = (
+        db.query(Subsystem).filter(Subsystem.id == authreq["subsystem_id"]).first()
+    )
+    maybe_alert_ml_risk(
+        user_email=user.email,
+        user_id=str(user.id),
+        risk_score=risk_score,
+        decision=actual_decision,
+        risk_breakdown=risk_breakdown,
+        risk_reasons=risk_reasons,
+        ip=client_ip,
+        geo_country=geo_country,
+        subsystem_name=subsystem_for_alert.name if subsystem_for_alert else None,
+    )
 
     # 3) บันทึก login session พร้อม 4-layer risk data
     db.add(
@@ -465,9 +542,22 @@ def token_exchange(
     if code_data["client_id"] != client_id:
         raise HTTPException(status_code=400, detail="client_id ไม่ตรงกับ code")
 
-    # 3. ตรวจ client_secret (Argon2id verify)
+    # 3. ตรวจ client_secret (Argon2id verify) — ลอง primary ก่อน, fallback legacy ในช่วง grace
     subsystem = db.query(Subsystem).filter(Subsystem.client_id == client_id).first()
-    if not subsystem or not verify_secret(subsystem.client_secret_hash, client_secret):
+    if not subsystem:
+        raise HTTPException(status_code=401, detail="client_id ไม่พบ")
+
+    primary_ok = verify_secret(subsystem.client_secret_hash, client_secret)
+    legacy_ok = False
+    if (
+        not primary_ok
+        and subsystem.previous_client_secret_hash
+        and subsystem.previous_secret_expires_at
+        and subsystem.previous_secret_expires_at > datetime.utcnow()
+    ):
+        legacy_ok = verify_secret(subsystem.previous_client_secret_hash, client_secret)
+
+    if not (primary_ok or legacy_ok):
         raise HTTPException(status_code=401, detail="client_secret ไม่ถูกต้อง")
 
     # 4. ตรวจ PKCE — SHA256(code_verifier) ต้องตรงกับ code_challenge
@@ -480,12 +570,25 @@ def token_exchange(
     if not user:
         raise HTTPException(status_code=404, detail="ไม่พบ user")
 
-    access_token = create_subsystem_token(
+    access_token, token_jti = create_subsystem_token(
         user=user,
         client_id=client_id,
         scope=code_data["scope"],
         role_in_sub=code_data["role_in_sub"],
     )
+
+    # Track jti บน LoginSession ล่าสุดของ (user, subsystem) สำหรับ force-revoke
+    latest_session = (
+        db.query(LoginSession)
+        .filter(
+            LoginSession.user_id == user.id,
+            LoginSession.subsystem_id == code_data["subsystem_id"],
+        )
+        .order_by(LoginSession.created_at.desc())
+        .first()
+    )
+    if latest_session and latest_session.jti is None:
+        latest_session.jti = token_jti
 
     log_action(
         db,
@@ -494,6 +597,7 @@ def token_exchange(
         target_type="subsystem",
         target_id=code_data["subsystem_id"],
         ip=get_client_ip(request),
+        metadata={"jti": token_jti},
     )
     db.commit()
 
@@ -504,6 +608,127 @@ def token_exchange(
         "scope": code_data["scope"],
         "role_in_subsystem": code_data["role_in_sub"],
     }
+
+
+# ============ 4. /oauth/logout — back-channel logout จาก subsystem ============
+
+
+@router.post("/logout")
+@limiter.limit(settings.rate_limit_token)
+def logout(
+    request: Request,
+    client_id: str = Form(...),
+    client_secret: str = Form(...),
+    hub_user_id: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    """Subsystem แจ้ง Hub ว่า user logout แล้ว (server-to-server).
+
+    Auth: client_id + client_secret (เหมือน /oauth/token)
+    Action: mark logout_at บน LoginSession ล่าสุดของ (user, subsystem) ที่ยัง active
+    Fail-safe: ถ้าไม่มี active session ก็คืน 200 (idempotent) — ไม่ใช่ error
+    """
+    # 1. Verify client credentials (Argon2id)
+    subsystem = db.query(Subsystem).filter(Subsystem.client_id == client_id).first()
+    if not subsystem or not verify_secret(subsystem.client_secret_hash, client_secret):
+        raise HTTPException(status_code=401, detail="client credentials ไม่ถูกต้อง")
+
+    # 2. หา user
+    user = db.query(User).filter(User.id == hub_user_id).first()
+    if not user:
+        # idempotent — user อาจถูกลบไปแล้ว
+        return {"status": "noop", "reason": "user not found"}
+
+    # 3. หา LoginSession ล่าสุดที่ active (logout_at IS NULL)
+    from datetime import datetime as _dt
+
+    sess = (
+        db.query(LoginSession)
+        .filter(
+            LoginSession.user_id == user.id,
+            LoginSession.subsystem_id == subsystem.id,
+            LoginSession.logout_at.is_(None),
+        )
+        .order_by(LoginSession.created_at.desc())
+        .first()
+    )
+    closed = False
+    if sess:
+        sess.logout_at = _dt.utcnow()
+        closed = True
+
+    log_action(
+        db,
+        actor_id=user.id,
+        action="subsystem_logout",
+        target_type="subsystem",
+        target_id=subsystem.id,
+        ip=get_client_ip(request),
+        metadata={
+            "session_closed": closed,
+            "session_id": str(sess.id) if sess else None,
+        },
+    )
+    db.commit()
+    return {"status": "ok", "session_closed": closed}
+
+
+# ============ Maintenance page (Pre-flight Use Case 2) ============
+
+
+def _maintenance_html(subsystem_name: str, health: dict) -> str:
+    """หน้า HTML แสดงตอน subsystem ล่ม (alt. ของ redirect ไป Google)."""
+    checked_at = (health.get("checked_at") or "").replace("T", " ")[:19]
+    error = health.get("error") or "subsystem ไม่ตอบ health check"
+    return f"""<!DOCTYPE html><html lang="th"><head><meta charset="UTF-8">
+<title>{subsystem_name} ปิดปรับปรุง</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  body {{ font-family: 'Sarabun', system-ui, sans-serif; background: #f8fafc;
+          margin: 0; min-height: 100vh; display: grid; place-items: center;
+          padding: 40px 16px; color: #0f172a; }}
+  .card {{ max-width: 560px; width: 100%; background: #fff; border-radius: 16px;
+           overflow: hidden; box-shadow: 0 4px 12px rgba(15,23,42,0.08); }}
+  .hero {{ background: linear-gradient(135deg,#dc2626,#7f1d1d); padding: 32px;
+           color: #fff; text-align: center; }}
+  .icon {{ font-size: 56px; line-height: 1; }}
+  .title {{ font-size: 22px; font-weight: 800; margin-top: 12px; }}
+  .body {{ padding: 28px 32px; }}
+  .reason {{ background: #fef2f2; border: 1px solid #fecaca; border-radius: 10px;
+             padding: 12px 14px; margin: 14px 0; font-size: 12px;
+             font-family: 'JetBrains Mono', monospace; color: #991b1b;
+             word-break: break-word; }}
+  .ts {{ font-size: 11px; color: #94a3b8; margin-top: 14px;
+         font-family: monospace; }}
+  .actions {{ margin-top: 22px; }}
+  .btn {{ display: inline-block; padding: 10px 18px; background: #0f172a;
+          color: #fff; text-decoration: none; border-radius: 8px;
+          font-weight: 600; font-size: 14px; }}
+  .footer {{ padding: 14px 32px; font-size: 11px; color: #94a3b8;
+             border-top: 1px solid #f1f5f9; }}
+</style></head><body>
+<div class="card">
+  <div class="hero">
+    <div class="icon">🔧</div>
+    <div class="title">{subsystem_name}<br>ปิดปรับปรุงชั่วคราว</div>
+  </div>
+  <div class="body">
+    <p>ระบบนี้กำลังมีปัญหาทางเทคนิค — ทีมงานได้รับแจ้งและอยู่ระหว่างแก้ไข</p>
+    <p>กรุณาลองอีกครั้งในอีก 5 นาที</p>
+    <div class="reason">
+      <strong>เหตุผล (สำหรับ admin):</strong><br>
+      {error}
+    </div>
+    <div class="ts">Health check ล่าสุด: {checked_at} UTC</div>
+    <div class="actions">
+      <a href="javascript:history.back()" class="btn">← กลับหน้าก่อน</a>
+    </div>
+  </div>
+  <div class="footer">
+    Central Auth Hub · pre-flight check ก่อน OAuth redirect
+  </div>
+</div>
+</body></html>"""
 
 
 # ============ ตัวช่วยทดสอบ (dev only) ============

@@ -11,7 +11,7 @@ from datetime import datetime
 
 from authlib.integrations.starlette_client import OAuth, OAuthError
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -34,7 +34,10 @@ from app.services.hooks import (
     emit,
 )
 from app.services.jwt_service import create_access_token
-from app.services.ml_client import get_anomaly_score
+from app.services.ip_blacklist import is_blacklisted
+from app.services.alert_service import maybe_alert_ml_risk
+from app.services.identity_challenge import is_user_challenged
+from app.security.risk_engine import evaluate_login_risk
 
 router = APIRouter()
 
@@ -164,6 +167,34 @@ async def google_callback(request: Request, db: Session = Depends(get_db)):
             ),
         )
 
+    # *** เช็ค identity challenge — admin เคย Revoke Level 2 ไหม ***
+    if is_user_challenged(str(user.id)):
+        log_action(
+            db,
+            actor_id=user.id,
+            action="hub_login_blocked_by_identity_challenge",
+            target_type="user",
+            target_id=user.id,
+            ip=client_ip,
+            metadata={"email": email},
+        )
+        db.commit()
+        await emit(
+            EVT_LOGIN_FAILURE,
+            {
+                "email": email,
+                "reason": "identity_challenge_pending",
+                "ip": client_ip,
+            },
+        )
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "ระบบกำลังรอคุณยืนยันตัวตน — กรุณาคลิกลิงก์ใน email ที่ส่งให้ก่อน login "
+                "(ถ้าไม่ได้รับ email ติดต่อ admin)"
+            ),
+        )
+
     # ผูก google_sub ครั้งแรกที่ login (ถ้ายังไม่มี)
     # ถ้ามีอยู่แล้วต้องตรงกัน — กัน account hijack ผ่านการเปลี่ยน Google account
     # ที่ใช้อีเมลเดียวกัน (เช่น เปิด workspace ใหม่ที่ alias ทับ)
@@ -215,13 +246,14 @@ async def google_callback(request: Request, db: Session = Depends(get_db)):
         )
     db.commit()
 
-    # ===== ML Anomaly Detection (Hub-direct) =====
+    # ===== Hybrid 4-Layer Risk Scoring (Hub-direct) =====
     # Admin / teacher / staff = high-value target — ตรวจเข้มกว่า user ปกติ
-    # บันทึก login_sessions ด้วย subsystem_id=None เพื่อแยกจาก subsystem flow
+    # ใช้ engine เดียวกับ subsystem OAuth flow → session ทุกแบบมี
+    # risk_score / risk_breakdown / risk_reasons ครบใน UI
     user_agent = request.headers.get("user-agent")
     geo_country = lookup_country(client_ip)
 
-    # 1) สกัด features จาก session + history
+    # 1) สกัด features จาก session + history (12 features)
     features = extract_session_features(
         db,
         user_id=user.id,
@@ -230,24 +262,35 @@ async def google_callback(request: Request, db: Session = Depends(get_db)):
         geo_country=geo_country,
     )
 
-    # 2) เรียก ML service (fail-safe: ถ้า ML ล่ม → pass + 0.0)
-    ml_result = await get_anomaly_score(features)
-    anomaly_score = ml_result["anomaly_score"]
-    ml_decision = ml_result["decision"]
+    # 2) 4-Layer Risk Engine (Rule → Behavior → IForest → Aggregation)
+    risk = await evaluate_login_risk(
+        features=features,
+        user_id=str(user.id),
+        ip=client_ip,
+        geo_country=geo_country,
+        db=db,
+        shadow_mode=settings.ml_shadow_mode,
+    )
+    risk_score = risk["score"]
+    actual_decision = risk["decision"]
+    risk_reasons = risk["reasons"]
+    risk_breakdown = risk["breakdown"]
+    anomaly_score = risk_breakdown.get("iforest_raw", 0.0)
 
-    # 3) Shadow mode → log เฉย ๆ / Enforce mode → ทำตาม ML จริง
-    if settings.ml_shadow_mode:
-        actual_decision = (
-            "would_block"
-            if ml_decision == "block"
-            else "would_mfa"
-            if ml_decision == "mfa"
-            else "pass"
-        )
-    else:
-        actual_decision = ml_decision
+    # 2.5) Alert admin — Hub-direct login = subsystem_name=None
+    maybe_alert_ml_risk(
+        user_email=user.email,
+        user_id=str(user.id),
+        risk_score=risk_score,
+        decision=actual_decision,
+        risk_breakdown=risk_breakdown,
+        risk_reasons=risk_reasons,
+        ip=client_ip,
+        geo_country=geo_country,
+        subsystem_name=None,
+    )
 
-    # 4) บันทึก login_session (subsystem_id=None = Hub-direct)
+    # 3) บันทึก login_session (subsystem_id=None = Hub-direct)
     login_session = LoginSession(
         user_id=user.id,
         subsystem_id=None,
@@ -258,7 +301,11 @@ async def google_callback(request: Request, db: Session = Depends(get_db)):
         browser=parse_browser(user_agent),
         device_type=parse_device_type(user_agent),
         anomaly_score=anomaly_score,
+        risk_score=risk_score,
+        risk_breakdown=risk_breakdown,
+        risk_reasons=risk_reasons,
         decision=actual_decision,
+        is_attack_ip=is_blacklisted(db, client_ip),
     )
     db.add(login_session)
     db.flush()  # ต้องการ login_session.id สำหรับ MFA challenge
@@ -363,8 +410,10 @@ async def google_callback(request: Request, db: Session = Depends(get_db)):
     )
     db.commit()
 
-    # ออก JWT
-    access_token = create_access_token(user)
+    # ออก JWT + เก็บ jti กลับไป LoginSession (สำหรับ force-revoke ภายหลัง)
+    access_token, token_jti = create_access_token(user)
+    login_session.jti = token_jti
+    db.commit()
 
     await emit(
         EVT_LOGIN_SUCCESS,
@@ -405,6 +454,101 @@ async def google_callback(request: Request, db: Session = Depends(get_db)):
 
 
 # ============ 3. ทดสอบ token ============
+
+
+@router.get("/confirm-identity", response_class=HTMLResponse)
+def confirm_identity(token: str = "", db: Session = Depends(get_db)):
+    """One-time identity confirmation จาก link ใน email.
+
+    Flow:
+      - user คลิก link จาก email
+      - verify token (HMAC-SHA256 ตรวจกับ Redis)
+      - ลบ challenge → user login ใหม่ได้
+      - แสดงหน้า success / error HTML
+    """
+    from app.services.identity_challenge import verify_and_clear
+
+    if not token:
+        return HTMLResponse(
+            content=_confirm_html(
+                ok=False,
+                title="ลิงก์ไม่ถูกต้อง",
+                msg="ไม่พบ token ใน URL — กรุณาเปิดลิงก์จาก email อีกครั้ง",
+            ),
+            status_code=400,
+        )
+
+    user_id = verify_and_clear(token)
+    if not user_id:
+        return HTMLResponse(
+            content=_confirm_html(
+                ok=False,
+                title="ลิงก์หมดอายุหรือถูกใช้ไปแล้ว",
+                msg=(
+                    "ลิงก์นี้ใช้ได้ครั้งเดียวและหมดอายุภายใน 15 นาที — "
+                    "ถ้ายังต้องการ login ต่อ ติดต่อ admin เพื่อขอลิงก์ใหม่"
+                ),
+            ),
+            status_code=400,
+        )
+
+    user = db.query(User).filter(User.id == user_id).first()
+    if user:
+        log_action(
+            db,
+            actor_id=user.id,
+            action="identity_challenge_confirmed",
+            target_type="user",
+            target_id=user.id,
+            ip=None,
+            metadata={"email": user.email},
+        )
+        db.commit()
+
+    return HTMLResponse(
+        content=_confirm_html(
+            ok=True,
+            title="✅ ยืนยันตัวตนสำเร็จ",
+            msg=(
+                "คุณสามารถ login เข้าระบบได้ตามปกติแล้ว — "
+                "กลับไปหน้า login ของระบบย่อยที่คุณใช้งาน"
+            ),
+        )
+    )
+
+
+def _confirm_html(ok: bool, title: str, msg: str) -> str:
+    """Render หน้า HTML สำหรับ identity confirm (success/error)."""
+    accent = "#15803d" if ok else "#b91c1c"
+    bg = "#dcfce7" if ok else "#fee2e2"
+    icon = "✓" if ok else "✕"
+    return f"""<!DOCTYPE html><html lang="th"><head><meta charset="UTF-8">
+<title>{title}</title>
+<style>
+  body {{ font-family: 'Sarabun', system-ui, sans-serif; background: #f8fafc;
+          min-height: 100vh; margin: 0; display: grid; place-items: center;
+          padding: 40px 16px; color: #0f172a; }}
+  .card {{ max-width: 520px; background: #fff; border-radius: 16px; overflow: hidden;
+           box-shadow: 0 4px 12px rgba(15,23,42,0.08); }}
+  .hero {{ background: {bg}; padding: 32px; text-align: center; }}
+  .icon {{ width: 72px; height: 72px; border-radius: 50%; background: {accent};
+           color: #fff; font-size: 36px; font-weight: 800; line-height: 72px;
+           margin: 0 auto 14px; }}
+  .title {{ font-size: 22px; font-weight: 800; color: {accent}; }}
+  .body {{ padding: 24px 32px 28px; }}
+  .msg {{ font-size: 14px; line-height: 1.6; color: #334155; }}
+  .footer {{ font-size: 11px; color: #94a3b8; border-top: 1px solid #f1f5f9;
+             padding: 14px 32px; }}
+</style></head><body>
+<div class="card">
+  <div class="hero">
+    <div class="icon">{icon}</div>
+    <div class="title">{title}</div>
+  </div>
+  <div class="body"><p class="msg">{msg}</p></div>
+  <div class="footer">Central Auth Hub · One-time identity verification</div>
+</div>
+</body></html>"""
 
 
 @router.get("/me")

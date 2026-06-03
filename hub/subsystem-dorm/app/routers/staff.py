@@ -105,6 +105,9 @@ def api_staff_residents(
                         "faculty": r.faculty,
                         "role_in_sub": r.role_in_sub,
                         "status": r.status,
+                        "hub_access_revoked_at": r.hub_access_revoked_at.isoformat()
+                        if r.hub_access_revoked_at
+                        else None,
                         "checked_in_at": r.checked_in_at.isoformat()
                         if r.checked_in_at
                         else None,

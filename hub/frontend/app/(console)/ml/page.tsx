@@ -12,19 +12,25 @@ import { AnomalyTable } from "./_components/AnomalyTable";
 import { SessionDetailPanel } from "./_components/SessionDetailPanel";
 import type { Overview, Anomaly } from "./_types";
 
+type SortMode = "score" | "recent";
+
 export default function MLPage() {
   const [ov, setOv] = useState<Overview | null>(null);
   const [days, setDays] = useState(7);
+  const [sortMode, setSortMode] = useState<SortMode>("recent");
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<Anomaly | null>(null);
 
   const load = useCallback(() => {
     setOv(null);
     setError(null);
-    clientFetch<Overview>(`/admin/ml/overview?days=${days}`)
+    // sort=recent → เห็น session ใหม่ทุกครั้ง / sort=score → top anomalies เดิม
+    clientFetch<Overview>(
+      `/admin/ml/overview?days=${days}&sort=${sortMode}&limit=50`
+    )
       .then(setOv)
       .catch((e) => setError(e.detail || "โหลด ML overview ไม่สำเร็จ"));
-  }, [days]);
+  }, [days, sortMode]);
 
   useEffect(load, [load]);
 
@@ -157,15 +163,53 @@ export default function MLPage() {
               </Link>
             </section>
 
-            {/* Top anomalies table */}
+            {/* Sessions table — toggle Top Anomalies / Recent Sessions */}
             <section>
-              <h3 className="text-xs font-bold text-ink-500 uppercase tracking-wider mb-3">
-                Top 20 Anomalies · {ov.data.top_anomalies.length} sessions
-              </h3>
+              <div className="flex items-center justify-between mb-3 flex-wrap gap-3">
+                <h3 className="text-xs font-bold text-ink-500 uppercase tracking-wider">
+                  {sortMode === "score"
+                    ? "Top Anomalies"
+                    : "Recent Sessions"}{" "}
+                  · {ov.data.top_anomalies.length} sessions
+                </h3>
+                <div className="inline-flex rounded-lg border border-ink-200 bg-white overflow-hidden text-xs font-semibold">
+                  <button
+                    onClick={() => setSortMode("recent")}
+                    className={
+                      "px-3 py-1.5 transition " +
+                      (sortMode === "recent"
+                        ? "bg-brand-600 text-white"
+                        : "text-ink-600 hover:bg-ink-50")
+                    }
+                  >
+                    🕒 Recent
+                  </button>
+                  <button
+                    onClick={() => setSortMode("score")}
+                    className={
+                      "px-3 py-1.5 transition border-l border-ink-200 " +
+                      (sortMode === "score"
+                        ? "bg-brand-600 text-white"
+                        : "text-ink-600 hover:bg-ink-50")
+                    }
+                  >
+                    🔥 Top Score
+                  </button>
+                </div>
+              </div>
+              <p className="text-[11px] text-ink-400 mb-2">
+                {sortMode === "score"
+                  ? "เรียงตาม anomaly score สูง→ต่ำ (เห็นเฉพาะที่ ML กังวลที่สุด)"
+                  : "เรียงตามเวลาล่าสุด (เห็น session ใหม่ทุก score)"}
+              </p>
               <AnomalyTable
                 rows={ov.data.top_anomalies}
                 onRowClick={setSelected}
-                emptyMessage="ไม่มี anomaly ใน window นี้"
+                emptyMessage={
+                  sortMode === "score"
+                    ? "ไม่มี anomaly ใน window นี้"
+                    : "ไม่มี session ใน window นี้"
+                }
                 showSubsystem
               />
             </section>

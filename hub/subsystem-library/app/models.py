@@ -67,8 +67,20 @@ class Member(Base):
     student_id = Column(String(50), nullable=True)
     faculty = Column(String(100), nullable=True)
 
+    # ── Extra fields ที่ Hub อาจส่งมาตาม scope (เก็บแม้ scope ปัจจุบันไม่ขอ) ──
+    employee_id = Column(String(50), nullable=True)
+    major = Column(String(100), nullable=True)
+    year = Column(String(50), nullable=True)
+    position = Column(String(50), nullable=True)
+    phone = Column(String(50), nullable=True)
+    address = Column(Text, nullable=True)
+
     role_in_sub = Column(String(50), nullable=False)  # member / librarian
     status = Column(String(20), default="active", index=True)  # active/suspended
+
+    # Hub revocation tracking — sync'd ผ่าน webhook จาก Hub
+    # NULL = Hub ยังให้สิทธิ์อยู่ / มีค่า = Hub revoke แล้ว
+    hub_access_revoked_at = Column(DateTime, nullable=True, index=True)
 
     created_at = Column(DateTime, default=_utcnow)
     updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)

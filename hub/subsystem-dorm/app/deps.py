@@ -6,6 +6,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.config import settings
+from app.database import get_db
 from app.models import Resident
 from app.services.session import load_session
 
@@ -19,25 +20,56 @@ def get_client_ip(request: Request) -> str | None:
 
 
 class CurrentUser:
-    """ข้อมูล user ปัจจุบันที่ดึงจาก session cookie."""
+    """ข้อมูล user ปัจจุบันที่ดึงจาก session cookie.
+
+    เก็บทุก field ที่ Hub อาจส่งมาตาม scope — field ไหน scope ไม่ขอ = None
+    """
 
     def __init__(self, data: dict):
         self.hub_user_id: str = data["hub_user_id"]
         self.email: str = data["email"]
         self.full_name: str = data["full_name"]
         self.role_in_sub: str = data["role_in_sub"]
-        self.faculty: str | None = data.get("faculty")
+        # Optional ตาม scope
         self.student_id: str | None = data.get("student_id")
+        self.employee_id: str | None = data.get("employee_id")
+        self.faculty: str | None = data.get("faculty")
+        self.major: str | None = data.get("major")
+        self.year: str | None = data.get("year")
+        self.position: str | None = data.get("position")
         self.phone: str | None = data.get("phone")
+        self.address: str | None = data.get("address")
+        # List of fields ที่ scope ปัจจุบันขอ (ใช้ filter ใน template)
+        self.provided_scope: list[str] = data.get("provided_scope") or []
 
 
 def get_current_user_optional(
     session_cookie: str | None = Cookie(None, alias=settings.session_cookie_name),
+    db: Session = Depends(get_db),
 ) -> CurrentUser | None:
-    """อ่าน session — คืน None ถ้าไม่ได้ login (สำหรับหน้า login เป็นต้น)."""
+    """อ่าน session — คืน None ถ้าไม่ได้ login (สำหรับหน้า login เป็นต้น).
+
+    Hub revocation check:
+      ถ้า Hub แจ้งว่า user คนนี้ถูก revoke (residents.hub_access_revoked_at มีค่า)
+      → ปฏิเสธ session ทันที (เหมือน logout) — กัน user ที่ถูก Hub block
+        ใช้ subsystem ต่อด้วย cookie เก่าที่ยัง valid
+    """
     data = load_session(session_cookie)
     if not data:
         return None
+
+    # ตรวจ Hub revocation status
+    hub_user_id = data.get("hub_user_id")
+    if hub_user_id:
+        resident = (
+            db.query(Resident.hub_access_revoked_at)
+            .filter(Resident.hub_user_id == hub_user_id)
+            .first()
+        )
+        if resident and resident.hub_access_revoked_at is not None:
+            # user ถูก Hub revoke → ปฏิเสธ session
+            return None
+
     return CurrentUser(data)
 
 
@@ -91,8 +123,13 @@ def get_or_create_resident(user: CurrentUser, db: Session) -> Resident:
             email=user.email,
             full_name=user.full_name,
             student_id=user.student_id,
+            employee_id=user.employee_id,
             faculty=user.faculty,
+            major=user.major,
+            year=user.year,
+            position=user.position,
             phone=user.phone,
+            address=user.address,
             role_in_sub=user.role_in_sub,
             status="active",
         )
@@ -114,16 +151,29 @@ def get_or_create_resident(user: CurrentUser, db: Session) -> Resident:
                     detail="ไม่สามารถสร้าง resident ได้ — ลอง login อีกครั้ง",
                 )
     else:
-        # sync ข้อมูลล่าสุดจาก JWT (อาจเปลี่ยน เช่น เปลี่ยน role ใน Hub access_list)
+        # sync ข้อมูลล่าสุดจาก JWT (เฉพาะ field ที่ scope ปัจจุบันส่งมา)
+        # ค่าที่ scope ไม่ขอ = JWT คืน None → เราคงค่าเดิม (ไม่ลบ data)
         resident.email = user.email
         resident.full_name = user.full_name
         resident.role_in_sub = user.role_in_sub
-        if user.student_id:
-            resident.student_id = user.student_id
-        if user.faculty:
-            resident.faculty = user.faculty
-        if user.phone:
-            resident.phone = user.phone
+        for attr in (
+            "student_id",
+            "employee_id",
+            "faculty",
+            "major",
+            "year",
+            "position",
+            "phone",
+            "address",
+        ):
+            val = getattr(user, attr, None)
+            if val:
+                setattr(resident, attr, val)
+        # User login ใหม่ได้ = Hub ยอม → reset revocation flag
+        # (ถ้า Hub revoke จริง flow OAuth จะไม่ผ่านที่ /oauth/authorize อยู่แล้ว
+        #  ดังนั้นถ้ามาถึงนี่ได้ = user มีสิทธิ์เข้าตอนนี้)
+        if resident.hub_access_revoked_at is not None:
+            resident.hub_access_revoked_at = None
     return resident
 
 

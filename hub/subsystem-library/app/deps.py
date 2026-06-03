@@ -6,6 +6,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.config import settings
+from app.database import get_db
 from app.models import Member
 from app.services.session import load_session
 
@@ -19,27 +20,49 @@ def get_client_ip(request: Request) -> str | None:
 
 
 class CurrentUser:
-    """ข้อมูล user ปัจจุบันจาก session cookie.
-
-    Scope ที่ Subsystem B ขอจาก Hub: email, full_name, role_in_sub, faculty, student_id
-    (hub_user_id = JWT.sub ใช้เป็น primary key เชื่อมกับ members table)
-    """
+    """ข้อมูล user ปัจจุบันจาก session cookie — เก็บทุก field ที่ Hub อาจส่งตาม scope."""
 
     def __init__(self, data: dict):
         self.hub_user_id: str = data["hub_user_id"]
         self.email: str = data["email"]
         self.full_name: str = data["full_name"]
         self.role_in_sub: str = data["role_in_sub"]
-        self.faculty: str | None = data.get("faculty")
         self.student_id: str | None = data.get("student_id")
+        self.employee_id: str | None = data.get("employee_id")
+        self.faculty: str | None = data.get("faculty")
+        self.major: str | None = data.get("major")
+        self.year: str | None = data.get("year")
+        self.position: str | None = data.get("position")
+        self.phone: str | None = data.get("phone")
+        self.address: str | None = data.get("address")
+        # field ที่ scope ปัจจุบันขอ — filter template
+        self.provided_scope: list[str] = data.get("provided_scope") or []
 
 
 def get_current_user_optional(
     session_cookie: str | None = Cookie(None, alias=settings.session_cookie_name),
+    db: Session = Depends(get_db),
 ) -> CurrentUser | None:
+    """อ่าน session — คืน None ถ้าไม่ได้ login.
+
+    Hub revocation check:
+      ถ้า Hub แจ้ง revoke (members.hub_access_revoked_at มีค่า)
+      → ปฏิเสธ session ทันที (กัน cookie เก่าใช้ต่อหลังถูก revoke)
+    """
     data = load_session(session_cookie)
     if not data:
         return None
+
+    hub_user_id = data.get("hub_user_id")
+    if hub_user_id:
+        row = (
+            db.query(Member.hub_access_revoked_at)
+            .filter(Member.hub_user_id == hub_user_id)
+            .first()
+        )
+        if row and row.hub_access_revoked_at is not None:
+            return None
+
     return CurrentUser(data)
 
 
@@ -77,7 +100,13 @@ def get_or_create_member(user: CurrentUser, db: Session) -> Member:
             email=user.email,
             full_name=user.full_name,
             student_id=user.student_id,
+            employee_id=user.employee_id,
             faculty=user.faculty,
+            major=user.major,
+            year=user.year,
+            position=user.position,
+            phone=user.phone,
+            address=user.address,
             role_in_sub=user.role_in_sub,
             status="active",
         )
@@ -99,14 +128,27 @@ def get_or_create_member(user: CurrentUser, db: Session) -> Member:
                     detail="ไม่สามารถสร้าง/หา member ได้ — ลอง login ใหม่",
                 )
     else:
-        # sync profile จาก JWT claim (เฉพาะ scope ที่ Subsystem B ขอ)
+        # sync profile จาก JWT claim — เฉพาะ field ที่มีค่า (scope ขอ)
+        # field ที่ scope ไม่ขอ → คงค่าเดิม ไม่ลบ
         member.email = user.email
         member.full_name = user.full_name
         member.role_in_sub = user.role_in_sub
-        if user.student_id:
-            member.student_id = user.student_id
-        if user.faculty:
-            member.faculty = user.faculty
+        for attr in (
+            "student_id",
+            "employee_id",
+            "faculty",
+            "major",
+            "year",
+            "position",
+            "phone",
+            "address",
+        ):
+            val = getattr(user, attr, None)
+            if val:
+                setattr(member, attr, val)
+        # login ใหม่ได้ผ่าน Hub = ปลด revocation flag
+        if member.hub_access_revoked_at is not None:
+            member.hub_access_revoked_at = None
     return member
 
 

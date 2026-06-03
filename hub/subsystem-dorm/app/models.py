@@ -61,11 +61,19 @@ class Resident(Base):
 
     id = uuid_pk()
     hub_user_id = Column(UUID(as_uuid=True), unique=True, nullable=False, index=True)
+    # ── Fields ที่ Hub ออกได้ตาม scope (10 ฟิลด์) ──
+    # Subsystem เก็บทุกฟิลด์ แม้ scope ปัจจุบันไม่ขอ — กันเสีย data ตอนขยาย scope
+    # field ไหน scope ไม่ขอ จะคงค่าเดิม (= NULL ถ้าไม่เคยมี) ไม่ลบทิ้ง
     email = Column(String(255), nullable=False, index=True)
     full_name = Column(String(255), nullable=False)
-    student_id = Column(String(50), nullable=True)
-    faculty = Column(String(100), nullable=True)
-    phone = Column(String(20), nullable=True)
+    student_id = Column(String(50), nullable=True)  # scope: student_id
+    employee_id = Column(String(50), nullable=True)  # scope: employee_id
+    faculty = Column(String(100), nullable=True)  # scope: faculty
+    major = Column(String(100), nullable=True)  # scope: major
+    year = Column(String(50), nullable=True)  # scope: year
+    position = Column(String(50), nullable=True)  # scope: position
+    phone = Column(String(50), nullable=True)  # scope: phone
+    address = Column(Text, nullable=True)  # scope: address
 
     role_in_sub = Column(String(50), nullable=False)  # resident / staff
     room_id = Column(
@@ -78,6 +86,11 @@ class Resident(Base):
     status = Column(
         String(20), default="active", index=True
     )  # active/checked_in/checked_out
+
+    # Hub revocation tracking — sync'd ผ่าน webhook จาก Hub
+    # NULL = Hub ยังให้สิทธิ์อยู่ / มีค่า = Hub revoke แล้ว → resident ใช้งานไม่ได้
+    # (เก็บแยกจาก status เพราะ status สื่อ check-in lifecycle ของหอพัก)
+    hub_access_revoked_at = Column(DateTime, nullable=True, index=True)
 
     created_at = Column(DateTime, default=_utcnow)
     updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)

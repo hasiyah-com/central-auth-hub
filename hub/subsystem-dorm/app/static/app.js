@@ -875,19 +875,43 @@ const MePage = ({ user, setPage }) => {
             </div>
           </div>
 
-          <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 10, fontWeight: 700, color: "var(--ink)", letterSpacing: ".12em", marginBottom: 12 }}>HUB_DATA</div>
+          <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 10, fontWeight: 700, color: "var(--ink)", letterSpacing: ".12em", marginBottom: 12 }}>
+            HUB_DATA · scope ปัจจุบัน {((user.provided_scope || []).length + 2)} fields
+          </div>
           <dl style={{ display: "flex", flexDirection: "column", gap: 0 }}>
-            {[
-              user.student_id && ["รหัสนักศึกษา", user.student_id],
-              user.faculty && ["คณะ", user.faculty],
-              user.phone && ["โทรศัพท์", user.phone],
-            ].filter(Boolean).map(([label, value], i) => (
-              <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 0", borderBottom: "1px solid var(--line-soft)" }}>
-                <dt style={{ fontSize: 13, color: "var(--ink-mute)" }}>{label}</dt>
-                <dd style={{ fontSize: 13, fontWeight: 700, margin: 0, fontFamily: "JetBrains Mono, monospace" }}>{value}</dd>
-              </div>
-            ))}
+            {(() => {
+              const scope = user.provided_scope || [];
+              const ALL_FIELDS = [
+                ["student_id", "🎓 รหัสนักศึกษา"],
+                ["employee_id", "👔 รหัสบุคลากร"],
+                ["faculty", "🏛️ คณะ"],
+                ["major", "📚 สาขา"],
+                ["year", "🗓️ ชั้นปี"],
+                ["position", "💼 ตำแหน่ง"],
+                ["phone", "📞 โทรศัพท์"],
+                ["address", "🏠 ที่อยู่"],
+              ];
+              // แสดง email + name เสมอ + optional fields ที่อยู่ใน scope
+              const items = [
+                ["📧 อีเมล", user.email],
+                ["👤 ชื่อ-นามสกุล", user.full_name],
+              ];
+              ALL_FIELDS.forEach(([key, label]) => {
+                if (scope.includes(key)) {
+                  items.push([label, user[key] || "— ไม่มีใน Hub"]);
+                }
+              });
+              return items.map(([label, value], i) => (
+                <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 0", borderBottom: "1px solid var(--line-soft)" }}>
+                  <dt style={{ fontSize: 13, color: "var(--ink-mute)" }}>{label}</dt>
+                  <dd style={{ fontSize: 13, fontWeight: 700, margin: 0, fontFamily: "JetBrains Mono, monospace" }}>{value}</dd>
+                </div>
+              ));
+            })()}
           </dl>
+          <div style={{ marginTop: 6, fontSize: 11, color: "var(--ink-mute)", fontFamily: "JetBrains Mono, monospace" }}>
+            scope: [email, name{(user.provided_scope || []).map(s => `, ${s}`).join("")}]
+          </div>
 
           <div style={{ marginTop: 14, padding: 12, background: "var(--bg-soft)", border: "2px solid var(--line)", borderRadius: "var(--radius-sm)", fontSize: 12, color: "var(--ink-soft)", display: "flex", gap: 8 }}>
             <span>ℹ️</span>

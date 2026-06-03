@@ -4,9 +4,14 @@
 เรียกจาก ml_admin.py ตอน toggle attack IP เพื่อ sync blacklist.
 """
 
+import logging
+
 from sqlalchemy.orm import Session
 
 from app.models import IpBlacklist
+from app.services.alert_service import send_alert
+
+log = logging.getLogger(__name__)
 
 
 def is_blacklisted(db: Session, ip: str) -> bool:
@@ -34,6 +39,21 @@ def add_to_blacklist(
         added_by=added_by_id,
     )
     db.add(entry)
+    # Fire alert (fail-safe)
+    try:
+        send_alert(
+            severity="warning",
+            kind="ip_blacklist.added",
+            key=ip,
+            title=f"IP เพิ่มเข้า blacklist: {ip}",
+            detail={
+                "ip": ip,
+                "reason": reason,
+                "added_by": str(added_by_id) if added_by_id else "auto",
+            },
+        )
+    except Exception as e:
+        log.exception("alert dispatch failed for blacklist add %s: %r", ip, e)
     return entry
 
 

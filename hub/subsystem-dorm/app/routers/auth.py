@@ -182,16 +182,35 @@ async def oauth_callback(
         _log_failed_login(db, request, "jwt_verify_failed", str(e))
         raise HTTPException(status_code=401, detail=f"JWT ไม่ valid: {e}")
 
-    # 4. upsert resident row
+    # 4. upsert resident row — รับ field ทั้งหมดจาก JWT (Hub ส่งเฉพาะที่ scope ขอ)
+    # provided_scope = list field ที่ JWT ส่งมาจริง — ใช้บอก template ว่าควรแสดง field ไหน
+    SCOPE_FIELDS_DORM = [
+        "student_id",
+        "employee_id",
+        "faculty",
+        "major",
+        "year",
+        "position",
+        "phone",
+        "address",
+    ]
+    provided_scope = [f for f in SCOPE_FIELDS_DORM if claims.get(f) is not None]
+
     user = CurrentUser(
         {
             "hub_user_id": claims["sub"],
             "email": claims.get("email", ""),
             "full_name": claims.get("name", ""),
             "role_in_sub": claims.get("role_in_subsystem", "resident"),
-            "faculty": claims.get("faculty"),
             "student_id": claims.get("student_id"),
+            "employee_id": claims.get("employee_id"),
+            "faculty": claims.get("faculty"),
+            "major": claims.get("major"),
+            "year": claims.get("year"),
+            "position": claims.get("position"),
             "phone": claims.get("phone"),
+            "address": claims.get("address"),
+            "provided_scope": provided_scope,
         }
     )
     resident = get_or_create_resident(user, db)
@@ -208,16 +227,22 @@ async def oauth_callback(
     )
     db.commit()
 
-    # 6. set session cookie + redirect /
+    # 6. set session cookie + redirect / — เก็บทุก field + provided_scope
     session_token = make_session_token(
         {
             "hub_user_id": user.hub_user_id,
             "email": user.email,
             "full_name": user.full_name,
             "role_in_sub": user.role_in_sub,
-            "faculty": user.faculty,
             "student_id": user.student_id,
+            "employee_id": user.employee_id,
+            "faculty": user.faculty,
+            "major": user.major,
+            "year": user.year,
+            "position": user.position,
             "phone": user.phone,
+            "address": user.address,
+            "provided_scope": user.provided_scope,
         }
     )
 
@@ -236,12 +261,12 @@ async def oauth_callback(
 
 
 @router.get("/logout")
-def logout(
+async def logout(
     request: Request,
     user: CurrentUser | None = Depends(get_current_user_optional),
     db: Session = Depends(get_db),
 ):
-    """clear session cookie + redirect ไปหน้า login."""
+    """clear session cookie + แจ้ง Hub (close LoginSession) + redirect ไปหน้า login."""
     if user is not None:
         log_action(
             db,
@@ -252,6 +277,8 @@ def logout(
             metadata={"email": user.email},
         )
         db.commit()
+        # แจ้ง Hub (fail-safe — ไม่ block logout local แม้ Hub ตอบช้า/error)
+        await hub_client.notify_hub_logout(user.hub_user_id)
 
     response = RedirectResponse(url="/login", status_code=302)
     response.delete_cookie(settings.session_cookie_name, path="/")

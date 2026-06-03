@@ -114,9 +114,6 @@ def verify_mfa(
         .filter(LoginSession.id == challenge.login_session_id)
         .first()
     )
-    if sess:
-        sess.decision = "mfa_passed"
-
     user = db.query(User).filter(User.id == challenge.user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="ไม่พบ user")
@@ -130,9 +127,12 @@ def verify_mfa(
         ip=ip,
         metadata={"challenge_id": str(challenge.id)},
     )
-    db.commit()
 
-    access_token = create_access_token(user)
+    access_token, token_jti = create_access_token(user)
+    if sess:
+        sess.decision = "mfa_passed"
+        sess.jti = token_jti
+    db.commit()
 
     return JSONResponse(
         {

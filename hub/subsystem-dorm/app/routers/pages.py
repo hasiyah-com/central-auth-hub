@@ -85,9 +85,17 @@ def api_me(
                 "email": user.email,
                 "full_name": user.full_name,
                 "role_in_sub": user.role_in_sub,
-                "faculty": user.faculty,
+                # ทุก scope field ที่ Hub อาจส่งมา (10 fields)
                 "student_id": user.student_id,
+                "employee_id": user.employee_id,
+                "faculty": user.faculty,
+                "major": user.major,
+                "year": user.year,
+                "position": user.position,
                 "phone": user.phone,
+                "address": user.address,
+                # list field ที่ scope ปัจจุบันขอ — SPA ใช้ filter UI
+                "provided_scope": user.provided_scope,
             },
             "resident": _resident_dict(resident) if resident else None,
             "current_room": current_room,

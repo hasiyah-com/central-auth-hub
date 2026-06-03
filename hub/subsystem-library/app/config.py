@@ -37,6 +37,10 @@ class Settings(BaseSettings):
     default_borrow_days: int = 14
     max_borrows_per_member: int = 3
 
+    # Webhook back-channel (Hub → subsystem) — ต้อง = WEBHOOK_SHARED_KEY ของ Hub
+    hub_webhook_shared_key: str = ""
+    webhook_max_age_sec: int = 300
+
     @property
     def jwt_issuer(self) -> str:
         return "https://hub.local"

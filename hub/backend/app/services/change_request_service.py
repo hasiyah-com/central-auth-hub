@@ -1,0 +1,339 @@
+"""Subsystem change request workflow — สำหรับ sensitive operations.
+
+Pattern:
+  Dev → API → create_request(type, payload) → status=pending
+                                              ↓
+  Admin → API → approve(request_id) → _apply_dispatch(type) → mutate DB
+                                                              + email dev
+              → reject(request_id, note) → status=rejected + email dev
+
+Types ที่รองรับ:
+  - rotate_secret           : ออก client_secret ใหม่ + grace 24h
+  - edit_scope              : เปลี่ยน Subsystem.scope (อาจ trigger re-approval)
+  - edit_allowed_roles      : เปลี่ยน Subsystem.allowed_roles
+  - edit_redirect_uris      : เปลี่ยน Subsystem.redirect_uris
+
+Security:
+  - dev สร้าง request ได้เฉพาะของ subsystem ที่ตัวเองเป็น owner
+  - admin override = บังคับ approve/reject ได้ทุก request
+  - ลบ request ที่ pending ของ subsystem เดียวกัน + type เดียวกัน (กัน dup pending)
+"""
+
+from __future__ import annotations
+
+import logging
+from datetime import datetime, timedelta
+from typing import Any
+
+from sqlalchemy.orm import Session
+
+from app.config import settings
+from app.models import (
+    AccessList,
+    SecretRetrievalToken,
+    Subsystem,
+    SubsystemChangeRequest,
+    User,
+)
+from app.services.audit_service import log_action
+from app.services.secret_service import (
+    encrypt_secret,
+    generate_client_credentials,
+    generate_retrieval_token,
+    hash_retrieval_token,
+    hash_secret,
+)
+
+log = logging.getLogger(__name__)
+
+VALID_TYPES = {
+    "rotate_secret",
+    "edit_scope",
+    "edit_allowed_roles",
+    "edit_redirect_uris",
+    "change_whitelist_role",  # เปลี่ยน role ของ user 1 คน
+    "bulk_change_whitelist_roles",  # batch เปลี่ยน role
+}
+
+# Types ที่อนุญาตให้มี pending ซ้อนกันได้ (ต่าง user / ต่างชุด)
+_ALLOW_DUPLICATE_PENDING = {
+    "change_whitelist_role",
+    "bulk_change_whitelist_roles",
+}
+
+SECRET_GRACE_HOURS = 24
+
+
+def list_pending_for_subsystem(
+    db: Session, subsystem_id, request_type: str | None = None
+) -> list[SubsystemChangeRequest]:
+    """ดึง pending requests ของ subsystem หนึ่ง (filter ตาม type ได้)."""
+    q = db.query(SubsystemChangeRequest).filter(
+        SubsystemChangeRequest.subsystem_id == subsystem_id,
+        SubsystemChangeRequest.status == "pending",
+    )
+    if request_type:
+        q = q.filter(SubsystemChangeRequest.request_type == request_type)
+    return q.all()
+
+
+def create_request(
+    db: Session,
+    *,
+    subsystem: Subsystem,
+    requested_by: User,
+    request_type: str,
+    payload: dict[str, Any],
+) -> tuple[SubsystemChangeRequest, dict[str, Any] | None]:
+    """สร้าง change request.
+
+    Returns (request, apply_result):
+      - dev (non-admin): status='pending', apply_result=None
+      - admin (Option C): status='approved' + auto-apply + apply_result=dict
+
+    ปฏิเสธถ้ามี pending ของ type เดียวกันอยู่แล้ว (เฉพาะ dev — admin bypass dedup)
+    """
+    if request_type not in VALID_TYPES:
+        raise ValueError(f"unknown request_type: {request_type}")
+
+    # กัน duplicate pending — admin bypass (sub-admin override)
+    if request_type not in _ALLOW_DUPLICATE_PENDING and not requested_by.is_hub_admin:
+        existing = list_pending_for_subsystem(db, subsystem.id, request_type)
+        if existing:
+            raise ValueError(
+                f"มี request ประเภท '{request_type}' ของ subsystem นี้ pending อยู่แล้ว — "
+                f"รอ admin review หรือยกเลิกก่อนสร้างใหม่"
+            )
+
+    is_admin_override = bool(requested_by.is_hub_admin)
+    now = datetime.utcnow()
+
+    req = SubsystemChangeRequest(
+        subsystem_id=subsystem.id,
+        requested_by=requested_by.id,
+        request_type=request_type,
+        payload=payload,
+        status="approved" if is_admin_override else "pending",
+        reviewer_id=requested_by.id if is_admin_override else None,
+        reviewer_note=(
+            "auto-approved by admin override" if is_admin_override else None
+        ),
+        reviewed_at=now if is_admin_override else None,
+    )
+    db.add(req)
+    db.flush()  # ได้ id ก่อน apply
+
+    apply_result: dict[str, Any] | None = None
+    if is_admin_override:
+        # Apply ทันที (admin = ผู้มีอำนาจ → trust)
+        apply_result = apply_approved(db, req, subsystem)
+        log_action(
+            db,
+            actor_id=requested_by.id,
+            action="change_request_admin_auto_approved",
+            target_type="subsystem",
+            target_id=subsystem.id,
+            ip=None,
+            metadata={
+                "request_id": str(req.id),
+                "request_type": request_type,
+                "payload": payload,
+                "applied_result": apply_result,
+            },
+        )
+    else:
+        log_action(
+            db,
+            actor_id=requested_by.id,
+            action="change_request_created",
+            target_type="subsystem",
+            target_id=subsystem.id,
+            ip=None,
+            metadata={
+                "request_id": str(req.id),
+                "request_type": request_type,
+                "payload": payload,
+            },
+        )
+
+    return req, apply_result
+
+
+# ─────────────────────────────────────────────────────────────
+# Dispatch — apply ตามประเภทหลัง admin approve
+# ─────────────────────────────────────────────────────────────
+
+
+def _apply_rotate_secret(db: Session, subsystem: Subsystem) -> dict[str, Any]:
+    """ออก secret ใหม่ + เก็บ legacy 24h + สร้าง one-time retrieval token."""
+    _client_id_unused, new_secret = generate_client_credentials()
+
+    # backup old as legacy
+    subsystem.previous_client_secret_hash = subsystem.client_secret_hash
+    subsystem.previous_secret_expires_at = datetime.utcnow() + timedelta(
+        hours=SECRET_GRACE_HOURS
+    )
+    subsystem.client_secret_hash = hash_secret(new_secret)
+
+    # one-time retrieval token
+    plaintext_token = generate_retrieval_token()
+    retrieval = SecretRetrievalToken(
+        token=hash_retrieval_token(plaintext_token),
+        subsystem_id=subsystem.id,
+        secret_encrypted=encrypt_secret(new_secret),
+        expires_at=datetime.utcnow() + timedelta(minutes=15),
+    )
+    db.add(retrieval)
+
+    return {
+        "retrieval_url": f"{settings.hub_base_url}/secret/retrieve?token={plaintext_token}",
+        "retrieval_expires_at": retrieval.expires_at.isoformat(),
+        "grace_hours": SECRET_GRACE_HOURS,
+        "previous_expires_at": subsystem.previous_secret_expires_at.isoformat(),
+    }
+
+
+def _apply_edit_scope(
+    db: Session, subsystem: Subsystem, payload: dict[str, Any]
+) -> dict[str, Any]:
+    new_scope = list(payload.get("scope") or [])
+    old_scope = list(subsystem.scope or [])
+    subsystem.scope = new_scope
+    return {"old_scope": old_scope, "new_scope": new_scope}
+
+
+def _apply_edit_allowed_roles(
+    db: Session, subsystem: Subsystem, payload: dict[str, Any]
+) -> dict[str, Any]:
+    new_roles = list(payload.get("allowed_roles") or [])
+    old_roles = list(subsystem.allowed_roles or [])
+    subsystem.allowed_roles = new_roles
+    return {"old_allowed_roles": old_roles, "new_allowed_roles": new_roles}
+
+
+def _apply_edit_redirect_uris(
+    db: Session, subsystem: Subsystem, payload: dict[str, Any]
+) -> dict[str, Any]:
+    new_uris = list(payload.get("redirect_uris") or [])
+    old_uris = list(subsystem.redirect_uris or [])
+    subsystem.redirect_uris = new_uris
+    return {"old_redirect_uris": old_uris, "new_redirect_uris": new_uris}
+
+
+def _apply_change_whitelist_role(
+    db: Session, subsystem: Subsystem, payload: dict[str, Any]
+) -> dict[str, Any]:
+    """เปลี่ยน role ของ user 1 คนใน whitelist.
+
+    payload: {"user_id": "...", "new_role": "staff"}
+    Validates role ตาม allowed_roles ปัจจุบัน (อาจเปลี่ยนจากตอน request)
+    """
+    uid = (payload.get("user_id") or "").strip()
+    new_role = (payload.get("new_role") or "").strip()
+    if not uid or not new_role:
+        raise ValueError("user_id หรือ new_role ว่าง")
+
+    allowed = list(subsystem.allowed_roles or ["user"])
+    if new_role not in allowed:
+        raise ValueError(
+            f"role '{new_role}' ไม่อยู่ใน allowed_roles ของ subsystem ({allowed})"
+        )
+
+    entry = (
+        db.query(AccessList)
+        .filter(
+            AccessList.subsystem_id == subsystem.id,
+            AccessList.user_id == uid,
+            AccessList.revoked_at.is_(None),
+        )
+        .first()
+    )
+    if not entry:
+        raise ValueError(f"user_id={uid} ไม่อยู่ใน whitelist (หรือถูก revoke)")
+
+    old_role = entry.role_in_sub
+    entry.role_in_sub = new_role
+    return {
+        "user_id": uid,
+        "old_role": old_role,
+        "new_role": new_role,
+    }
+
+
+def _apply_bulk_change_whitelist_roles(
+    db: Session, subsystem: Subsystem, payload: dict[str, Any]
+) -> dict[str, Any]:
+    """Batch เปลี่ยน role.
+
+    payload: {"updates": [{"user_id": "...", "role_in_sub": "..."}, ...]}
+    Validate batch ทั้งหมดก่อน mutate (all-or-nothing)
+    """
+    updates = payload.get("updates") or []
+    if not updates:
+        raise ValueError("updates ว่าง")
+
+    allowed = list(subsystem.allowed_roles or ["user"])
+    parsed: list[tuple[str, str]] = []
+    for i, u in enumerate(updates):
+        uid = (u.get("user_id") or "").strip()
+        role = (u.get("role_in_sub") or "").strip()
+        if not uid or not role:
+            raise ValueError(f"updates[{i}]: user_id/role ว่าง")
+        if role not in allowed:
+            raise ValueError(
+                f"updates[{i}]: role '{role}' ไม่อยู่ใน allowed_roles ({allowed})"
+            )
+        parsed.append((uid, role))
+
+    changed: list[dict] = []
+    skipped: list[dict] = []
+    for uid, role in parsed:
+        entry = (
+            db.query(AccessList)
+            .filter(
+                AccessList.subsystem_id == subsystem.id,
+                AccessList.user_id == uid,
+                AccessList.revoked_at.is_(None),
+            )
+            .first()
+        )
+        if not entry:
+            skipped.append({"user_id": uid, "reason": "not in whitelist"})
+            continue
+        if entry.role_in_sub == role:
+            skipped.append({"user_id": uid, "reason": "role เดิม"})
+            continue
+        changed.append(
+            {"user_id": uid, "old_role": entry.role_in_sub, "new_role": role}
+        )
+        entry.role_in_sub = role
+
+    return {
+        "changed_count": len(changed),
+        "skipped_count": len(skipped),
+        "changes": changed,
+        "skipped": skipped,
+    }
+
+
+_DISPATCH = {
+    "rotate_secret": lambda db, sub, p: _apply_rotate_secret(db, sub),
+    "edit_scope": _apply_edit_scope,
+    "edit_allowed_roles": _apply_edit_allowed_roles,
+    "edit_redirect_uris": _apply_edit_redirect_uris,
+    "change_whitelist_role": _apply_change_whitelist_role,
+    "bulk_change_whitelist_roles": _apply_bulk_change_whitelist_roles,
+}
+
+
+def apply_approved(
+    db: Session, req: SubsystemChangeRequest, subsystem: Subsystem
+) -> dict[str, Any]:
+    """Dispatch ตาม request_type → apply การเปลี่ยนแปลงจริง.
+
+    Caller commit eng เสร็จแล้ว
+    """
+    handler = _DISPATCH.get(req.request_type)
+    if not handler:
+        raise ValueError(f"unhandled type: {req.request_type}")
+    return handler(db, subsystem, req.payload or {})

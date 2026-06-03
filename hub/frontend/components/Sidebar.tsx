@@ -14,8 +14,10 @@ type Me = {
 
 const ADMIN_NAV = [
   { href: "/dashboard", label: "ภาพรวม", icon: "📊" },
+  { href: "/notifications", label: "แจ้งเตือน", icon: "🔔" },
   { href: "/users", label: "ผู้ใช้งาน", icon: "👥" },
   { href: "/subsystems", label: "ระบบย่อย", icon: "🧩" },
+  { href: "/pending-requests", label: "คำขอ Approve", icon: "📋" },
   { href: "/ml", label: "ML / ความผิดปกติ", icon: "🧠" },
   { href: "/api-alerts", label: "API Alerts", icon: "🛡️" },
   { href: "/ip-blacklist", label: "IP Blacklist", icon: "🚫" },
@@ -27,9 +29,29 @@ const DEV_NAV = [
   { href: "/developer/subsystems/new", label: "ลงทะเบียนใหม่", icon: "➕" },
 ];
 
+type NotifCount = {
+  total: number;
+  unread?: number;
+  by_category: {
+    approval_requests: number;
+    ml_anomaly: number;
+    api_alerts: number;
+    subsystem_health: number;
+  };
+  // unread per category — Sidebar badge ใช้ตัวนี้ (ลดลงเมื่อ admin mark read)
+  unread_by_category?: {
+    approval_requests?: number;
+    ml_anomaly?: number;
+    api_alerts?: number;
+    subsystem_health?: number;
+    admin_overrides?: number;
+  };
+};
+
 export function Sidebar() {
   const pathname = usePathname();
   const [me, setMe] = useState<Me | null>(null);
+  const [notif, setNotif] = useState<NotifCount | null>(null);
 
   useEffect(() => {
     fetch("/api/me", { credentials: "include" })
@@ -37,6 +59,32 @@ export function Sidebar() {
       .then(setMe)
       .catch(() => setMe(null));
   }, []);
+
+  // Live notifications count (admin only) — poll ทุก 30 วินาที
+  useEffect(() => {
+    if (!me?.is_hub_admin) return;
+    const fetchCount = () =>
+      fetch("/api/proxy/admin/notifications/count", {
+        credentials: "include",
+      })
+        .then((r) => (r.ok ? r.json() : null))
+        .then(setNotif)
+        .catch(() => {});
+    fetchCount();
+    const t = setInterval(fetchCount, 30_000);
+    return () => clearInterval(t);
+  }, [me]);
+
+  const badgeFor = (href: string): number | undefined => {
+    if (!notif) return undefined;
+    // ทุก badge ใช้ "unread per category" — admin กด mark read แล้ว badge ลด/หาย
+    const ubc = notif.unread_by_category || {};
+    if (href === "/notifications") return notif.unread ?? notif.total;
+    if (href === "/pending-requests") return ubc.approval_requests ?? 0;
+    if (href === "/ml") return ubc.ml_anomaly ?? 0;
+    if (href === "/api-alerts") return ubc.api_alerts ?? 0;
+    return undefined;
+  };
 
   const isAdmin = me?.is_hub_admin === true || me?.user_type === "admin";
   const isDeveloper =
@@ -66,9 +114,17 @@ export function Sidebar() {
           <div className="mb-4">
             <SectionLabel>Admin Console</SectionLabel>
             <div className="space-y-1">
-              {ADMIN_NAV.map((item) => (
-                <NavLink key={item.href} {...item} pathname={pathname} />
-              ))}
+              {ADMIN_NAV.map((item) => {
+                const b = badgeFor(item.href);
+                return (
+                  <NavLink
+                    key={item.href}
+                    {...item}
+                    pathname={pathname}
+                    badge={b && b > 0 ? b : undefined}
+                  />
+                );
+              })}
             </div>
           </div>
         )}
@@ -112,11 +168,13 @@ function NavLink({
   label,
   icon,
   pathname,
+  badge,
 }: {
   href: string;
   label: string;
   icon: string;
   pathname: string;
+  badge?: number;
 }) {
   // exact match for /developer/subsystems/new (don't bleed into list)
   // otherwise prefix match
@@ -139,7 +197,12 @@ function NavLink({
       )}
     >
       <span className="text-base">{icon}</span>
-      <span>{label}</span>
+      <span className="flex-1">{label}</span>
+      {badge !== undefined && badge > 0 && (
+        <span className="px-2 py-0.5 rounded-full bg-amber-500 text-white text-[10px] font-bold tabular-nums animate-pulse">
+          {badge > 99 ? "99+" : badge}
+        </span>
+      )}
     </Link>
   );
 }

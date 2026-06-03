@@ -13,6 +13,7 @@
   - skip endpoint ที่ไม่ควร log (health, docs, openapi)
 """
 
+import logging
 import time
 
 from fastapi import Request
@@ -22,6 +23,8 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from app.database import SessionLocal
 from app.models import RequestLog
 from app.services.jwt_service import verify_token
+
+log = logging.getLogger(__name__)
 
 # path ที่ไม่ log (noise + บ่อยเกินไป)
 SKIP_PATHS = {
@@ -112,8 +115,8 @@ class RequestLoggerMiddleware(BaseHTTPMiddleware):
             db.add(RequestLog(**kwargs))
             db.commit()
         except Exception as e:
-            # log failure to stdout — ไม่ raise
-            print(f"[request_logger] failed to log: {e}")
+            # log failure ผ่าน structured logger — ไม่ raise (กัน request crash)
+            log.exception("request_logger failed to persist log: %r", e)
             try:
                 db.rollback()
             except Exception:

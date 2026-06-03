@@ -2,6 +2,7 @@
 
 Login flow เหมือน Subsystem A (ผ่าน Hub OAuth + PKCE)
 """
+
 import os
 from contextlib import asynccontextmanager
 
@@ -10,7 +11,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.types import Scope
 
 from app.database import Base, engine
-from app.routers import auth, borrow, librarian, pages
+from app.routers import auth, borrow, librarian, pages, webhook
 
 
 class NoCacheStaticFiles(StaticFiles):
@@ -47,6 +48,7 @@ app.include_router(auth.router, tags=["Authentication"])
 app.include_router(pages.router, tags=["Member Pages"])
 app.include_router(borrow.router, prefix="/borrow", tags=["Borrow"])
 app.include_router(librarian.router, prefix="/librarian", tags=["Librarian"])
+app.include_router(webhook.router, tags=["Webhook (Hub → us)"])
 
 
 @app.get("/health")

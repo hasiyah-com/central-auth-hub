@@ -99,9 +99,15 @@
           </td>
 
           <td>
+            {% if m.hub_access_revoked_at %}
+            <span class="badge" style="background:#fee2e2; color:#991b1b; border:1px solid #fca5a5;" title="Hub revoke whitelist แล้ว — login ใหม่ไม่ได้">
+              ⛔ Hub-revoked
+            </span>
+            {% else %}
             <span class="badge badge-{% if m.status == 'active' %}returned{% else %}cancelled{% endif %}">
               {% if m.status == "active" %}✅ active{% else %}{{ m.status }}{% endif %}
             </span>
+            {% endif %}
           </td>
 
           <td class="whitespace-nowrap">
