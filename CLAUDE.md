@@ -170,11 +170,32 @@ central-auth-starter/
 
 ## Running The Project
 
-```bash
-# Bring everything up
-docker compose up -d --build
+**Architecture (Migration B, 2026-06-03):** 3 docker-compose files = 3 independent stacks
+sharing an external `cah-net` network. Hub stack is the "Auth Platform"; each subsystem
+runs as its own stack (mirrors real-world deployment where subsystems are owned by
+different teams).
 
-# Seed 100 users (one time)
+```
+docker-compose.yml          → cah-hub      (postgres + redis + ml + backend + frontend)
+docker-compose.dorm.yml     → cah-dorm     (postgres-dorm + subsystem-dorm)
+docker-compose.library.yml  → cah-library  (postgres-library + subsystem-library)
+```
+
+```bash
+# Bring up ALL stacks (Hub first, then subsystems — handled by up.sh)
+bash scripts/stack/up.sh
+
+# Or one stack at a time (subsystems need Hub up for JWKS):
+bash scripts/stack/up.sh hub
+bash scripts/stack/up.sh dorm
+bash scripts/stack/up.sh library
+
+# Stop (DB volumes preserved)
+bash scripts/stack/down.sh             # all
+bash scripts/stack/down.sh dorm        # one stack
+bash scripts/stack/down.sh --wipe      # all + delete DB volumes (irreversible)
+
+# Seed 100 users (one time — Hub DB only)
 docker compose exec hub-backend python -m app.seeds.seed_users
 
 # Generate JWT keys (one time)
@@ -184,13 +205,20 @@ docker compose exec hub-backend python -m scripts.generate_jwt_keys
 docker compose exec ml-service python -m scripts.generate_data
 docker compose exec ml-service python -m scripts.train_model
 
-# Logs
-docker compose logs -f hub-backend
-docker compose logs -f ml-service
+# Logs (target a stack with -f)
+docker compose logs -f hub-backend                                  # cah-hub
+docker compose -f docker-compose.dorm.yml logs -f subsystem-dorm    # cah-dorm
+docker compose -f docker-compose.library.yml logs -f subsystem-library  # cah-library
 
 # Restart after code change (uvicorn auto-reloads in dev)
 docker compose restart hub-backend
 ```
+
+**Why split?** Each subsystem is an independent OAuth client. In production a different
+team owns each — they would clone only the subsystem they operate, configure
+`HUB_BASE_URL` to point at the central Auth Platform's HTTPS endpoint, and deploy
+independently. The split here mirrors that. To demo: `docker compose -f
+docker-compose.dorm.yml up -d` on a fresh server runs Dorm alone.
 
 ### Pre-commit setup (one-time per clone)
 
