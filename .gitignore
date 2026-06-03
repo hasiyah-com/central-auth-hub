@@ -42,6 +42,11 @@ build/
 *.db
 *.sqlite
 
+# ============ DB backups (contain personal data — back up off-site) ============
+backups/
+*.sql
+*.sql.gz
+
 # ============ Docker ============
 postgres_data/
 
