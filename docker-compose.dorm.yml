@@ -1,0 +1,64 @@
+# Subsystem A — ระบบหอพัก (Dorm) — Independent OAuth client stack
+#
+# This stack is the *dormitory subsystem* — in production it would be deployed
+# by the dorm office's IT, not the Auth Platform team. It registers with Hub
+# via /developer/subsystems, gets a client_id + client_secret, and talks to
+# Hub via HTTPS in prod. In dev it shares the `cah-net` external network so
+# `HUB_INTERNAL_URL=http://hub-backend:8000` resolves by Docker DNS.
+#
+# Prereq:   Hub stack must be up first (this stack does not depend_on across
+#           projects — it just retries JWKS fetch at runtime; the subsystem's
+#           hub_client.py already has a 10-minute cache + fail-safe).
+# Start:    bash scripts/stack/up.sh dorm
+# Or:       docker compose -f docker-compose.dorm.yml up -d
+# Stop:     docker compose -f docker-compose.dorm.yml down
+
+name: cah-dorm
+
+services:
+  postgres-dorm:
+    image: postgres:15-alpine
+    container_name: hub-postgres-dorm
+    environment:
+      POSTGRES_USER: ${DORM_POSTGRES_USER:-dorm}
+      POSTGRES_PASSWORD: ${DORM_POSTGRES_PASSWORD:-dormpass}
+      POSTGRES_DB: ${DORM_POSTGRES_DB:-dorm_db}
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_dorm_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DORM_POSTGRES_USER:-dorm} -d ${DORM_POSTGRES_DB:-dorm_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  subsystem-dorm:
+    build:
+      context: ./hub/subsystem-dorm
+      dockerfile: Dockerfile
+    container_name: hub-subsystem-dorm
+    env_file:
+      - ./hub/subsystem-dorm/.env
+    environment:
+      DATABASE_URL: postgresql+psycopg2://${DORM_POSTGRES_USER:-dorm}:${DORM_POSTGRES_PASSWORD:-dormpass}@postgres-dorm:5432/${DORM_POSTGRES_DB:-dorm_db}
+    ports:
+      - "8001:8000"
+    # No depends_on hub-backend — cross-project depends aren't honored by
+    # Compose. hub_client.py handles Hub unavailability via JWKS cache + retry.
+    depends_on:
+      postgres-dorm:
+        condition: service_healthy
+    volumes:
+      - ./hub/subsystem-dorm:/app
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+
+networks:
+  default:
+    name: cah-net
+    external: true
+
+volumes:
+  postgres_dorm_data:
+    name: central-auth-starter_postgres_dorm_data
+    external: true

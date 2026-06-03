@@ -10,9 +10,19 @@ printf "  Hub Morning Check  %s\n" "$(date '+%Y-%m-%d %H:%M')"
 echo "=========================================="
 
 echo ""
-echo "=== Docker Services ==="
-docker compose ps --format "table {{.Name}}\t{{.Status}}\t{{.Ports}}" 2>/dev/null \
-  || echo "  (services not running — run: docker compose up -d)"
+echo "=== Docker Stacks (Migration B: cah-hub / cah-dorm / cah-library) ==="
+# Project labels are how Compose v2.20+ groups containers into stacks. We list
+# all 3 expected projects so an empty stack stands out immediately.
+for proj in cah-hub cah-dorm cah-library; do
+  running=$(docker ps --filter "label=com.docker.compose.project=$proj" --format "{{.Names}}" | wc -l)
+  if [ "$running" -gt 0 ]; then
+    echo "  [$proj] running ($running containers)"
+  else
+    echo "  [$proj] DOWN — bring up: bash scripts/stack/up.sh ${proj#cah-}"
+  fi
+done
+echo
+echo "  (details: docker compose ls)"
 
 echo ""
 echo "=== Git Status ==="
