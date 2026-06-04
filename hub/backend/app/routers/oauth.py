@@ -378,6 +378,14 @@ async def oauth_callback(
     risk_reasons = risk["reasons"]
     risk_breakdown = risk["breakdown"]
     anomaly_score = risk_breakdown.get("iforest_raw", 0.0)
+    # SHAP top-k features for Layer 3 (IForest). Empty when ML service is
+    # older or SHAP unavailable — never raises.
+    iforest_explanation = risk.get("iforest_explanation", [])
+    # Embed SHAP into risk_breakdown so login_sessions.risk_breakdown JSON
+    # carries it without a schema migration. ml_admin.py reads it back from
+    # this nested key for the SessionDetailPanel UI.
+    if iforest_explanation:
+        risk_breakdown = {**risk_breakdown, "iforest_explanation": iforest_explanation}
 
     # 2.5) Alert admin ทาง Telegram/email ถ้า score เกิน threshold
     # (fail-safe — ส่ง alert ไม่ได้ห้าม block flow login)
@@ -429,6 +437,9 @@ async def oauth_callback(
                 "risk_score": risk_score,
                 "breakdown": risk_breakdown,
                 "reasons": risk_reasons,
+                # SHAP top-k feature contributions — kept on block events
+                # so admin can investigate which features drove the decision.
+                "iforest_explanation": iforest_explanation,
             },
         )
         db.commit()
@@ -483,6 +494,14 @@ async def oauth_callback(
             "decision": actual_decision,
             "breakdown": risk_breakdown,
             "reasons": risk_reasons,
+            # SHAP only when risk is non-trivial — saves audit table space.
+            # Threshold matches Layer 4 "warn" boundary (anything below this
+            # is normal enough that Layer 1+2 reasons fully explain it).
+            **(
+                {"iforest_explanation": iforest_explanation}
+                if risk_score >= 0.3 and iforest_explanation
+                else {}
+            ),
         },
     )
     db.commit()

@@ -6,3 +6,6 @@ pydantic==2.9.2
 scikit-learn==1.5.2
 numpy==2.1.3
 joblib==1.4.2
+
+# Interpretability — TreeExplainer for IsolationForest (Wiefling 2022 pattern)
+shap==0.46.0

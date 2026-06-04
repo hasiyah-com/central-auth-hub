@@ -4,7 +4,12 @@ import { useState } from "react";
 import Link from "next/link";
 import { Badge } from "@/components/Badge";
 import { clientFetch } from "@/lib/api";
-import type { Anomaly, UserSession, FeedbackResponse } from "../_types";
+import type {
+  Anomaly,
+  UserSession,
+  FeedbackResponse,
+  ShapContribution,
+} from "../_types";
 import { DECISION_TONE, DEVICE_ICON, FEEDBACK_LABELS } from "../_types";
 
 type SessionData = Anomaly | (UserSession & { user_email?: string; user_id?: string; session_id?: string; subsystem_name?: string });
@@ -112,11 +117,11 @@ export function SessionDetailPanel({ session, onFeedbackSaved, hideUserLink }: P
           </div>
         )}
 
-        {/* Risk Reasons */}
+        {/* Risk Reasons — Layer 1 + 2 explicit rule hits */}
         {session.risk_reasons && session.risk_reasons.length > 0 && (
           <div className="mt-3 p-3 rounded-lg bg-ink-50 border border-ink-200">
             <div className="text-[10px] font-bold text-ink-400 uppercase tracking-wider mb-1">
-              Reasons
+              Reasons (Layer 1 + 2)
             </div>
             <div className="flex flex-wrap gap-1">
               {session.risk_reasons.map((r, i) => (
@@ -129,6 +134,15 @@ export function SessionDetailPanel({ session, onFeedbackSaved, hideUserLink }: P
               ))}
             </div>
           </div>
+        )}
+
+        {/* SHAP — Layer 3 (IForest) per-feature contributions.
+            Only renders when the ML service actually returned an explanation
+            (newer ml-service versions with shap installed). Sign-convention:
+            positive shap = pushed score TOWARD anomaly (red bar);
+            negative = pushed toward normal (green bar). */}
+        {bd?.iforest_explanation && bd.iforest_explanation.length > 0 && (
+          <ShapBreakdown items={bd.iforest_explanation} />
         )}
       </div>
 
@@ -347,4 +361,65 @@ function BreakdownBar({
       </div>
     </div>
   );
+}
+
+/** SHAP per-feature breakdown for Layer 3 (IForest).
+ *
+ *  Bars are normalized to the MAX absolute SHAP in the list — relative
+ *  magnitudes are what humans read at a glance, not absolute SHAP units
+ *  (which are decision_function space, unbounded for IForest).
+ *
+ *  Direction → color:
+ *    anomaly (positive shap) = rose-500 (this feature made score WORSE)
+ *    normal  (negative shap) = emerald-500 (pushed score TOWARD normal)
+ */
+function ShapBreakdown({ items }: { items: ShapContribution[] }) {
+  const maxAbs = Math.max(...items.map((i) => Math.abs(i.shap)), 0.001);
+
+  return (
+    <div className="mt-3 p-3 rounded-lg bg-amber-50/50 border border-amber-200">
+      <div className="text-[10px] font-bold text-amber-700 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+        <span>SHAP (Layer 3 · IForest)</span>
+        <span
+          className="text-amber-500 font-normal normal-case tracking-normal"
+          title="Top features ranked by |SHAP value|. Red = pushed score toward anomaly, green = toward normal."
+        >
+          (top {items.length})
+        </span>
+      </div>
+      <div className="space-y-1.5">
+        {items.map((it, i) => {
+          const pct = Math.round((Math.abs(it.shap) / maxAbs) * 100);
+          const isAnomaly = it.direction === "anomaly";
+          const bar = isAnomaly ? "bg-rose-500" : "bg-emerald-500";
+          return (
+            <div key={i}>
+              <div className="flex items-baseline justify-between gap-2 mb-0.5">
+                <span className="text-[11px] font-mono text-ink-700 truncate">
+                  {it.feature}
+                  <span className="ml-1.5 text-ink-400">= {fmtFeatureValue(it.value)}</span>
+                </span>
+                <span
+                  className={`text-[10px] font-mono font-bold ${
+                    isAnomaly ? "text-rose-600" : "text-emerald-600"
+                  }`}
+                >
+                  {isAnomaly ? "+" : ""}
+                  {it.shap.toFixed(3)}
+                </span>
+              </div>
+              <div className="h-1.5 bg-ink-100 rounded-full overflow-hidden">
+                <div className={`h-full ${bar}`} style={{ width: `${pct}%` }} />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/** Display feature values nicely: integers show no decimal, floats show 2dp. */
+function fmtFeatureValue(v: number): string {
+  return Number.isInteger(v) ? v.toString() : v.toFixed(2);
 }
