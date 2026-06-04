@@ -70,9 +70,15 @@ async def evaluate_login_risk(
     behavior_result = evaluate_behavior(features, profile)
 
     # ── Layer 3: Isolation Forest (fail-safe ตาม B21) ──
+    # SHAP explanation is passed through from ML service. If ML service is
+    # offline / older version without SHAP, explanation will be [] — Layer
+    # 1+2 reasons still drive the explainability story.
     try:
         ml_result = await get_anomaly_score(features)
-        iforest_result = map_score(ml_result["anomaly_score"])
+        iforest_result = map_score(
+            ml_result["anomaly_score"],
+            explanation=ml_result.get("explanation", []),
+        )
     except Exception as e:
         logger.warning("[risk_engine] ML service error: %s — fallback to 0.0", e)
         iforest_result = IForestResult(raw_score=0.0, risk_score=0.0, label="error")
@@ -93,4 +99,7 @@ async def evaluate_login_risk(
         "score": decision.total_score,
         "reasons": decision.reasons,
         "breakdown": decision.breakdown,
+        # SHAP top-k features from Layer 3 — UI uses this in SessionDetailPanel,
+        # audit log includes when score is high.
+        "iforest_explanation": iforest_result.explanation,
     }

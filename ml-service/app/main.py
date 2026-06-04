@@ -13,6 +13,7 @@ Endpoints:
   GET  /v1/features-info        -> ดูชื่อ feature + range
   POST /v1/score                -> scoring login session
 """
+
 import uuid
 from datetime import datetime, timezone
 
@@ -21,7 +22,12 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, field_validator
 
 from app.features import FEATURE_COUNT, FEATURE_NAMES, FEATURE_RANGES
-from app.model import load_model, model_loaded, predict_score
+from app.model import (
+    explainer_status,
+    load_model,
+    model_loaded,
+    predict_with_explanation,
+)
 
 # Threshold
 THRESHOLD_BLOCK = 0.70
@@ -45,6 +51,7 @@ def startup():
 
 # ============ Standard Error Handler ============
 
+
 @app.exception_handler(HTTPException)
 async def http_error_handler(request: Request, exc: HTTPException):
     """ตอบ error เป็น JSON มาตรฐาน {error: {code, message, request_id, ...}}."""
@@ -63,6 +70,7 @@ async def http_error_handler(request: Request, exc: HTTPException):
 
 
 # ============ Schemas (with strict validation) ============
+
 
 class ScoreRequest(BaseModel):
     features: list[float] = Field(
@@ -87,19 +95,39 @@ class ScoreRequest(BaseModel):
         return v
 
 
+class FeatureContribution(BaseModel):
+    """SHAP contribution for one feature on one sample.
+
+    `direction`: "anomaly" = pushed score toward anomalous,
+                 "normal"  = pushed score toward normal.
+    """
+
+    feature: str
+    shap: float
+    value: float
+    direction: str
+
+
 class ScoreData(BaseModel):
     anomaly_score: float
     decision: str
     thresholds: dict[str, float]
+    # SHAP top-k features (max 5) sorted by |contribution|.
+    # Empty list when SHAP is unavailable (e.g. shap pkg missing,
+    # explainer init failed) — Hub treats this as fail-safe and shows
+    # Layer 1+2 reasons only.
+    explanation: list[FeatureContribution] = []
 
 
 class ScoreResponse(BaseModel):
     """Response wrapper {data, meta} — ตามมาตรฐาน API design."""
+
     data: ScoreData
     meta: dict
 
 
 # ============ Endpoints ============
+
 
 @app.get("/health")
 def health():
@@ -107,7 +135,8 @@ def health():
     return {
         "status": "ok" if model_loaded() else "warning",
         "model": "loaded" if model_loaded() else "not loaded — run train_model",
-        "version": "0.2.0",
+        "explainer": explainer_status(),  # "ready" | "unavailable" | "uninitialized"
+        "version": "0.3.0",
     }
 
 
@@ -121,7 +150,10 @@ def features_info():
                 {
                     "name": name,
                     "index": i,
-                    "range": {"min": FEATURE_RANGES[name][0], "max": FEATURE_RANGES[name][1]},
+                    "range": {
+                        "min": FEATURE_RANGES[name][0],
+                        "max": FEATURE_RANGES[name][1],
+                    },
                 }
                 for i, name in enumerate(FEATURE_NAMES)
             ],
@@ -132,12 +164,16 @@ def features_info():
 
 @app.post("/v1/score", response_model=ScoreResponse)
 def score(req: ScoreRequest, request: Request):
-    """รับ feature vector คืน anomaly score + decision.
+    """รับ feature vector คืน anomaly score + decision + SHAP explanation.
 
     Standard response wrapper: {data: {...}, meta: {...}}
+
+    `data.explanation` lists top-5 features by |SHAP contribution|. Empty
+    list means SHAP wasn't available (Hub will fall back to Layer 1+2
+    reasons only — never crashes).
     """
     try:
-        s = predict_score(req.features)
+        s, explanation = predict_with_explanation(req.features, top_k=5)
     except FileNotFoundError as e:
         raise HTTPException(status_code=503, detail=str(e))
 
@@ -153,17 +189,20 @@ def score(req: ScoreRequest, request: Request):
             anomaly_score=round(s, 4),
             decision=decision,
             thresholds={"block": THRESHOLD_BLOCK, "mfa": THRESHOLD_MFA},
+            explanation=[FeatureContribution(**e) for e in explanation],
         ),
         meta={
             "version": "v1",
             "request_id": str(uuid.uuid4()),
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "feature_count": FEATURE_COUNT,
+            "explainer": explainer_status(),
         },
     )
 
 
 # ============ Backward-compatible (Week 5 old paths) ============
+
 
 @app.get("/features/info")
 def features_info_legacy():

@@ -1,6 +1,29 @@
 // Shared types สำหรับทุกหน้า ML dashboard
 // ── ตรงกับ API response ของ ml_admin.py ──
 
+/** SHAP per-feature contribution from Layer 3 (IForest).
+ *  Computed by ml-service via shap.TreeExplainer and embedded into
+ *  login_sessions.risk_breakdown.iforest_explanation. Empty/missing
+ *  when ML service is older or SHAP unavailable — UI gracefully omits.
+ *  Sign convention: positive shap = pushed score toward anomaly,
+ *  negative shap = pushed toward normal. */
+export type ShapContribution = {
+  feature: string;
+  shap: number;
+  value: number;
+  direction: "anomaly" | "normal";
+};
+
+/** risk_breakdown JSON shape — base 4 numbers from Layer 4 aggregator,
+ *  plus optional iforest_explanation embedded by oauth.py at login time. */
+export type RiskBreakdown = {
+  rule: number;
+  behavior: number;
+  iforest: number;
+  iforest_raw: number;
+  iforest_explanation?: ShapContribution[];
+};
+
 export type Anomaly = {
   session_id: string;
   user_id: string;
@@ -20,7 +43,7 @@ export type Anomaly = {
   is_attack_ip: boolean;
   is_account_takeover: boolean;
   risk_score: number | null;
-  risk_breakdown: { rule: number; behavior: number; iforest: number; iforest_raw: number } | null;
+  risk_breakdown: RiskBreakdown | null;
   risk_reasons: string[] | null;
   created_at: string;
 };
@@ -38,7 +61,7 @@ export type UserSession = {
   is_attack_ip: boolean;
   is_account_takeover: boolean;
   risk_score: number | null;
-  risk_breakdown: { rule: number; behavior: number; iforest: number; iforest_raw: number } | null;
+  risk_breakdown: RiskBreakdown | null;
   risk_reasons: string[] | null;
   created_at: string;
   feedback_label: string | null;
