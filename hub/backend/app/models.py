@@ -31,6 +31,7 @@ class User(Base):
 
     id = uuid_pk()
     google_sub = Column(String(255), unique=True, nullable=True, index=True)
+    line_sub = Column(String, nullable=True, index=True)  #
     email = Column(String(255), unique=True, nullable=False, index=True)
     full_name = Column(String(255), nullable=False)
     user_type = Column(
