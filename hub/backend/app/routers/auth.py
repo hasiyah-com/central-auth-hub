@@ -51,6 +51,13 @@ oauth.register(
     client_kwargs={"scope": "openid email profile"},
 )
 
+oauth.register(
+    name="line",
+    client_id=settings.line_client_id,
+    client_secret=settings.line_client_secret,
+    server_metadata_url=("https://access.line.me/.well-known/openid-configuration"),
+    client_kwargs={"scope": "openid email profile"},
+)
 
 # ============ 1. เริ่ม login — redirect ไป Google ============
 
@@ -68,6 +75,23 @@ async def google_login(request: Request):
     )
     redirect_uri = settings.google_redirect_uri
     return await oauth.google.authorize_redirect(request, redirect_uri)
+
+
+# ============line================
+@router.get("/line/login")
+@limiter.limit(settings.rate_limit_login)
+async def line_login(request: Request):
+    """พาผู้ใช้ไปหน้า login ของ LINE. (rate-limited per-IP)"""
+    await emit(
+        EVT_LOGIN_PRE,
+        {
+            "ip": get_client_ip(request),
+            "user_agent": request.headers.get("user-agent"),
+            "provider": "line",  # ← เพิ่ม field เพื่อ track ว่ามาจาก IdP ไหน
+        },
+    )
+    redirect_uri = settings.line_redirect_uri
+    return await oauth.line.authorize_redirect(request, redirect_uri)
 
 
 # ============ 2. Google callback — ออก JWT ============
@@ -161,9 +185,7 @@ async def google_callback(request: Request, db: Session = Depends(get_db)):
         raise HTTPException(
             status_code=403,
             detail=(
-                "นักศึกษาไม่สามารถเข้าระบบกลางโดยตรงได้ — "
-                "กรุณาเข้าใช้ผ่านระบบย่อยที่ได้รับสิทธิ์ "
-                "(เช่น ระบบหอพัก ระบบห้องสมุด)"
+                "นักศึกษาไม่สามารถเข้าระบบกลางโดยตรงได้ — " "กรุณาเข้าใช้ผ่านระบบย่อยที่ได้รับสิทธิ์ "
             ),
         )
 
@@ -406,6 +428,397 @@ async def google_callback(request: Request, db: Session = Depends(get_db)):
             "user_type": user.user_type,
             "anomaly_score": anomaly_score,
             "decision": actual_decision,
+        },
+    )
+    db.commit()
+
+    # ออก JWT + เก็บ jti กลับไป LoginSession (สำหรับ force-revoke ภายหลัง)
+    access_token, token_jti = create_access_token(user)
+    login_session.jti = token_jti
+    db.commit()
+
+    await emit(
+        EVT_LOGIN_SUCCESS,
+        {
+            "user_id": str(user.id),
+            "email": user.email,
+            "user_type": user.user_type,
+            "ip": client_ip,
+        },
+    )
+
+    # Redirect ไป Next.js frontend สำหรับทุก non-student
+    # (student ถูก block ที่ check ก่อนหน้านี้แล้ว — ไม่ถึงตรงนี้)
+    # - admin → middleware ส่งต่อไป /dashboard (Admin Console)
+    # - teacher/staff → middleware ส่งต่อไป /developer/subsystems (Developer Portal)
+    # ใช้ query ?api=1 ถ้าต้องการ JSON response สำหรับ API client / curl test
+    wants_json = request.query_params.get("api") == "1"
+    if settings.admin_frontend_url and not wants_json:
+        return RedirectResponse(
+            f"{settings.admin_frontend_url}/auth/callback?token={access_token}",
+            status_code=302,
+        )
+
+    return JSONResponse(
+        {
+            "access_token": access_token,
+            "token_type": "bearer",
+            "expires_in": settings.jwt_access_token_expire_minutes * 60,
+            "user": {
+                "id": str(user.id),
+                "email": user.email,
+                "full_name": user.full_name,
+                "user_type": user.user_type,
+                "faculty": user.faculty,
+            },
+        }
+    )
+
+
+# =============2.1 line callback==============
+@router.get("/line/callback")
+@limiter.limit(settings.rate_limit_login)
+async def line_callback(request: Request, db: Session = Depends(get_db)):
+    """LINE ส่งผู้ใช้กลับมาที่นี่พร้อม authorization code. (rate-limited per-IP)"""
+    try:
+        token = await oauth.line.authorize_access_token(request)
+    except OAuthError as e:
+        raise HTTPException(status_code=400, detail=f"OAuth ล้มเหลว: {e.error}")
+
+    # ข้อมูล user จาก LINE (OIDC userinfo)
+    userinfo = token.get("userinfo")
+    if not userinfo:
+        raise HTTPException(status_code=400, detail="ไม่ได้รับข้อมูลจาก LINE")
+
+    # LINE ส่ง email มาเฉพาะเมื่อเปิด "Email permission" ใน Console + user อนุญาต
+    # ไม่มี fallback แบบ Microsoft's preferred_username — LINE ไม่ส่ง field นั้น
+    email = userinfo.get("email")
+    if not email:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "LINE ไม่ส่ง email มาให้ — กรุณา verify email ใน LINE app ก่อน "
+                "หรือ revoke permission แล้ว login ใหม่ (ดู docs/guides/add-line-login.md)"
+            ),
+        )
+
+    # LINE userId = sub claim (รูปแบบ "Uxxxxxxxxxxx..." 33 chars)
+    line_sub = userinfo["sub"]
+
+    client_ip = get_client_ip(request)
+
+    # หา user ใน DB (จาก 100 คนที่ seed)
+    user = db.query(User).filter(User.email == email).first()
+    if not user:
+        log_action(
+            db,
+            actor_id=None,
+            action="hub_login_failed_unknown_email_line",
+            target_type="email",
+            target_id=None,
+            ip=client_ip,
+            metadata={"email": email, "line_sub": line_sub, "provider": "line"},
+        )
+        db.commit()
+        await emit(
+            EVT_LOGIN_FAILURE,
+            {
+                "email": email,
+                "reason": "unknown_email",
+                "ip": client_ip,
+            },
+        )
+        raise HTTPException(
+            status_code=403,
+            detail=f"อีเมล {email} ไม่ใช่ผู้ใช้ของมหาวิทยาลัย",
+        )
+    if user.status != "active":
+        log_action(
+            db,
+            actor_id=user.id,
+            action="hub_login_failed_inactive",
+            target_type="user",
+            target_id=user.id,
+            ip=client_ip,
+            metadata={"email": email, "status": user.status},
+        )
+        db.commit()
+        await emit(
+            EVT_LOGIN_FAILURE,
+            {
+                "email": email,
+                "reason": f"inactive_{user.status}",
+                "ip": client_ip,
+            },
+        )
+        raise HTTPException(status_code=403, detail=f"บัญชีถูก {user.status}")
+
+    # *** นโยบาย: นักศึกษาเข้าระบบกลางโดยตรงไม่ได้ ***
+    if user.user_type == "student":
+        log_action(
+            db,
+            actor_id=user.id,
+            action="hub_login_blocked_student_line",
+            target_type="user",
+            target_id=user.id,
+            ip=client_ip,
+            metadata={"email": email, "user_type": "student"},
+        )
+        db.commit()
+        await emit(
+            EVT_LOGIN_FAILURE,
+            {
+                "email": email,
+                "reason": "student_blocked",
+                "ip": client_ip,
+            },
+        )
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "นักศึกษาไม่สามารถเข้าระบบกลางโดยตรงได้ — " "กรุณาเข้าใช้ผ่านระบบย่อยที่ได้รับสิทธิ์ "
+            ),
+        )
+
+    # *** เช็ค identity challenge — admin เคย Revoke Level 2 ไหม ***
+    if is_user_challenged(str(user.id)):
+        log_action(
+            db,
+            actor_id=user.id,
+            action="hub_login_blocked_by_identity_challenge",
+            target_type="user",
+            target_id=user.id,
+            ip=client_ip,
+            metadata={"email": email},
+        )
+        db.commit()
+        await emit(
+            EVT_LOGIN_FAILURE,
+            {
+                "email": email,
+                "reason": "identity_challenge_pending",
+                "ip": client_ip,
+            },
+        )
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "ระบบกำลังรอคุณยืนยันตัวตน — กรุณาคลิกลิงก์ใน email ที่ส่งให้ก่อน login "
+                "(ถ้าไม่ได้รับ email ติดต่อ admin)"
+            ),
+        )
+
+    # ผูก line_sub ครั้งแรกที่ login (ถ้ายังไม่มี)
+    # ถ้ามีอยู่แล้วต้องตรงกัน — กัน account hijack ผ่านการเปลี่ยน LINE account
+    # ที่ใช้อีเมลเดียวกัน (user เปลี่ยน LINE account แต่ใช้ Gmail เดิม)
+    if user.line_sub and user.line_sub != line_sub:
+        log_action(
+            db,
+            actor_id=user.id,
+            action="hub_login_failed_line_sub_mismatch",
+            target_type="user",
+            target_id=user.id,
+            ip=client_ip,
+            metadata={
+                "email": email,
+                "stored_sub_prefix": user.line_sub[:8],
+                "received_sub_prefix": line_sub[:8],
+            },
+        )
+        db.commit()
+        await emit(
+            EVT_LOGIN_FAILURE,
+            {
+                "email": email,
+                "reason": "line_sub_mismatch",
+                "ip": client_ip,
+            },
+        )
+        raise HTTPException(
+            status_code=403,
+            detail="LINE account นี้ไม่ตรงกับบัญชีที่เคยใช้ login — ติดต่อ admin",
+        )
+    if not user.line_sub:
+        user.line_sub = line_sub
+
+    # Sync display name from LINE (source of truth) on every login.
+    # Keeps the Hub user's full_name in sync with the LINE display name.
+    line_name = (userinfo.get("name") or "").strip()
+    if line_name and line_name != (user.full_name or "").strip():
+        old_name = user.full_name
+        user.full_name = line_name
+        log_action(
+            db,
+            actor_id=user.id,
+            action="profile_synced_from_line",
+            target_type="user",
+            target_id=user.id,
+            ip=client_ip,
+            metadata={"field": "full_name", "old": old_name, "new": line_name},
+        )
+    db.commit()
+
+    # ===== Hybrid 4-Layer Risk Scoring (Hub-direct) =====
+    # Admin / teacher / staff = high-value target — ตรวจเข้มกว่า user ปกติ
+    # ใช้ engine เดียวกับ subsystem OAuth flow → session ทุกแบบมี
+    # risk_score / risk_breakdown / risk_reasons ครบใน UI
+    user_agent = request.headers.get("user-agent")
+    geo_country = lookup_country(client_ip)
+
+    # 1) สกัด features จาก session + history (12 features)
+    features = extract_session_features(
+        db,
+        user_id=user.id,
+        ip=client_ip,
+        user_agent=user_agent,
+        geo_country=geo_country,
+    )
+
+    # 2) 4-Layer Risk Engine (Rule → Behavior → IForest → Aggregation)
+    risk = await evaluate_login_risk(
+        features=features,
+        user_id=str(user.id),
+        ip=client_ip,
+        geo_country=geo_country,
+        db=db,
+        shadow_mode=settings.ml_shadow_mode,
+    )
+    risk_score = risk["score"]
+    actual_decision = risk["decision"]
+    risk_reasons = risk["reasons"]
+    risk_breakdown = risk["breakdown"]
+    anomaly_score = risk_breakdown.get("iforest_raw", 0.0)
+
+    # 2.5) Alert admin — Hub-direct login = subsystem_name=None
+    maybe_alert_ml_risk(
+        user_email=user.email,
+        user_id=str(user.id),
+        risk_score=risk_score,
+        decision=actual_decision,
+        risk_breakdown=risk_breakdown,
+        risk_reasons=risk_reasons,
+        ip=client_ip,
+        geo_country=geo_country,
+        subsystem_name=None,
+    )
+
+    # 3) บันทึก login_session (subsystem_id=None = Hub-direct)
+    login_session = LoginSession(
+        user_id=user.id,
+        subsystem_id=None,
+        ip=client_ip,
+        user_agent=user_agent,
+        geo_country=geo_country,
+        os_name=parse_os_name(user_agent),
+        browser=parse_browser(user_agent),
+        device_type=parse_device_type(user_agent),
+        anomaly_score=anomaly_score,
+        risk_score=risk_score,
+        risk_breakdown=risk_breakdown,
+        risk_reasons=risk_reasons,
+        decision=actual_decision,
+        is_attack_ip=is_blacklisted(db, client_ip),
+    )
+    db.add(login_session)
+    db.flush()  # ต้องการ login_session.id สำหรับ MFA challenge
+
+    # 5) Enforce mode + decision=block → ปฏิเสธ ก่อนออก JWT
+    if actual_decision == "block":
+        log_action(
+            db,
+            actor_id=user.id,
+            action="hub_login_blocked_by_ml",
+            target_type="user",
+            target_id=user.id,
+            ip=client_ip,
+            metadata={"score": anomaly_score, "features": features},
+        )
+        db.commit()
+        await emit(
+            EVT_LOGIN_FAILURE,
+            {
+                "email": email,
+                "reason": "ml_blocked",
+                "ip": client_ip,
+                "anomaly_score": anomaly_score,
+            },
+        )
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                f"การ login ถูกบล็อกโดยระบบตรวจสอบความปลอดภัย "
+                f"(anomaly_score={anomaly_score}) — ติดต่อ admin หากเป็นเรื่องผิดพลาด"
+            ),
+        )
+
+    # 6) Enforce mode + decision=mfa → สร้าง MFA challenge + redirect ไป /auth/mfa
+    if actual_decision == "mfa":
+        from datetime import timedelta
+
+        from app.models import MFAChallenge
+        from app.services.mfa_service import generate_otp, hash_otp, send_otp_email
+
+        otp = generate_otp()
+        expires_at = datetime.utcnow() + timedelta(minutes=5)
+        challenge = MFAChallenge(
+            user_id=user.id,
+            login_session_id=login_session.id,
+            code_hash=hash_otp(otp),
+            method="email",
+            expires_at=expires_at,
+        )
+        db.add(challenge)
+        log_action(
+            db,
+            actor_id=user.id,
+            action="mfa_challenge_issued",
+            target_type="user",
+            target_id=user.id,
+            ip=client_ip,
+            metadata={
+                "session_id": str(login_session.id),
+                "method": "email",
+                "score": anomaly_score,
+            },
+        )
+        db.commit()
+        db.refresh(challenge)
+
+        # ส่ง email (fail-safe — ถ้า SMTP ไม่ตั้งค่าจะ log warning)
+        send_otp_email(user.email, otp, expires_at)
+
+        # Redirect frontend ไปหน้ารับ OTP
+        if settings.admin_frontend_url:
+            return RedirectResponse(
+                f"{settings.admin_frontend_url}/auth/mfa?challenge={challenge.id}",
+                status_code=302,
+            )
+        # API client fallback
+        return JSONResponse(
+            {
+                "mfa_required": True,
+                "challenge_id": str(challenge.id),
+                "method": "email",
+                "expires_at": expires_at.isoformat(),
+                "message": "กรุณาตรวจ email + กรอก OTP ที่ /auth/mfa",
+            },
+            status_code=202,
+        )
+
+    # log การ login สำเร็จ
+    log_action(
+        db,
+        actor_id=user.id,
+        action="hub_login_success",
+        target_type="user",
+        target_id=user.id,
+        ip=client_ip,
+        metadata={
+            "email": email,
+            "user_type": user.user_type,
+            "anomaly_score": anomaly_score,
+            "decision": actual_decision,
+            "provider": "line",
         },
     )
     db.commit()

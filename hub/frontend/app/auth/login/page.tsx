@@ -26,6 +26,7 @@ export default function LoginPage() {
             สำหรับผู้ดูแลระบบ — ใช้บัญชี Google ที่ลงทะเบียนไว้กับ Hub
           </p>
 
+          {/* Google login — บัญชีที่ Hub seed ไว้ตามทะเบียน */}
           <a
             href={`${HUB_URL}/auth/google/login`}
             className="w-full flex items-center justify-center gap-3 px-4 py-3 rounded-xl bg-ink-900 hover:bg-ink-800 text-white font-semibold transition"
@@ -48,7 +49,23 @@ export default function LoginPage() {
                 fill="#EA4335"
               />
             </svg>
-            <span>เข้าสู่ระบบด้วย Google</span>
+            <span>Sign in with Google</span>
+          </a>
+
+          {/* LINE login — alt IdP สำหรับ user ที่สะดวกใช้ LINE
+              ใช้ brand color #06C755 (LINE Green) + chat-bubble icon */}
+          <a
+            href={`${HUB_URL}/auth/line/login`}
+            className="mt-3 w-full flex items-center justify-center gap-3 px-4 py-3 rounded-xl bg-[#06C755] hover:bg-[#05A647] text-white font-semibold transition"
+          >
+            <svg width="20" height="20" viewBox="0 0 320 320" fill="currentColor">
+              <path d="M160 0C71.6 0 0 58.2 0 130c0 64.4 56.8 118.4 133.6 128.6 5.2 1.1 12.3 3.4 14.1 7.9 1.6 4 1 10.3.5 14.4l-2.3 13.6c-.7 4-3.2 15.7 13.7 8.6 17-7.1 91.3-53.7 124.5-92 23-25.2 33.9-50.7 33.9-79.1C320 58.2 248.4 0 160 0z" />
+              <path
+                d="M93 105h-6c-1.1 0-2 .9-2 2v40c0 1.1.9 2 2 2h6c1.1 0 2-.9 2-2v-40c0-1.1-.9-2-2-2zm44 0h-6c-1.1 0-2 .9-2 2v23.7L110.7 106c-.1 0-.1-.1-.2-.1l-.2-.2-.2-.1h-.2c-.1 0-.1-.1-.2-.1h-6.7c-1.1 0-2 .9-2 2v40c0 1.1.9 2 2 2h6c1.1 0 2-.9 2-2v-23.6l18.3 24.7c.1.2.3.3.4.4.1.1.2.1.2.2.1 0 .2.1.2.1h7.2c1.1 0 2-.9 2-2v-40c.1-1.1-.8-2.4-1.9-2.4zm-65 35.6h-17.5V107c0-1.1-.9-2-2-2h-6c-1.1 0-2 .9-2 2v40c0 .5.2 1 .6 1.4l.1.1c.4.3.8.5 1.4.5h25.5c1.1 0 2-.9 2-2v-6c0-1.1-.9-2.4-2.1-2.4zm103.2-25.6c1.1 0 2-.9 2-2v-6c0-1.1-.9-2-2-2h-25.6c-.5 0-1 .2-1.4.6l-.1.1c-.3.4-.5.8-.5 1.4v40c0 .5.2 1 .6 1.4l.1.1c.4.3.8.5 1.4.5h25.5c1.1 0 2-.9 2-2v-6c0-1.1-.9-2-2-2h-17.5v-6.8h17.5c1.1 0 2-.9 2-2v-6c0-1.1-.9-2-2-2h-17.5V115h17.5z"
+                fill="#06C755"
+              />
+            </svg>
+            <span>Sign in with LINE</span>
           </a>
 
           <div className="mt-6 text-xs text-ink-400 text-center">
