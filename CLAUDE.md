@@ -7,10 +7,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 **Central Auth Hub** — ระบบการจัดการสิทธิ์ผู้ใช้แบบศูนย์กลาง (Centralized Identity & Permission Management Platform) สำหรับมหาวิทยาลัย เป็นโปรเจคจบปริญญาตรี
 
 ระบบประกอบด้วย:
-- **Hub** (Central Auth Server) — จัดการ identity, permissions, audit, dashboard
-- **Subsystem A — ระบบหอพัก** (Week 6, port 8001) — OAuth client เต็มลูป + business logic จองห้อง
-- **Subsystem B — ระบบห้องสมุด** (Week 7, port 8002) — OAuth client + business logic ยืม/คืนหนังสือ
-- **ML Verifier** — Isolation Forest ตรวจ anomaly login (Shadow Mode)
+- **Hub** (Central Auth Server, port 8000) — จัดการ identity, permissions, audit, 4-Layer RBA risk scoring
+- **Hub Admin Frontend** (Week 8, port 3000) — Next.js 14 admin console: dashboard, users, subsystems, pending triage, audit log, ML threshold preview + SHAP, IP blacklist, API alerts, notifications
+- **Subsystem A — ระบบหอพัก** (Week 6, port 8001) — OAuth client + business logic จองห้อง (React SPA + Bauhaus theme)
+- **Subsystem B — ระบบห้องสมุด** (Week 7, port 8002) — OAuth client + business logic ยืม/คืนหนังสือ (vintage UI + sidebar)
+- **ML Verifier** (port 9000) — Isolation Forest + SHAP TreeExplainer (Shadow Mode + tunable thresholds)
+
+**IdP support:**
+- ✅ Google OAuth (primary)
+- ✅ LINE Login (alternate, since Week 9 — free, no Azure dependency)
+- Both via OIDC discovery + Authlib — same code shape, swappable
 
 **สถาปัตยกรรมไม่ใช่ SSO** — แต่ละ subsystem มี session แยกของตัวเอง Hub ทำหน้าที่ authenticate + authorize เท่านั้น
 
@@ -27,14 +33,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 | Layer | Tech |
 |-------|------|
-| Backend (Hub) | Python 3.11 + FastAPI + SQLAlchemy |
-| Backend (ML) | Python 3.11 + FastAPI + scikit-learn |
+| Backend (Hub) | Python 3.11 + FastAPI + SQLAlchemy + Authlib (OAuth) |
+| Backend (ML) | Python 3.11 + FastAPI + scikit-learn + SHAP (TreeExplainer) |
 | Database | PostgreSQL 15 |
 | Cache / Session | Redis 7 |
-| Auth | OAuth 2.0 + PKCE + JWT (RS256) |
-| Containers | Docker Compose |
-| Frontend | Next.js (Week 8+, ยังไม่ได้สร้าง) |
-| ML Algorithm | Isolation Forest (research: Liu, Ting, Zhou 2008) |
+| Auth IdPs | Google OAuth (OIDC) + LINE Login (OIDC) — both via Authlib |
+| Auth Protocol | OAuth 2.0 + PKCE + JWT (RS256) + JWKS discovery |
+| Containers | Docker Compose (3 stacks: cah-hub / cah-dorm / cah-library) |
+| Frontend | Next.js 14 (App Router) + TypeScript + Tailwind CSS |
+| ML Algorithm | 4-Layer RBA: Rule Engine + Behavior Profiling + Isolation Forest + Aggregation (Freeman 2016, Wiefling 2022, F-RBA 2024) |
+| ML Interpretability | SHAP TreeExplainer (Lundberg & Lee 2017) — per-feature contribution |
 
 ## Architecture
 
@@ -690,6 +698,66 @@ docker compose exec ml-service python -m scripts.train_model
 **B32. `created_at` ไม่ตรงเวลา** (เคสที่ user ถามจริง) — ดู `2026-05-17 07:45` คิดว่าผิด → +7 ชม. = `14:45 BKK`
 → **กฎ:** เดียวกับ B29 (เป็นปัญหาเดียวกัน)
 
+### 🐳 Docker / Container State (Week 8-9)
+
+**B33. `docker compose` attach container เดิม → อ่าน `.env` จาก folder ผิด**
+- อาการ: รัน `docker compose up -d` จาก main folder แต่ `hub-backend` container อ่าน `GOOGLE_REDIRECT_URI=http://localhost:8020/...` (จาก worktree folder อื่น)
+- สาเหตุ: `container_name:` ใน base `docker-compose.yml` hardcoded (เช่น `hub-backend`) → Docker เห็น name ตรงกับ container ที่มีอยู่ → attach ตัวเดิมแทนสร้างใหม่ → ใช้ env จาก folder ที่สร้างครั้งแรก
+- **กฎ:** ถ้าเปลี่ยน folder ที่ start Docker → `docker compose -p <old-project> down` ก่อน แล้วค่อย `docker compose up -d --force-recreate` จาก folder ใหม่
+- **Verify:** `docker exec hub-backend env | grep GOOGLE_REDIRECT` ต้องตรงกับ `.env` ใน folder ที่กำลังทำงาน
+
+**B34. Pytest path ใน dev-routine skill ผิด**
+- อาการ: `docker compose exec hub-backend pytest hub/backend/ -v` → `ERROR: file or directory not found`
+- สาเหตุ: container WORKDIR = `/app` (COPY จาก `./hub/backend` → `/app`) → path `hub/backend/` ไม่มีใน container
+- **กฎ:** ใน container ใช้ `pytest .` หรือ `pytest tests/`
+
+**B35. `.gitignore` หาย entries หลัง merge feature branches**
+- อาการ: หลัง merge `feature/ml-dev` กลับ main → `.gitignore` กลับไปเป็นเวอร์ชั่นเก่า → `.claude/settings.local.json`, `tmp_*.py`, `docker-compose.override.yml` โผล่เป็น untracked อีกครั้ง
+- สาเหตุ: branch feature/* เริ่มต้นก่อน commit ที่เพิ่ม entries → merge ทับ
+- **กฎ:** ทุกครั้งหลัง merge → `git status` ตรวจ untracked ที่ควรเป็น ignored → fix ทันที (`git check-ignore -v <file>` ดู rule ที่ match)
+
+**B36. `docker compose restart` ไม่อ่าน `.env` ใหม่**
+- อาการ: แก้ค่าใน `.env` (เช่น `LINE_CLIENT_ID`) → restart container → app ยังเห็นค่าเก่า/ไม่มีเลย
+- สาเหตุ: env vars inject ตอนสร้าง container (`docker create`) — `restart` แค่ kill+start process ไม่ re-read env_file
+- **กฎ:** เมื่อแก้ env vars → `docker compose up -d --force-recreate <service>` (ไม่ใช่ restart)
+- **Verify:** `docker exec <container> env | grep <VAR>` ต้องมีค่าตามที่ตั้ง
+
+**B37. Docker volume namespace เปลี่ยน → ข้อมูลหาย**
+- อาการ: เปลี่ยน project name (e.g. Migration B) → `docker compose up` สร้าง volume ใหม่ชื่อ `cah-hub_postgres_data` แทน `central-auth-starter_postgres_data` → DB ว่างเปล่า ทั้งๆที่ volume เก่ายังอยู่
+- สาเหตุ: Docker prefix volume name ด้วย project name → ชื่อ volume เปลี่ยนตาม
+- **กฎ:** ใช้ `name:` + `external: true` ใน compose declaration เพื่อ pin volume name เดิม:
+  ```yaml
+  volumes:
+    postgres_data:
+      name: central-auth-starter_postgres_data
+      external: true
+  ```
+
+### 🔄 Auth / OAuth (Week 9 — LINE Login)
+
+**B38. Frontend files in worktree never committed → lost when discarded**
+- อาการ: Week 8 ทำ Next.js admin dashboard บน worktree `feature/hub-dev` แต่ไม่ commit → ครั้งหลัง folder ถูกลบจาก disk → ไฟล์หายหมด
+- สาเหตุ: worktree files = untracked ทั่วไป — ลบ folder = data loss permanent
+- **กฎ:** Commit งานทุก work session แม้ยังไม่เสร็จ (WIP commit) — ใช้ `git add -p` เลือกเฉพาะที่พร้อม
+
+**B39. SHAP sign convention สับสน (positive/negative direction)**
+- อาการ: SHAP top features ใน UI สลับ red/green ผิด — feature ที่ผลักไป "anomaly" แสดงสีเขียว
+- สาเหตุ: `shap_value` บน `decision_function` ของ IForest:
+  - `> 0` → feature ผลัก output ทาง **NORMAL** (decision_function สูง = ปกติมาก)
+  - `< 0` → feature ผลัก output ทาง **ANOMALY**
+- **กฎ:** ใน `predict_with_explanation()` ใช้ `anomaly_contrib = -shap_value` เพื่อ flip → UI "positive = anomaly" (intuitive)
+
+**B40. LINE Channel ID vs Bot User ID confused**
+- อาการ: ส่ง `LINE_CLIENT_ID=U40f2d407a844c7fe4e36b04eb1dded2d` → 400 Bad Request: "Failed to convert property value of type 'java.lang.String' to required type 'java.lang.Integer' for property 'clientId'"
+- สาเหตุ: User copy "Bot User ID" จาก Messaging API channel (รูปแบบ `U` + 32 hex chars) — แต่ LINE Login OAuth ต้องการ **Channel ID** เป็นตัวเลขล้วน 10 หลัก (เช่น `2010297925`)
+- **กฎ:** LINE Channel ID อยู่ที่ Console → channel **LINE Login** type → tab **Basic settings** → field **Channel ID** (numeric only)
+- หลังแก้ `.env` → ต้อง `force-recreate` (ดู B36)
+
+**B41. `docker-compose.yml` `hub-frontend` block ไม่ถูก commit → ภัยเงียบ**
+- อาการ: Week 8 เพิ่ม `hub-frontend` service ใน docker-compose.yml + รัน Docker ปกติ → working tree มี service แต่ไม่ commit
+- สาเหตุ: working ได้ทันที (Docker เห็นจากไฟล์ local) → ลืม commit → ถ้า reset/clone จะหาย
+- **กฎ:** หลังเพิ่ม service ใน docker-compose → `git status` ตรวจ + commit ทันที (ก่อน restart Docker)
+
 ---
 
 ทุกครั้งที่เจอ bug ใหม่ — **เพิ่มเข้าที่นี่** พร้อมอธิบายอาการ + วิธีแก้ + กฎที่ป้องกันไม่ให้เกิดอีก
@@ -772,11 +840,32 @@ docker compose exec hub-backend pytest . -v -s
 | 5 | ML Verifier (Isolation Forest, 12 features, Shadow Mode) + security hardening (17 bugs) | ✅ |
 | 6 | Subsystem A — ระบบหอพัก (FastAPI + Jinja2 + postgres-dorm) | ✅ |
 | 7 | Subsystem B — ระบบห้องสมุด (FastAPI + Jinja2 + postgres-library) | ✅ |
-| 8 | Admin Dashboard frontend (Next.js) | 🔄 next |
-| 9-10 | MFA flow + token revocation | ⏳ |
-| 11-12 | Security hardening + penetration test | ⏳ |
-| 13-14 | Test suite + documentation | ⏳ |
+| 8 | Admin Dashboard frontend (Next.js) + audit log viewer + pending triage | ✅ |
+| 8.5 | Migration B — split docker-compose (Hub/Dorm/Library stacks) + SHAP TreeExplainer + LINE Login alternate IdP + Subsystem A React SPA + ML eval split/GeoIP + RBA 4-Layer scoring + secret rotation | ✅ |
+| 9-10 | MFA flow (scaffold ✅, wire-up ⏳) + Session Downgrade (`restricted` JWT claim) + Token Revocation (jti + Redis blacklist) | 🔄 next |
+| 11-12 | Security hardening (rate limit, CSRF, CSP, prod fail-fast) + threat-model doc + pentest checklist | ⏳ |
+| 13-14 | Test suite (pytest scaffold ✅) + Jest/RTL frontend tests + GitHub Actions CI + full documentation | ⏳ |
 | 15-16 | Buffer + thesis writing + defense | ⏳ |
+
+### สถานะเพิ่มเติม (ตอนนี้ — Week 8.5)
+
+**สิ่งที่ทำเสร็จเพิ่มเติมจาก roadmap เดิม:**
+- ✅ **4-Layer RBA risk scoring** (Rule Engine + Behavior Profiling + IForest + Aggregation) แทน ML score เดี่ยว
+- ✅ **SHAP TreeExplainer** บน IsolationForest — per-feature contribution + UI bars
+- ✅ **LINE Login** — alternate OAuth IdP (free, no credit card) — มีในระบบคู่กับ Google
+- ✅ **Migration B** — 3 stacks (`cah-hub`, `cah-dorm`, `cah-library`) connected ผ่าน `cah-net` external network
+- ✅ **DB backup workflow** — `scripts/backup.sh` → `pg_dump` 3 DBs + OneDrive sync
+- ✅ **Dev infrastructure** — daily routine scripts (morning.sh, eod.sh), domain skills, pre-commit hooks
+- ✅ **Documentation** — `docs/ml-12-features-risk-matrix.pdf` (8 หน้า), `docs/guides/add-line-login.md` (604 บรรทัด), MFA options analysis, P2 Session Downgrade plan
+
+**สิ่งที่ scaffold แล้วยังไม่ wire (Week 9 priority):**
+- ⚠️ MFA OTP — `routers/mfa.py` + `services/mfa_service.py` + frontend `/auth/mfa` ครบ แต่ `routers/mfa` ไม่ได้ register ใน `main.py` + oauth.py challenge branch comment ว่า "ปล่อยผ่าน + log" (ยังไม่ trigger MFA flow)
+- ⚠️ Session Downgrade — restrict JWT claim + `require_write_access()` dependency ใน subsystems — design พร้อม (`docs/p2-session-downgrade-plan.md`) แต่ยัง implement ไม่เสร็จ
+- ⚠️ Token Revocation — ยังไม่มี jti claim + Redis blacklist
+
+**Strategy A (Single-stack Docker policy, 2026-05-21):**
+ใช้ main stack เท่านั้นเป็นปกติ — worktree stacks (cah-hub, cah-dorm worktrees) ใช้เฉพาะ experimental code isolation
+ไม่ start Docker ใน worktree เพื่อเลี่ยง DB split + B33 issue (ดู `scripts/worktree/README.md`)
 
 ## Reference Documents
 
