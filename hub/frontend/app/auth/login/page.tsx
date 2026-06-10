@@ -1,8 +1,65 @@
 "use client";
 
+import { useEffect, useState } from "react";
+import { isPasskeySupported, loginWithPasskey } from "@/lib/passkey";
+
 const HUB_URL = process.env.NEXT_PUBLIC_HUB_URL || "http://localhost:8000";
 
 export default function LoginPage() {
+  const [passkeySupported, setPasskeySupported] = useState<boolean | null>(null);
+  const [showPasskeyDialog, setShowPasskeyDialog] = useState(false);
+  const [email, setEmail] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setPasskeySupported(isPasskeySupported());
+  }, []);
+
+  const handlePasskeyLogin = async () => {
+    if (!email.trim()) {
+      setError("กรุณากรอก email");
+      return;
+    }
+    setError(null);
+    setBusy(true);
+    try {
+      const result = await loginWithPasskey(email.trim());
+      // Persist JWT in httpOnly cookie via set-token route
+      const setRes = await fetch("/api/set-token", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({ token: result.access_token }),
+      });
+      if (!setRes.ok) {
+        const body = await setRes.json().catch(() => ({}));
+        throw new Error(body.error || "ไม่สามารถบันทึก session ได้");
+      }
+      // Full reload to clear RSC cache (same pattern as Google callback)
+      const dest = result.user.is_hub_admin ? "/dashboard" : "/developer/subsystems";
+      window.location.href = dest;
+    } catch (e) {
+      const msg =
+        e instanceof Error
+          ? e.message
+          : typeof e === "object" && e && "detail" in e
+            ? String((e as { detail: unknown }).detail)
+            : "Login ด้วย Passkey ไม่สำเร็จ";
+      // Friendly translation for common errors
+      let friendly = msg;
+      if (msg.includes("invalid_credential")) {
+        friendly = "ไม่พบ Passkey ที่ใช้ได้กับ email นี้";
+      } else if (msg.includes("challenge_expired")) {
+        friendly = "Session หมดอายุ กรุณาลองใหม่";
+      } else if (msg.includes("assertion_verify_failed")) {
+        friendly = "ตรวจ Passkey ไม่ผ่าน — credential อาจถูกแก้ไข";
+      }
+      setError(friendly);
+      setBusy(false);
+    }
+  };
+
   return (
     <main className="min-h-screen grid place-items-center bg-gradient-to-br from-ink-900 via-ink-800 to-brand-900 px-4">
       <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl overflow-hidden">
@@ -23,10 +80,80 @@ export default function LoginPage() {
             เข้าสู่ระบบ
           </h1>
           <p className="text-sm text-ink-500 mb-8">
-            สำหรับผู้ดูแลระบบ — ใช้บัญชี Google ที่ลงทะเบียนไว้กับ Hub
+            สำหรับผู้ดูแลระบบ — ใช้ Passkey หรือบัญชี Google ที่ลงทะเบียนไว้
           </p>
 
-          {/* Google login — บัญชีที่ Hub seed ไว้ตามทะเบียน */}
+          {/* Passkey login (Phase 2) — conditional on browser support */}
+          {passkeySupported && !showPasskeyDialog && (
+            <button
+              onClick={() => setShowPasskeyDialog(true)}
+              className="w-full flex items-center justify-center gap-3 px-4 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold transition mb-3"
+            >
+              <span className="text-xl">🔑</span>
+              <span>Sign in with Passkey</span>
+            </button>
+          )}
+
+          {/* Passkey email-first dialog */}
+          {showPasskeyDialog && (
+            <div className="mb-3 p-4 rounded-xl border-2 border-emerald-200 bg-emerald-50 space-y-3">
+              <div className="flex items-center justify-between">
+                <div className="font-semibold text-emerald-900">
+                  🔑 Sign in with Passkey
+                </div>
+                <button
+                  onClick={() => {
+                    setShowPasskeyDialog(false);
+                    setError(null);
+                    setEmail("");
+                  }}
+                  disabled={busy}
+                  className="text-emerald-700 hover:text-emerald-900 text-sm"
+                >
+                  ยกเลิก
+                </button>
+              </div>
+              <p className="text-xs text-emerald-800">
+                กรอก email ของคุณ แล้วระบบจะถาม biometric / security key
+              </p>
+              <input
+                type="email"
+                autoFocus
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="you@uni.ac.th"
+                disabled={busy}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && !busy) handlePasskeyLogin();
+                }}
+                className="w-full px-3 py-2 border border-emerald-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 bg-white"
+              />
+              {error && (
+                <div className="text-xs text-red-700 bg-red-50 border border-red-200 rounded p-2">
+                  {error}
+                </div>
+              )}
+              <button
+                onClick={handlePasskeyLogin}
+                disabled={busy || !email.trim()}
+                className={`w-full py-2.5 rounded-lg font-semibold transition ${
+                  busy || !email.trim()
+                    ? "bg-emerald-300 text-white cursor-not-allowed"
+                    : "bg-emerald-600 text-white hover:bg-emerald-700"
+                }`}
+              >
+                {busy ? "กำลังตรวจ Passkey…" : "ดำเนินการต่อ"}
+              </button>
+            </div>
+          )}
+
+          {passkeySupported === false && (
+            <div className="mb-3 p-3 text-xs text-amber-900 bg-amber-50 border border-amber-200 rounded-lg">
+              ⚠️ เบราว์เซอร์นี้ไม่รองรับ Passkey — กรุณาใช้ Google login แทน
+            </div>
+          )}
+
+          {/* Google login — fallback ทุก browser */}
           <a
             href={`${HUB_URL}/auth/google/login`}
             className="w-full flex items-center justify-center gap-3 px-4 py-3 rounded-xl bg-ink-900 hover:bg-ink-800 text-white font-semibold transition"
@@ -52,21 +179,13 @@ export default function LoginPage() {
             <span>Sign in with Google</span>
           </a>
 
-          {/* LINE login — alt IdP สำหรับ user ที่สะดวกใช้ LINE
-              ใช้ brand color #06C755 (LINE Green) + chat-bubble icon */}
-          <a
-            href={`${HUB_URL}/auth/line/login`}
-            className="mt-3 w-full flex items-center justify-center gap-3 px-4 py-3 rounded-xl bg-[#06C755] hover:bg-[#05A647] text-white font-semibold transition"
-          >
-            <svg width="20" height="20" viewBox="0 0 320 320" fill="currentColor">
-              <path d="M160 0C71.6 0 0 58.2 0 130c0 64.4 56.8 118.4 133.6 128.6 5.2 1.1 12.3 3.4 14.1 7.9 1.6 4 1 10.3.5 14.4l-2.3 13.6c-.7 4-3.2 15.7 13.7 8.6 17-7.1 91.3-53.7 124.5-92 23-25.2 33.9-50.7 33.9-79.1C320 58.2 248.4 0 160 0z" />
-              <path
-                d="M93 105h-6c-1.1 0-2 .9-2 2v40c0 1.1.9 2 2 2h6c1.1 0 2-.9 2-2v-40c0-1.1-.9-2-2-2zm44 0h-6c-1.1 0-2 .9-2 2v23.7L110.7 106c-.1 0-.1-.1-.2-.1l-.2-.2-.2-.1h-.2c-.1 0-.1-.1-.2-.1h-6.7c-1.1 0-2 .9-2 2v40c0 1.1.9 2 2 2h6c1.1 0 2-.9 2-2v-23.6l18.3 24.7c.1.2.3.3.4.4.1.1.2.1.2.2.1 0 .2.1.2.1h7.2c1.1 0 2-.9 2-2v-40c.1-1.1-.8-2.4-1.9-2.4zm-65 35.6h-17.5V107c0-1.1-.9-2-2-2h-6c-1.1 0-2 .9-2 2v40c0 .5.2 1 .6 1.4l.1.1c.4.3.8.5 1.4.5h25.5c1.1 0 2-.9 2-2v-6c0-1.1-.9-2.4-2.1-2.4zm103.2-25.6c1.1 0 2-.9 2-2v-6c0-1.1-.9-2-2-2h-25.6c-.5 0-1 .2-1.4.6l-.1.1c-.3.4-.5.8-.5 1.4v40c0 .5.2 1 .6 1.4l.1.1c.4.3.8.5 1.4.5h25.5c1.1 0 2-.9 2-2v-6c0-1.1-.9-2-2-2h-17.5v-6.8h17.5c1.1 0 2-.9 2-2v-6c0-1.1-.9-2-2-2h-17.5V115h17.5z"
-                fill="#06C755"
-              />
-            </svg>
-            <span>Sign in with LINE</span>
+          {/* LINE login — ปิดชั่วคราว (Q3 decision 2026-06-10)
+              email scope ยังแก้ไม่ตก, code อยู่ใน git/backend จะกลับมาเมื่อแก้ได้
+
+          <a href={`${HUB_URL}/auth/line/login`} className="mt-3 ...">
+            Sign in with LINE
           </a>
+          */}
 
           <div className="mt-6 text-xs text-ink-400 text-center">
             เฉพาะผู้ใช้ที่มีสิทธิ์ <code className="font-mono">is_hub_admin</code> เท่านั้น
@@ -75,7 +194,7 @@ export default function LoginPage() {
 
         <div className="px-8 py-5 bg-ink-50 border-t border-ink-100">
           <div className="text-xs text-ink-500 flex items-center justify-between">
-            <span>OAuth 2.0 · PKCE · JWT RS256</span>
+            <span>OAuth 2.0 · PKCE · JWT RS256 · WebAuthn</span>
             <span className="font-mono">v0.5.0</span>
           </div>
         </div>

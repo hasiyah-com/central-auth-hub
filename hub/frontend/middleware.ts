@@ -32,6 +32,11 @@ export function middleware(req: NextRequest) {
   if (
     pathname.startsWith("/auth/") ||
     pathname.startsWith("/api/set-token") ||
+    // Passkey login + recovery proxy — public flows (user ยังไม่มี token)
+    //   /api/proxy/auth/passkey/login/*   (Phase 2)
+    //   /api/proxy/auth/passkey/recover/* (Phase 4)
+    // แยกจาก /api/proxy/account/passkeys/* (register/manage) ที่ยังต้อง auth
+    pathname.startsWith("/api/proxy/auth/passkey/") ||
     pathname.startsWith("/_next") ||
     pathname === "/favicon.ico"
   ) {

@@ -1,0 +1,311 @@
+/**
+ * Passkey (WebAuthn) browser wrapper — Phase 1 (plan v3).
+ *
+ * Wraps `navigator.credentials.create()` with:
+ *   - base64URL <-> ArrayBuffer conversions (WebAuthn spec uses URL-safe b64 no-pad)
+ *   - Server JSON serialization (PublicKeyCredential.toJSON() helper)
+ *   - Feature detection (graceful fallback for old browsers)
+ *
+ * Auth flow (Phase 2) will add `loginWithPasskey()`.
+ * Step-up flow (Phase 5) will add `stepUpWithPasskey()`.
+ *
+ * Usage:
+ *   if (isPasskeySupported()) {
+ *     const result = await registerPasskey("MacBook Air");
+ *     if (result.backup_codes) showBackupCodesModal(result.backup_codes);
+ *   }
+ */
+
+import { clientFetch } from "./api";
+
+// ── Feature detection ──────────────────────────────────────────
+
+export function isPasskeySupported(): boolean {
+  return (
+    typeof window !== "undefined" &&
+    !!window.PublicKeyCredential &&
+    typeof navigator !== "undefined" &&
+    !!navigator.credentials &&
+    typeof navigator.credentials.create === "function"
+  );
+}
+
+// Detect platform authenticator (TouchID, Windows Hello, etc.)
+// Optional UX hint — does NOT affect security.
+export async function isPlatformAuthenticatorAvailable(): Promise<boolean> {
+  if (!isPasskeySupported()) return false;
+  try {
+    return await window.PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable();
+  } catch {
+    return false;
+  }
+}
+
+// ── base64URL helpers (no-pad, URL-safe) ───────────────────────
+
+export function b64urlToBuffer(b64url: string): ArrayBuffer {
+  const padded = b64url.replace(/-/g, "+").replace(/_/g, "/");
+  const pad = padded.length % 4 === 0 ? "" : "=".repeat(4 - (padded.length % 4));
+  const binary = atob(padded + pad);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes.buffer;
+}
+
+export function bufferToB64url(buffer: ArrayBuffer | Uint8Array): string {
+  const bytes =
+    buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
+  let binary = "";
+  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+// ── Types matching backend response ────────────────────────────
+
+interface PublicKeyCredentialCreationOptionsJSON {
+  challenge: string;
+  rp: { id: string; name: string };
+  user: { id: string; name: string; displayName: string };
+  pubKeyCredParams: { type: "public-key"; alg: number }[];
+  timeout?: number;
+  excludeCredentials?: { id: string; type: "public-key"; transports?: string[] }[];
+  authenticatorSelection?: {
+    authenticatorAttachment?: "platform" | "cross-platform";
+    residentKey?: "discouraged" | "preferred" | "required";
+    requireResidentKey?: boolean;
+    userVerification?: "discouraged" | "preferred" | "required";
+  };
+  attestation?: "none" | "indirect" | "direct" | "enterprise";
+}
+
+export interface RegisterFinishResult {
+  passkey_id: string;
+  device_name: string;
+  device_type: "platform" | "cross-platform" | null;
+  /** Only present on the FIRST registered Passkey (Improvement #3 — mandatory). */
+  backup_codes?: string[];
+  backup_codes_must_acknowledge?: boolean;
+}
+
+// ── Registration ──────────────────────────────────────────────
+
+function decodeCreationOptions(
+  opts: PublicKeyCredentialCreationOptionsJSON
+): PublicKeyCredentialCreationOptions {
+  return {
+    ...opts,
+    challenge: b64urlToBuffer(opts.challenge),
+    user: { ...opts.user, id: b64urlToBuffer(opts.user.id) },
+    excludeCredentials: (opts.excludeCredentials || []).map((c) => ({
+      ...c,
+      id: b64urlToBuffer(c.id),
+      transports: c.transports as AuthenticatorTransport[] | undefined,
+    })),
+  } as PublicKeyCredentialCreationOptions;
+}
+
+function encodeRegistrationCredential(cred: PublicKeyCredential): unknown {
+  const response = cred.response as AuthenticatorAttestationResponse;
+  const transports =
+    typeof response.getTransports === "function" ? response.getTransports() : [];
+  return {
+    id: cred.id,
+    rawId: bufferToB64url(cred.rawId),
+    type: cred.type,
+    authenticatorAttachment: cred.authenticatorAttachment,
+    response: {
+      attestationObject: bufferToB64url(response.attestationObject),
+      clientDataJSON: bufferToB64url(response.clientDataJSON),
+      transports,
+    },
+    clientExtensionResults: cred.getClientExtensionResults
+      ? cred.getClientExtensionResults()
+      : {},
+  };
+}
+
+/**
+ * Full registration ceremony.
+ * Calls backend /register/start → invokes WebAuthn → posts to /register/finish.
+ */
+export async function registerPasskey(
+  deviceName: string
+): Promise<RegisterFinishResult> {
+  if (!isPasskeySupported()) {
+    throw new Error("เบราว์เซอร์นี้ไม่รองรับ Passkey");
+  }
+  if (!deviceName?.trim()) {
+    throw new Error("กรุณาตั้งชื่ออุปกรณ์");
+  }
+
+  // 1. Begin — get challenge + options
+  const optionsJSON = await clientFetch<PublicKeyCredentialCreationOptionsJSON>(
+    "/account/passkeys/register/start",
+    { method: "POST", body: JSON.stringify({}) }
+  );
+
+  // 2. Browser ceremony
+  const options = decodeCreationOptions(optionsJSON);
+  let credential: PublicKeyCredential | null;
+  try {
+    credential = (await navigator.credentials.create({
+      publicKey: options,
+    })) as PublicKeyCredential | null;
+  } catch (e) {
+    // User cancelled / authenticator error — log + rethrow with friendlier msg
+    throw new Error(
+      `WebAuthn ceremony failed: ${
+        e instanceof Error ? e.message : String(e)
+      }`
+    );
+  }
+  if (!credential) throw new Error("ไม่ได้รับ credential จากเบราว์เซอร์");
+
+  // 3. Finish — verify on server + save
+  const payload = {
+    device_name: deviceName.trim(),
+    credential: encodeRegistrationCredential(credential),
+  };
+  return clientFetch<RegisterFinishResult>(
+    "/account/passkeys/register/finish",
+    { method: "POST", body: JSON.stringify(payload) }
+  );
+}
+
+// ── Backup codes acknowledge (Improvement #3) ─────────────────
+
+export async function acknowledgeBackupCodes(): Promise<{
+  acknowledged: boolean;
+  codes_marked: number;
+}> {
+  return clientFetch<{ acknowledged: boolean; codes_marked: number }>(
+    "/account/passkeys/backup-codes/acknowledge",
+    { method: "POST", body: JSON.stringify({}) }
+  );
+}
+
+export interface BackupCodesStatus {
+  generation: number;
+  total: number;
+  used: number;
+  remaining: number;
+  low: boolean;
+  acknowledged: boolean;
+}
+
+export async function fetchBackupCodesStatus(): Promise<BackupCodesStatus> {
+  return clientFetch<BackupCodesStatus>(
+    "/account/passkeys/backup-codes/status"
+  );
+}
+
+// ── Authentication (Phase 2 — email-first) ────────────────────
+
+interface PublicKeyCredentialRequestOptionsJSON {
+  challenge: string;
+  rpId?: string;
+  timeout?: number;
+  userVerification?: "discouraged" | "preferred" | "required";
+  allowCredentials?: {
+    id: string;
+    type: "public-key";
+    transports?: string[];
+  }[];
+}
+
+export interface LoginResult {
+  access_token: string;
+  token_type: "bearer";
+  user: {
+    id: string;
+    email: string;
+    full_name: string | null;
+    user_type: string | null;
+    is_hub_admin: boolean;
+  };
+  /** Counter-regression notice (Improvement #10) — not blocking, UI may show a subtle hint. */
+  notice?: "passkey_counter_regression";
+}
+
+function decodeRequestOptions(
+  opts: PublicKeyCredentialRequestOptionsJSON
+): PublicKeyCredentialRequestOptions {
+  return {
+    ...opts,
+    challenge: b64urlToBuffer(opts.challenge),
+    allowCredentials: (opts.allowCredentials || []).map((c) => ({
+      ...c,
+      id: b64urlToBuffer(c.id),
+      transports: c.transports as AuthenticatorTransport[] | undefined,
+    })),
+  } as PublicKeyCredentialRequestOptions;
+}
+
+function encodeAssertionCredential(cred: PublicKeyCredential): unknown {
+  const response = cred.response as AuthenticatorAssertionResponse;
+  return {
+    id: cred.id,
+    rawId: bufferToB64url(cred.rawId),
+    type: cred.type,
+    authenticatorAttachment: cred.authenticatorAttachment,
+    response: {
+      authenticatorData: bufferToB64url(response.authenticatorData),
+      clientDataJSON: bufferToB64url(response.clientDataJSON),
+      signature: bufferToB64url(response.signature),
+      userHandle: response.userHandle
+        ? bufferToB64url(response.userHandle)
+        : null,
+    },
+    clientExtensionResults: cred.getClientExtensionResults
+      ? cred.getClientExtensionResults()
+      : {},
+  };
+}
+
+/**
+ * Full Passkey login ceremony.
+ * Calls /login/start with email → invokes WebAuthn get() → /login/finish.
+ *
+ * Throws if browser doesn't support, user cancels, or backend rejects.
+ */
+export async function loginWithPasskey(email: string): Promise<LoginResult> {
+  if (!isPasskeySupported()) {
+    throw new Error("เบราว์เซอร์นี้ไม่รองรับ Passkey");
+  }
+  const trimmed = email.trim();
+  if (!trimmed) throw new Error("กรุณากรอก email");
+
+  // 1. Begin — get challenge + allowCredentials
+  const optionsJSON = await clientFetch<PublicKeyCredentialRequestOptionsJSON>(
+    "/auth/passkey/login/start",
+    { method: "POST", body: JSON.stringify({ email: trimmed }) }
+  );
+
+  // 2. Browser ceremony
+  const options = decodeRequestOptions(optionsJSON);
+  let credential: PublicKeyCredential | null;
+  try {
+    credential = (await navigator.credentials.get({
+      publicKey: options,
+    })) as PublicKeyCredential | null;
+  } catch (e) {
+    throw new Error(
+      `Passkey ceremony failed: ${
+        e instanceof Error ? e.message : String(e)
+      }`
+    );
+  }
+  if (!credential) throw new Error("ไม่ได้รับ credential จากเบราว์เซอร์");
+
+  // 3. Finish — verify + issue token
+  return clientFetch<LoginResult>(
+    "/auth/passkey/login/finish",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        email: trimmed,
+        credential: encodeAssertionCredential(credential),
+      }),
+    }
+  );
+}

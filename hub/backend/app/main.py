@@ -35,6 +35,7 @@ from app.routers import (  # noqa: E402
     secret,
     oauth,
     oidc,
+    passkey,
 )
 from app.services.jwt_service import get_jwks  # noqa: E402
 from app.services.request_id import RequestIdMiddleware  # noqa: E402
@@ -190,6 +191,8 @@ app.include_router(
 )
 # OIDC Discovery + UserInfo + Introspection (no prefix — root paths per OIDC spec)
 app.include_router(oidc.router, tags=["OIDC"])
+# Passkey / WebAuthn (Phase 1+ — plan v3)
+app.include_router(passkey.router, tags=["Passkey"])
 
 
 # ============ JWKS endpoint (OIDC discovery standard path) ============
