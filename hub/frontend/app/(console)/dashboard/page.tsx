@@ -32,11 +32,46 @@ const CATEGORY_LABELS: Record<string, { label: string; icon: string }> = {
   subsystem_health: { label: "Subsystem ล่ม", icon: "🟢" },
 };
 
+type HealthCheckResult = {
+  ok: boolean;
+  emitted?: boolean;
+  slot?: string;
+  date?: string;
+  subsystems?: number;
+  includes_hub_self_check?: boolean;
+  includes_api_alerts_summary?: boolean;
+};
+
 export default function DashboardPage() {
   const [data, setData] = useState<Overview | null>(null);
   const [counts, setCounts] = useState<UserCount | null>(null);
   const [notif, setNotif] = useState<NotifCount | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [hcBusy, setHcBusy] = useState(false);
+  const [hcResult, setHcResult] = useState<HealthCheckResult | null>(null);
+  const [hcError, setHcError] = useState<string | null>(null);
+
+  const runHealthCheckNow = async () => {
+    setHcBusy(true);
+    setHcError(null);
+    setHcResult(null);
+    try {
+      const res = await clientFetch<HealthCheckResult>(
+        "/admin/subsystems/health/emit-summary-now",
+        { method: "POST" }
+      );
+      setHcResult(res);
+      // refresh notification count ทันที (summary ใหม่จะโผล่ใน /notifications)
+      clientFetch<NotifCount>("/admin/notifications/count")
+        .then(setNotif)
+        .catch(() => {});
+    } catch (e) {
+      const err = e as { detail?: string };
+      setHcError(err.detail || "ตรวจสอบไม่สำเร็จ");
+    } finally {
+      setHcBusy(false);
+    }
+  };
 
   useEffect(() => {
     Promise.all([
@@ -72,6 +107,68 @@ export default function DashboardPage() {
         {!data && !error && (
           <div className="text-ink-400 text-sm">กำลังโหลด…</div>
         )}
+
+        {/* Action bar — ปุ่ม run health check + manual report */}
+        <div className="mb-6 flex flex-wrap items-center gap-3">
+          <button
+            onClick={runHealthCheckNow}
+            disabled={hcBusy}
+            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 disabled:bg-ink-300 disabled:cursor-not-allowed text-white text-sm font-bold shadow-sm hover:shadow transition"
+          >
+            {hcBusy ? (
+              <>
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  className="w-4 h-4 animate-spin"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                >
+                  <circle
+                    className="opacity-25"
+                    cx="12"
+                    cy="12"
+                    r="10"
+                    stroke="currentColor"
+                    strokeWidth="4"
+                  />
+                  <path
+                    className="opacity-75"
+                    fill="currentColor"
+                    d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"
+                  />
+                </svg>
+                <span>กำลังตรวจ…</span>
+              </>
+            ) : (
+              <>
+                <span className="text-lg">🩺</span>
+                <span>เช็คสุขภาพระบบตอนนี้</span>
+              </>
+            )}
+          </button>
+
+          {hcResult && hcResult.ok && (
+            <div className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs">
+              <span className="text-base">✓</span>
+              <span>
+                ตรวจเสร็จ — Hub + {hcResult.subsystems} subsystem
+              </span>
+              <Link
+                href="/notifications"
+                className="ml-1 font-bold underline hover:no-underline"
+              >
+                ดูรายงาน →
+              </Link>
+            </div>
+          )}
+
+          {hcError && (
+            <div className="inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-rose-50 border border-rose-200 text-rose-800 text-xs">
+              <span className="text-base">✗</span>
+              <span>{hcError}</span>
+            </div>
+          )}
+        </div>
 
         {/* Notifications Banner — แสดงเฉพาะถ้ามี unread ที่ admin ยังไม่ดู */}
         {notif && (notif.unread ?? 0) > 0 && (

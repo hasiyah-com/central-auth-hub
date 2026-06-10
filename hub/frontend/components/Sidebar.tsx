@@ -45,6 +45,7 @@ type NotifCount = {
     api_alerts?: number;
     subsystem_health?: number;
     admin_overrides?: number;
+    decided_requests?: number;
   };
 };
 

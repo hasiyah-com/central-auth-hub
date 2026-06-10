@@ -12,6 +12,7 @@ Endpoints:
   GET  /admin/audit                              -> audit log viewer (filtered, paginated)
 """
 
+import logging
 from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -43,6 +44,8 @@ from app.services.jwt_service import revoke_jti
 from app.services.webhook_dispatcher import send_access_revoked
 from app.services.subsystem_health import get_status as get_health_status
 from app.redis_client import redis_client
+
+log = logging.getLogger(__name__)
 
 
 # ============ Notification read state (Redis-backed per admin) ============
@@ -541,7 +544,12 @@ def subsystem_audit(
         raise HTTPException(status_code=404, detail="ไม่พบ subsystem")
 
     q = (
-        db.query(AuditLog, User.email)
+        db.query(
+            AuditLog,
+            User.email,
+            User.user_type,
+            User.is_hub_admin,
+        )
         .outerjoin(User, AuditLog.actor_id == User.id)
         .filter(
             AuditLog.target_type == "subsystem",
@@ -565,12 +573,14 @@ def subsystem_audit(
                 "id": str(log.id),
                 "actor_id": str(log.actor_id) if log.actor_id else None,
                 "actor_email": email,
+                "actor_user_type": user_type,
+                "actor_is_hub_admin": bool(is_admin),
                 "action": log.action,
                 "ip": str(log.ip) if log.ip else None,
                 "metadata": log.metadata_json,
                 "created_at": log.created_at.isoformat() if log.created_at else None,
             }
-            for log, email in rows
+            for log, email, user_type, is_admin in rows
         ],
     }
 
@@ -686,6 +696,24 @@ def revoke_session(
         except Exception as e:
             extra_actions["challenge_error"] = str(e)
 
+    # 4. Webhook ยิงก่อน log — เพื่อจับ delivery result ใส่ใน audit metadata
+    #    ("เตะออกจริงๆ" = subsystem confirm 200 OK)
+    webhook_delivered: bool | None = None
+    if subsystem and sess.user_id:
+        try:
+            webhook_delivered = send_access_revoked(
+                subsystem,
+                {
+                    "hub_user_id": str(sess.user_id),
+                    "revoked_by": str(admin.id),
+                    "reason": f"session_force_revoked_{level}",
+                },
+            )
+        except Exception as e:
+            log.warning("webhook send_access_revoked failed: %r", e)
+            webhook_delivered = False
+
+    # log #1 — target=login_session (สำหรับหน้า audit ของ session/user)
     log_action(
         db,
         actor_id=admin.id,
@@ -696,27 +724,38 @@ def revoke_session(
         metadata={
             "level": level,
             "user_id": str(sess.user_id) if sess.user_id else None,
+            "user_email": target_user.email if target_user else None,
             "subsystem_id": str(sess.subsystem_id) if sess.subsystem_id else None,
+            "subsystem_name": subsystem_name,
             "jti_revoked": revoked_jwt,
             "had_jti": sess.jti is not None,
+            "webhook_delivered": webhook_delivered,
             **extra_actions,
         },
     )
-    db.commit()
 
-    # 4. Webhook: บอก subsystem ให้ลบ local session ของ user คนนี้ทันที
-    if subsystem and sess.user_id:
-        try:
-            send_access_revoked(
-                subsystem,
-                {
-                    "hub_user_id": str(sess.user_id),
-                    "revoked_by": str(admin.id),
-                    "reason": f"session_force_revoked_{level}",
-                },
-            )
-        except Exception:
-            pass  # logged inside dispatcher
+    # log #2 — target=subsystem (เพื่อโผล่ในหน้า audit ของ subsystem นี้
+    # ให้เห็นว่ามี user คนไหนถูกเตะออก ใครเตะ เตะระดับไหน เตะสำเร็จไหม)
+    if subsystem:
+        log_action(
+            db,
+            actor_id=admin.id,
+            action=f"user_force_revoked_{level}",
+            target_type="subsystem",
+            target_id=subsystem.id,
+            ip=get_client_ip(request),
+            metadata={
+                "level": level,
+                "session_id": str(sess.id),
+                "user_id": str(sess.user_id) if sess.user_id else None,
+                "user_email": target_user.email if target_user else None,
+                "user_full_name": target_user.full_name if target_user else None,
+                "jti_revoked": revoked_jwt,
+                "webhook_delivered": webhook_delivered,
+                **extra_actions,
+            },
+        )
+    db.commit()
 
     # 5. Email user
     email_sent = False
@@ -837,6 +876,56 @@ def list_notifications(
         for req, sub_name, req_email in override_q.limit(20).all()
     ]
 
+    # 1c) Recent decisions (admin approve/reject dev's request, 24h)
+    #     ต่างจาก admin_overrides ตรงที่ผู้ขอ ≠ ผู้ review (มีคู่ dev+admin จริง)
+    # join reviewer แยกออกมาเพื่อแสดงว่า admin คนไหนเป็นคน decide
+    reviewer_alias = aliased(User)
+    decided_q = (
+        db.query(
+            SubsystemChangeRequest,
+            Subsystem.name.label("sub_name"),
+            User.email.label("req_email"),
+            reviewer_alias.email.label("reviewer_email"),
+        )
+        .join(Subsystem, Subsystem.id == SubsystemChangeRequest.subsystem_id)
+        .outerjoin(User, User.id == SubsystemChangeRequest.requested_by)
+        .outerjoin(
+            reviewer_alias, reviewer_alias.id == SubsystemChangeRequest.reviewer_id
+        )
+        .filter(
+            SubsystemChangeRequest.status.in_(("approved", "rejected")),
+            SubsystemChangeRequest.reviewed_at >= cutoff_24h,
+            # ตัดออกที่ admin auto-approve ตัวเอง (อันนั้นอยู่ใน admin_overrides แล้ว)
+            SubsystemChangeRequest.reviewer_id != SubsystemChangeRequest.requested_by,
+        )
+        .order_by(SubsystemChangeRequest.reviewed_at.desc())
+    )
+    decided_total = decided_q.count()
+    decided_items = [
+        {
+            "id": str(req.id),
+            "title": (
+                f"{'✅' if req.status == 'approved' else '❌'} "
+                f"{req.status.title()} · "
+                f"{req.request_type.replace('_', ' ').title()} · {sub_name}"
+            ),
+            "subtitle": (
+                f"requested by {req_email or 'unknown'} · "
+                f"decided by {reviewer_email or 'unknown'}"
+                + (f" · note: {req.reviewer_note}" if req.reviewer_note else "")
+            ),
+            "created_at": req.reviewed_at.isoformat() if req.reviewed_at else None,
+            "severity": "info" if req.status == "approved" else "warning",
+            "meta": {
+                "request_type": req.request_type,
+                "status": req.status,
+                "reviewer_note": req.reviewer_note,
+            },
+            "is_read": _is_read(admin.id, read_set, "decided_requests", str(req.id)),
+        }
+        for req, sub_name, req_email, reviewer_email in decided_q.limit(20).all()
+    ]
+
     # 2) ML anomaly — ใช้ threshold เดียวกับ Telegram alert
     #    (alert_ml_warning_threshold = 0.5 default · ตัวที่เห็นใน Telegram)
     ml_threshold = float(settings.alert_ml_warning_threshold)
@@ -899,6 +988,71 @@ def list_notifications(
         for a in api_q.limit(20).all()
     ]
 
+    # 3b) API alerts summary (เช้า/บ่าย/เย็น) — 3 ล่าสุดใน 24h
+    #     แสดงสถานะภาพรวมไม่ใช่ alert ด่วน
+    api_summary_rows = (
+        db.query(AuditLog)
+        .filter(
+            AuditLog.action == "api_alerts_summary",
+            AuditLog.created_at >= cutoff_24h,
+        )
+        .order_by(AuditLog.created_at.desc())
+        .limit(3)
+        .all()
+    )
+    for row in api_summary_rows:
+        meta = row.metadata_json or {}
+        label = meta.get("label") or "📋 รายงาน API"
+        total_alerts = meta.get("total", 0)
+        unresolved = meta.get("unresolved", 0)
+        by_sev = meta.get("by_severity") or {}
+        if total_alerts == 0:
+            subtitle = "✓ ไม่มี API alert ใน 24h"
+            sev = "info"
+        else:
+            sev_parts = []
+            if by_sev.get("critical"):
+                sev_parts.append(f"{by_sev['critical']} critical")
+            if by_sev.get("warning"):
+                sev_parts.append(f"{by_sev['warning']} warning")
+            if by_sev.get("info"):
+                sev_parts.append(f"{by_sev['info']} info")
+            subtitle = (
+                f"{total_alerts} alerts ใน 24h"
+                + (f" · {unresolved} unresolved" if unresolved else "")
+                + (" · " + " · ".join(sev_parts) if sev_parts else "")
+            )
+            sev = (
+                "critical"
+                if by_sev.get("critical", 0) > 0
+                else "warning"
+                if unresolved > 0
+                else "info"
+            )
+        api_total += 1
+        api_items.append(
+            {
+                "id": str(row.id),
+                "title": f"{label} · {meta.get('date', '')}",
+                "subtitle": subtitle,
+                "created_at": row.created_at.isoformat() if row.created_at else None,
+                "severity": sev,
+                "meta": {
+                    "kind": "api_summary",
+                    "slot": meta.get("slot"),
+                    "date": meta.get("date"),
+                    "total": total_alerts,
+                    "unresolved": unresolved,
+                    "resolved": meta.get("resolved"),
+                    "by_severity": by_sev,
+                    "top_rules": meta.get("top_rules"),
+                    "top_ips": meta.get("top_ips"),
+                    "window_hours": meta.get("window_hours"),
+                },
+                "is_read": _is_read(admin.id, read_set, "api_alerts", str(row.id)),
+            }
+        )
+
     # 4) Subsystem health (Redis cache: status != online)
     health_items: list[dict] = []
     health_total = 0
@@ -929,7 +1083,80 @@ def list_notifications(
                     }
                 )
 
-    total = pending_total + ml_total + api_total + health_total + override_total
+    # 4b) Health summaries (เช้า/บ่าย/เย็น) — สรุปการเช็คสุขภาพ 3 ช่วงต่อวัน
+    #     ดึงล่าสุด 3 entries จาก audit_logs (action=subsystem_health_summary)
+    #     เพื่อให้ admin รู้ว่าระบบเช็คสุขภาพทำงานปกติแม้ไม่มี subsystem ที่ down
+    summary_rows = (
+        db.query(AuditLog)
+        .filter(
+            AuditLog.action == "subsystem_health_summary",
+            AuditLog.created_at >= cutoff_24h,
+        )
+        .order_by(AuditLog.created_at.desc())
+        .limit(3)
+        .all()
+    )
+    for row in summary_rows:
+        meta = row.metadata_json or {}
+        counts = meta.get("counts") or {}
+        label = meta.get("label") or "รายงานสุขภาพ"
+        total_subs = meta.get("total", 0)
+        online = counts.get("online", 0)
+        degraded = counts.get("degraded", 0)
+        down = counts.get("down", 0)
+        unknown = counts.get("unknown", 0)
+        unhealthy = degraded + down
+        # severity ตามสภาพ
+        if down > 0:
+            sev = "critical"
+        elif degraded > 0:
+            sev = "warning"
+        else:
+            sev = "info"
+        # text สรุป — รวม Hub + subsystems
+        if unhealthy == 0 and unknown == 0:
+            subtitle = f"✓ ทุกระบบปกติ ({online}/{total_subs} online · รวม Hub)"
+        else:
+            parts = []
+            if online:
+                parts.append(f"{online} online")
+            if degraded:
+                parts.append(f"{degraded} degraded")
+            if down:
+                parts.append(f"{down} down")
+            if unknown:
+                parts.append(f"{unknown} unknown")
+            subtitle = (" · ".join(parts) if parts else "ไม่มีรายการ") + " (รวม Hub)"
+        health_total += 1
+        health_items.append(
+            {
+                "id": str(row.id),
+                "title": f"{label} · {meta.get('date', '')}",
+                "subtitle": subtitle,
+                "created_at": row.created_at.isoformat() if row.created_at else None,
+                "severity": sev,
+                "meta": {
+                    "kind": "health_summary",
+                    "slot": meta.get("slot"),
+                    "date": meta.get("date"),
+                    "counts": counts,
+                    "total": total_subs,
+                    "details": meta.get("details"),
+                },
+                "is_read": _is_read(
+                    admin.id, read_set, "subsystem_health", str(row.id)
+                ),
+            }
+        )
+
+    total = (
+        pending_total
+        + ml_total
+        + api_total
+        + health_total
+        + override_total
+        + decided_total
+    )
 
     # นับ unread per category — Sidebar badge ใช้ตัวนี้ (ลดลงเมื่อ admin กดอ่าน)
     def _unread(items: list[dict]) -> int:
@@ -938,6 +1165,7 @@ def list_notifications(
     unread_by_category = {
         "approval_requests": _unread(pending_items),
         "admin_overrides": _unread(override_items),
+        "decided_requests": _unread(decided_items),
         "ml_anomaly": _unread(ml_items),
         "api_alerts": _unread(api_items),
         "subsystem_health": _unread(health_items),
@@ -963,6 +1191,13 @@ def list_notifications(
                 "items": override_items,
                 "link": "/pending-requests",
             },
+            "decided_requests": {
+                "label": "ประวัติ approve/reject คำขอ (24h ล่าสุด)",
+                "icon": "📜",
+                "count": decided_total,
+                "items": decided_items,
+                "link": "/pending-requests",
+            },
             "ml_anomaly": {
                 "label": "ML Anomaly Login",
                 "icon": "🧠",
@@ -978,13 +1213,57 @@ def list_notifications(
                 "link": "/api-alerts",
             },
             "subsystem_health": {
-                "label": "Subsystem ล่ม / ช้า",
+                "label": "Subsystem health / รายงาน",
                 "icon": "🟢",
                 "count": health_total,
                 "items": health_items,
                 "link": "/subsystems",
             },
         },
+    }
+
+
+@router.post("/subsystems/health/emit-summary-now")
+async def emit_health_summary_now(
+    admin: User = Depends(require_hub_admin),
+    db: Session = Depends(get_db),
+):
+    """[Admin] บังคับสร้าง health summary ทันที (ไม่รอ slot 8/13/18).
+
+    Slot จะเซ็ตเป็น "manual-HHMMSS" + วันที่ปัจจุบัน — ไม่ชน mutex ของ slot ปกติ
+    Summary จะรวม Hub self-check + subsystems ทั้งหมด
+    """
+    import asyncio as _asyncio
+
+    from app.services.subsystem_health import (
+        BKK_TZ,
+        _emit_api_alerts_summary,
+        _emit_summary,
+        _ping,
+    )
+
+    subsystems = db.query(Subsystem).filter(Subsystem.status == "active").all()
+    # ping subsystems พร้อมกัน (Hub self-check จะถูกเรียกใน _emit_summary)
+    results = (
+        await _asyncio.gather(*[_ping(s) for s in subsystems]) if subsystems else []
+    )
+
+    now_bkk = datetime.now(BKK_TZ)
+    slot = f"manual-{now_bkk.strftime('%H%M%S')}"
+    label = "🧪 รายงาน (manual)"
+    date_str = now_bkk.strftime("%Y-%m-%d")
+
+    await _emit_summary(db, subsystems, list(results), slot, label, date_str)
+    _emit_api_alerts_summary(db, slot, label, date_str)
+
+    return {
+        "ok": True,
+        "emitted": True,
+        "slot": slot,
+        "date": date_str,
+        "subsystems": len(subsystems),
+        "includes_hub_self_check": True,
+        "includes_api_alerts_summary": True,
     }
 
 

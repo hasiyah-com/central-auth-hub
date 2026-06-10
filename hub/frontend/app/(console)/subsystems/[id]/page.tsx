@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Topbar } from "@/components/Topbar";
 import { DataTable, type Column } from "@/components/DataTable";
 import { Badge } from "@/components/Badge";
+import { SlidePanel } from "@/components/SlidePanel";
 import { clientFetch } from "@/lib/api";
 
 // ── Types ──────────────────────────────────────────────────
@@ -95,6 +96,8 @@ type AuditItem = {
   id: string;
   actor_id: string | null;
   actor_email: string | null;
+  actor_user_type: string | null;
+  actor_is_hub_admin: boolean;
   action: string;
   target_type: string;
   target_id: string | null;
@@ -182,6 +185,7 @@ export default function SubsystemDetailPage({
   const [whitelist, setWhitelist] = useState<WhitelistEntry[] | null>(null);
   const [whitelistError, setWhitelistError] = useState<string | null>(null);
   const [audit, setAudit] = useState<AuditItem[] | null>(null);
+  const [selectedAudit, setSelectedAudit] = useState<AuditItem | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const [newEmail, setNewEmail] = useState("");
@@ -817,13 +821,107 @@ export default function SubsystemDetailPage({
     },
   ];
 
+  // Action → friendly Thai label
+  const ACTION_LABELS: Record<string, string> = {
+    token_issued: "ออก JWT token",
+    oauth_authorized: "อนุญาต OAuth",
+    oauth_login_failed_not_in_whitelist: "บล็อก login (ไม่อยู่ใน whitelist)",
+    oauth_preflight_subsystem_down: "Preflight ล้มเหลว (subsystem ลง)",
+    subsystem_registered: "ลงทะเบียน subsystem",
+    subsystem_approved: "อนุมัติ subsystem",
+    subsystem_rejected: "ปฏิเสธ subsystem",
+    subsystem_suspended: "ระงับใช้งาน subsystem",
+    subsystem_resumed: "เปิดใช้งาน subsystem อีกครั้ง",
+    subsystem_updated: "แก้ไข subsystem",
+    subsystem_logout: "Logout จาก subsystem",
+    subsystem_owner_transferred: "โอนกรรมสิทธิ์ subsystem",
+    whitelist_user_added: "เพิ่ม user เข้า whitelist",
+    whitelist_user_removed: "ลบ user ออกจาก whitelist",
+    whitelist_user_restored: "คืน user เข้า whitelist",
+    whitelist_uploaded: "อัปโหลด whitelist (bulk)",
+    whitelist_role_changed: "เปลี่ยน role ของ user",
+    whitelist_role_change_requested: "ขอเปลี่ยน role (รออนุมัติ)",
+    whitelist_bulk_role_update: "เปลี่ยน role แบบ bulk",
+    whitelist_bulk_role_update_requested: "ขอเปลี่ยน role แบบ bulk (รออนุมัติ)",
+    client_secret_rotated: "หมุน client_secret", // pragma: allowlist secret
+    rotate_secret_requested: "ขอหมุน client_secret (รออนุมัติ)", // pragma: allowlist secret
+    secret_retrieved: "ดู client_secret", // pragma: allowlist secret
+    change_request_created: "สร้างคำขอ approval",
+    change_request_approved: "อนุมัติคำขอ",
+    change_request_rejected: "ปฏิเสธคำขอ",
+    change_request_admin_auto_approved: "Admin auto-approve",
+    user_force_revoked_notify: "🔔 บังคับ logout (แจ้ง)",
+    user_force_revoked_challenge: "🛡️ บังคับ logout (ต้อง confirm ก่อน login)",
+    user_force_revoked_ban: "🚫 บังคับ logout + แบนถาวร",
+  };
+  const labelFor = (action: string) => ACTION_LABELS[action] || action;
+
+  // build รายละเอียด from action + metadata
+  const detailFor = (a: AuditItem): string => {
+    const m = (a.metadata || {}) as Record<string, unknown>;
+    const userEmail = (m.user_email as string | undefined) || "";
+    const userName = (m.user_full_name as string | undefined) || "";
+    const wd = m.webhook_delivered as boolean | null | undefined;
+    const level = (m.level as string | undefined) || "";
+    const parts: string[] = [];
+    if (userEmail || userName) {
+      parts.push(`เป้าหมาย: ${userName || ""} ${userEmail ? `<${userEmail}>` : ""}`.trim());
+    }
+    if (a.action.startsWith("user_force_revoked_")) {
+      if (level) parts.push(`ระดับ: ${level}`);
+      if (wd === true) parts.push("✓ webhook ส่งถึง subsystem");
+      else if (wd === false) parts.push("✗ webhook ส่งไม่ถึง");
+    }
+    // whitelist_role_changed / bulk metadata
+    const removed = m.removed_user_id as string | undefined;
+    if (a.action === "whitelist_user_removed" && removed) {
+      parts.push(`user_id: ${removed.slice(0, 8)}…`);
+    }
+    const email = m.email as string | undefined;
+    const role = m.role as string | undefined;
+    if ((a.action === "whitelist_user_added" || a.action === "whitelist_user_restored") && email) {
+      parts.push(`${email}${role ? ` (${role})` : ""}`);
+    }
+    return parts.join(" · ") || "—";
+  };
+
+  // Role label + tone — hub_admin override > user_type
+  const roleInfoFor = (
+    a: AuditItem
+  ): { label: string; tone: "brand" | "good" | "warn" | "danger" | "default" } => {
+    if (a.actor_is_hub_admin) return { label: "Hub Admin", tone: "danger" };
+    const t = a.actor_user_type;
+    if (!t) return { label: "system", tone: "default" };
+    const map: Record<string, { label: string; tone: "brand" | "good" | "warn" | "danger" | "default" }> = {
+      admin: { label: "admin", tone: "danger" },
+      staff: { label: "staff", tone: "warn" },
+      teacher: { label: "teacher", tone: "brand" },
+      student: { label: "student", tone: "default" },
+    };
+    return map[t] || { label: t, tone: "default" };
+  };
+
+  const actionTone = (
+    action: string
+  ): "brand" | "good" | "warn" | "danger" | "default" => {
+    if (action.includes("approved") || action.includes("success")) return "good";
+    if (
+      action.includes("rejected") ||
+      action.includes("failed") ||
+      action.includes("blocked")
+    )
+      return "danger";
+    if (action.includes("login") || action.includes("token")) return "brand";
+    if (action.includes("revoked") || action.includes("suspended")) return "warn";
+    return "default";
+  };
+
   const auditCols: Column<AuditItem & Record<string, unknown>>[] = [
     {
       key: "created_at",
       header: "เวลา",
-      width: "170px",
       render: (a) => (
-        <span className="font-mono text-[11px] text-ink-500">
+        <span className="font-mono text-xs whitespace-nowrap">
           {a.created_at
             ? parseUTC(a.created_at).toLocaleString("th-TH", {
                 timeZone: "Asia/Bangkok",
@@ -840,27 +938,64 @@ export default function SubsystemDetailPage({
       ),
     },
     {
-      key: "action",
-      header: "Action",
-      render: (a) => (
-        <span className="font-mono text-xs font-semibold text-ink-900">
-          {a.action}
-        </span>
-      ),
-    },
-    {
       key: "actor_email",
       header: "ผู้กระทำ",
-      render: (a) => (
-        <span className="text-xs text-ink-700">{a.actor_email || "—"}</span>
-      ),
+      render: (a) =>
+        a.actor_email ? (
+          <span className="font-mono text-xs">{a.actor_email}</span>
+        ) : (
+          <span className="text-ink-400 italic text-xs">system</span>
+        ),
+    },
+    {
+      key: "actor_role",
+      header: "Role",
+      width: "110px",
+      render: (a) => {
+        const r = roleInfoFor(a);
+        return <Badge tone={r.tone}>{r.label}</Badge>;
+      },
+    },
+    {
+      key: "action",
+      header: "การกระทำ",
+      render: (a) => <Badge tone={actionTone(a.action)}>{a.action}</Badge>,
     },
     {
       key: "ip",
       header: "IP",
-      width: "130px",
       render: (a) => (
-        <span className="font-mono text-[11px] text-ink-500">{a.ip || "—"}</span>
+        <span className="font-mono text-xs">{a.ip || "—"}</span>
+      ),
+    },
+    {
+      key: "detail",
+      header: "รายละเอียด",
+      align: "right",
+      width: "150px",
+      render: (a) => (
+        <button
+          type="button"
+          onClick={() => setSelectedAudit(a)}
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-brand-200 bg-brand-50 hover:bg-brand-100 hover:border-brand-300 text-brand-700 text-xs font-semibold transition shadow-sm hover:shadow"
+          title="คลิกเพื่อดูรายละเอียดทั้งหมด"
+        >
+          <svg
+            xmlns="http://www.w3.org/2000/svg"
+            viewBox="0 0 20 20"
+            fill="currentColor"
+            className="w-3.5 h-3.5"
+            aria-hidden="true"
+          >
+            <path d="M10 12.5a2.5 2.5 0 100-5 2.5 2.5 0 000 5z" />
+            <path
+              fillRule="evenodd"
+              d="M.664 10.59a1.651 1.651 0 010-1.186A10.004 10.004 0 0110 3c4.257 0 7.893 2.66 9.336 6.41.147.381.146.804 0 1.186A10.004 10.004 0 0110 17c-4.257 0-7.893-2.66-9.336-6.41zM14 10a4 4 0 11-8 0 4 4 0 018 0z"
+              clipRule="evenodd"
+            />
+          </svg>
+          ดูรายละเอียด
+        </button>
       ),
     },
   ];
@@ -1721,8 +1856,245 @@ export default function SubsystemDetailPage({
           </div>
         </div>
       )}
+
+      {/* ── Audit detail slide panel ── */}
+      <SlidePanel
+        open={!!selectedAudit}
+        onClose={() => setSelectedAudit(null)}
+        title="รายละเอียด Audit Log"
+      >
+        {selectedAudit && (
+          <AuditDetailBody
+            entry={selectedAudit}
+            labelFor={labelFor}
+            detailFor={detailFor}
+          />
+        )}
+      </SlidePanel>
     </>
   );
+}
+
+function AuditRow({
+  label,
+  children,
+}: {
+  label: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-3 py-1 border-b border-ink-100 last:border-b-0">
+      <span className="text-[11px] text-ink-500 shrink-0">{label}</span>
+      <span className="text-right">{children}</span>
+    </div>
+  );
+}
+
+function AuditDetailBody({
+  entry,
+  labelFor,
+  detailFor,
+}: {
+  entry: AuditItem;
+  labelFor: (a: string) => string;
+  detailFor: (a: AuditItem) => string;
+}) {
+  const m = (entry.metadata || {}) as Record<string, unknown>;
+  const metaKeys = Object.keys(m);
+
+  const time = entry.created_at
+    ? parseUTC(entry.created_at).toLocaleString("th-TH", {
+        timeZone: "Asia/Bangkok",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hour12: false,
+      })
+    : "—";
+
+  // ตัด key พิเศษบางตัวมา highlight แยก
+  const userEmail = m.user_email as string | undefined;
+  const userName = m.user_full_name as string | undefined;
+  const userId = m.user_id as string | undefined;
+  const level = m.level as string | undefined;
+  const wd = m.webhook_delivered as boolean | null | undefined;
+  const jtiRevoked = m.jti_revoked as boolean | undefined;
+  const summary = detailFor(entry);
+
+  return (
+    <div className="space-y-5 text-sm">
+      {/* Header */}
+      <div>
+        <div className="text-xs text-ink-500 mb-1">Action</div>
+        <div className="text-base font-extrabold text-ink-900">
+          {labelFor(entry.action)}
+        </div>
+        <div className="font-mono text-[11px] text-ink-400 mt-0.5">
+          {entry.action}
+        </div>
+      </div>
+
+      {/* Summary chip */}
+      {summary && summary !== "—" && (
+        <div className="rounded-lg bg-ink-50 border border-ink-200 px-3 py-2 text-xs text-ink-700">
+          {summary}
+        </div>
+      )}
+
+      {/* Quick facts */}
+      <div className="grid grid-cols-1 gap-2">
+        <AuditRow label="เวลา (Asia/Bangkok)">
+          <span className="font-mono text-xs">{time}</span>
+        </AuditRow>
+        <AuditRow label="ผู้กระทำ (actor)">
+          <span className="text-xs">{entry.actor_email || "—"}</span>
+        </AuditRow>
+        <AuditRow label="Role">
+          {entry.actor_is_hub_admin ? (
+            <Badge tone="danger">Hub Admin</Badge>
+          ) : entry.actor_user_type ? (
+            <Badge
+              tone={
+                entry.actor_user_type === "admin"
+                  ? "danger"
+                  : entry.actor_user_type === "staff"
+                  ? "warn"
+                  : entry.actor_user_type === "teacher"
+                  ? "brand"
+                  : "default"
+              }
+            >
+              {entry.actor_user_type}
+            </Badge>
+          ) : (
+            <span className="text-xs text-ink-400 italic">system</span>
+          )}
+        </AuditRow>
+        <AuditRow label="IP">
+          <span className="font-mono text-xs">{entry.ip || "—"}</span>
+        </AuditRow>
+        <AuditRow label="Target">
+          <span className="text-xs">
+            <span className="font-mono">{entry.target_type}</span>
+            {entry.target_id && (
+              <span className="text-ink-500"> · {entry.target_id.slice(0, 12)}…</span>
+            )}
+          </span>
+        </AuditRow>
+      </div>
+
+      {/* User target (ถ้ามี) */}
+      {(userEmail || userName || userId) && (
+        <div>
+          <div className="text-xs font-bold text-ink-900 mb-2">👤 ผู้ใช้ที่เป็นเป้าหมาย</div>
+          <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 space-y-1.5">
+            {userName && (
+              <div className="text-xs">
+                <span className="text-ink-500">ชื่อ:</span>{" "}
+                <span className="font-semibold text-ink-900">{userName}</span>
+              </div>
+            )}
+            {userEmail && (
+              <div className="text-xs">
+                <span className="text-ink-500">Email:</span>{" "}
+                <span className="font-mono text-ink-900">{userEmail}</span>
+              </div>
+            )}
+            {userId && (
+              <div className="text-xs">
+                <span className="text-ink-500">User ID:</span>{" "}
+                <span className="font-mono text-ink-700">{userId}</span>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Outcome (force-revoke specific) */}
+      {entry.action.startsWith("user_force_revoked_") && (
+        <div>
+          <div className="text-xs font-bold text-ink-900 mb-2">🚨 ผลการเตะ</div>
+          <div className="grid grid-cols-1 gap-2">
+            {level && (
+              <AuditRow label="ระดับ">
+                <Badge
+                  tone={
+                    level === "ban"
+                      ? "danger"
+                      : level === "challenge"
+                      ? "warning"
+                      : "info"
+                  }
+                >
+                  {level.toUpperCase()}
+                </Badge>
+              </AuditRow>
+            )}
+            <AuditRow label="JWT ถูกบล็อก (jti revoked)">
+              <BoolPill v={jtiRevoked} />
+            </AuditRow>
+            <AuditRow label="Webhook ส่งถึง subsystem">
+              <BoolPill v={wd} unknownLabel="ไม่ได้ยิง" />
+            </AuditRow>
+            {m.whitelist_removed === true && (
+              <AuditRow label="ลบจาก whitelist">
+                <BoolPill v={true} />
+              </AuditRow>
+            )}
+            {m.challenge_created === true && (
+              <AuditRow label="สร้าง identity challenge">
+                <BoolPill v={true} />
+              </AuditRow>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Raw metadata (collapsible-ish) */}
+      {metaKeys.length > 0 && (
+        <details className="rounded-lg border border-ink-200 bg-ink-50 group">
+          <summary className="px-3 py-2 cursor-pointer text-xs font-semibold text-ink-700 hover:text-ink-900 list-none flex items-center justify-between">
+            <span>📋 Raw metadata ({metaKeys.length} fields)</span>
+            <span className="text-ink-400 group-open:rotate-90 transition-transform">▶</span>
+          </summary>
+          <pre className="px-3 py-2 border-t border-ink-200 bg-white text-[10px] font-mono text-ink-700 overflow-x-auto whitespace-pre-wrap break-all max-h-80 overflow-y-auto">
+            {JSON.stringify(m, null, 2)}
+          </pre>
+        </details>
+      )}
+
+      {/* IDs */}
+      <div className="border-t border-ink-200 pt-3 text-[10px] text-ink-400 font-mono space-y-0.5">
+        <div>audit_log_id: {entry.id}</div>
+        {entry.actor_id && <div>actor_id: {entry.actor_id}</div>}
+      </div>
+    </div>
+  );
+}
+
+function BoolPill({
+  v,
+  unknownLabel = "—",
+}: {
+  v: boolean | null | undefined;
+  unknownLabel?: string;
+}) {
+  if (v === true)
+    return (
+      <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700">
+        ✓ สำเร็จ
+      </span>
+    );
+  if (v === false)
+    return (
+      <span className="inline-flex items-center gap-1 text-xs font-semibold text-rose-700">
+        ✗ ไม่สำเร็จ
+      </span>
+    );
+  return <span className="text-xs text-ink-400">{unknownLabel}</span>;
 }
 
 function KpiCard({
@@ -1762,14 +2134,6 @@ function KpiCard({
   );
 }
 
-function FieldLabel({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="text-[11px] font-bold text-ink-500 uppercase tracking-wider mb-1.5">
-      {children}
-    </div>
-  );
-}
-
 function Field({
   label,
   value,
@@ -1791,6 +2155,14 @@ function Field({
       >
         {value}
       </div>
+    </div>
+  );
+}
+
+function FieldLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="text-[11px] font-bold text-ink-500 uppercase tracking-wider mb-1.5">
+      {children}
     </div>
   );
 }

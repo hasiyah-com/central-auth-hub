@@ -32,15 +32,28 @@ log = logging.getLogger(__name__)
 # Hub ใน container ถึง subsystem ใน container ต้องใช้ docker service name
 # ไม่ใช่ localhost ของ host machine
 _DEV_LOCALHOST_MAP = {
+    # Subsystems รันใน Docker compose stacks เดียวกัน → map ไป service name ตรงๆ
     ("localhost", "8001"): "subsystem-dorm:8000",
     ("127.0.0.1", "8001"): "subsystem-dorm:8000",
     ("localhost", "8002"): "subsystem-library:8000",
     ("127.0.0.1", "8002"): "subsystem-library:8000",
 }
 
+# port อะไรก็ตามที่ไม่อยู่ใน MAP ข้างบน + host เป็น localhost/127.0.0.1
+# → แสดงว่าน่าจะเป็น service บน Windows host (เช่น XAMPP Apache port 80,
+# Node.js dev server port 5000, ฯลฯ) ต้องแทน host เป็น host.docker.internal
+# เพื่อให้ container เข้าถึง host machine ได้
+# (Linux: ต้องเพิ่ม extra_hosts ใน compose — Windows/Mac: built-in)
+_HOST_GATEWAY = "host.docker.internal"
+_LOCALHOST_HOSTS = {"localhost", "127.0.0.1"}
+
 
 def _translate_for_docker(url: str) -> str:
-    """ใน dev mode ถ้า URL ชี้ไป localhost:PORT ของ host → map เป็น docker service name.
+    """ใน dev mode ถ้า URL ชี้ไป localhost ของ host → map ให้ container เข้าถึงได้.
+
+    1) Subsystem ที่รันใน docker compose เดียวกัน (8001/8002) → service-name
+    2) อื่นๆ ที่เป็น localhost (เช่น XAMPP port 80) → host.docker.internal
+       — เพื่อให้ Hub container ทะลุไปยัง Windows host machine ที่รัน XAMPP/Node/etc.
 
     Production: ไม่ทำ — ใช้ URL ตามที่ลงทะเบียน (HTTPS public domain)
     """
@@ -48,14 +61,23 @@ def _translate_for_docker(url: str) -> str:
         return url
     try:
         p = urlparse(url)
-        host = p.hostname or ""
+        host = (p.hostname or "").lower()
         port = str(p.port or "")
+        # 1) ถ้า match exact (subsystem ใน compose) → ใช้ service-name
         replacement = _DEV_LOCALHOST_MAP.get((host, port))
         if replacement:
-            new_netloc = replacement
-            # rebuild — เก็บ scheme/path/query เดิม
+            rebuilt = p._replace(netloc=replacement).geturl()
+            log.debug("webhook URL translated (svc): %s → %s", url, rebuilt)
+            return rebuilt
+        # 2) ถ้าเป็น localhost (เช่น XAMPP localhost:80 หรือ Node localhost:5000)
+        #    → แทน host เป็น host.docker.internal (เก็บ port เดิม)
+        if host in _LOCALHOST_HOSTS:
+            if port:
+                new_netloc = f"{_HOST_GATEWAY}:{port}"
+            else:
+                new_netloc = _HOST_GATEWAY  # default port ของ scheme (80/443)
             rebuilt = p._replace(netloc=new_netloc).geturl()
-            log.debug("webhook URL translated for docker: %s → %s", url, rebuilt)
+            log.debug("webhook URL translated (host-gw): %s → %s", url, rebuilt)
             return rebuilt
     except Exception:
         pass

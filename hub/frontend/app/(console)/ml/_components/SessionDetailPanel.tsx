@@ -117,23 +117,13 @@ export function SessionDetailPanel({ session, onFeedbackSaved, hideUserLink }: P
           </div>
         )}
 
-        {/* Risk Reasons — Layer 1 + 2 explicit rule hits */}
+        {/* Reasons (Layer 1 + 2) — bar style matching SHAP for visual parity.
+            Rules only fire when a signal is suspicious, so every bar here is
+            anomaly-direction by definition (no green). Hard blocks (IP
+            blacklist, impossible travel) have no numeric weight — render as
+            full-width red bars so they read as "maxed out". */}
         {session.risk_reasons && session.risk_reasons.length > 0 && (
-          <div className="mt-3 p-3 rounded-lg bg-ink-50 border border-ink-200">
-            <div className="text-[10px] font-bold text-ink-400 uppercase tracking-wider mb-1">
-              Reasons (Layer 1 + 2)
-            </div>
-            <div className="flex flex-wrap gap-1">
-              {session.risk_reasons.map((r, i) => (
-                <span
-                  key={i}
-                  className="px-2 py-0.5 rounded bg-ink-200 text-[11px] font-mono text-ink-700"
-                >
-                  {r}
-                </span>
-              ))}
-            </div>
-          </div>
+          <RuleBreakdown reasons={session.risk_reasons} />
         )}
 
         {/* SHAP — Layer 3 (IForest) per-feature contributions.
@@ -422,4 +412,154 @@ function ShapBreakdown({ items }: { items: ShapContribution[] }) {
 /** Display feature values nicely: integers show no decimal, floats show 2dp. */
 function fmtFeatureValue(v: number): string {
   return Number.isInteger(v) ? v.toString() : v.toFixed(2);
+}
+
+/** Parse a raw L1+2 reason string into structured parts so we can render it
+ *  with the same bar layout as SHAP. Formats this handles (see rule_engine.py
+ *  and behavior_profiling.py for source-of-truth):
+ *
+ *    "is_new_device (+0.30)"
+ *    "is_thailand=0 (+0.10)"
+ *    "failed_logins_24h>=3 (+0.20)"
+ *    "hours_diff=8.2 >= 6 (+0.20)"
+ *    "weekend_mismatch (+0.10)"
+ *    "multi_account_ip=7 > 5 (+0.25)"
+ *    "no_history (cold start)"                       ← no weight
+ *    "ip_blacklisted (203.0.113.42)"                 ← hard block, no weight
+ *    "impossible_travel: TH → US in 0.5h (< 1h)"     ← hard block
+ *    "country_change_count_30d=8 >= 8 (hard block)"  ← hard block
+ *    "skipped (hard block)"                          ← layer 2 skipped
+ */
+type ParsedReason = {
+  feature: string;
+  detail: string | null;
+  weight: number | null;
+  isHardBlock: boolean;
+};
+
+function parseReason(raw: string): ParsedReason {
+  const isHardBlock =
+    raw.includes("hard block") ||
+    raw.startsWith("ip_blacklisted") ||
+    raw.startsWith("impossible_travel");
+
+  // Pull off the trailing "(+0.XX)" weight if present
+  const weightMatch = raw.match(/\(\+(\d+(?:\.\d+)?)\)\s*$/);
+  const weight = weightMatch ? parseFloat(weightMatch[1]) : null;
+  let body = weightMatch ? raw.slice(0, weightMatch.index).trim() : raw.trim();
+
+  // Layer-2 "skipped" — leave as is
+  if (body.startsWith("skipped")) {
+    return { feature: "(layer skipped)", detail: null, weight: null, isHardBlock: true };
+  }
+
+  // "impossible_travel: TH → US in 0.5h (< 1h)"
+  if (body.startsWith("impossible_travel")) {
+    const colonIdx = body.indexOf(":");
+    return {
+      feature: "impossible_travel",
+      detail: colonIdx >= 0 ? body.slice(colonIdx + 1).trim() : null,
+      weight,
+      isHardBlock: true,
+    };
+  }
+
+  // "ip_blacklisted (203.0.113.42)" — feature only, detail in parens
+  if (body.startsWith("ip_blacklisted")) {
+    const m = body.match(/^ip_blacklisted\s*\(([^)]+)\)/);
+    return {
+      feature: "ip_blacklisted",
+      detail: m ? m[1] : null,
+      weight,
+      isHardBlock: true,
+    };
+  }
+
+  // Strip a trailing " (hard block)" marker so feature parse below stays clean
+  body = body.replace(/\s*\(hard block\)\s*$/, "").trim();
+
+  // Strip a trailing " (cold start)" marker (layer 2 cold start) and treat as
+  // a non-weighted reason
+  if (/\(cold start\)\s*$/.test(body)) {
+    return {
+      feature: body.replace(/\s*\(cold start\)\s*$/, "").trim() || "cold_start",
+      detail: "cold start",
+      weight,
+      isHardBlock: false,
+    };
+  }
+
+  // Generic: "feature[=value] [op threshold]" — feature is alnum/underscore at start
+  const featMatch = body.match(/^([A-Za-z_][A-Za-z0-9_]*)/);
+  const feature = featMatch ? featMatch[1] : body;
+  const rest = body.slice(feature.length).trim();
+  // Drop leading "=" or operator chars so detail reads cleanly
+  const detail = rest.replace(/^=\s*/, "").trim() || null;
+
+  return { feature, detail, weight, isHardBlock };
+}
+
+/** Layer 1 + 2 bar breakdown — visual mirror of ShapBreakdown.
+ *
+ *  Why bars (vs the old chips): admins need to scan WHICH features fired and
+ *  HOW MUCH each contributed. A row of chips makes them all look equal; bars
+ *  ranked by weight surface the dominant signal at a glance.
+ *
+ *  Sizing: bar width is `weight / maxWeight`. Hard-block reasons have no
+ *  numeric weight — they render full width because they alone can decide
+ *  the outcome.
+ */
+function RuleBreakdown({ reasons }: { reasons: string[] }) {
+  const parsed = reasons.map(parseReason);
+  // Max weight in the list — used to normalize bar widths. Falls back to 0.4
+  // (typical L1 weight) when no reason carries a number.
+  const maxWeight = Math.max(
+    ...parsed.map((p) => p.weight ?? 0),
+    0.001,
+  );
+
+  return (
+    <div className="mt-3 p-3 rounded-lg bg-rose-50/40 border border-rose-200">
+      <div className="text-[10px] font-bold text-rose-700 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+        <span>Reasons (Layer 1 + 2)</span>
+        <span
+          className="text-rose-400 font-normal normal-case tracking-normal"
+          title="Hard-coded rules + behavior profile hits. All bars are anomaly direction."
+        >
+          ({parsed.length})
+        </span>
+      </div>
+      <div className="space-y-1.5">
+        {parsed.map((p, i) => {
+          const pct = p.isHardBlock
+            ? 100
+            : p.weight != null
+              ? Math.round((p.weight / maxWeight) * 100)
+              : 50; // unknown weight — half bar so it's visible but not dominant
+          return (
+            <div key={i}>
+              <div className="flex items-baseline justify-between gap-2 mb-0.5">
+                <span className="text-[11px] font-mono text-ink-700 truncate">
+                  {p.feature}
+                  {p.detail && (
+                    <span className="ml-1.5 text-ink-400">= {p.detail}</span>
+                  )}
+                </span>
+                <span className="text-[10px] font-mono font-bold text-rose-600 whitespace-nowrap">
+                  {p.isHardBlock
+                    ? "HARD BLOCK"
+                    : p.weight != null
+                      ? `+${p.weight.toFixed(2)}`
+                      : "—"}
+                </span>
+              </div>
+              <div className="h-1.5 bg-ink-100 rounded-full overflow-hidden">
+                <div className="h-full bg-rose-500" style={{ width: `${pct}%` }} />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
 }
