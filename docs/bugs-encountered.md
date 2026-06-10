@@ -194,6 +194,22 @@
 - สาเหตุ: working ได้ทันที (Docker เห็นจากไฟล์ local) → ลืม commit → ถ้า reset/clone จะหาย
 - **กฎ:** หลังเพิ่ม service ใน docker-compose → `git status` ตรวจ + commit ทันที (ก่อน restart Docker)
 
+**B42. LINE Login + Authlib → `UnsupportedAlgorithmError` ที่ parse_id_token**
+- อาการ: หลัง redirect กลับ `/auth/line/callback` → 500 Internal Server Error → log: `authlib.jose.errors.UnsupportedAlgorithmError: unsupported_algorithm:` ที่ `oauth.line.authorize_access_token()`
+- สาเหตุ: LINE sign ID token ด้วย **HS256** (HMAC + channel secret) แต่ Authlib's default JWS registry รองรับแค่ **RS256** (Google/Microsoft ใช้แบบนั้น) → parse_id_token() ภายใน authorize_access_token() ตายตอน `_prepare_algorithm_key`
+- **กฎ:** สำหรับ LINE (และ IdP อื่นที่ใช้ HMAC algorithm) — bypass Authlib's auto parse_id_token:
+  1. ดึง `code` + `state` จาก query params เอง
+  2. POST ไป `https://api.line.me/oauth2/v2.1/token` ผ่าน `httpx` ตรงๆ
+  3. GET `https://api.line.me/oauth2/v2.1/userinfo` พร้อม Bearer access_token
+  4. State validation ใช้ session ที่ Authlib เก็บไว้ตอน `authorize_redirect` (key pattern `_state_<provider>_*`)
+- **Verify:** `curl -s https://access.line.me/.well-known/openid-configuration | jq .id_token_signing_alg_values_supported` → `["HS256", "ES256"]` ← ไม่มี RS256
+- **ทางเลือก:** ถ้าอยากใช้ Authlib's auto parse → register HS256 ใน JWS registry globally:
+  ```python
+  from authlib.jose.rfc7518.jws_algs import HS256
+  # อาจต้องใช้ JWS_ALGORITHMS.register(HS256()) หรือ patch ตามเวอร์ชั่น
+  ```
+  แต่ approach นี้ขัด security model ของ Authlib (HS256 ใน ID token = client_secret leak risk ถ้าหลุด) — ใช้ manual approach ดีกว่า
+
 ---
 
 ## วิธีเพิ่ม bug ใหม่

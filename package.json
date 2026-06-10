@@ -1,0 +1,17 @@
+{
+  "name": "central-auth-starter",
+  "version": "1.0.0",
+  "description": "ระบบจัดการสิทธิ์ผู้ใช้แบบศูนย์กลาง (Senior Project)",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs"
+  },
+  "scripts": {},
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@playwright/test": "^1.60.0",
+    "@types/node": "^25.9.2"
+  }
+}
