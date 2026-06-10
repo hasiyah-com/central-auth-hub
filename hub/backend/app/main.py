@@ -34,6 +34,7 @@ from app.routers import (  # noqa: E402
     developer,
     secret,
     oauth,
+    oidc,
 )
 from app.services.jwt_service import get_jwks  # noqa: E402
 from app.services.request_id import RequestIdMiddleware  # noqa: E402
@@ -187,6 +188,8 @@ app.include_router(
 app.include_router(
     ip_blacklist.router, prefix="/admin/ip-blacklist", tags=["Admin · IP Blacklist"]
 )
+# OIDC Discovery + UserInfo + Introspection (no prefix — root paths per OIDC spec)
+app.include_router(oidc.router, tags=["OIDC"])
 
 
 # ============ JWKS endpoint (OIDC discovery standard path) ============

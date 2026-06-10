@@ -31,7 +31,13 @@ from app.redis_client import redis_client
 from app.services.hooks import EVT_TOKEN_ISSUED, emit_nowait
 
 log = logging.getLogger(__name__)
-ISSUER = "https://hub.local"
+
+
+# iss claim — มาจาก settings.hub_issuer (configurable)
+# ใช้ผ่าน property function เพื่อให้ทดสอบ override ได้ + ไม่ต้อง restart
+def _issuer() -> str:
+    return settings.hub_issuer
+
 
 # ============ Revocation list (Redis) ============
 # Pattern: token's jti → key "jwt:revoked:{jti}" with TTL=remaining exp
@@ -145,7 +151,7 @@ def create_access_token(user, audience: str | None = None) -> tuple[str, str]:
     expire = now + timedelta(minutes=settings.jwt_access_token_expire_minutes)
     jti = uuid.uuid4().hex
     payload = {
-        "iss": ISSUER,
+        "iss": _issuer(),
         "sub": str(user.id),
         "aud": audience or settings.jwt_hub_audience,
         "iat": int(now.timestamp()),
@@ -187,7 +193,7 @@ def create_subsystem_token(
     expire = now + timedelta(minutes=settings.jwt_access_token_expire_minutes)
     jti = uuid.uuid4().hex
     payload = {
-        "iss": ISSUER,
+        "iss": _issuer(),
         "sub": str(user.id),
         "aud": client_id,
         "iat": int(now.timestamp()),
@@ -207,7 +213,31 @@ def create_subsystem_token(
         "phone": ("phone", user.phone),
         "address": ("address", user.address),
     }
+
+    # OIDC standard scope alias (OIDC Core 1.0 §5.4)
+    #   openid  = marker (ไม่ map field)
+    #   profile = expand → 7 Hub field
+    #   email   = passthrough (ใช้ตรงๆ ใน Hub แล้ว)
+    effective_scope: set[str] = set()
     for s in scope:
+        if s == "openid":
+            continue  # marker — no field
+        if s == "profile":
+            effective_scope.update(
+                {
+                    "name",
+                    "student_id",
+                    "employee_id",
+                    "faculty",
+                    "major",
+                    "year",
+                    "position",
+                }
+            )
+            continue
+        effective_scope.add(s)
+
+    for s in effective_scope:
         if s in scope_field_map:
             k, v = scope_field_map[s]
             payload[k] = v
@@ -259,7 +289,7 @@ def verify_token(token: str, audience: str | None = None) -> dict:
         pub_pem,
         algorithms=["RS256"],
         audience=expected_aud,
-        issuer=ISSUER,
+        issuer=_issuer(),
         options={"verify_aud": True, "verify_iss": True, "verify_exp": True},
     )
     # Revocation check — หลัง decode ผ่านถึงจะตรวจ

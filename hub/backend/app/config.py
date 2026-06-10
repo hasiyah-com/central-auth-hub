@@ -48,6 +48,13 @@ class Settings(BaseSettings):
     # audience ของ token ที่ Hub ออกใช้กับ Hub เอง (กัน subsystem token ใช้ที่ Hub)
     jwt_hub_audience: str = "hub.internal"
 
+    # OIDC issuer identifier — ใส่ใน `iss` claim ของ JWT และใน
+    # /.well-known/openid-configuration (issuer field — RFC 8414 §3)
+    # ต้องตรงกันทุกที่: JWT iss = Discovery issuer = subsystem verify issuer
+    # Default = "https://hub.local" (ไม่ทำให้ token เก่าที่ออกใช้แล้ว invalid)
+    # Production: ตั้งเป็น public URL เช่น "https://hub.uni.ac.th"
+    hub_issuer: str = "https://hub.local"
+
     # Google OAuth
     google_client_id: str = ""
     google_client_secret: str = ""
@@ -126,6 +133,28 @@ class Settings(BaseSettings):
     # >= warning → severity=warning (filter ด้วย alert_min_severity)
     alert_ml_critical_threshold: float = 0.70
     alert_ml_warning_threshold: float = 0.50
+
+    # ── WebAuthn / Passkey (Phase 0 — Foundation, plan v3) ──
+    # RP ID = domain ที่ Passkey ผูกอยู่ (cryptographically bound — เปลี่ยน = invalidate ทั้งหมด)
+    # Dev: "localhost" (WebAuthn spec ยอมรับ — ไม่ต้อง HTTPS)
+    # Staging: "auth-dev.uni.ac.th"
+    # Prod: "auth.uni.ac.th"
+    webauthn_rp_id: str = "localhost"
+    webauthn_rp_name: str = "Central Auth Hub"
+    # Origin allowlist (comma-separated) — รองรับ subdomain
+    # Dev: "http://localhost:3000"
+    # Prod: "https://auth.uni.ac.th,https://staff.auth.uni.ac.th"
+    webauthn_origins: str = "http://localhost:3000"
+    webauthn_challenge_ttl_sec: int = 300  # 5 นาที
+    webauthn_backup_codes_count: int = 10
+    webauthn_max_passkeys_per_user: int = 10  # Improvement #9 (review บอก 5 — ขอแก้)
+
+    # ── Step-up Authentication Cache (Improvement #2) ──
+    # Trusted session window หลัง verify Passkey/OTP — bypass critical action ภายในช่วงนี้
+    # Q7 (locked): 15 นาที default, env-configurable
+    stepup_cache_ttl_sec: int = 900
+    # Improvement #10 — counter regression boost risk score (ไม่ block)
+    stepup_counter_regression_risk_boost: float = 0.2
 
     def validate_production(self) -> None:
         """fail-fast ถ้า prod ยังใช้ default ที่ไม่ปลอดภัย."""

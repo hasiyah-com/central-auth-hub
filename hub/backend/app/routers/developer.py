@@ -35,7 +35,16 @@ from app.services.secret_service import (
 router = APIRouter()
 
 # scope ที่อนุญาตให้ subsystem ขอได้
+# - Hub-specific: email, name, student_id, employee_id, faculty, major, year, position, phone, address
+# - OIDC standard alias (OIDC Core 1.0 §5.4):
+#     openid  = marker (ไม่ map field — แสดงว่าใช้ OIDC flow)
+#     profile = expand → name, student_id, employee_id, faculty, major, year, position
+#     email   = email (อยู่แล้วใน list)
 ALLOWED_SCOPES = {
+    # OIDC standard
+    "openid",
+    "profile",
+    # Hub-specific (compatible กับ OIDC `email`)
     "email",
     "name",
     "student_id",

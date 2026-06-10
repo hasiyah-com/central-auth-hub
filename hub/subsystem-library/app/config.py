@@ -41,9 +41,13 @@ class Settings(BaseSettings):
     hub_webhook_shared_key: str = ""
     webhook_max_age_sec: int = 300
 
+    # OIDC issuer ที่ Hub ออก JWT — ต้องตรงกับ settings.hub_issuer ของ Hub
+    # ถ้า Hub เปลี่ยน issuer เป็น public URL ต้องเปลี่ยน LIBRARY_HUB_ISSUER=... ด้วย
+    hub_issuer: str = "https://hub.local"
+
     @property
     def jwt_issuer(self) -> str:
-        return "https://hub.local"
+        return self.hub_issuer
 
     # B6: fail-fast ถ้า production ยังใช้ default ที่ไม่ปลอดภัย
     @model_validator(mode="after")
