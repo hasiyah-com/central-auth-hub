@@ -40,6 +40,10 @@ httpx==0.27.2
 # ============ GeoIP (MaxMind GeoLite2 offline lookup) ============
 geoip2==4.8.0
 
+# ============ WebAuthn / Passkey (FIDO Alliance reference impl) ============
+# Used in Phase 1+ — registration + authentication ceremony
+webauthn==2.5.0
+
 # ============ Seed data ============
 faker==30.8.2
 

@@ -9,6 +9,7 @@ Flow (Week 2 — Hub <-> Google เท่านั้น ยังไม่ร�
 
 from datetime import datetime
 
+import httpx
 from authlib.integrations.starlette_client import OAuth, OAuthError
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
@@ -78,20 +79,46 @@ async def google_login(request: Request):
 
 
 # ============line================
+# LINE Login: build authorize URL เอง ไม่พึ่ง Authlib's authorize_redirect
+# เพราะ Authlib + LINE OIDC discovery ตีกัน — scope "email" ถูกตัดออก
+# (LINE metadata อาจ override หรือ Authlib normalize scope ไม่ตรง)
+# Manual approach: เราคุม scope string เอง 100%
 @router.get("/line/login")
 @limiter.limit(settings.rate_limit_login)
 async def line_login(request: Request):
     """พาผู้ใช้ไปหน้า login ของ LINE. (rate-limited per-IP)"""
+    import secrets
+    from urllib.parse import urlencode
+
     await emit(
         EVT_LOGIN_PRE,
         {
             "ip": get_client_ip(request),
             "user_agent": request.headers.get("user-agent"),
-            "provider": "line",  # ← เพิ่ม field เพื่อ track ว่ามาจาก IdP ไหน
+            "provider": "line",
         },
     )
-    redirect_uri = settings.line_redirect_uri
-    return await oauth.line.authorize_redirect(request, redirect_uri)
+
+    # state + nonce สำหรับ CSRF protection — เก็บใน session ให้ /line/callback ตรวจ
+    state = secrets.token_urlsafe(24)
+    nonce = secrets.token_urlsafe(24)
+    request.session["_line_state"] = state
+    request.session["_line_nonce"] = nonce
+
+    params = {
+        "response_type": "code",
+        "client_id": settings.line_client_id,
+        "redirect_uri": settings.line_redirect_uri,
+        "state": state,
+        # ลำดับ scope ตาม LINE official docs — space separated, email มาก่อนเสมอ
+        # ดู: https://developers.line.biz/en/docs/line-login/integrate-line-login/#making-an-authorization-request
+        "scope": "openid profile email",
+        "nonce": nonce,
+        # bot_prompt: ไม่เปิด LINE Bot integration → "normal"
+        "bot_prompt": "normal",
+    }
+    authorize_url = "https://access.line.me/oauth2/v2.1/authorize?" + urlencode(params)
+    return RedirectResponse(authorize_url, status_code=302)
 
 
 # ============ 2. Google callback — ออก JWT ============
@@ -476,17 +503,76 @@ async def google_callback(request: Request, db: Session = Depends(get_db)):
 
 
 # =============2.1 line callback==============
+# LINE Login quirk: ID token ถูก sign ด้วย HS256 (HMAC + channel secret)
+# Authlib's authorize_access_token() พยายาม parse ID token ด้วย RS256 ก่อน
+# → ขึ้น UnsupportedAlgorithmError (ดู B42 ใน docs/bugs-encountered.md)
+# Workaround: exchange code + ดึง userinfo จาก LINE REST API โดยตรง
+# (state validation ยังใช้ session ที่ Authlib เก็บไว้ตอน /line/login)
 @router.get("/line/callback")
 @limiter.limit(settings.rate_limit_login)
 async def line_callback(request: Request, db: Session = Depends(get_db)):
     """LINE ส่งผู้ใช้กลับมาที่นี่พร้อม authorization code. (rate-limited per-IP)"""
-    try:
-        token = await oauth.line.authorize_access_token(request)
-    except OAuthError as e:
-        raise HTTPException(status_code=400, detail=f"OAuth ล้มเหลว: {e.error}")
+    code = request.query_params.get("code")
+    state = request.query_params.get("state")
+    error = request.query_params.get("error")
+    if error:
+        raise HTTPException(
+            status_code=400,
+            detail=f"LINE ปฏิเสธ: {error} — {request.query_params.get('error_description', '')}",
+        )
+    if not code:
+        raise HTTPException(
+            status_code=400, detail="LINE ไม่ส่ง authorization code กลับมา"
+        )
 
-    # ข้อมูล user จาก LINE (OIDC userinfo)
-    userinfo = token.get("userinfo")
+    # 1) Verify state ที่ /line/login เก็บใน session เอง (ไม่ใช่ Authlib)
+    stored_state = request.session.pop("_line_state", None)
+    if not stored_state or stored_state != state:
+        raise HTTPException(
+            status_code=400, detail="OAuth state ไม่ถูกต้อง (CSRF protection)"
+        )
+
+    # 2) Exchange code → access_token (ผ่าน LINE token endpoint)
+    async with httpx.AsyncClient(timeout=10) as http:
+        token_resp = await http.post(
+            "https://api.line.me/oauth2/v2.1/token",
+            data={
+                "grant_type": "authorization_code",
+                "code": code,
+                "redirect_uri": settings.line_redirect_uri,
+                "client_id": settings.line_client_id,
+                "client_secret": settings.line_client_secret,
+            },
+        )
+        if token_resp.status_code != 200:
+            raise HTTPException(
+                status_code=400,
+                detail=f"LINE token exchange ล้มเหลว: {token_resp.text[:200]}",
+            )
+        token = token_resp.json()
+
+        # 3) ดึง userinfo (OIDC standard endpoint — รับ access_token ไม่ใช่ ID token)
+        userinfo_resp = await http.get(
+            "https://api.line.me/oauth2/v2.1/userinfo",
+            headers={"Authorization": f"Bearer {token['access_token']}"},
+        )
+        if userinfo_resp.status_code != 200:
+            raise HTTPException(
+                status_code=400,
+                detail=f"LINE userinfo ดึงไม่สำเร็จ: {userinfo_resp.text[:200]}",
+            )
+        userinfo = userinfo_resp.json()
+
+    # DEBUG (ลบทีหลัง): log keys ที่ LINE ส่งกลับมา — ช่วยระบุว่า email หายไปทำไม
+    import logging as _logging
+
+    _logging.getLogger(__name__).warning(
+        "[LINE_DEBUG] userinfo keys=%s, has_email=%s, scope_in_token=%s",
+        list(userinfo.keys()),
+        "email" in userinfo,
+        token.get("scope"),
+    )
+
     if not userinfo:
         raise HTTPException(status_code=400, detail="ไม่ได้รับข้อมูลจาก LINE")
 

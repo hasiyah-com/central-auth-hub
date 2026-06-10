@@ -9,13 +9,14 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Integer,
+    LargeBinary,
     String,
     Text,
     UniqueConstraint,
     JSON,
     Numeric,
 )
-from sqlalchemy.dialects.postgresql import UUID, ARRAY, INET
+from sqlalchemy.dialects.postgresql import UUID, ARRAY, INET, JSONB
 
 from app.database import Base
 
@@ -53,6 +54,15 @@ class User(Base):
         String(20), default="active", index=True
     )  # active/suspended/deleted
     is_hub_admin = Column(Boolean, default=False)
+
+    # Email verification (Phase 0 — Passkey plan v3, Decision #10)
+    # ทุก user ต้องมี email verified ก่อนใช้ระบบ (recovery channel)
+    # Backfill = true สำหรับ user ที่เคย login Google (Google verify ให้)
+    email_verified = Column(
+        Boolean, default=False, nullable=False, server_default="false"
+    )
+    email_verified_at = Column(DateTime, nullable=True)
+
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
@@ -336,3 +346,92 @@ class IpBlacklist(Base):
     reason = Column(Text, nullable=True)
     added_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+
+
+class PasskeyCredential(Base):
+    """WebAuthn / FIDO2 Passkey credential (Phase 1 — plan v3).
+
+    1 user → N devices (TouchID, Windows Hello, YubiKey, Mobile-as-key ฯลฯ).
+    Public key + sign_count เป็นมาตรฐาน WebAuthn — เก็บเป็น bytea.
+
+    Soft delete via revoked_at (audit trail). active credential = revoked_at IS NULL.
+    """
+
+    __tablename__ = "passkey_credentials"
+
+    id = uuid_pk()
+    user_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+
+    # WebAuthn standard (binary)
+    credential_id = Column(LargeBinary, unique=True, nullable=False, index=True)
+    public_key = Column(LargeBinary, nullable=False)
+    sign_count = Column(Integer, nullable=False, default=0)
+    aaguid = Column(UUID(as_uuid=True), nullable=True)  # authenticator GUID
+    transports = Column(
+        ARRAY(String), nullable=False, server_default="{}"
+    )  # ['usb','nfc','ble','internal','hybrid']
+
+    # User-facing metadata (Improvement #4 — lifecycle)
+    device_name = Column(String(100), nullable=False)  # user-typed
+    device_type = Column(String(50), nullable=True)  # 'platform' | 'cross-platform'
+    nickname_history = Column(
+        JSONB, nullable=False, server_default="[]"
+    )  # [{from, to, at}]
+
+    # Timestamps
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    last_used_at = Column(DateTime, nullable=True)
+    last_used_ip = Column(INET, nullable=True)
+    last_used_user_agent = Column(Text, nullable=True)
+    revoked_at = Column(DateTime, nullable=True, index=True)
+    revoked_reason = Column(
+        String(50), nullable=True
+    )  # user_deleted | admin_reset | backup_recovery | email_recovery
+
+    # Attestation flags (from authenticator)
+    backup_eligible = Column(Boolean, nullable=True)
+    backup_state = Column(Boolean, nullable=True)
+
+    # Improvement #10 — counter monitoring
+    counter_regression_count = Column(Integer, nullable=False, default=0)
+    last_counter_regression_at = Column(DateTime, nullable=True)
+
+
+class PasskeyBackupCode(Base):
+    """One-time backup codes สำหรับ recovery (Phase 1 — plan v3, Improvement #3).
+
+    10 codes ต่อ user (สร้างครั้งเดียวตอน register Passkey แรก — mandatory).
+    เก็บ Argon2id hash เท่านั้น — show plaintext แค่ครั้งเดียวตอนสร้าง.
+
+    Regenerate ทั้ง batch: increment ``generation`` + insert ใหม่ 10 rows
+    (rows เก่า generation ต่ำกว่า = invalid โดย business logic).
+    """
+
+    __tablename__ = "passkey_backup_codes"
+
+    id = uuid_pk()
+    user_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    code_hash = Column(Text, nullable=False)  # Argon2id
+
+    # Usage tracking
+    used_at = Column(DateTime, nullable=True)
+    used_ip = Column(INET, nullable=True)
+    used_user_agent = Column(Text, nullable=True)
+
+    # Batch tracking — regenerate = generation += 1
+    generation = Column(Integer, nullable=False, default=1)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    # Improvement #3 — Mandatory acknowledge before close modal
+    # NULL = user ยังไม่ confirm "I saved my codes"
+    acknowledged_at = Column(DateTime, nullable=True)
