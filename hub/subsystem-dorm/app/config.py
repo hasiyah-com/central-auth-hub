@@ -37,10 +37,15 @@ class Settings(BaseSettings):
     # tolerance สำหรับ X-Hub-Timestamp (วินาที) — กัน replay attack
     webhook_max_age_sec: int = 300
 
+    # OIDC issuer ที่ Hub ออก JWT — ต้องตรงกับ settings.hub_issuer ของ Hub
+    # ถ้า Hub เปลี่ยน issuer เป็น public URL (เช่น https://hub.uni.ac.th)
+    # subsystem ต้องเปลี่ยนตามผ่าน env var DORM_HUB_ISSUER=...
+    hub_issuer: str = "https://hub.local"
+
     @property
     def jwt_issuer(self) -> str:
-        """Issuer ใน JWT ที่ Hub ออก (คงที่)."""
-        return "https://hub.local"
+        """Issuer ใน JWT ที่ Hub ออก — sync กับ Hub via env."""
+        return self.hub_issuer
 
     # ── D6 FIX: production config validation (fail-fast) ──────────────────
     @model_validator(mode="after")

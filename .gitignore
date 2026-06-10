@@ -66,3 +66,30 @@ hub/backend/tmp_*.py
 # ============ GeoIP database (download separately, large binary) ============
 hub/backend/data/*.mmdb
 hub/frontend/tsconfig.tsbuildinfo
+
+# Playwright
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
+/playwright/.auth/
+
+# ============ SDK build artifacts ============
+# PHP
+hub/sdk/php-client/vendor/
+hub/sdk/php-client/composer.phar
+hub/sdk/php-client/.phpunit.result.cache
+
+# Node
+hub/sdk/node-client/node_modules/
+hub/sdk/node-client/dist/
+hub/sdk/node-client/package-lock.json
+
+# Python
+hub/sdk/python-client/build/
+hub/sdk/python-client/dist/
+hub/sdk/python-client/src/*.egg-info/
+
+# Go
+hub/sdk/auth-proxy/proxy
+hub/sdk/auth-proxy/proxy.exe
