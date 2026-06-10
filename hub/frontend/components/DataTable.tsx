@@ -5,6 +5,7 @@ export type Column<T> = {
   header: string;
   render?: (row: T) => React.ReactNode;
   width?: string;
+  align?: "left" | "right" | "center";
 };
 
 type Props<T> = {
@@ -28,7 +29,13 @@ export function DataTable<T extends Record<string, unknown>>({
                 <th
                   key={col.key}
                   style={col.width ? { width: col.width } : undefined}
-                  className="px-4 py-3 text-left text-[11px] font-bold text-ink-500 uppercase tracking-wider"
+                  className={`px-4 py-3 text-[11px] font-bold text-ink-500 uppercase tracking-wider ${
+                    col.align === "right"
+                      ? "text-right"
+                      : col.align === "center"
+                      ? "text-center"
+                      : "text-left"
+                  }`}
                 >
                   {col.header}
                 </th>
@@ -49,7 +56,16 @@ export function DataTable<T extends Record<string, unknown>>({
               rows.map((row, i) => (
                 <tr key={i} className="hover:bg-ink-50/50 transition">
                   {columns.map((col) => (
-                    <td key={col.key} className="px-4 py-3 text-ink-700">
+                    <td
+                      key={col.key}
+                      className={`px-4 py-3 text-ink-700 ${
+                        col.align === "right"
+                          ? "text-right"
+                          : col.align === "center"
+                          ? "text-center"
+                          : ""
+                      }`}
+                    >
                       {col.render
                         ? col.render(row)
                         : String(row[col.key] ?? "—")}

@@ -66,6 +66,10 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-hub}:${POSTGRES_PASSWORD:-devpassword}@postgres:5432/${POSTGRES_DB:-hub_db}
       REDIS_URL: redis://redis:6379/0
+    # Linux ต้อง map host.docker.internal เอง (Windows/Mac มี built-in อยู่แล้ว)
+    # ใช้ตอน subsystem รันบน Windows host (XAMPP Apache port 80, Node dev server ฯลฯ)
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "8000:8000"
     depends_on:
