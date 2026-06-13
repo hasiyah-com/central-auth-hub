@@ -231,13 +231,18 @@ async def oauth_callback(
         # Enforce Mode: ทำตาม ML จริง
         actual_decision = ml_decision
 
-    # 4) บันทึก login session พร้อม score + decision
+    # 4) บันทึก login session พร้อม score + decision + parsed UA
+    from app.services.feature_extraction import parse_browser, parse_os_name, parse_device_type
+
     db.add(LoginSession(
         user_id=user.id,
         subsystem_id=authreq["subsystem_id"],
         ip=client_ip,
         user_agent=user_agent,
         geo_country=geo_country,
+        os_name=parse_os_name(user_agent),
+        browser=parse_browser(user_agent),
+        device_type=parse_device_type(user_agent),
         anomaly_score=anomaly_score,
         decision=actual_decision,
     ))

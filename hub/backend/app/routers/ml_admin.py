@@ -88,6 +88,11 @@ def ml_overview(
             "decision": sess.decision,
             "ip": str(sess.ip) if sess.ip else None,
             "geo_country": sess.geo_country,
+            "os_name": sess.os_name,
+            "browser": sess.browser,
+            "device_type": sess.device_type,
+            "is_attack_ip": sess.is_attack_ip,
+            "is_account_takeover": sess.is_account_takeover,
             "created_at": sess.created_at,
         }
         for sess, u in top_rows
@@ -163,6 +168,13 @@ def add_feedback(
         )
         db.add(existing)
         action_name = "ml_feedback_added"
+
+    # Sync ground truth label → login_sessions.is_account_takeover
+    # (ตรงกับ RBA dataset ของ Wiefling 2022 — "Is Account Takeover" column)
+    if body.label == "true_positive":
+        sess.is_account_takeover = True
+    elif body.label in ("false_positive", "normal_confirmed"):
+        sess.is_account_takeover = False
 
     log_action(
         db,
@@ -320,7 +332,11 @@ def user_session_timeline(
                     "decision": sess.decision,
                     "ip": str(sess.ip) if sess.ip else None,
                     "geo_country": sess.geo_country,
-                    "browser": browser_family(sess.user_agent),
+                    "os_name": sess.os_name,
+                    "browser": sess.browser or browser_family(sess.user_agent),
+                    "device_type": sess.device_type,
+                    "is_attack_ip": sess.is_attack_ip,
+                    "is_account_takeover": sess.is_account_takeover,
                     "created_at": sess.created_at,
                     "feedback_label": fb.label if fb else None,
                 }
