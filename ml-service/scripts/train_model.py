@@ -12,6 +12,7 @@ Output:
   - รายงาน AUC, classification report, confusion matrix แยก train/test
   - เลือก threshold จาก test set ที่ Youden's J (TPR - FPR สูงสุด)
 """
+
 import csv
 from pathlib import Path
 
@@ -37,25 +38,31 @@ TEST_SIZE = 0.20
 
 def load_data() -> tuple[np.ndarray, np.ndarray]:
     if not DATA_PATH.exists():
-        raise FileNotFoundError(
-            f"ไม่พบ {DATA_PATH} — รัน scripts/generate_data ก่อน"
-        )
+        raise FileNotFoundError(f"ไม่พบ {DATA_PATH} — รัน scripts/generate_data ก่อน")
     X, y = [], []
     with open(DATA_PATH, encoding="utf-8") as f:
         reader = csv.reader(f)
-        next(reader)   # header
+        next(reader)  # header
         for row in reader:
             X.append([float(v) for v in row[:-1]])
             y.append(int(row[-1]))
     return np.array(X), np.array(y)
 
 
-def report_split(name: str, y_true: np.ndarray, pred_label: np.ndarray, scores: np.ndarray) -> None:
+def report_split(
+    name: str, y_true: np.ndarray, pred_label: np.ndarray, scores: np.ndarray
+) -> None:
     print(f"\n=========== {name} ===========")
-    print(f"  samples: {len(y_true)}  (normal={int((y_true == 0).sum())}, anomaly={int((y_true == 1).sum())})")
+    print(
+        f"  samples: {len(y_true)}  (normal={int((y_true == 0).sum())}, anomaly={int((y_true == 1).sum())})"
+    )
 
     print("\n--- Classification Report ---")
-    print(classification_report(y_true, pred_label, target_names=["normal", "anomaly"], zero_division=0))
+    print(
+        classification_report(
+            y_true, pred_label, target_names=["normal", "anomaly"], zero_division=0
+        )
+    )
 
     cm = confusion_matrix(y_true, pred_label)
     print("Confusion Matrix:")
@@ -99,21 +106,26 @@ def main():
 
     # Stratified split — รักษาสัดส่วน normal/anomaly ทั้ง train + test
     X_train, X_test, y_train, y_test = train_test_split(
-        X, y,
+        X,
+        y,
         test_size=TEST_SIZE,
         stratify=y,
         random_state=RANDOM_STATE,
     )
     print(f"\n🔀 Split (stratified) — test_size={TEST_SIZE}")
-    print(f"   train: {len(X_train)}  (normal={(y_train == 0).sum()}, anomaly={(y_train == 1).sum()})")
-    print(f"   test:  {len(X_test)}  (normal={(y_test == 0).sum()}, anomaly={(y_test == 1).sum()})")
+    print(
+        f"   train: {len(X_train)}  (normal={(y_train == 0).sum()}, anomaly={(y_train == 1).sum()})"
+    )
+    print(
+        f"   test:  {len(X_test)}  (normal={(y_test == 0).sum()}, anomaly={(y_test == 1).sum()})"
+    )
 
     # Train Isolation Forest — unsupervised, ใช้ normal ของ train set เท่านั้น
     print("\n🤖 Train Isolation Forest (บน train_normal เท่านั้น) ...")
     X_train_normal = X_train[y_train == 0]
     model = IsolationForest(
         n_estimators=100,
-        contamination=0.05,    # คาดว่าใน production จะมี anomaly ~5%
+        contamination=0.05,  # คาดว่าใน production จะมี anomaly ~5%
         max_samples=256,
         random_state=RANDOM_STATE,
         n_jobs=-1,
