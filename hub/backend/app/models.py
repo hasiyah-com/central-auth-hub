@@ -75,7 +75,11 @@ class AccessList(Base):
 
 
 class LoginSession(Base):
-    """บันทึกทุก login (สำหรับ audit + ML training)"""
+    """บันทึกทุก login (สำหรับ audit + ML training).
+
+    Columns ตรงกับ RBA dataset ของ Wiefling et al. (2022) เพื่อให้
+    เปรียบเทียบกับงานวิจัยต้นฉบับได้โดยตรง.
+    """
     __tablename__ = "login_sessions"
 
     id = uuid_pk()
@@ -85,8 +89,20 @@ class LoginSession(Base):
     user_agent = Column(Text)
     geo_country = Column(String(50))
     geo_city = Column(String(100))
+
+    # Parsed จาก user_agent (ตรงกับ RBA dataset columns)
+    os_name = Column(String(100))       # "Windows 10", "iOS 16.0", "Android 13"
+    browser = Column(String(100))       # "Chrome 120.0.3538", "Firefox 115.0"
+    device_type = Column(String(20))    # "mobile", "desktop", "tablet", "bot"
+
+    # ML
     anomaly_score = Column(Numeric(3, 2))
-    decision = Column(String(20))   # pass/mfa/block
+    decision = Column(String(20))       # pass/mfa/block/would_mfa/would_block
+
+    # Ground truth labels (ตรงกับ RBA dataset columns)
+    is_attack_ip = Column(Boolean, default=False)          # IP อยู่ใน blacklist
+    is_account_takeover = Column(Boolean, default=False)   # admin ยืนยันว่าเป็น attacker จริง
+
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
 
 

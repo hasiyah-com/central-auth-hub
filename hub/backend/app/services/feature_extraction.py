@@ -24,7 +24,7 @@ from app.models import LoginSession
 MIN_HISTORY_FOR_PERSONALIZATION = 5
 
 
-# ============ ตัวช่วยแยก browser family จาก user-agent ============
+# ============ ตัวช่วย parse user-agent (ตรงกับ RBA dataset ของ Wiefling 2022) ============
 
 _BROWSER_PATTERNS = [
     ("Edge",    re.compile(r"\b(Edg|Edge)/", re.I)),
@@ -43,6 +43,87 @@ def browser_family(user_agent: str | None) -> str:
         if pat.search(user_agent):
             return name
     return "Other"
+
+
+def parse_browser(user_agent: str | None) -> str:
+    """Browser Name and Version — เช่น 'Chrome 120.0.3538', 'Firefox 115.0'.
+
+    ตรงกับ column 'Browser Name and Version' ของ RBA dataset.
+    """
+    if not user_agent:
+        return "Unknown"
+    # ลำดับสำคัญ: Edge ก่อน Chrome (เพราะ Edge มี Chrome/ ด้วย)
+    m = re.search(r"Edg(?:e)?/(\d+[\.\d]*)", user_agent)
+    if m:
+        return f"Edge {m.group(1)}"
+    m = re.search(r"OPR/(\d+[\.\d]*)", user_agent)
+    if m:
+        return f"Opera {m.group(1)}"
+    m = re.search(r"Chrome/(\d+[\.\d]*)", user_agent)
+    if m:
+        return f"Chrome {m.group(1)}"
+    m = re.search(r"Firefox/(\d+[\.\d]*)", user_agent)
+    if m:
+        return f"Firefox {m.group(1)}"
+    m = re.search(r"Version/(\d+[\.\d]*).*Safari/", user_agent)
+    if m:
+        return f"Safari {m.group(1)}"
+    return "Other"
+
+
+def parse_os_name(user_agent: str | None) -> str:
+    """OS Name and Version — เช่น 'Windows 10', 'iOS 16.0', 'Android 13'.
+
+    ตรงกับ column 'OS Name and Version' ของ RBA dataset.
+    """
+    if not user_agent:
+        return "Unknown"
+    # iOS (iPhone / iPad)
+    m = re.search(r"(?:iPhone|iPad).*?OS (\d+)[_.](\d+)", user_agent)
+    if m:
+        return f"iOS {m.group(1)}.{m.group(2)}"
+    # Android
+    m = re.search(r"Android (\d+(?:\.\d+)?)", user_agent)
+    if m:
+        return f"Android {m.group(1)}"
+    # Windows
+    if "Windows NT 10.0" in user_agent:
+        return "Windows 10"
+    if "Windows NT 6.3" in user_agent:
+        return "Windows 8.1"
+    if "Windows NT 6.1" in user_agent:
+        return "Windows 7"
+    # macOS
+    m = re.search(r"Mac OS X (\d+)[_.](\d+)", user_agent)
+    if m:
+        return f"macOS {m.group(1)}.{m.group(2)}"
+    # Chrome OS
+    if "CrOS" in user_agent:
+        return "Chrome OS"
+    # Linux
+    if "Linux" in user_agent:
+        return "Linux"
+    return "Other"
+
+
+def parse_device_type(user_agent: str | None) -> str:
+    """Device Type — 'mobile', 'desktop', 'tablet', 'bot', 'unknown'.
+
+    ตรงกับ column 'Device Type' ของ RBA dataset.
+    """
+    if not user_agent:
+        return "unknown"
+    ua = user_agent.lower()
+    if "bot" in ua or "crawl" in ua or "spider" in ua:
+        return "bot"
+    if "ipad" in ua or "tablet" in ua:
+        return "tablet"
+    if "iphone" in ua or "mobile" in ua:
+        return "mobile"
+    # Android ที่ไม่มี "Mobile" = tablet
+    if "android" in ua:
+        return "tablet" if "mobile" not in ua else "mobile"
+    return "desktop"
 
 
 # ============ Main extraction ============
