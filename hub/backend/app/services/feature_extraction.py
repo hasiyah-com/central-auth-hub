@@ -256,6 +256,43 @@ def extract_session_features(
         or 0
     )
 
+    # === Passkey / Device Trust (5) — Phase 5, Improvement #5 ===
+    # cold start: ไม่มี passkey → ทุกตัว 0 (neutral)
+    from app.models import PasskeyCredential
+
+    pk_rows = (
+        db.query(PasskeyCredential.created_at, PasskeyCredential.last_used_at)
+        .filter(
+            PasskeyCredential.user_id == user_id,
+            PasskeyCredential.revoked_at.is_(None),
+        )
+        .all()
+    )
+    if pk_rows:
+        has_passkey = 1.0
+        passkey_count = float(len(pk_rows))
+        oldest = (
+            min(r[0] for r in pk_rows if r[0]) if any(r[0] for r in pk_rows) else now
+        )
+        passkey_age_days = max(0.0, (now - oldest).total_seconds() / 86400.0)
+        newest = max((r[0] for r in pk_rows if r[0]), default=None)
+        # เพิ่ม passkey ใหม่ < 1 ชม. = takeover sign
+        new_recently = 1.0 if newest and (now - newest).total_seconds() < 3600 else 0.0
+        last_used_list = [r[1] for r in pk_rows if r[1]]
+        if last_used_list:
+            most_recent_use = max(last_used_list)
+            passkey_last_used_days = max(
+                0.0, (now - most_recent_use).total_seconds() / 86400.0
+            )
+        else:
+            passkey_last_used_days = passkey_age_days  # ไม่เคยใช้เลย
+    else:
+        has_passkey = 0.0
+        passkey_count = 0.0
+        passkey_age_days = 0.0
+        new_recently = 0.0
+        passkey_last_used_days = 0.0
+
     return [
         hour,
         day,
@@ -269,4 +306,9 @@ def extract_session_features(
         float(log_min),
         float(login_count_24h),
         float(failed_24h),
+        has_passkey,
+        passkey_count,
+        passkey_age_days,
+        new_recently,
+        passkey_last_used_days,
     ]

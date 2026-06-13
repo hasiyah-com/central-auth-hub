@@ -141,10 +141,13 @@ class Settings(BaseSettings):
     # Prod: "auth.uni.ac.th"
     webauthn_rp_id: str = "localhost"
     webauthn_rp_name: str = "Central Auth Hub"
-    # Origin allowlist (comma-separated) — รองรับ subdomain
-    # Dev: "http://localhost:3000"
+    # Origin allowlist (comma-separated) — WebAuthn ceremony รันที่ origin ไหน
+    # ต้องตรงเป๊ะ. มี 2 origin ใน dev เพราะ:
+    #   - localhost:3000 = Next.js console (/account/security register)
+    #   - localhost:8000 = Hub-served HTML (subsystem chooser login + enroll interstitial)
+    # RP ID = "localhost" ใช้ได้ทั้ง 2 port (port ไม่นับใน RP ID matching)
     # Prod: "https://auth.uni.ac.th,https://staff.auth.uni.ac.th"
-    webauthn_origins: str = "http://localhost:3000"
+    webauthn_origins: str = "http://localhost:3000,http://localhost:8000"
     webauthn_challenge_ttl_sec: int = 300  # 5 นาที
     webauthn_backup_codes_count: int = 10
     webauthn_max_passkeys_per_user: int = 10  # Improvement #9 (review บอก 5 — ขอแก้)
@@ -155,6 +158,12 @@ class Settings(BaseSettings):
     stepup_cache_ttl_sec: int = 900
     # Improvement #10 — counter regression boost risk score (ไม่ block)
     stepup_counter_regression_risk_boost: float = 0.2
+
+    # ── Passkey force adoption (Phase 7 — Q5) ──
+    # 0 = opt-in ตลอด (default). > 0 = หลัง N วันนับจากสร้าง account ถ้ายังไม่มี
+    # passkey → nudge (login response มี passkey_adoption.nudge=true).
+    # ไม่ได้ block — แค่ flag ให้ frontend เตือน/พาไปตั้งค่า. (soft enforcement)
+    passkey_required_after_days: int = 0
 
     def validate_production(self) -> None:
         """fail-fast ถ้า prod ยังใช้ default ที่ไม่ปลอดภัย."""
