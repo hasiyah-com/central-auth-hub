@@ -559,6 +559,7 @@ docker compose exec ml-service python -m scripts.train_model
 - **Use `get_client_ip(request)`** from `app/deps.py` — never `request.client.host` (returns Docker internal IP `172.x`)
 - **Every protected endpoint MUST have a Depends** — `Depends(get_current_user)`, `require_developer`, or `require_hub_admin`; never trust the path being "internal"
 - **`/docs`, `/redoc`, `/openapi.json` disabled in production** — `ENABLE_DOCS=false` in `.env`
+- **Anti-enumeration — opaque ทั้งข้อความ + shape ของ response** — auth-failure ทุกกรณี (email ไม่มีในระบบ / credential ผิด / OTP ผิด) ต้องตอบ **เหมือนกันหมด**: same HTTP status, same error code, same generic message ("ไม่สามารถเข้าสู่ระบบได้ กรุณาลองใหม่อีกครั้ง"). OTP/recovery begin คืน `True` เสมอ (ไม่บอกว่า email มีจริงไหม). Passkey `login/start` ต้องคืน `allowCredentials` **ไม่ว่างเสมอ** — ถ้า email ไม่มี passkey ใช้ `_dummy_descriptors(email)` (decoy จาก `HMAC(SECRET_KEY, email)`, deterministic ต่อ email) เพราะ empty-vs-non-empty list ก็ leak ว่า "มี passkey" ได้ → B43
 
 ### Audit / Logging
 - **Audit log** — every state-changing endpoint calls `log_action()` with `actor_id`, `action`, `target_type`, `target_id`, `ip`, optional `metadata`
@@ -636,6 +637,8 @@ docker compose exec ml-service python -m scripts.train_model
 | 🔧 Config / Misc | B29-B32 | UTC timezone, pydantic install order, Swagger UX |
 | 🐳 Docker / Container State (Week 8-9) | B33-B37 | Project attach, env reload, volume namespace |
 | 🔄 LINE Login + SHAP (Week 9) | B38-B41 | Worktree commit hygiene, SHAP sign, Channel ID format |
+| 🔑 Passkey / WebAuthn (Week 9-10) | B42-B43 | LINE Authlib HS256, Passkey login enumeration (allowCredentials shape) |
+| 🚨 Risk-Triggered MFA (Week 9-10) | B44-B48 | Hard block threshold at finalizer, Force-enroll OTP gate, Browser unsupported → Recovery, atomic consume, runtime grace period |
 
 ### วิธีเพิ่ม bug ใหม่
 
@@ -723,7 +726,7 @@ docker compose exec hub-backend pytest . -v -s
 | 7 | Subsystem B — ระบบห้องสมุด (FastAPI + Jinja2 + postgres-library) | ✅ |
 | 8 | Admin Dashboard frontend (Next.js) + audit log viewer + pending triage | ✅ |
 | 8.5 | Migration B — split docker-compose (Hub/Dorm/Library stacks) + SHAP TreeExplainer + LINE Login alternate IdP + Subsystem A React SPA + ML eval split/GeoIP + RBA 4-Layer scoring + secret rotation | ✅ |
-| 9-10 | MFA flow (scaffold ✅, wire-up ⏳) + Session Downgrade (`restricted` JWT claim) + Token Revocation (jti + Redis blacklist) | 🔄 next |
+| 9-10 | Passkey 8 phase ✅ + **Risk-Triggered MFA (Re-Auth/Force-Enroll/Grace) ✅** (22 new tests, B44-B48) + Session Downgrade + Token Revocation | 🔄 |
 | 11-12 | Security hardening (rate limit, CSRF, CSP, prod fail-fast) + threat-model doc + pentest checklist | ⏳ |
 | 13-14 | Test suite (pytest scaffold ✅) + Jest/RTL frontend tests + GitHub Actions CI + full documentation | ⏳ |
 | 15-16 | Buffer + thesis writing + defense | ⏳ |

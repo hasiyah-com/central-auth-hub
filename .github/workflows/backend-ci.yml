@@ -1,0 +1,82 @@
+name: Backend CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "hub/backend/**"
+      - ".github/workflows/backend-ci.yml"
+  pull_request:
+    paths:
+      - "hub/backend/**"
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: hub/backend
+
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: hub
+          POSTGRES_PASSWORD: devpassword  # pragma: allowlist secret
+          POSTGRES_DB: hub_db
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U hub -d hub_db"
+          --health-interval 10s --health-timeout 5s --health-retries 5
+      redis:
+        image: redis:7
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s --health-timeout 5s --health-retries 5
+
+    env:
+      APP_ENV: development
+      DATABASE_URL: postgresql+psycopg2://hub:devpassword@localhost:5432/hub_db  # pragma: allowlist secret
+      REDIS_URL: redis://localhost:6379/0
+      SECRET_KEY: ci-secret-key-not-for-production-0123456789  # pragma: allowlist secret
+      SECRET_ENCRYPTION_KEY: ci-encryption-key-not-for-production-9876  # pragma: allowlist secret
+      JWT_PRIVATE_KEY_PATH: ${{ github.workspace }}/hub/backend/keys/jwt_private.pem
+      JWT_PUBLIC_KEY_PATH: ${{ github.workspace }}/hub/backend/keys/jwt_public.pem
+      # ML unreachable → ml_client fail-safe to pass (B21). GeoIP missing → neutral.
+      ML_SERVICE_URL: http://localhost:9999
+      GEOIP_DB_PATH: /tmp/nonexistent.mmdb
+      WEBAUTHN_RP_ID: localhost
+      WEBAUTHN_ORIGINS: http://localhost:3000,http://localhost:8000
+      PYTHONPATH: ${{ github.workspace }}/hub/backend
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: hub/backend/requirements.txt
+
+      - name: Install dependencies
+        run: pip install --no-cache-dir -r requirements.txt
+
+      - name: Generate JWT RS256 keys
+        run: |
+          mkdir -p keys
+          openssl genpkey -algorithm RSA -out keys/jwt_private.pem -pkeyopt rsa_keygen_bits:2048
+          openssl rsa -in keys/jwt_private.pem -pubout -out keys/jwt_public.pem
+
+      - name: Create tables + seed users
+        run: |
+          python -c "from app.database import Base, engine; import app.models; Base.metadata.create_all(engine)"
+          echo y | python -m app.seeds.seed_users
+
+      - name: Run pytest (exclude standalone scripts)
+        run: |
+          pytest \
+            --ignore=tests/test_e2e_full_stack.py \
+            --ignore=tests/test_l1_oidc.py \
+            --ignore=tests/test_l1_oidc_authlib.py \
+            -p no:cacheprovider
