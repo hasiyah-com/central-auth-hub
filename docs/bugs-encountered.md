@@ -210,6 +210,54 @@
   ```
   แต่ approach นี้ขัด security model ของ Authlib (HS256 ใน ID token = client_secret leak risk ถ้าหลุด) — ใช้ manual approach ดีกว่า
 
+**B43. User Enumeration ผ่าน Passkey `login/start` — `allowCredentials` empty vs non-empty**
+- อาการ: ยิง `POST /auth/passkey/login/start` ตรงๆ แล้วดู `allowCredentials` ใน response → email ที่มี passkey คืน list ไม่ว่าง, email ที่ไม่มี/ไม่มีบัญชี คืน `[]` → ผู้โจมตี enumerate ได้ว่า email ไหนลงทะเบียน passkey แล้ว (OWASP — Information Disclosure, Medium)
+- สาเหตุ: ข้อความ error opaque อยู่แล้ว (auth_complete คืน `401 invalid_credential` เหมือนกันทุกกรณี) **แต่ shape ของ response ที่ login/start ยัง leak** — `auth_begin` คืน `allowCredentials` ตาม passkey จริงของ user → ว่าง=ไม่มี, ไม่ว่าง=มี
+- **กฎ:** auth-failure ต้อง opaque **ทั้งข้อความ + shape**:
+  1. `login/start` คืน `allowCredentials` ไม่ว่างเสมอ — ไม่มี passkey → `_dummy_descriptors(email)` (decoy id = `HMAC-SHA256(SECRET_KEY, "passkey-decoy:"+email)[:20]`, deterministic ต่อ email, ไม่ตรง credential จริงใน DB → จบที่ 401 เหมือน wrong cred)
+  2. frontend รวม `invalid_credential` + `assertion_verify_failed` → generic "ไม่สามารถเข้าสู่ระบบได้ กรุณาลองใหม่อีกครั้ง"
+  3. OTP/recovery begin คืน `True` เสมอ (anti-enum อยู่แล้ว)
+- **Verify:** `curl ... login/start -d '{"email":"ghost@x.com"}'` 2 ครั้ง → `allowCredentials` ไม่ว่าง + id เดิม (deterministic); คนละ email → id ต่าง
+- **Test:** `tests/test_passkey_login.py::test_auth_begin_dummy_*` (deterministic / unique / not-in-DB / non-empty)
+
+---
+
+## 🔄 Risk-Triggered Passkey (Week 9-10)
+
+**B44. Risk hard-block threshold ต้องอยู่ที่ finalizer ไม่ใช่ aggregator**
+- อาการ: ก่อนแก้ — aggregator คืน `decision="block"` ที่ `risk_score >= 0.80` → finalizer raise 403 ทันที (ไม่มี mfa flow); แต่ต้องการ block จริงเฉพาะ `>= 0.85` และ 0.80-0.84 ให้เข้า mfa flow
+- สาเหตุ: ถ้าแก้ `THRESHOLDS["block"] = 0.85` ใน `risk_aggregator.py` จะกระทบ tests + alert thresholds เดิมทั่ว codebase
+- **กฎ:** Decision enforcement อยู่ที่ **finalizer** (single source of truth) — risk_aggregator คงไว้ที่ 0.80 (ใช้สำหรับ "would_block" alert); finalizer ตรวจ `risk_score >= settings.risk_block_hard_threshold (0.85)` แยกอีกชั้น
+- **Implementation:** `oauth.py:_finalize_subsystem_login()` + `auth.py:google_callback()` + `line_callback()` — เพิ่ม `is_hard_block` + `is_mfa_required` ก่อน raise/redirect
+- **Verify:** `pytest tests/test_risk_passkey_flow.py::test_config_risk_block_hard_threshold_is_085`
+
+**B45. Force Enrollment ต้องผ่าน OTP ก่อน register/start (กัน attacker enroll)**
+- อาการ: ถ้าให้ user ที่ trigger mfa branch + ไม่มี passkey → register passkey ได้เลย → attacker ที่ phish session → enroll passkey ของตัวเอง → bypass ตลอด lifetime ของบัญชี
+- สาเหตุ: mfa decision = "อาจมี attacker" → ปล่อยให้ register passkey โดยไม่ verify email = mass account takeover
+- **กฎ:** `/auth/passkey/force-enroll/register/start` ต้องตรวจ Redis flag `force_enroll_otp_passed:{challenge_id}` → ไม่มี → 403 `{code: "otp_required"}`; user ต้องเรียก `send-otp` → `verify-otp` (OTP 6 หลัก ทาง email user) ก่อน
+- **Implementation:** `passkey.py:_require_otp_passed()` + `force_enroll_register_start/complete`
+- **Verify:** `pytest tests/test_risk_passkey_flow.py::test_force_enroll_register_start_requires_otp_passed`
+
+**B46. Browser ไม่รองรับ WebAuthn — บังคับ Account Recovery (ไม่ fallback OTP login)**
+- อาการ: ถ้า user เปิด browser เก่า (IE / มือถือเก่า) → ไม่มี `window.PublicKeyCredential` → ผ่าน mfa flow ไม่ได้
+- สาเหตุ: ถ้า fallback ไป OTP login (เหมือน MFA OTP flow เดิม) = ลด security model จาก phishing-resistant → channel-bound OTP; attacker ที่ control email = bypass
+- **กฎ:** หน้า Risk Re-Auth + Force Enrollment ตรวจ `PublicKeyCredential` ถ้าไม่มี → แสดง "Browser นี้ไม่รองรับ Passkey กรุณาใช้อุปกรณ์ที่รองรับ หรือใช้ Account Recovery" + ลิงก์ `/auth/passkey/recover` (backup codes + email OTP **เฉพาะตอน recovery จริง**)
+- **Implementation:** `passkey.py:_risk_stepup_html()` + `_force_enroll_html()` — JS `pkSupported()` check
+- **Verify:** `pytest tests/test_risk_passkey_flow.py::test_risk_stepup_page_renders_reasons_and_score` (HTML contains "เบราว์เซอร์นี้ไม่รองรับ Passkey" + "Account Recovery")
+
+**B47. risk_challenge consume ต้องเป็น atomic getdel หลัง WebAuthn verify ผ่าน**
+- อาการ: ถ้า consume ก่อน WebAuthn verify → verify fail → user ต้อง login ใหม่ (เสียประสบการณ์); ถ้า consume หลัง verify ผ่าน + ไม่ใช้ getdel atomic → race condition: 2 requests verify ผ่านพร้อมกัน → ออก JWT 2 ตัวจาก challenge เดียว
+- สาเหตุ: B9 pattern เดียวกับ authorization_code
+- **กฎ:** ลำดับ: `peek()` → WebAuthn verify → `consume()` (atomic getdel) → raise 410 ถ้า None (กัน race) → finalize
+- **Implementation:** `passkey.py:risk_stepup_verify` + `force_enroll_register_complete`
+- **Verify:** `pytest tests/test_risk_passkey_flow.py::test_risk_challenge_replay_after_consume_returns_none`
+
+**B48. Grace Period ใช้ `account_age < N days` ห้ามใช้ `is_new_user` flag**
+- อาการ: ถ้าเก็บ flag `is_new_user` ใน DB แล้ว user ใช้งานเกิน 7 วันก็ยัง True (ถ้าไม่มี cron clear) → bypass force enroll ได้ไม่จำกัด
+- สาเหตุ: เก็บ state ที่ derived ได้จาก `user.created_at` = ซ้ำซ้อน + เสี่ยง stale
+- **กฎ:** ใช้ `(now - user.created_at).days < settings.passkey_grace_period_days` คำนวณ runtime; ไม่เก็บ flag; helper `webauthn_service.in_grace_period(user, db)` เป็นจุดเดียวที่ตัดสิน
+- **Verify:** `pytest tests/test_risk_passkey_flow.py::test_in_grace_period_*`
+
 ---
 
 ## วิธีเพิ่ม bug ใหม่
