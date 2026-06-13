@@ -1,7 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { isPasskeySupported, loginWithPasskey } from "@/lib/passkey";
+import {
+  isPasskeySupported,
+  loginWithPasskey,
+  loginWithPasskeyDiscoverable,
+} from "@/lib/passkey";
 
 const HUB_URL = process.env.NEXT_PUBLIC_HUB_URL || "http://localhost:8000";
 
@@ -16,6 +20,38 @@ export default function LoginPage() {
     setPasskeySupported(isPasskeySupported());
   }, []);
 
+  const persistAndRedirect = async (token: string, isAdmin: boolean) => {
+    const setRes = await fetch("/api/set-token", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      credentials: "include",
+      body: JSON.stringify({ token }),
+    });
+    if (!setRes.ok) {
+      const body = await setRes.json().catch(() => ({}));
+      throw new Error(body.error || "ไม่สามารถบันทึก session ได้");
+    }
+    window.location.href = isAdmin ? "/dashboard" : "/developer/subsystems";
+  };
+
+  const friendlyErr = (e: unknown): string => {
+    const msg =
+      e instanceof Error
+        ? e.message
+        : typeof e === "object" && e && "detail" in e
+          ? String((e as { detail: unknown }).detail)
+          : "ไม่สามารถเข้าสู่ระบบได้ กรุณาลองใหม่อีกครั้ง";
+    // OWASP anti-enumeration: auth-failure ทุกกรณีใช้ข้อความเดียวกัน (generic)
+    // — ไม่บอกว่า email มี/ไม่มี passkey หรือ credential ผิด
+    if (
+      msg.includes("invalid_credential") ||
+      msg.includes("assertion_verify_failed")
+    )
+      return "ไม่สามารถเข้าสู่ระบบได้ กรุณาลองใหม่อีกครั้ง";
+    if (msg.includes("challenge_expired")) return "Session หมดอายุ กรุณาลองใหม่";
+    return msg;
+  };
+
   const handlePasskeyLogin = async () => {
     if (!email.trim()) {
       setError("กรุณากรอก email");
@@ -25,37 +61,21 @@ export default function LoginPage() {
     setBusy(true);
     try {
       const result = await loginWithPasskey(email.trim());
-      // Persist JWT in httpOnly cookie via set-token route
-      const setRes = await fetch("/api/set-token", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        credentials: "include",
-        body: JSON.stringify({ token: result.access_token }),
-      });
-      if (!setRes.ok) {
-        const body = await setRes.json().catch(() => ({}));
-        throw new Error(body.error || "ไม่สามารถบันทึก session ได้");
-      }
-      // Full reload to clear RSC cache (same pattern as Google callback)
-      const dest = result.user.is_hub_admin ? "/dashboard" : "/developer/subsystems";
-      window.location.href = dest;
+      await persistAndRedirect(result.access_token, result.user.is_hub_admin);
     } catch (e) {
-      const msg =
-        e instanceof Error
-          ? e.message
-          : typeof e === "object" && e && "detail" in e
-            ? String((e as { detail: unknown }).detail)
-            : "Login ด้วย Passkey ไม่สำเร็จ";
-      // Friendly translation for common errors
-      let friendly = msg;
-      if (msg.includes("invalid_credential")) {
-        friendly = "ไม่พบ Passkey ที่ใช้ได้กับ email นี้";
-      } else if (msg.includes("challenge_expired")) {
-        friendly = "Session หมดอายุ กรุณาลองใหม่";
-      } else if (msg.includes("assertion_verify_failed")) {
-        friendly = "ตรวจ Passkey ไม่ผ่าน — credential อาจถูกแก้ไข";
-      }
-      setError(friendly);
+      setError(friendlyErr(e));
+      setBusy(false);
+    }
+  };
+
+  const handleDiscoverable = async () => {
+    setError(null);
+    setBusy(true);
+    try {
+      const result = await loginWithPasskeyDiscoverable();
+      await persistAndRedirect(result.access_token, result.user.is_hub_admin);
+    } catch (e) {
+      setError(friendlyErr(e));
       setBusy(false);
     }
   };
@@ -144,6 +164,18 @@ export default function LoginPage() {
               >
                 {busy ? "กำลังตรวจ Passkey…" : "ดำเนินการต่อ"}
               </button>
+              <div className="flex items-center gap-2 text-[10px] text-emerald-700">
+                <span className="flex-1 h-px bg-emerald-200" />
+                หรือ
+                <span className="flex-1 h-px bg-emerald-200" />
+              </div>
+              <button
+                onClick={handleDiscoverable}
+                disabled={busy}
+                className="w-full py-2 rounded-lg text-sm font-medium text-emerald-700 hover:bg-emerald-100 border border-emerald-200 transition disabled:opacity-50"
+              >
+                🔓 เข้าโดยไม่กรอก email (เลือก passkey จากอุปกรณ์)
+              </button>
             </div>
           )}
 
@@ -190,6 +222,16 @@ export default function LoginPage() {
           <div className="mt-6 text-xs text-ink-400 text-center">
             เฉพาะผู้ใช้ที่มีสิทธิ์ <code className="font-mono">is_hub_admin</code> เท่านั้น
           </div>
+          {passkeySupported && (
+            <div className="mt-2 text-center">
+              <a
+                href="/auth/passkey/recover"
+                className="text-xs text-emerald-600 hover:text-emerald-700"
+              >
+                ทำ Passkey หาย? กู้บัญชี
+              </a>
+            </div>
+          )}
         </div>
 
         <div className="px-8 py-5 bg-ink-50 border-t border-ink-100">

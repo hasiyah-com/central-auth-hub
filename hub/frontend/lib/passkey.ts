@@ -199,6 +199,181 @@ export async function fetchBackupCodesStatus(): Promise<BackupCodesStatus> {
   );
 }
 
+export async function regenerateBackupCodes(): Promise<{
+  backup_codes: string[];
+  backup_codes_must_acknowledge: boolean;
+}> {
+  return clientFetch("/account/passkeys/backup-codes/regenerate", {
+    method: "POST",
+    body: JSON.stringify({}),
+  });
+}
+
+// ── Admin: passkey overview (read-only + reset) ───────────────
+
+export interface AdminUserPasskeys {
+  user_id: string;
+  email: string;
+  passkeys: {
+    id: string;
+    device_name: string;
+    device_type: string | null;
+    created_at: string | null;
+    last_used_at: string | null;
+    last_used_country: string | null;
+    counter_regression_count: number;
+  }[];
+  count: number;
+  backup_codes: { remaining: number; total: number; low: boolean };
+}
+
+export async function adminListUserPasskeys(
+  userId: string
+): Promise<AdminUserPasskeys> {
+  return clientFetch<AdminUserPasskeys>(`/admin/users/${userId}/passkeys`);
+}
+
+export async function adminResetUserPasskeys(
+  userId: string
+): Promise<{ revoked_count: number; message: string }> {
+  return clientFetch(`/admin/users/${userId}/reset-passkeys`, {
+    method: "POST",
+    body: JSON.stringify({}),
+  });
+}
+
+// ── Lifecycle (Phase 3) ───────────────────────────────────────
+
+export interface PasskeyInfo {
+  id: string;
+  device_name: string;
+  device_type: "platform" | "cross-platform" | null;
+  transports: string[];
+  created_at: string | null;
+  last_used_at: string | null;
+  last_used_country: string | null;
+  counter_regression_count: number;
+  rename_count: number;
+}
+
+export interface PasskeyList {
+  passkeys: PasskeyInfo[];
+  count: number;
+  max: number;
+}
+
+export async function listPasskeys(): Promise<PasskeyList> {
+  return clientFetch<PasskeyList>("/account/passkeys");
+}
+
+export async function renamePasskey(
+  id: string,
+  deviceName: string
+): Promise<PasskeyInfo> {
+  return clientFetch<PasskeyInfo>(`/account/passkeys/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify({ device_name: deviceName }),
+  });
+}
+
+export async function deletePasskey(
+  id: string
+): Promise<{ deleted: boolean; id: string }> {
+  return clientFetch<{ deleted: boolean; id: string }>(
+    `/account/passkeys/${id}`,
+    { method: "DELETE" }
+  );
+}
+
+// ── Recovery (Phase 4) — public, no auth ──────────────────────
+
+export async function recoverWithBackupCode(
+  email: string,
+  code: string
+): Promise<{ recovered: boolean; message: string }> {
+  return clientFetch("/auth/passkey/recover/backup-code", {
+    method: "POST",
+    body: JSON.stringify({ email: email.trim(), code: code.trim() }),
+  });
+}
+
+export async function recoverEmailOtpStart(
+  email: string
+): Promise<{ sent: boolean; message: string }> {
+  return clientFetch("/auth/passkey/recover/email-otp/start", {
+    method: "POST",
+    body: JSON.stringify({ email: email.trim() }),
+  });
+}
+
+export async function recoverEmailOtpVerify(
+  email: string,
+  otp: string
+): Promise<{ recovered: boolean; message: string; backup_codes?: string[] }> {
+  return clientFetch("/auth/passkey/recover/email-otp/verify", {
+    method: "POST",
+    body: JSON.stringify({ email: email.trim(), otp: otp.trim() }),
+  });
+}
+
+// ── Step-up re-auth (Phase 5) ─────────────────────────────────
+
+/**
+ * Step-up ด้วย passkey ของ user ปัจจุบัน (JWT required).
+ * Throws {detail:{code:"no_passkey"}} ถ้าไม่มี passkey → caller fallback OTP.
+ */
+export async function stepUpWithPasskey(): Promise<{ granted: boolean; ttl_sec: number }> {
+  const optionsJSON = await clientFetch<PublicKeyCredentialRequestOptionsJSON>(
+    "/auth/passkey/stepup/start",
+    { method: "POST", body: JSON.stringify({}) }
+  );
+  const options = decodeRequestOptions(optionsJSON);
+  const credential = (await navigator.credentials.get({
+    publicKey: options,
+  })) as PublicKeyCredential | null;
+  if (!credential) throw new Error("ไม่ได้รับ credential จากอุปกรณ์");
+  return clientFetch("/auth/passkey/stepup/finish", {
+    method: "POST",
+    body: JSON.stringify({ credential: encodeAssertionCredential(credential) }),
+  });
+}
+
+export async function stepupOtpStart(): Promise<{ sent: boolean; message: string }> {
+  return clientFetch("/auth/stepup/otp/start", {
+    method: "POST",
+    body: JSON.stringify({}),
+  });
+}
+
+export async function stepupOtpVerify(
+  otp: string
+): Promise<{ granted: boolean; ttl_sec: number }> {
+  return clientFetch("/auth/stepup/otp/verify", {
+    method: "POST",
+    body: JSON.stringify({ otp: otp.trim() }),
+  });
+}
+
+// regenerate codes via OTP — ไม่ revoke passkey (codes หาย/ใกล้หมด)
+export async function regenOtpStart(
+  email: string
+): Promise<{ sent: boolean; message: string }> {
+  return clientFetch("/auth/passkey/backup-codes/regen-otp/start", {
+    method: "POST",
+    body: JSON.stringify({ email: email.trim() }),
+  });
+}
+
+export async function regenOtpVerify(
+  email: string,
+  otp: string
+): Promise<{ regenerated: boolean; message: string; backup_codes: string[] }> {
+  return clientFetch("/auth/passkey/backup-codes/regen-otp/verify", {
+    method: "POST",
+    body: JSON.stringify({ email: email.trim(), otp: otp.trim() }),
+  });
+}
+
 // ── Authentication (Phase 2 — email-first) ────────────────────
 
 interface PublicKeyCredentialRequestOptionsJSON {
@@ -260,6 +435,27 @@ function encodeAssertionCredential(cred: PublicKeyCredential): unknown {
       ? cred.getClientExtensionResults()
       : {},
   };
+}
+
+/**
+ * Discoverable login (Phase 7) — ไม่ต้องกรอก email.
+ * browser โชว์ resident keys → identify จาก userHandle.
+ */
+export async function loginWithPasskeyDiscoverable(): Promise<LoginResult> {
+  if (!isPasskeySupported()) throw new Error("เบราว์เซอร์นี้ไม่รองรับ Passkey");
+  const optionsJSON = await clientFetch<PublicKeyCredentialRequestOptionsJSON>(
+    "/auth/passkey/login/discoverable/start",
+    { method: "POST", body: JSON.stringify({}) }
+  );
+  const options = decodeRequestOptions(optionsJSON);
+  const credential = (await navigator.credentials.get({
+    publicKey: options,
+  })) as PublicKeyCredential | null;
+  if (!credential) throw new Error("ไม่ได้รับ credential จากเบราว์เซอร์");
+  return clientFetch<LoginResult>("/auth/passkey/login/discoverable/finish", {
+    method: "POST",
+    body: JSON.stringify({ credential: encodeAssertionCredential(credential) }),
+  });
 }
 
 /**

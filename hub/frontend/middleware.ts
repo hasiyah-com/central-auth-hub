@@ -8,7 +8,16 @@ import {
 } from "@/lib/auth";
 
 // Routes ที่จำกัดเฉพาะ hub_admin (Admin Console)
-const ADMIN_PATHS = ["/dashboard", "/users", "/subsystems", "/ml", "/audit"];
+// /account/security = passkey management — admin เท่านั้น (teacher/staff/นักศึกษา
+// ลง passkey ผ่าน subsystem enroll interstitial แทน)
+const ADMIN_PATHS = [
+  "/dashboard",
+  "/users",
+  "/subsystems",
+  "/ml",
+  "/audit",
+  "/account",
+];
 
 // Routes ที่ให้ teacher/staff/admin เข้าได้ (Developer Portal)
 const DEV_PATHS = ["/developer"];

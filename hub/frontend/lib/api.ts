@@ -28,14 +28,28 @@ export async function clientFetch<T = unknown>(
     },
   });
   if (!res.ok) {
-    let detail = res.statusText;
+    let detail: unknown = res.statusText;
     try {
       const body = await res.json();
       detail = body.detail || JSON.stringify(body);
     } catch {
       // ignore
     }
-    const err: ApiError = { status: res.status, detail };
+    // Step-up required (Phase 5 — critical action gate):
+    // backend 403 {code: "stepup_required"} → พาไปยืนยันตัวตน แล้วกลับมาหน้าเดิม
+    if (
+      res.status === 403 &&
+      typeof detail === "object" &&
+      detail !== null &&
+      (detail as { code?: string }).code === "stepup_required" &&
+      typeof window !== "undefined"
+    ) {
+      const returnTo = encodeURIComponent(
+        window.location.pathname + window.location.search
+      );
+      window.location.href = `/auth/passkey/stepup?return_to=${returnTo}`;
+    }
+    const err: ApiError = { status: res.status, detail: detail as string };
     throw err;
   }
   // 204 No Content
