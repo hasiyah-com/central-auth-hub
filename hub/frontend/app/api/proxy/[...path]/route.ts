@@ -28,6 +28,17 @@ async function forward(req: NextRequest, path: string[]) {
   if (ct) headers["content-type"] = ct;
   if (token) headers["authorization"] = `Bearer ${token}`;
 
+  // forward browser user-agent — ไม่งั้น backend เห็น UA ของ Next.js (undici)
+  // → LoginSession.os_name/browser parse เป็น "other" (passkey login session)
+  const ua = req.headers.get("user-agent");
+  if (ua) headers["user-agent"] = ua;
+
+  // forward client IP → backend get_client_ip() อ่าน X-Forwarded-For ก่อน
+  // (ไม่งั้น audit/ML เห็น IP ของ Next.js container 172.x แทน client จริง)
+  const xff = req.headers.get("x-forwarded-for");
+  const realIp = xff || req.headers.get("x-real-ip") || "";
+  if (realIp) headers["x-forwarded-for"] = realIp;
+
   const init: RequestInit = {
     method: req.method,
     headers,

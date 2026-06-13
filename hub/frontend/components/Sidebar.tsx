@@ -22,6 +22,7 @@ const ADMIN_NAV = [
   { href: "/api-alerts", label: "API Alerts", icon: "🛡️" },
   { href: "/ip-blacklist", label: "IP Blacklist", icon: "🚫" },
   { href: "/audit", label: "Audit Log", icon: "📜" },
+  { href: "/account/security", label: "Passkey", icon: "🔑" },
 ];
 
 const DEV_NAV = [

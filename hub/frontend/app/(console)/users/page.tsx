@@ -5,6 +5,7 @@ import { Topbar } from "@/components/Topbar";
 import { DataTable, type Column } from "@/components/DataTable";
 import { Badge } from "@/components/Badge";
 import { clientFetch } from "@/lib/api";
+import { UserPasskeyModal } from "./_components/UserPasskeyModal";
 
 type User = {
   id: string;
@@ -32,6 +33,7 @@ export default function UsersPage() {
   const [faculty, setFaculty] = useState<string>("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [pkUser, setPkUser] = useState<{ id: string; name: string } | null>(null);
 
   function load() {
     setLoading(true);
@@ -97,6 +99,22 @@ export default function UsersPage() {
         </Badge>
       ),
     },
+    {
+      key: "passkey",
+      header: "Passkey",
+      render: (u) => (
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            setPkUser({ id: u.id, name: u.email });
+          }}
+          className="text-xs px-2.5 py-1 rounded-md border border-ink-200 hover:border-brand-400 hover:bg-brand-50 text-ink-600"
+          title="ดู/จัดการ Passkey"
+        >
+          🔑 ดู
+        </button>
+      ),
+    },
   ];
 
   return (
@@ -135,6 +153,14 @@ export default function UsersPage() {
 
         <DataTable columns={columns} rows={users} emptyMessage="ไม่พบผู้ใช้" />
       </main>
+
+      {pkUser && (
+        <UserPasskeyModal
+          userId={pkUser.id}
+          userName={pkUser.name}
+          onClose={() => setPkUser(null)}
+        />
+      )}
     </>
   );
 }

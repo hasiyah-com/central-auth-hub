@@ -1,36 +1,63 @@
 "use client";
 
 /**
- * Account Security — Phase 1 minimal Add Passkey UI (plan v3).
+ * Account Security — Passkey lifecycle management (Phase 3, admin only).
  *
- * Phase 3 will extend this with: list, rename, delete, last_used,
- * backup-codes status panel, regenerate flow.
+ * List + Add + Rename + Delete passkeys + backup codes status.
  */
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Topbar } from "@/components/Topbar";
 import {
+  fetchBackupCodesStatus,
   isPasskeySupported,
   isPlatformAuthenticatorAvailable,
+  listPasskeys,
+  regenerateBackupCodes,
   registerPasskey,
-  type RegisterFinishResult,
+  type BackupCodesStatus,
+  type PasskeyInfo,
 } from "@/lib/passkey";
 import { BackupCodesModal } from "./_components/BackupCodesModal";
+import { PasskeyCard } from "./_components/PasskeyCard";
 
 export default function SecurityPage() {
   const [supported, setSupported] = useState<boolean | null>(null);
   const [platformAvailable, setPlatformAvailable] = useState(false);
+  const [passkeys, setPasskeys] = useState<PasskeyInfo[]>([]);
+  const [maxPasskeys, setMaxPasskeys] = useState(10);
+  const [backupStatus, setBackupStatus] = useState<BackupCodesStatus | null>(null);
+  const [loading, setLoading] = useState(true);
   const [deviceName, setDeviceName] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<RegisterFinishResult | null>(null);
   const [backupCodes, setBackupCodes] = useState<string[] | null>(null);
+  const [showAdd, setShowAdd] = useState(false);
+
+  const refresh = useCallback(async () => {
+    try {
+      const [list, bc] = await Promise.all([
+        listPasskeys(),
+        fetchBackupCodesStatus().catch(() => null),
+      ]);
+      setPasskeys(list.passkeys);
+      setMaxPasskeys(list.max);
+      setBackupStatus(bc);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "โหลดข้อมูลไม่สำเร็จ");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     const ok = isPasskeySupported();
     setSupported(ok);
     if (ok) isPlatformAuthenticatorAvailable().then(setPlatformAvailable);
-  }, []);
+    refresh();
+  }, [refresh]);
+
+  const atMax = passkeys.length >= maxPasskeys;
 
   const handleRegister = async () => {
     if (!deviceName.trim()) {
@@ -41,17 +68,20 @@ export default function SecurityPage() {
     setBusy(true);
     try {
       const res = await registerPasskey(deviceName.trim());
-      setResult(res);
       if (res.backup_codes && res.backup_codes_must_acknowledge) {
         setBackupCodes(res.backup_codes);
       }
       setDeviceName("");
+      setShowAdd(false);
+      await refresh();
     } catch (e) {
       const message =
         e instanceof Error
           ? e.message
           : typeof e === "object" && e && "detail" in e
-            ? String((e as { detail: unknown }).detail)
+            ? typeof (e as { detail: unknown }).detail === "object"
+              ? "ลงทะเบียนไม่สำเร็จ (อาจถึงจำนวนสูงสุด)"
+              : String((e as { detail: unknown }).detail)
             : "ลงทะเบียน Passkey ไม่สำเร็จ";
       setError(message);
     } finally {
@@ -64,83 +94,157 @@ export default function SecurityPage() {
       <Topbar title="ความปลอดภัยของบัญชี" />
 
       <div className="px-8 py-6 max-w-3xl space-y-6">
-        {/* Feature support banner */}
         {supported === false && (
           <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-sm text-red-900">
-            <strong>เบราว์เซอร์นี้ไม่รองรับ Passkey.</strong> กรุณาใช้ Chrome,
-            Edge, Safari, หรือ Firefox เวอร์ชั่นใหม่.
+            <strong>เบราว์เซอร์นี้ไม่รองรับ Passkey.</strong> ใช้ Chrome, Edge,
+            Safari, หรือ Firefox เวอร์ชั่นใหม่.
           </div>
         )}
 
-        {supported && (
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm text-blue-900">
-            <div className="font-semibold mb-1">
-              ✅ เบราว์เซอร์รองรับ Passkey
+        {/* Passkey list */}
+        <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-lg font-bold text-gray-900">Passkey ของคุณ</h2>
+              <p className="text-sm text-gray-600 mt-0.5">
+                {passkeys.length}/{maxPasskeys} อุปกรณ์
+                {platformAvailable && " · ตรวจพบ biometric ในเครื่องนี้"}
+              </p>
             </div>
-            {platformAvailable ? (
-              <div>
-                ตรวจพบ TouchID / Windows Hello / Biometric — ใช้ลงทะเบียนได้เลย.
-              </div>
-            ) : (
-              <div>
-                ไม่พบ platform authenticator — ใช้ YubiKey หรือมือถือ (Mobile-as-key)
-                ได้.
-              </div>
+            {supported && !atMax && !showAdd && (
+              <button
+                onClick={() => setShowAdd(true)}
+                className="px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700"
+              >
+                + เพิ่ม Passkey
+              </button>
             )}
           </div>
-        )}
 
-        {/* Add Passkey form */}
-        <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-4">
-          <div>
-            <h2 className="text-lg font-bold text-gray-900">เพิ่ม Passkey</h2>
-            <p className="text-sm text-gray-600 mt-1">
-              ลงทะเบียนอุปกรณ์ใหม่ (TouchID, Windows Hello, YubiKey, มือถือ).
-              Passkey แรกจะสร้าง backup codes 10 ตัวให้บันทึกเก็บไว้.
-            </p>
-          </div>
+          {loading ? (
+            <div className="text-sm text-gray-400 py-6 text-center">กำลังโหลด…</div>
+          ) : passkeys.length === 0 ? (
+            <div className="text-sm text-gray-500 py-6 text-center border border-dashed border-gray-200 rounded-lg">
+              ยังไม่มี Passkey — เพิ่มเพื่อ login แบบไม่ใช้รหัสผ่าน
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {passkeys.map((pk) => (
+                <PasskeyCard
+                  key={pk.id}
+                  pk={pk}
+                  isLast={passkeys.length === 1}
+                  onChanged={refresh}
+                />
+              ))}
+            </div>
+          )}
 
-          <div className="space-y-2">
-            <label htmlFor="deviceName" className="text-sm font-medium text-gray-700">
-              ชื่ออุปกรณ์
-            </label>
-            <input
-              id="deviceName"
-              type="text"
-              value={deviceName}
-              onChange={(e) => setDeviceName(e.target.value)}
-              placeholder="MacBook Air, iPhone 15, YubiKey 5C"
-              disabled={!supported || busy}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 disabled:bg-gray-100"
-              maxLength={100}
-            />
-          </div>
+          {/* Add form */}
+          {showAdd && (
+            <div className="border-t border-gray-100 pt-4 space-y-3">
+              <label className="text-sm font-medium text-gray-700">
+                ชื่ออุปกรณ์ใหม่
+              </label>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={deviceName}
+                  onChange={(e) => setDeviceName(e.target.value)}
+                  placeholder="MacBook Air, iPhone 15, YubiKey 5C"
+                  disabled={busy}
+                  maxLength={100}
+                  autoFocus
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") handleRegister();
+                  }}
+                  className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
+                />
+                <button
+                  onClick={handleRegister}
+                  disabled={busy || !deviceName.trim()}
+                  className={`px-4 py-2 rounded-lg font-semibold ${
+                    busy || !deviceName.trim()
+                      ? "bg-gray-200 text-gray-400 cursor-not-allowed"
+                      : "bg-emerald-600 text-white hover:bg-emerald-700"
+                  }`}
+                >
+                  {busy ? "กำลังลงทะเบียน…" : "ลงทะเบียน"}
+                </button>
+                <button
+                  onClick={() => {
+                    setShowAdd(false);
+                    setDeviceName("");
+                    setError(null);
+                  }}
+                  disabled={busy}
+                  className="px-3 py-2 text-gray-500 hover:text-gray-700 text-sm"
+                >
+                  ยกเลิก
+                </button>
+              </div>
+            </div>
+          )}
+
+          {atMax && (
+            <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-2.5">
+              ถึงจำนวนสูงสุด {maxPasskeys} อุปกรณ์ — ลบตัวเก่าก่อนเพิ่มใหม่
+            </div>
+          )}
 
           {error && (
             <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-800">
               {error}
             </div>
           )}
-
-          {result && !backupCodes && (
-            <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-3 text-sm text-emerald-800">
-              ✓ ลงทะเบียน <strong>{result.device_name}</strong> สำเร็จ (
-              {result.device_type})
-            </div>
-          )}
-
-          <button
-            onClick={handleRegister}
-            disabled={!supported || busy || !deviceName.trim()}
-            className={`w-full py-2.5 rounded-lg font-semibold transition ${
-              !supported || busy || !deviceName.trim()
-                ? "bg-gray-200 text-gray-400 cursor-not-allowed"
-                : "bg-emerald-600 text-white hover:bg-emerald-700"
-            }`}
-          >
-            {busy ? "กำลังลงทะเบียน…" : "🔑 ลงทะเบียน Passkey"}
-          </button>
         </div>
+
+        {/* Backup codes status + regenerate (A + C) */}
+        {backupStatus && backupStatus.generation > 0 && (
+          <div className="bg-white rounded-xl border border-gray-200 p-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-lg font-bold text-gray-900 mb-1">Backup Codes</h2>
+                <p className="text-sm text-gray-600">
+                  เหลือ <strong>{backupStatus.remaining}</strong>/{backupStatus.total} codes
+                  {backupStatus.low && (
+                    <span className="text-amber-600">
+                      {" "}· ⚠ ใกล้หมด — ควรสร้างใหม่
+                    </span>
+                  )}
+                </p>
+              </div>
+              <button
+                onClick={async () => {
+                  if (
+                    !confirm(
+                      "สร้าง backup codes ชุดใหม่? codes เก่าทั้งหมดจะใช้ไม่ได้"
+                    )
+                  )
+                    return;
+                  setBusy(true);
+                  try {
+                    const r = await regenerateBackupCodes();
+                    setBackupCodes(r.backup_codes);
+                    await refresh();
+                  } catch (e) {
+                    setError(e instanceof Error ? e.message : "สร้างใหม่ไม่สำเร็จ");
+                  } finally {
+                    setBusy(false);
+                  }
+                }}
+                disabled={busy}
+                className={`px-4 py-2 rounded-lg text-sm font-semibold ${
+                  backupStatus.low
+                    ? "bg-amber-600 text-white hover:bg-amber-700"
+                    : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                }`}
+              >
+                🔄 สร้างใหม่
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {backupCodes && (
