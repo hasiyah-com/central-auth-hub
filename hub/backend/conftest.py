@@ -105,19 +105,23 @@ def student_user(db: Session) -> User:
 # ─────────────────────────────────────────────────────────────
 
 
+# create_access_token คืน tuple (token, jti) — unpack เอาเฉพาะ token string
 @pytest.fixture
 def admin_token(admin_user: User) -> str:
-    return create_access_token(admin_user)
+    token, _jti = create_access_token(admin_user)
+    return token
 
 
 @pytest.fixture
 def teacher_token(teacher_user: User) -> str:
-    return create_access_token(teacher_user)
+    token, _jti = create_access_token(teacher_user)
+    return token
 
 
 @pytest.fixture
 def staff_token(staff_user: User) -> str:
-    return create_access_token(staff_user)
+    token, _jti = create_access_token(staff_user)
+    return token
 
 
 # ─────────────────────────────────────────────────────────────

@@ -72,6 +72,10 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
             )
         # CSP — relax /docs (Swagger ใช้ inline + CDN), เข้มใน production
         path = request.url.path
+        # HTML pages ที่ render เอง(OAuth chooser ฯลฯ) ตั้ง request.state.csp_nonce
+        # → อนุญาต inline style+script เฉพาะที่มี nonce ตรงกัน (ปลอดภัยกว่า unsafe-inline)
+        #   + Google Fonts สำหรับ typography
+        nonce = getattr(request.state, "csp_nonce", None)
         if path.startswith("/docs") or path.startswith("/redoc"):
             csp = (
                 "default-src 'self'; "
@@ -79,6 +83,15 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
                 "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
                 "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
                 "font-src 'self' https://cdn.jsdelivr.net"
+            )
+        elif nonce:
+            csp = (
+                "default-src 'self'; "
+                "img-src 'self' data:; "
+                f"style-src 'self' 'nonce-{nonce}' https://fonts.googleapis.com; "
+                f"script-src 'self' 'nonce-{nonce}'; "
+                "font-src 'self' https://fonts.gstatic.com; "
+                "frame-ancestors 'none'; base-uri 'self'"
             )
         else:
             csp = "default-src 'self'; frame-ancestors 'none'; base-uri 'self'"

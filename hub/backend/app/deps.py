@@ -1,5 +1,7 @@
 """FastAPI dependencies — ใช้ร่วมกันหลาย router."""
 
+import ipaddress
+
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jwt.exceptions import InvalidTokenError as JWTError
@@ -13,16 +15,46 @@ from app.services.jwt_service import verify_token
 bearer_scheme = HTTPBearer()
 
 
+def _valid_ip_or_none(candidate: str | None) -> str | None:
+    """คืน candidate ถ้าเป็น IPv4/IPv6 ที่ถูกต้อง — ไม่งั้น None.
+
+    กัน:
+      - INET column insert crash (audit_logs.ip, login_sessions.ip,
+        request_logs.ip เป็น type INET — ค่าที่ไม่ใช่ IP จะ raise DataError → 500)
+      - Malformed X-Forwarded-For DoS / log injection — attacker ส่ง
+        header garbage ทำให้ audit/log insert ล้มทั้ง request ไม่ได้
+    """
+    if not candidate:
+        return None
+    try:
+        ip = ipaddress.ip_address(candidate)
+    except ValueError:
+        return None
+    # normalize IPv4-mapped IPv6 (::ffff:172.18.0.1 → 172.18.0.1)
+    # — สวยขึ้น + GeoIP/ML ทำงานกับ IPv4 ตรงๆ
+    if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped is not None:
+        return str(ip.ipv4_mapped)
+    return str(ip)
+
+
 def get_client_ip(request: Request) -> str | None:
     """คืน IP ของ client โดยให้ความสำคัญกับ X-Forwarded-For (เมื่ออยู่หลัง proxy).
 
     ใน production ถ้าวางหลัง nginx/cloudflare ต้องการ IP ตัวจริงเพื่อ audit + ML.
     Docker network ก็ใช้ตัวนี้กัน 172.x.x.x ไม่ตรงกับ IP จริง
+
+    Validate ผลลัพธ์เป็น IP ที่ถูกต้องเสมอ (กัน INET insert crash +
+    malformed-header DoS) — ถ้าไม่ใช่ IP คืน None
     """
     xff = request.headers.get("x-forwarded-for")
     if xff:
-        return xff.split(",")[0].strip()
-    return request.client.host if request.client else None
+        first = xff.split(",")[0].strip()
+        validated = _valid_ip_or_none(first)
+        if validated:
+            return validated
+        # XFF ไม่ใช่ IP (ปลอม/garbage) → fallback ไป request.client.host
+    client_host = request.client.host if request.client else None
+    return _valid_ip_or_none(client_host)
 
 
 def get_current_user(
