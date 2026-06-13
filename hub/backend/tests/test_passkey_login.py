@@ -83,14 +83,55 @@ def _add_credential(
 
 @pytest.mark.smoke
 def test_auth_begin_unknown_email_does_not_enumerate(db):
-    """Unknown email → still returns options (no 404). Anti-enumeration."""
+    """Unknown email → still returns options (no 404). Anti-enumeration.
+
+    allowCredentials ต้อง **ไม่ว่าง** (dummy descriptors) — กัน enumeration
+    ผ่าน shape ของ response (empty=ไม่มี passkey vs non-empty=มี).
+    """
     options = webauthn_service.auth_begin(
         f"nonexistent-{uuid.uuid4().hex[:6]}@uni.ac.th", db
     )
     assert "challenge" in options
     assert options["userVerification"] == "required"  # Decision #2
-    # No credentials to allow — empty list (frontend will trigger ceremony anyway)
-    assert options.get("allowCredentials", []) == []
+    # Anti-enum: ต้องมี dummy descriptor (ไม่ใช่ list ว่าง)
+    assert len(options.get("allowCredentials", [])) >= 1
+
+
+@pytest.mark.smoke
+def test_auth_begin_dummy_is_deterministic_per_email(db):
+    """email เดียวกัน → dummy credential id เดิมทุกครั้ง (กัน shape/timing tell)."""
+    email = f"ghost-{uuid.uuid4().hex[:6]}@uni.ac.th"
+    a = webauthn_service.auth_begin(email, db)
+    b = webauthn_service.auth_begin(email, db)
+    ids_a = [c["id"] for c in a["allowCredentials"]]
+    ids_b = [c["id"] for c in b["allowCredentials"]]
+    assert ids_a == ids_b and len(ids_a) >= 1
+
+
+@pytest.mark.smoke
+def test_auth_begin_dummy_differs_between_emails(db):
+    """คนละ email → dummy id ต่างกัน (เลียนแบบ credential จริงที่ unique)."""
+    a = webauthn_service.auth_begin(f"a-{uuid.uuid4().hex[:6]}@uni.ac.th", db)
+    b = webauthn_service.auth_begin(f"b-{uuid.uuid4().hex[:6]}@uni.ac.th", db)
+    assert a["allowCredentials"][0]["id"] != b["allowCredentials"][0]["id"]
+
+
+@pytest.mark.smoke
+def test_auth_begin_dummy_not_in_db(test_user, db):
+    """dummy credential id ต้องไม่ตรง credential จริงใน DB → ceremony fail
+    แบบเดียวกับ wrong credential (401 invalid_credential)."""
+    from app.services.webauthn_service import _b64url_decode
+
+    options = webauthn_service.auth_begin(
+        f"nobody-{uuid.uuid4().hex[:6]}@uni.ac.th", db
+    )
+    dummy_id = _b64url_decode(options["allowCredentials"][0]["id"])
+    hit = (
+        db.query(PasskeyCredential)
+        .filter(PasskeyCredential.credential_id == dummy_id)
+        .first()
+    )
+    assert hit is None
 
 
 @pytest.mark.smoke
@@ -116,10 +157,15 @@ def test_auth_begin_populates_allow_credentials(test_user, db):
 
 @pytest.mark.smoke
 def test_auth_begin_excludes_revoked(test_user, db):
-    """Revoked credentials → not in allow_credentials."""
-    _add_credential(db, test_user, revoked=True)
+    """Revoked credentials → not in allow_credentials (จะได้ dummy แทน)."""
+    from app.services.webauthn_service import _b64url
+
+    cred = _add_credential(db, test_user, revoked=True)
     options = webauthn_service.auth_begin(test_user.email, db)
-    assert options.get("allowCredentials", []) == []
+    returned_ids = {c["id"] for c in options.get("allowCredentials", [])}
+    # credential ที่ revoked ต้องไม่อยู่ใน list (ได้ dummy เพราะไม่มี active)
+    assert _b64url(cred.credential_id) not in returned_ids
+    assert len(returned_ids) >= 1  # dummy (anti-enum)
 
 
 @pytest.mark.smoke
@@ -207,6 +253,27 @@ def test_auth_complete_bad_rawid_raises(test_user, db):
         "credential_id_bad_b64",
         "credential_missing_rawId",
     )
+
+
+@pytest.mark.smoke
+def test_login_session_populates_device_and_ml():
+    """_build_login_session ต้อง parse device + รัน ML จริง
+    (กัน dashboard '?' — bug 2026-06-11; + ML runs — bug 2026-06-11 #2).
+    """
+    import inspect
+
+    from app.routers import passkey as pk
+
+    src = inspect.getsource(pk._build_login_session)
+    assert (
+        "parse_os_name" in src and "parse_browser" in src and "parse_device_type" in src
+    )
+    assert "lookup_country" in src
+    # ML/RBA ต้องรันจริง (ไม่ hardcode 0.0)
+    assert "evaluate_login_risk" in src, "ต้องรัน risk engine (ML), ห้าม hardcode 0.0"
+    assert "extract_session_features" in src
+    # login_finish + discoverable เรียก helper นี้
+    assert "_build_login_session" in inspect.getsource(pk.login_finish)
 
 
 @pytest.mark.smoke
