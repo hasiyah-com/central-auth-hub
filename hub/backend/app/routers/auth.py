@@ -7,8 +7,6 @@ Flow (Week 2 — Hub <-> Google เท่านั้น ยังไม่ร�
   4. GET /.well-known/jwks.json -> public key สำหรับ verify
 """
 
-from datetime import datetime
-
 import httpx
 from authlib.integrations.starlette_client import OAuth, OAuthError
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -39,6 +37,8 @@ from app.services.ip_blacklist import is_blacklisted
 from app.services.alert_service import maybe_alert_ml_risk
 from app.services.identity_challenge import is_user_challenged
 from app.security.risk_engine import evaluate_login_risk
+from app.services import webauthn_service
+from app.services import risk_challenge
 
 router = APIRouter()
 
@@ -75,7 +75,12 @@ async def google_login(request: Request):
         },
     )
     redirect_uri = settings.google_redirect_uri
-    return await oauth.google.authorize_redirect(request, redirect_uri)
+    # prompt=select_account → Google บังคับให้เลือก account ทุกครั้ง
+    # (ไม่ auto-login ด้วย session เดิม) — จำเป็นสำหรับ multi-account
+    # + การเทส (register passkey หลายอีเมลบนเครื่องเดียว)
+    return await oauth.google.authorize_redirect(
+        request, redirect_uri, prompt="select_account"
+    )
 
 
 # ============line================
@@ -359,8 +364,17 @@ async def google_callback(request: Request, db: Session = Depends(get_db)):
     db.add(login_session)
     db.flush()  # ต้องการ login_session.id สำหรับ MFA challenge
 
-    # 5) Enforce mode + decision=block → ปฏิเสธ ก่อนออก JWT
-    if actual_decision == "block":
+    # ─── Risk-Triggered Decision (Hub direct, Week 9-10) ─────────────────
+    # >= 0.85 hard threshold      → BLOCK 403
+    # 0.50 ≤ score < 0.85         → MFA flow (Passkey re-auth / grace / force-enroll)
+    # Shadow mode = log only (would_* ไม่ enforce). MFA/block เด้งเฉพาะ enforce mode.
+    enforcing = not settings.ml_shadow_mode
+    is_hard_block = enforcing and risk_score >= settings.risk_block_hard_threshold
+    is_mfa_required = (
+        enforcing and not is_hard_block and actual_decision in ("block", "challenge")
+    )
+
+    if is_hard_block:
         log_action(
             db,
             actor_id=user.id,
@@ -368,7 +382,13 @@ async def google_callback(request: Request, db: Session = Depends(get_db)):
             target_type="user",
             target_id=user.id,
             ip=client_ip,
-            metadata={"score": anomaly_score, "features": features},
+            metadata={
+                "score": anomaly_score,
+                "risk_score": risk_score,
+                "reasons": risk_reasons,
+                "features": features,
+                "hard_block_threshold": settings.risk_block_hard_threshold,
+            },
         )
         db.commit()
         await emit(
@@ -378,69 +398,96 @@ async def google_callback(request: Request, db: Session = Depends(get_db)):
                 "reason": "ml_blocked",
                 "ip": client_ip,
                 "anomaly_score": anomaly_score,
+                "risk_score": risk_score,
             },
         )
         raise HTTPException(
             status_code=403,
             detail=(
                 f"การ login ถูกบล็อกโดยระบบตรวจสอบความปลอดภัย "
-                f"(anomaly_score={anomaly_score}) — ติดต่อ admin หากเป็นเรื่องผิดพลาด"
+                f"(risk_score={risk_score:.3f}) — ติดต่อ admin หากเป็นเรื่องผิดพลาด"
             ),
         )
 
-    # 6) Enforce mode + decision=mfa → สร้าง MFA challenge + redirect ไป /auth/mfa
-    if actual_decision == "mfa":
-        from datetime import timedelta
-
-        from app.models import MFAChallenge
-        from app.services.mfa_service import generate_otp, hash_otp, send_otp_email
-
-        otp = generate_otp()
-        expires_at = datetime.utcnow() + timedelta(minutes=5)
-        challenge = MFAChallenge(
-            user_id=user.id,
-            login_session_id=login_session.id,
-            code_hash=hash_otp(otp),
-            method="email",
-            expires_at=expires_at,
-        )
-        db.add(challenge)
-        log_action(
-            db,
-            actor_id=user.id,
-            action="mfa_challenge_issued",
-            target_type="user",
-            target_id=user.id,
-            ip=client_ip,
-            metadata={
-                "session_id": str(login_session.id),
-                "method": "email",
-                "score": anomaly_score,
-            },
-        )
-        db.commit()
-        db.refresh(challenge)
-
-        # ส่ง email (fail-safe — ถ้า SMTP ไม่ตั้งค่าจะ log warning)
-        send_otp_email(user.email, otp, expires_at)
-
-        # Redirect frontend ไปหน้ารับ OTP
-        if settings.admin_frontend_url:
+    if is_mfa_required:
+        has_passkey = webauthn_service.count_active(user.id, db) > 0
+        if has_passkey:
+            challenge_id = risk_challenge.mint(
+                user_id=str(user.id),
+                hub_state="",
+                authreq=None,
+                risk_score=risk_score,
+                risk_breakdown=risk_breakdown,
+                risk_reasons=risk_reasons,
+                provider="hub_direct",
+                kind="reauth",
+                flow="hub_direct",
+            )
+            log_action(
+                db,
+                actor_id=user.id,
+                action="risk_mfa_required",
+                target_type="user",
+                target_id=user.id,
+                ip=client_ip,
+                metadata={
+                    "kind": "reauth",
+                    "challenge_id": challenge_id,
+                    "risk_score": risk_score,
+                },
+            )
+            db.commit()
             return RedirectResponse(
-                f"{settings.admin_frontend_url}/auth/mfa?challenge={challenge.id}",
+                f"/auth/passkey/risk-stepup?challenge={challenge_id}",
                 status_code=302,
             )
-        # API client fallback
-        return JSONResponse(
-            {
-                "mfa_required": True,
-                "challenge_id": str(challenge.id),
-                "method": "email",
-                "expires_at": expires_at.isoformat(),
-                "message": "กรุณาตรวจ email + กรอก OTP ที่ /auth/mfa",
-            },
-            status_code=202,
-        )
+
+        if webauthn_service.in_grace_period(user, db):
+            adoption = webauthn_service.adoption_status(user, db)
+            log_action(
+                db,
+                actor_id=user.id,
+                action="risk_grace_period_allowed",
+                target_type="user",
+                target_id=user.id,
+                ip=client_ip,
+                metadata={
+                    "risk_score": risk_score,
+                    "grace_days_remaining": adoption.get("grace_days_remaining"),
+                    "days_since_signup": adoption.get("days_since_signup"),
+                },
+            )
+            # fall through → ออก JWT ปกติ
+        else:
+            challenge_id = risk_challenge.mint(
+                user_id=str(user.id),
+                hub_state="",
+                authreq=None,
+                risk_score=risk_score,
+                risk_breakdown=risk_breakdown,
+                risk_reasons=risk_reasons,
+                provider="hub_direct",
+                kind="enroll",
+                flow="hub_direct",
+            )
+            log_action(
+                db,
+                actor_id=user.id,
+                action="risk_force_enroll_required",
+                target_type="user",
+                target_id=user.id,
+                ip=client_ip,
+                metadata={
+                    "kind": "enroll",
+                    "challenge_id": challenge_id,
+                    "risk_score": risk_score,
+                },
+            )
+            db.commit()
+            return RedirectResponse(
+                f"/auth/passkey/force-enroll?challenge={challenge_id}",
+                status_code=302,
+            )
 
     # log การ login สำเร็จ
     log_action(
@@ -808,8 +855,17 @@ async def line_callback(request: Request, db: Session = Depends(get_db)):
     db.add(login_session)
     db.flush()  # ต้องการ login_session.id สำหรับ MFA challenge
 
-    # 5) Enforce mode + decision=block → ปฏิเสธ ก่อนออก JWT
-    if actual_decision == "block":
+    # ─── Risk-Triggered Decision (Hub direct, Week 9-10) ─────────────────
+    # >= 0.85 hard threshold      → BLOCK 403
+    # 0.50 ≤ score < 0.85         → MFA flow (Passkey re-auth / grace / force-enroll)
+    # Shadow mode = log only (would_* ไม่ enforce). MFA/block เด้งเฉพาะ enforce mode.
+    enforcing = not settings.ml_shadow_mode
+    is_hard_block = enforcing and risk_score >= settings.risk_block_hard_threshold
+    is_mfa_required = (
+        enforcing and not is_hard_block and actual_decision in ("block", "challenge")
+    )
+
+    if is_hard_block:
         log_action(
             db,
             actor_id=user.id,
@@ -817,7 +873,13 @@ async def line_callback(request: Request, db: Session = Depends(get_db)):
             target_type="user",
             target_id=user.id,
             ip=client_ip,
-            metadata={"score": anomaly_score, "features": features},
+            metadata={
+                "score": anomaly_score,
+                "risk_score": risk_score,
+                "reasons": risk_reasons,
+                "features": features,
+                "hard_block_threshold": settings.risk_block_hard_threshold,
+            },
         )
         db.commit()
         await emit(
@@ -827,69 +889,96 @@ async def line_callback(request: Request, db: Session = Depends(get_db)):
                 "reason": "ml_blocked",
                 "ip": client_ip,
                 "anomaly_score": anomaly_score,
+                "risk_score": risk_score,
             },
         )
         raise HTTPException(
             status_code=403,
             detail=(
                 f"การ login ถูกบล็อกโดยระบบตรวจสอบความปลอดภัย "
-                f"(anomaly_score={anomaly_score}) — ติดต่อ admin หากเป็นเรื่องผิดพลาด"
+                f"(risk_score={risk_score:.3f}) — ติดต่อ admin หากเป็นเรื่องผิดพลาด"
             ),
         )
 
-    # 6) Enforce mode + decision=mfa → สร้าง MFA challenge + redirect ไป /auth/mfa
-    if actual_decision == "mfa":
-        from datetime import timedelta
-
-        from app.models import MFAChallenge
-        from app.services.mfa_service import generate_otp, hash_otp, send_otp_email
-
-        otp = generate_otp()
-        expires_at = datetime.utcnow() + timedelta(minutes=5)
-        challenge = MFAChallenge(
-            user_id=user.id,
-            login_session_id=login_session.id,
-            code_hash=hash_otp(otp),
-            method="email",
-            expires_at=expires_at,
-        )
-        db.add(challenge)
-        log_action(
-            db,
-            actor_id=user.id,
-            action="mfa_challenge_issued",
-            target_type="user",
-            target_id=user.id,
-            ip=client_ip,
-            metadata={
-                "session_id": str(login_session.id),
-                "method": "email",
-                "score": anomaly_score,
-            },
-        )
-        db.commit()
-        db.refresh(challenge)
-
-        # ส่ง email (fail-safe — ถ้า SMTP ไม่ตั้งค่าจะ log warning)
-        send_otp_email(user.email, otp, expires_at)
-
-        # Redirect frontend ไปหน้ารับ OTP
-        if settings.admin_frontend_url:
+    if is_mfa_required:
+        has_passkey = webauthn_service.count_active(user.id, db) > 0
+        if has_passkey:
+            challenge_id = risk_challenge.mint(
+                user_id=str(user.id),
+                hub_state="",
+                authreq=None,
+                risk_score=risk_score,
+                risk_breakdown=risk_breakdown,
+                risk_reasons=risk_reasons,
+                provider="hub_direct",
+                kind="reauth",
+                flow="hub_direct",
+            )
+            log_action(
+                db,
+                actor_id=user.id,
+                action="risk_mfa_required",
+                target_type="user",
+                target_id=user.id,
+                ip=client_ip,
+                metadata={
+                    "kind": "reauth",
+                    "challenge_id": challenge_id,
+                    "risk_score": risk_score,
+                },
+            )
+            db.commit()
             return RedirectResponse(
-                f"{settings.admin_frontend_url}/auth/mfa?challenge={challenge.id}",
+                f"/auth/passkey/risk-stepup?challenge={challenge_id}",
                 status_code=302,
             )
-        # API client fallback
-        return JSONResponse(
-            {
-                "mfa_required": True,
-                "challenge_id": str(challenge.id),
-                "method": "email",
-                "expires_at": expires_at.isoformat(),
-                "message": "กรุณาตรวจ email + กรอก OTP ที่ /auth/mfa",
-            },
-            status_code=202,
-        )
+
+        if webauthn_service.in_grace_period(user, db):
+            adoption = webauthn_service.adoption_status(user, db)
+            log_action(
+                db,
+                actor_id=user.id,
+                action="risk_grace_period_allowed",
+                target_type="user",
+                target_id=user.id,
+                ip=client_ip,
+                metadata={
+                    "risk_score": risk_score,
+                    "grace_days_remaining": adoption.get("grace_days_remaining"),
+                    "days_since_signup": adoption.get("days_since_signup"),
+                },
+            )
+            # fall through → ออก JWT ปกติ
+        else:
+            challenge_id = risk_challenge.mint(
+                user_id=str(user.id),
+                hub_state="",
+                authreq=None,
+                risk_score=risk_score,
+                risk_breakdown=risk_breakdown,
+                risk_reasons=risk_reasons,
+                provider="hub_direct",
+                kind="enroll",
+                flow="hub_direct",
+            )
+            log_action(
+                db,
+                actor_id=user.id,
+                action="risk_force_enroll_required",
+                target_type="user",
+                target_id=user.id,
+                ip=client_ip,
+                metadata={
+                    "kind": "enroll",
+                    "challenge_id": challenge_id,
+                    "risk_score": risk_score,
+                },
+            )
+            db.commit()
+            return RedirectResponse(
+                f"/auth/passkey/force-enroll?challenge={challenge_id}",
+                status_code=302,
+            )
 
     # log การ login สำเร็จ
     log_action(

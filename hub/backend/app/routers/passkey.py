@@ -21,19 +21,28 @@ action, so the start endpoint goes through ``critical_action_policy.gate(...)``
 EXCEPT for the very first Passkey (which can't have step-up cache yet).
 """
 
+import json
 import logging
+import secrets
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.database import get_db
 from app.deps import get_client_ip, get_current_user, require_hub_admin
-from app.models import LoginSession, User
+from app.models import AccessList, LoginSession, User
 from app.rate_limiter import limiter
-from app.services import passkey_recovery, stepup_cache, webauthn_service
+from app.redis_client import redis_client
+from app.services import (
+    passkey_recovery,
+    risk_challenge,
+    stepup_cache,
+    webauthn_service,
+)
 from app.services.audit_service import log_action
 from app.services.critical_action_policy import _bearer, _extract_jti, gate
 from app.services.alert_service import maybe_alert_ml_risk
@@ -1143,3 +1152,902 @@ async def stepup_otp_verify(
     )
     db.commit()
     return {"granted": True, "ttl_sec": settings.stepup_cache_ttl_sec}
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# Risk-Triggered Re-Authentication (Week 9-10)
+# ════════════════════════════════════════════════════════════════════════════
+# Triggered จาก finalizer เมื่อ RBA decision = mfa_required + user has passkey.
+# Flow:
+#   GET  /auth/passkey/risk-stepup?challenge=<id>          (Hub-served HTML)
+#   POST /auth/passkey/risk-stepup/start  {challenge_id}   → assertion options
+#   POST /auth/passkey/risk-stepup/verify {challenge_id, credential}
+#                                                          → mint redirect URL
+# ----------------------------------------------------------------------------
+
+
+def _load_challenge_user(challenge_id: str, db: Session) -> tuple[dict, User]:
+    """Peek challenge + load User. Raise 410 ถ้า expired/missing."""
+    payload = risk_challenge.peek(challenge_id)
+    if not payload:
+        raise HTTPException(status_code=410, detail="challenge หมดอายุ — กรุณา login ใหม่")
+    user = db.query(User).filter(User.id == payload["user_id"]).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="ไม่พบ user")
+    return payload, user
+
+
+def _finalize_after_reauth(
+    *,
+    user: User,
+    payload: dict,
+    request: Request,
+    db: Session,
+) -> str:
+    """หลัง re-auth ผ่าน → ออก authorization code (subsystem) หรือ JWT (hub_direct).
+
+    Returns: redirect URL string.
+    """
+    flow = payload.get("flow")
+    client_ip = get_client_ip(request)
+
+    if flow == "subsystem":
+        authreq = payload["authreq"]
+        hub_state = payload["hub_state"]
+        raw = redis_client.get(f"authreq:{hub_state}")
+        if not raw:
+            raise HTTPException(
+                status_code=410, detail="OAuth session หมดอายุ — login ใหม่"
+            )
+        access = (
+            db.query(AccessList)
+            .filter(
+                AccessList.user_id == user.id,
+                AccessList.subsystem_id == authreq["subsystem_id"],
+                AccessList.revoked_at.is_(None),
+            )
+            .first()
+        )
+        if not access:
+            raise HTTPException(status_code=403, detail="ไม่มีสิทธิ์เข้า subsystem นี้")
+
+        auth_code = secrets.token_urlsafe(32)
+        AUTH_CODE_TTL = 60
+        redis_client.setex(
+            f"authcode:{auth_code}",
+            AUTH_CODE_TTL,
+            json.dumps(
+                {
+                    "user_id": str(user.id),
+                    "client_id": authreq["client_id"],
+                    "subsystem_id": authreq["subsystem_id"],
+                    "code_challenge": authreq["code_challenge"],
+                    "scope": authreq["scope"],
+                    "role_in_sub": access.role_in_sub,
+                }
+            ),
+        )
+        latest = (
+            db.query(LoginSession)
+            .filter(
+                LoginSession.user_id == user.id,
+                LoginSession.subsystem_id == authreq["subsystem_id"],
+            )
+            .order_by(LoginSession.created_at.desc())
+            .first()
+        )
+        if latest:
+            latest.decision = "mfa_passed"
+        log_action(
+            db,
+            actor_id=user.id,
+            action="risk_mfa_passed",
+            target_type="subsystem",
+            target_id=authreq["subsystem_id"],
+            ip=client_ip,
+            metadata={
+                "method": "passkey",
+                "risk_score": payload.get("risk_score"),
+            },
+        )
+        redis_client.delete(f"authreq:{hub_state}")
+        sep = "&" if "?" in authreq["redirect_uri"] else "?"
+        return (
+            f"{authreq['redirect_uri']}{sep}code={auth_code}&state={authreq['state']}"
+        )
+
+    # flow == "hub_direct"
+    access_token, token_jti = create_access_token(user)
+    latest = (
+        db.query(LoginSession)
+        .filter(LoginSession.user_id == user.id)
+        .order_by(LoginSession.created_at.desc())
+        .first()
+    )
+    if latest:
+        latest.jti = token_jti
+        latest.decision = "mfa_passed"
+    log_action(
+        db,
+        actor_id=user.id,
+        action="risk_mfa_passed",
+        target_type="user",
+        target_id=user.id,
+        ip=client_ip,
+        metadata={
+            "method": "passkey",
+            "risk_score": payload.get("risk_score"),
+            "flow": "hub_direct",
+        },
+    )
+    stepup_cache.set_granted(
+        user_id=str(user.id),
+        jti=token_jti,
+        method="passkey",
+        ip=client_ip,
+    )
+    if settings.admin_frontend_url:
+        return f"{settings.admin_frontend_url}/auth/callback?token={access_token}"
+    return f"/auth/me?token={access_token}"
+
+
+class RiskStepupStartBody(BaseModel):
+    challenge_id: str = Field(..., min_length=8, max_length=128)
+
+
+class RiskStepupVerifyBody(BaseModel):
+    challenge_id: str = Field(..., min_length=8, max_length=128)
+    credential: dict = Field(..., description="WebAuthn assertion")
+
+
+@router.get("/auth/passkey/risk-stepup", response_class=HTMLResponse)
+async def risk_stepup_page(
+    request: Request,
+    challenge: str,
+    db: Session = Depends(get_db),
+):
+    """Hub-served HTML page สำหรับ Risk Re-Auth (Passkey)."""
+    payload, user = _load_challenge_user(challenge, db)
+    nonce = secrets.token_urlsafe(16)
+    request.state.csp_nonce = nonce
+    reasons = payload.get("risk_reasons") or []
+    return HTMLResponse(
+        content=_risk_stepup_html(
+            challenge_id=challenge,
+            user_email=user.email,
+            risk_score=payload.get("risk_score", 0.0),
+            reasons=reasons,
+            nonce=nonce,
+        )
+    )
+
+
+@router.post("/auth/passkey/risk-stepup/start")
+@limiter.limit(settings.rate_limit_token)
+async def risk_stepup_start(
+    request: Request,
+    body: RiskStepupStartBody,
+    db: Session = Depends(get_db),
+):
+    """Return assertion options — peek challenge + stepup_begin()."""
+    payload, user = _load_challenge_user(body.challenge_id, db)
+    if payload.get("kind") != "reauth":
+        raise HTTPException(status_code=400, detail="challenge นี้ไม่ใช่สำหรับ re-auth")
+    return webauthn_service.stepup_begin(user, db)
+
+
+@router.post("/auth/passkey/risk-stepup/verify")
+@limiter.limit(settings.rate_limit_token)
+async def risk_stepup_verify(
+    request: Request,
+    body: RiskStepupVerifyBody,
+    db: Session = Depends(get_db),
+):
+    """Verify assertion + mint redirect URL (atomic consume หลัง verify ผ่าน)."""
+    payload, user = _load_challenge_user(body.challenge_id, db)
+    if payload.get("kind") != "reauth":
+        raise HTTPException(status_code=400, detail="challenge นี้ไม่ใช่สำหรับ re-auth")
+    ip = get_client_ip(request)
+    try:
+        result = webauthn_service.stepup_complete(
+            user,
+            body.credential,
+            db,
+            ip=ip,
+            user_agent=request.headers.get("user-agent"),
+        )
+    except HTTPException as e:
+        code = e.detail.get("code") if isinstance(e.detail, dict) else None
+        log_action(
+            db,
+            actor_id=user.id,
+            action="risk_mfa_verify_failed",
+            target_type="user",
+            target_id=user.id,
+            ip=ip,
+            metadata={"code": code, "method": "passkey"},
+        )
+        db.commit()
+        raise
+    if result.counter_regression:
+        log_action(
+            db,
+            actor_id=user.id,
+            action="passkey_counter_regression_during_reauth",
+            target_type="passkey",
+            target_id=result.credential.id,
+            ip=ip,
+            metadata={"risk_score": payload.get("risk_score")},
+        )
+
+    consumed = risk_challenge.consume(body.challenge_id)
+    if not consumed:
+        raise HTTPException(status_code=410, detail="challenge ถูกใช้ไปแล้ว — login ใหม่")
+    redirect_url = _finalize_after_reauth(
+        user=user, payload=consumed, request=request, db=db
+    )
+    db.commit()
+    return JSONResponse({"redirect_url": redirect_url})
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# Force Passkey Enrollment (Week 9-10) — High Risk + No Passkey + No Grace
+# ════════════════════════════════════════════════════════════════════════════
+# Triggered จาก finalizer เมื่อ RBA decision=mfa + no passkey + account_age>=7d.
+# Flow:
+#   GET  /auth/passkey/force-enroll?challenge=<id>     (Hub-served HTML)
+#   POST .../send-otp           {challenge_id}         → ส่ง OTP email
+#   POST .../verify-otp         {challenge_id, otp}    → mark OTP passed
+#   POST .../register/start     {challenge_id}         → require OTP-passed
+#   POST .../register/complete  {challenge_id, ...}    → enroll + redirect
+#
+# OTP gate — ป้องกัน attacker ที่ trigger mfa branch แล้ว register passkey ของตน
+# เข้าบัญชี (B45). OTP ใช้ mfa_service เดิม (HMAC-SHA256, NIST 800-63B-4).
+# ----------------------------------------------------------------------------
+
+
+_FORCE_ENROLL_OTP_TTL = 300  # 5 นาที
+
+
+def _force_enroll_otp_key(challenge_id: str) -> str:
+    return f"force_enroll_otp:{challenge_id}"
+
+
+def _force_enroll_otp_passed_key(challenge_id: str) -> str:
+    return f"force_enroll_otp_passed:{challenge_id}"
+
+
+def _require_otp_passed(challenge_id: str) -> None:
+    """403 ถ้าไม่มี force_enroll_otp_passed flag ใน Redis."""
+    if not redis_client.get(_force_enroll_otp_passed_key(challenge_id)):
+        raise HTTPException(
+            status_code=403,
+            detail={"code": "otp_required", "message": "กรุณายืนยัน OTP ก่อน"},
+        )
+
+
+class ForceEnrollOTPSendBody(BaseModel):
+    challenge_id: str = Field(..., min_length=8, max_length=128)
+
+
+class ForceEnrollOTPVerifyBody(BaseModel):
+    challenge_id: str = Field(..., min_length=8, max_length=128)
+    otp: str = Field(..., min_length=6, max_length=6, pattern=r"^\d{6}$")
+
+
+class ForceEnrollStartBody(BaseModel):
+    challenge_id: str = Field(..., min_length=8, max_length=128)
+
+
+class ForceEnrollCompleteBody(BaseModel):
+    challenge_id: str = Field(..., min_length=8, max_length=128)
+    credential: dict = Field(..., description="WebAuthn attestation")
+    device_name: str = Field("อุปกรณ์ของฉัน", max_length=100)
+
+
+@router.get("/auth/passkey/force-enroll", response_class=HTMLResponse)
+async def force_enroll_page(
+    request: Request,
+    challenge: str,
+    db: Session = Depends(get_db),
+):
+    """Hub-served HTML page สำหรับ Force Enrollment (OTP + Passkey register)."""
+    payload, user = _load_challenge_user(challenge, db)
+    if payload.get("kind") != "enroll":
+        raise HTTPException(status_code=400, detail="challenge นี้ไม่ใช่สำหรับ enroll")
+    nonce = secrets.token_urlsafe(16)
+    request.state.csp_nonce = nonce
+    parts = user.email.split("@")
+    email_masked = (
+        f"{parts[0][0]}***{parts[0][-1] if len(parts[0]) > 1 else ''}@{parts[1]}"
+        if len(parts) == 2 and parts[0]
+        else "***"
+    )
+    return HTMLResponse(
+        content=_force_enroll_html(
+            challenge_id=challenge,
+            email_masked=email_masked,
+            risk_score=payload.get("risk_score", 0.0),
+            reasons=payload.get("risk_reasons") or [],
+            nonce=nonce,
+        )
+    )
+
+
+@router.post("/auth/passkey/force-enroll/send-otp")
+@limiter.limit("3/minute")
+async def force_enroll_send_otp(
+    request: Request,
+    body: ForceEnrollOTPSendBody,
+    db: Session = Depends(get_db),
+):
+    """สร้าง OTP + ส่ง email + เก็บ hash ใน Redis."""
+    from datetime import datetime, timedelta
+
+    from app.services.mfa_service import generate_otp, hash_otp, send_otp_email
+
+    payload, user = _load_challenge_user(body.challenge_id, db)
+    if payload.get("kind") != "enroll":
+        raise HTTPException(status_code=400, detail="challenge นี้ไม่ใช่สำหรับ enroll")
+
+    otp = generate_otp()
+    expires_at = datetime.utcnow() + timedelta(seconds=_FORCE_ENROLL_OTP_TTL)
+    redis_client.setex(
+        _force_enroll_otp_key(body.challenge_id),
+        _FORCE_ENROLL_OTP_TTL,
+        hash_otp(otp),
+    )
+    log_action(
+        db,
+        actor_id=user.id,
+        action="risk_force_enroll_otp_sent",
+        target_type="user",
+        target_id=user.id,
+        ip=get_client_ip(request),
+        metadata={"challenge_id": body.challenge_id},
+    )
+    db.commit()
+    # fail-safe — ถ้า SMTP ไม่ตั้งค่า log warning + ดำเนินต่อ
+    send_otp_email(user.email, otp, expires_at)
+    return {
+        "sent": True,
+        "expires_at": expires_at.isoformat(),
+        "ttl_sec": _FORCE_ENROLL_OTP_TTL,
+    }
+
+
+@router.post("/auth/passkey/force-enroll/verify-otp")
+@limiter.limit("10/minute")
+async def force_enroll_verify_otp(
+    request: Request,
+    body: ForceEnrollOTPVerifyBody,
+    db: Session = Depends(get_db),
+):
+    """Verify OTP + set passed flag."""
+    from app.services.mfa_service import verify_otp
+
+    payload, user = _load_challenge_user(body.challenge_id, db)
+    stored_hash = redis_client.get(_force_enroll_otp_key(body.challenge_id))
+    if not stored_hash:
+        raise HTTPException(status_code=410, detail="OTP หมดอายุ — กรุณาขอ OTP ใหม่")
+    stored = stored_hash.decode() if isinstance(stored_hash, bytes) else stored_hash
+    if not verify_otp(stored, body.otp):
+        log_action(
+            db,
+            actor_id=user.id,
+            action="risk_force_enroll_otp_failed",
+            target_type="user",
+            target_id=user.id,
+            ip=get_client_ip(request),
+            metadata={"challenge_id": body.challenge_id},
+        )
+        db.commit()
+        raise HTTPException(status_code=401, detail="OTP ไม่ถูกต้อง")
+
+    # ผ่าน — set passed flag + delete OTP hash
+    redis_client.setex(
+        _force_enroll_otp_passed_key(body.challenge_id),
+        _FORCE_ENROLL_OTP_TTL,
+        "1",
+    )
+    redis_client.delete(_force_enroll_otp_key(body.challenge_id))
+    log_action(
+        db,
+        actor_id=user.id,
+        action="risk_force_enroll_otp_verified",
+        target_type="user",
+        target_id=user.id,
+        ip=get_client_ip(request),
+        metadata={"challenge_id": body.challenge_id},
+    )
+    db.commit()
+    return {"verified": True}
+
+
+@router.post("/auth/passkey/force-enroll/register/start")
+@limiter.limit(settings.rate_limit_token)
+async def force_enroll_register_start(
+    request: Request,
+    body: ForceEnrollStartBody,
+    db: Session = Depends(get_db),
+):
+    """Return registration options — ต้องผ่าน OTP ก่อน."""
+    _require_otp_passed(body.challenge_id)
+    payload, user = _load_challenge_user(body.challenge_id, db)
+    return webauthn_service.register_begin(user, db)
+
+
+@router.post("/auth/passkey/force-enroll/register/complete")
+@limiter.limit(settings.rate_limit_token)
+async def force_enroll_register_complete(
+    request: Request,
+    body: ForceEnrollCompleteBody,
+    db: Session = Depends(get_db),
+):
+    """Verify attestation + create credential + backup codes + mint redirect.
+
+    Atomic: consume challenge **หลัง** register ผ่าน — กัน replay.
+    """
+    _require_otp_passed(body.challenge_id)
+    payload, user = _load_challenge_user(body.challenge_id, db)
+    ip = get_client_ip(request)
+
+    try:
+        row = webauthn_service.register_complete(
+            user, body.credential, body.device_name, db
+        )
+    except HTTPException as e:
+        code = e.detail.get("code") if isinstance(e.detail, dict) else None
+        log_action(
+            db,
+            actor_id=user.id,
+            action="risk_force_enroll_register_failed",
+            target_type="passkey",
+            ip=ip,
+            metadata={"code": code, "challenge_id": body.challenge_id},
+        )
+        db.commit()
+        raise
+
+    log_action(
+        db,
+        actor_id=user.id,
+        action="passkey_registered",
+        target_type="passkey",
+        target_id=row.id,
+        ip=ip,
+        metadata={
+            "device_name": row.device_name,
+            "via": "risk_force_enroll",
+            "risk_score": payload.get("risk_score"),
+        },
+    )
+    # ออก backup codes — passkey แรกของ user (Force Enroll = ไม่มี passkey มาก่อน)
+    codes = passkey_recovery.ensure_backup_codes(user.id, db)
+    if codes:
+        log_action(
+            db,
+            actor_id=user.id,
+            action="passkey_backup_codes_generated",
+            target_type="user",
+            target_id=user.id,
+            ip=ip,
+            metadata={"count": len(codes), "trigger": "risk_force_enroll"},
+        )
+
+    # consume challenge + cleanup OTP flag
+    consumed = risk_challenge.consume(body.challenge_id)
+    if not consumed:
+        raise HTTPException(status_code=410, detail="challenge ถูกใช้ไปแล้ว — login ใหม่")
+    redis_client.delete(_force_enroll_otp_passed_key(body.challenge_id))
+
+    # mint redirect URL (same finalizer as re-auth — issues auth code/JWT)
+    redirect_url = _finalize_after_reauth(
+        user=user, payload=consumed, request=request, db=db
+    )
+    db.commit()
+    return JSONResponse(
+        {
+            "redirect_url": redirect_url,
+            "passkey_id": str(row.id),
+            "backup_codes": codes if codes else None,
+        }
+    )
+
+
+def _force_enroll_html(
+    *,
+    challenge_id: str,
+    email_masked: str,
+    risk_score: float,
+    reasons: list,
+    nonce: str,
+) -> str:
+    """Force Enrollment page — OTP gate (step 1) + Passkey register (step 2)."""
+    safe_email = (
+        email_masked.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    )
+    reasons_html = (
+        "".join(
+            f"<li>{r.replace('<', '&lt;').replace('>', '&gt;')}</li>"
+            for r in reasons[:5]
+        )
+        or "<li>ตรวจพบความเสี่ยงผิดปกติจากระบบ ML</li>"
+    )
+    return f"""<!DOCTYPE html><html lang="th"><head><meta charset="UTF-8">
+<title>ลงทะเบียน Passkey · Central Auth Hub</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Kanit:wght@500;600;700&family=IBM+Plex+Sans+Thai:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style nonce="{nonce}">
+  :root {{ --bg-0:#070b14; --ink:#e8eef7; --muted:#8a99b5; --mint:#34e8c4;
+           --mint-2:#13b89a; --line:rgba(148,178,224,.14); --danger:#ff6b81; --amber:#f5b97a; }}
+  * {{ box-sizing:border-box; }}
+  html,body {{ margin:0; height:100%; }}
+  body {{ font-family:'IBM Plex Sans Thai',system-ui,sans-serif; background:var(--bg-0);
+          color:var(--ink); min-height:100vh; display:grid; place-items:center;
+          padding:32px 16px; overflow:hidden; position:relative; }}
+  body::before {{ content:''; position:fixed; inset:-20%; z-index:0;
+    background:radial-gradient(40% 50% at 18% 22%, rgba(245,185,122,.18), transparent 70%),
+      radial-gradient(45% 55% at 85% 18%, rgba(255,107,129,.12), transparent 70%);
+    filter:blur(20px); }}
+  .card {{ position:relative; z-index:1; width:100%; max-width:460px;
+    background:linear-gradient(180deg, rgba(20,28,48,.86), rgba(11,17,32,.92));
+    border:1px solid var(--line); border-radius:22px; backdrop-filter:blur(14px);
+    box-shadow:0 30px 80px -20px rgba(0,0,0,.7); overflow:hidden;
+    animation:rise .7s cubic-bezier(.2,.8,.2,1) both; }}
+  @keyframes rise {{ from{{opacity:0; transform:translateY(16px)}} to{{opacity:1; transform:none}} }}
+  .top {{ padding:30px 32px 4px; text-align:center; }}
+  .emblem {{ width:62px; height:62px; margin:0 auto 14px; border-radius:18px;
+    background:linear-gradient(135deg, rgba(245,185,122,.2), rgba(245,185,122,.05));
+    border:1px solid rgba(245,185,122,.35); display:grid; place-items:center; color:var(--amber); }}
+  h1 {{ font-family:'Kanit',sans-serif; font-weight:600; font-size:22px; margin:0 0 6px; }}
+  .sub {{ color:var(--muted); font-size:13.5px; margin:0; line-height:1.55; }}
+  .who {{ font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--mint);
+          margin-top:10px; word-break:break-all; }}
+  .body {{ padding:20px 32px 26px; }}
+  .reasons {{ background:rgba(255,107,129,.06); border:1px solid rgba(255,107,129,.22);
+    border-radius:12px; padding:14px 16px; margin-bottom:18px; }}
+  .reasons-title {{ font-size:11px; letter-spacing:.12em; text-transform:uppercase;
+    color:var(--danger); margin-bottom:6px; font-family:'IBM Plex Mono',monospace; }}
+  .reasons ul {{ margin:0; padding-left:18px; font-size:13px; color:#c4d0e4; line-height:1.6; }}
+  .score {{ font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--muted); margin-top:8px; }}
+  .step {{ display:none; }}
+  .step.active {{ display:block; }}
+  .step-h {{ font-family:'Kanit',sans-serif; font-size:14px; color:var(--mint);
+             margin:0 0 10px; letter-spacing:.04em; }}
+  label.fld {{ font-size:11px; color:var(--muted); font-family:'IBM Plex Mono',monospace;
+               display:block; margin-bottom:6px; }}
+  input {{ width:100%; padding:13px 14px; border-radius:11px; border:1px solid var(--line);
+           background:rgba(7,11,20,.7); color:var(--ink); font-size:14.5px;
+           font-family:'IBM Plex Sans Thai',sans-serif; margin-bottom:14px; }}
+  input:focus {{ outline:none; border-color:var(--mint-2); box-shadow:0 0 0 3px rgba(52,232,196,.16); }}
+  #otpIn {{ font-family:'IBM Plex Mono',monospace; font-size:24px; letter-spacing:.4em;
+            text-align:center; padding:14px; }}
+  .btn {{ display:flex; align-items:center; justify-content:center; gap:10px; width:100%;
+    padding:14px 16px; border-radius:13px; font-family:'Kanit',sans-serif; font-weight:500;
+    font-size:15.5px; border:1px solid transparent; cursor:pointer; text-decoration:none;
+    transition:transform .15s; }}
+  .btn-pk {{ color:#04221c; background:linear-gradient(100deg,var(--mint),#5ff0d6);
+             box-shadow:0 10px 30px -10px rgba(52,232,196,.6); }}
+  .btn-pk:hover {{ transform:translateY(-2px); }}
+  .btn-pk[disabled] {{ opacity:.5; cursor:not-allowed; transform:none; }}
+  .btn-recover {{ color:var(--muted); background:transparent; margin-top:10px; font-size:13px; }}
+  .btn-recover:hover {{ color:var(--ink); }}
+  .err {{ display:none; font-size:12.5px; color:var(--danger); margin-bottom:12px;
+    background:rgba(255,107,129,.08); border:1px solid rgba(255,107,129,.28);
+    padding:10px 12px; border-radius:10px; line-height:1.45; }}
+  .err.show {{ display:block; }}
+  .ok {{ display:none; font-size:12.5px; color:var(--mint); margin-bottom:12px;
+    background:rgba(52,232,196,.08); border:1px solid rgba(52,232,196,.28);
+    padding:10px 12px; border-radius:10px; }}
+  .ok.show {{ display:block; }}
+  .unsupported {{ display:none; font-size:12.5px; color:var(--amber); margin-bottom:12px;
+    background:rgba(245,185,122,.08); border:1px solid rgba(245,185,122,.28);
+    padding:12px 14px; border-radius:10px; line-height:1.55; }}
+  .unsupported.show {{ display:block; }}
+  .spinner {{ width:16px; height:16px; border:2px solid rgba(4,34,28,.35);
+    border-top-color:#04221c; border-radius:50%; animation:spin .7s linear infinite; }}
+  @keyframes spin {{ to{{transform:rotate(360deg)}} }}
+  .foot {{ padding:13px 32px; border-top:1px solid var(--line); text-align:center;
+    font-family:'IBM Plex Mono',monospace; font-size:10px; color:#56657f; letter-spacing:.06em; }}
+  .codes {{ display:grid; grid-template-columns:1fr 1fr; gap:8px; margin:6px 0 16px; }}
+  .code {{ font-family:'IBM Plex Mono',monospace; font-size:13.5px; letter-spacing:.06em;
+    background:rgba(7,11,20,.8); border:1px solid var(--line); border-radius:9px;
+    padding:8px 10px; color:#cfe; text-align:center; }}
+</style></head><body>
+<div class="card">
+  <div class="top">
+    <div class="emblem">
+      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+    </div>
+    <h1>ต้องลงทะเบียน Passkey</h1>
+    <p class="sub">ระบบตรวจพบความเสี่ยงสูง — กรุณาตั้งค่า Passkey<br>เพื่อความปลอดภัยของบัญชีคุณ</p>
+    <div class="who">{safe_email}</div>
+  </div>
+  <div class="body">
+    <div class="reasons">
+      <div class="reasons-title">ปัจจัยเสี่ยงที่ตรวจพบ</div>
+      <ul>{reasons_html}</ul>
+      <div class="score">risk_score: {risk_score:.3f}</div>
+    </div>
+
+    <div class="err" id="err"></div>
+    <div class="ok" id="ok"></div>
+    <div class="unsupported" id="unsupported">
+      ⚠️ <strong>เบราว์เซอร์นี้ไม่รองรับ Passkey</strong><br>
+      กรุณาใช้อุปกรณ์ที่รองรับ หรือใช้
+      <a href="/auth/passkey/recover" style="color:var(--mint)">Account Recovery</a>
+    </div>
+
+    <div class="step active" id="step1">
+      <div class="step-h">ขั้นที่ 1 — ยืนยัน OTP ทาง email</div>
+      <button class="btn btn-pk" id="sendBtn">📧 ส่ง OTP ไปที่ email</button>
+      <label class="fld" for="otpIn" style="margin-top:14px">รหัส OTP 6 หลัก</label>
+      <input type="text" id="otpIn" inputmode="numeric" maxlength="6" pattern="\\d{{6}}" placeholder="——————">
+      <button class="btn btn-pk" id="verifyOtpBtn" disabled style="margin-top:6px">ยืนยัน OTP</button>
+    </div>
+
+    <div class="step" id="step2">
+      <div class="step-h">ขั้นที่ 2 — ตั้งค่า Passkey</div>
+      <label class="fld" for="dev">ชื่ออุปกรณ์</label>
+      <input type="text" id="dev" value="อุปกรณ์ของฉัน" maxlength="100">
+      <button class="btn btn-pk" id="enrollBtn">🔑 ตั้งค่า Passkey</button>
+    </div>
+
+    <a class="btn btn-recover" href="/auth/passkey/recover">ทำ Passkey หาย? → กู้บัญชี</a>
+  </div>
+  <div class="foot">WebAuthn · FIDO2 · Force Enrollment</div>
+</div>
+<script nonce="{nonce}">
+const CHALLENGE_ID = {json.dumps(challenge_id)};
+function b64urlToBuf(s) {{ const p=s.replace(/-/g,'+').replace(/_/g,'/');
+  const pad=p.length%4===0?'':'='.repeat(4-(p.length%4)); const bin=atob(p+pad);
+  const a=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++)a[i]=bin.charCodeAt(i); return a.buffer; }}
+function bufToB64url(buf) {{ const a=new Uint8Array(buf); let b='';
+  for(let i=0;i<a.length;i++)b+=String.fromCharCode(a[i]);
+  return btoa(b).replace(/\\+/g,'-').replace(/\\//g,'_').replace(/=+$/,''); }}
+function pkSupported() {{ return !!(window.PublicKeyCredential && navigator.credentials && navigator.credentials.create); }}
+
+const errEl=document.getElementById('err'), okEl=document.getElementById('ok');
+const sendBtn=document.getElementById('sendBtn'), otpIn=document.getElementById('otpIn');
+const verifyBtn=document.getElementById('verifyOtpBtn'), enrollBtn=document.getElementById('enrollBtn');
+const devEl=document.getElementById('dev');
+const step1=document.getElementById('step1'), step2=document.getElementById('step2');
+
+function showErr(m){{ errEl.textContent=m; errEl.classList.add('show'); okEl.classList.remove('show'); }}
+function showOk(m){{ okEl.textContent=m; okEl.classList.add('show'); errEl.classList.remove('show'); }}
+
+if(!pkSupported()){{
+  document.getElementById('unsupported').classList.add('show');
+  sendBtn.disabled=true; enrollBtn.disabled=true;
+}}
+
+otpIn.addEventListener('input', ()=>{{ verifyBtn.disabled = !/^\\d{{6}}$/.test(otpIn.value); }});
+
+sendBtn.addEventListener('click', async()=>{{
+  errEl.classList.remove('show');
+  sendBtn.disabled=true; sendBtn.innerHTML='<span class="spinner"></span> กำลังส่ง…';
+  try {{
+    const r=await fetch('/auth/passkey/force-enroll/send-otp',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{challenge_id:CHALLENGE_ID}})}});
+    if(!r.ok){{ const e=await r.json().catch(()=>({{}})); throw new Error(e.detail||'ส่งไม่สำเร็จ'); }}
+    showOk('✓ ส่ง OTP ไปแล้ว — ตรวจ email ของคุณ');
+    sendBtn.textContent='📧 ส่งใหม่อีกครั้ง'; sendBtn.disabled=false;
+  }} catch(err){{ showErr(err.message||'ส่งไม่สำเร็จ');
+    sendBtn.disabled=false; sendBtn.textContent='📧 ส่ง OTP ไปที่ email'; }}
+}});
+
+verifyBtn.addEventListener('click', async()=>{{
+  errEl.classList.remove('show');
+  verifyBtn.disabled=true; verifyBtn.innerHTML='<span class="spinner"></span> กำลังตรวจ…';
+  try {{
+    const r=await fetch('/auth/passkey/force-enroll/verify-otp',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{challenge_id:CHALLENGE_ID,otp:otpIn.value}})}});
+    if(!r.ok){{ const e=await r.json().catch(()=>({{}})); throw new Error(e.detail||'OTP ไม่ถูกต้อง'); }}
+    showOk('✓ ยืนยัน OTP สำเร็จ — กรุณาตั้งค่า Passkey');
+    step1.classList.remove('active'); step2.classList.add('active');
+  }} catch(err){{ showErr(err.message||'OTP ไม่ถูกต้อง');
+    verifyBtn.disabled=false; verifyBtn.textContent='ยืนยัน OTP'; }}
+}});
+
+enrollBtn.addEventListener('click', async()=>{{
+  errEl.classList.remove('show');
+  const dev=(devEl.value||'').trim()||'อุปกรณ์ของฉัน';
+  enrollBtn.disabled=true; enrollBtn.innerHTML='<span class="spinner"></span> กำลังตั้งค่า…';
+  try {{
+    const s=await fetch('/auth/passkey/force-enroll/register/start',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{challenge_id:CHALLENGE_ID}})}});
+    if(!s.ok){{ const e=await s.json().catch(()=>({{}})); throw new Error(typeof e.detail==='string'?e.detail:'เริ่มไม่สำเร็จ'); }}
+    const opts=await s.json();
+    opts.challenge=b64urlToBuf(opts.challenge);
+    opts.user.id=b64urlToBuf(opts.user.id);
+    (opts.excludeCredentials||[]).forEach(c=>c.id=b64urlToBuf(c.id));
+    let cred;
+    try {{ cred=await navigator.credentials.create({{publicKey:opts}}); }}
+    catch(ce){{ throw new Error('การตั้งค่าถูกยกเลิก หรืออุปกรณ์ไม่รองรับ'); }}
+    if(!cred) throw new Error('ไม่ได้รับข้อมูลจากอุปกรณ์');
+    const resp=cred.response;
+    const payload={{ id:cred.id, rawId:bufToB64url(cred.rawId), type:cred.type,
+      authenticatorAttachment:cred.authenticatorAttachment,
+      response:{{ attestationObject:bufToB64url(resp.attestationObject),
+        clientDataJSON:bufToB64url(resp.clientDataJSON),
+        transports:resp.getTransports?resp.getTransports():[] }} }};
+    const f=await fetch('/auth/passkey/force-enroll/register/complete',{{method:'POST',headers:{{'Content-Type':'application/json'}},
+      body:JSON.stringify({{challenge_id:CHALLENGE_ID,device_name:dev,credential:payload}})}});
+    if(!f.ok){{ const e=await f.json().catch(()=>({{}})); throw new Error(typeof e.detail==='string'?e.detail:'ตั้งค่าไม่สำเร็จ'); }}
+    const data=await f.json();
+    if(data.backup_codes && data.backup_codes.length){{
+      const codesDiv=document.createElement('div');
+      codesDiv.className='reasons'; codesDiv.style.marginTop='14px';
+      codesDiv.innerHTML='<div class="step-h" style="color:var(--mint)">🔑 Backup Codes (เก็บไว้กู้บัญชี)</div>'+
+        '<div class="codes">'+data.backup_codes.map(c=>'<div class="code">'+c+'</div>').join('')+'</div>'+
+        '<button class="btn btn-pk" id="contBtn">บันทึกแล้ว → ดำเนินการต่อ</button>';
+      step2.innerHTML=''; step2.appendChild(codesDiv);
+      document.getElementById('contBtn').addEventListener('click', ()=>{{ window.location.href=data.redirect_url; }});
+    }} else {{ window.location.href=data.redirect_url; }}
+  }} catch(err){{ showErr(err.message||'ตั้งค่าไม่สำเร็จ');
+    enrollBtn.disabled=false; enrollBtn.textContent='🔑 ตั้งค่า Passkey'; }}
+}});
+</script>
+</body></html>"""
+
+
+def _risk_stepup_html(
+    *,
+    challenge_id: str,
+    user_email: str,
+    risk_score: float,
+    reasons: list,
+    nonce: str,
+) -> str:
+    """Hub-served HTML page สำหรับ Risk Re-Auth (Passkey).
+
+    Dark theme + IBM Plex Sans Thai + CSP nonce — pattern เดียวกับ
+    _passkey_enroll_html ใน oauth.py.
+    """
+    safe_email = (
+        user_email.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    )
+    reasons_html = (
+        "".join(
+            f"<li>{r.replace('<', '&lt;').replace('>', '&gt;')}</li>"
+            for r in reasons[:5]
+        )
+        or "<li>ตรวจพบความเสี่ยงผิดปกติจากระบบ ML</li>"
+    )
+    return f"""<!DOCTYPE html><html lang="th"><head><meta charset="UTF-8">
+<title>ยืนยันตัวตน · Central Auth Hub</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Kanit:wght@500;600;700&family=IBM+Plex+Sans+Thai:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style nonce="{nonce}">
+  :root {{ --bg-0:#070b14; --ink:#e8eef7; --muted:#8a99b5; --mint:#34e8c4;
+           --mint-2:#13b89a; --line:rgba(148,178,224,.14); --danger:#ff6b81; --amber:#f5b97a; }}
+  * {{ box-sizing:border-box; }}
+  html,body {{ margin:0; height:100%; }}
+  body {{ font-family:'IBM Plex Sans Thai',system-ui,sans-serif; background:var(--bg-0);
+          color:var(--ink); min-height:100vh; display:grid; place-items:center;
+          padding:32px 16px; overflow:hidden; position:relative; }}
+  body::before {{ content:''; position:fixed; inset:-20%; z-index:0;
+    background:radial-gradient(40% 50% at 18% 22%, rgba(245,185,122,.16), transparent 70%),
+      radial-gradient(45% 55% at 85% 18%, rgba(82,120,255,.16), transparent 70%);
+    filter:blur(20px); }}
+  .card {{ position:relative; z-index:1; width:100%; max-width:440px;
+    background:linear-gradient(180deg, rgba(20,28,48,.86), rgba(11,17,32,.92));
+    border:1px solid var(--line); border-radius:22px; backdrop-filter:blur(14px);
+    box-shadow:0 30px 80px -20px rgba(0,0,0,.7); overflow:hidden;
+    animation:rise .7s cubic-bezier(.2,.8,.2,1) both; }}
+  @keyframes rise {{ from{{opacity:0; transform:translateY(16px)}} to{{opacity:1; transform:none}} }}
+  .top {{ padding:30px 32px 4px; text-align:center; }}
+  .emblem {{ width:62px; height:62px; margin:0 auto 14px; border-radius:18px;
+    background:linear-gradient(135deg, rgba(245,185,122,.2), rgba(245,185,122,.05));
+    border:1px solid rgba(245,185,122,.35); display:grid; place-items:center; color:var(--amber); }}
+  h1 {{ font-family:'Kanit',sans-serif; font-weight:600; font-size:24px; margin:0 0 6px; }}
+  .sub {{ color:var(--muted); font-size:13.5px; margin:0; line-height:1.55; }}
+  .who {{ font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--mint);
+          margin-top:10px; word-break:break-all; }}
+  .body {{ padding:20px 32px 26px; }}
+  .reasons {{ background:rgba(245,185,122,.08); border:1px solid rgba(245,185,122,.22);
+    border-radius:12px; padding:14px 16px; margin-bottom:18px; }}
+  .reasons-title {{ font-size:11px; letter-spacing:.12em; text-transform:uppercase;
+    color:var(--amber); margin-bottom:6px; font-family:'IBM Plex Mono',monospace; }}
+  .reasons ul {{ margin:0; padding-left:18px; font-size:13px; color:#c4d0e4; line-height:1.6; }}
+  .score {{ font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--muted); margin-top:8px; }}
+  .btn {{ display:flex; align-items:center; justify-content:center; gap:10px; width:100%;
+    padding:14px 16px; border-radius:13px; font-family:'Kanit',sans-serif; font-weight:500;
+    font-size:15.5px; border:1px solid transparent; cursor:pointer; text-decoration:none;
+    transition:transform .15s; }}
+  .btn-pk {{ color:#04221c; background:linear-gradient(100deg,var(--mint),#5ff0d6);
+             box-shadow:0 10px 30px -10px rgba(52,232,196,.6); }}
+  .btn-pk:hover {{ transform:translateY(-2px); }}
+  .btn-pk[disabled] {{ opacity:.5; cursor:not-allowed; transform:none; }}
+  .btn-recover {{ color:var(--muted); background:transparent; margin-top:10px; font-size:13px; }}
+  .btn-recover:hover {{ color:var(--ink); }}
+  .err {{ display:none; font-size:12.5px; color:var(--danger); margin-bottom:12px;
+    background:rgba(255,107,129,.08); border:1px solid rgba(255,107,129,.28);
+    padding:10px 12px; border-radius:10px; line-height:1.45; }}
+  .err.show {{ display:block; }}
+  .unsupported {{ display:none; font-size:12.5px; color:var(--amber); margin-bottom:12px;
+    background:rgba(245,185,122,.08); border:1px solid rgba(245,185,122,.28);
+    padding:12px 14px; border-radius:10px; line-height:1.55; }}
+  .unsupported.show {{ display:block; }}
+  .spinner {{ width:16px; height:16px; border:2px solid rgba(4,34,28,.35);
+    border-top-color:#04221c; border-radius:50%; animation:spin .7s linear infinite; }}
+  @keyframes spin {{ to{{transform:rotate(360deg)}} }}
+  .foot {{ padding:13px 32px; border-top:1px solid var(--line); text-align:center;
+    font-family:'IBM Plex Mono',monospace; font-size:10px; color:#56657f; letter-spacing:.06em; }}
+</style></head><body>
+<div class="card">
+  <div class="top">
+    <div class="emblem">
+      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+    </div>
+    <h1>ยืนยันตัวตนอีกครั้ง</h1>
+    <p class="sub">ระบบตรวจพบความเสี่ยงจากการ login ครั้งนี้<br>กรุณายืนยันด้วย Passkey เพื่อความปลอดภัย</p>
+    <div class="who">{safe_email}</div>
+  </div>
+  <div class="body">
+    <div class="reasons">
+      <div class="reasons-title">ปัจจัยเสี่ยงที่ตรวจพบ</div>
+      <ul>{reasons_html}</ul>
+      <div class="score">risk_score: {risk_score:.3f}</div>
+    </div>
+    <div class="err" id="err"></div>
+    <div class="unsupported" id="unsupported">
+      ⚠️ <strong>เบราว์เซอร์นี้ไม่รองรับ Passkey</strong><br>
+      กรุณาใช้อุปกรณ์ที่รองรับ หรือใช้ <a href="/auth/passkey/recover" style="color:var(--mint)">Account Recovery</a>
+    </div>
+    <button class="btn btn-pk" id="verify">🔑 ยืนยันด้วย Passkey</button>
+    <a class="btn btn-recover" href="/auth/passkey/recover">ทำ Passkey หาย? → กู้บัญชี</a>
+  </div>
+  <div class="foot">WebAuthn · FIDO2 · Risk-Based Authentication</div>
+</div>
+<script nonce="{nonce}">
+const CHALLENGE_ID = {json.dumps(challenge_id)};
+function b64urlToBuf(s) {{ const p=s.replace(/-/g,'+').replace(/_/g,'/');
+  const pad=p.length%4===0?'':'='.repeat(4-(p.length%4)); const bin=atob(p+pad);
+  const a=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++)a[i]=bin.charCodeAt(i); return a.buffer; }}
+function bufToB64url(buf) {{ const a=new Uint8Array(buf); let b='';
+  for(let i=0;i<a.length;i++)b+=String.fromCharCode(a[i]);
+  return btoa(b).replace(/\\+/g,'-').replace(/\\//g,'_').replace(/=+$/,''); }}
+function pkSupported() {{ return !!(window.PublicKeyCredential && navigator.credentials && navigator.credentials.get); }}
+
+const btn=document.getElementById('verify'), errEl=document.getElementById('err');
+function showErr(m){{ errEl.textContent=m; errEl.classList.add('show'); }}
+
+if(!pkSupported()){{
+  document.getElementById('unsupported').classList.add('show');
+  btn.disabled=true;
+}}
+
+async function doVerify(){{
+  errEl.classList.remove('show');
+  btn.disabled=true; btn.innerHTML='<span class="spinner"></span> กำลังยืนยัน…';
+  try {{
+    const s=await fetch('/auth/passkey/risk-stepup/start',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{challenge_id:CHALLENGE_ID}})}});
+    if(!s.ok){{ const e=await s.json().catch(()=>({{}})); throw new Error(typeof e.detail==='string'?e.detail:'เริ่มไม่สำเร็จ'); }}
+    const opts=await s.json();
+    opts.challenge=b64urlToBuf(opts.challenge);
+    (opts.allowCredentials||[]).forEach(c=>c.id=b64urlToBuf(c.id));
+    let assertion;
+    try {{ assertion=await navigator.credentials.get({{publicKey:opts}}); }}
+    catch(ce){{ throw new Error('การยืนยันถูกยกเลิก หรืออุปกรณ์ไม่รองรับ'); }}
+    if(!assertion) throw new Error('ไม่ได้รับข้อมูลจากอุปกรณ์');
+    const r=assertion.response;
+    const payload={{ id:assertion.id, rawId:bufToB64url(assertion.rawId), type:assertion.type,
+      response:{{ authenticatorData:bufToB64url(r.authenticatorData),
+        clientDataJSON:bufToB64url(r.clientDataJSON),
+        signature:bufToB64url(r.signature),
+        userHandle:r.userHandle?bufToB64url(r.userHandle):null }} }};
+    const f=await fetch('/auth/passkey/risk-stepup/verify',{{method:'POST',headers:{{'Content-Type':'application/json'}},
+      body:JSON.stringify({{challenge_id:CHALLENGE_ID,credential:payload}})}});
+    if(!f.ok){{ const e=await f.json().catch(()=>({{}})); const d=e.detail;
+      throw new Error(typeof d==='string'?d:(d&&d.code?d.code:'ยืนยันไม่สำเร็จ')); }}
+    const data=await f.json();
+    window.location.href=data.redirect_url;
+  }} catch(err){{ showErr(err.message||'ยืนยันไม่สำเร็จ');
+    btn.disabled=false; btn.textContent='🔑 ยืนยันด้วย Passkey'; }}
+}}
+btn.addEventListener('click', doVerify);
+</script>
+</body></html>"""

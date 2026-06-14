@@ -165,6 +165,18 @@ class Settings(BaseSettings):
     # ไม่ได้ block — แค่ flag ให้ frontend เตือน/พาไปตั้งค่า. (soft enforcement)
     passkey_required_after_days: int = 0
 
+    # ── Risk-Triggered MFA (Week 9-10) ──
+    # Hard block threshold — score >= นี่ → 403 ไม่มี enroll/re-auth (เหนือ aggregator's "block" 0.80)
+    # ช่วง 0.80-0.84 (aggregator = "block") finalizer treat เป็น mfa_required
+    # ช่วง >= 0.85 finalizer raise 403 จริง
+    risk_block_hard_threshold: float = 0.85
+    # Grace period สำหรับ user ใหม่ — ไม่บังคับ Force Enrollment ถ้า account ยังใหม่
+    # ใช้คู่กับ count_active(passkey)==0 → Allow Once + Show Banner
+    passkey_grace_period_days: int = 7
+    # TTL ของ risk_challenge ใน Redis (mint หลัง RBA mfa_required → consume ใน re-auth/enroll)
+    # 5 นาที — สั้นพอกัน replay, ยาวพอให้ user ทำ flow เสร็จ
+    risk_challenge_ttl_sec: int = 300
+
     def validate_production(self) -> None:
         """fail-fast ถ้า prod ยังใช้ default ที่ไม่ปลอดภัย."""
         if self.app_env != "production":

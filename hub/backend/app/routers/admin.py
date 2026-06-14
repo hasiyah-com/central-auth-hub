@@ -33,6 +33,8 @@ from app.models import (
     User,
 )
 from app.services.audit_service import log_action
+from app.services.critical_action_policy import gate as _stepup_gate
+from app.services import passkey_recovery
 from app.services.change_request_service import apply_approved
 from app.services.email_service import (
     send_identity_challenge,
@@ -196,7 +198,10 @@ def list_pending_subsystems(
 # ============ Approve / Reject ============
 
 
-@router.post("/subsystems/{subsystem_id}/approve")
+@router.post(
+    "/subsystems/{subsystem_id}/approve",
+    dependencies=[Depends(_stepup_gate("subsystem_approve"))],
+)
 def approve_subsystem(
     subsystem_id: str,
     request: Request,
@@ -233,7 +238,95 @@ def approve_subsystem(
     }
 
 
-@router.post("/subsystems/{subsystem_id}/reject")
+@router.get("/users/{user_id}/passkeys")
+def list_user_passkeys(
+    user_id: str,
+    admin: User = Depends(require_hub_admin),
+    db: Session = Depends(get_db),
+):
+    """Admin ดู passkey ของ user (read-only overview) — Phase: admin passkey overview.
+
+    ไม่ส่ง credential_id/public_key. ใช้ในหน้า Users (admin เห็นว่าใครมี passkey อะไร).
+    """
+    from app.services import webauthn_service
+    from app.services.geoip import lookup_country
+    from app.services import passkey_recovery
+
+    target = db.query(User).filter(User.id == user_id).first()
+    if not target:
+        raise HTTPException(status_code=404, detail="ไม่พบผู้ใช้")
+
+    rows = webauthn_service.list_for_user(target.id, db)
+    passkeys = [
+        {
+            "id": str(r.id),
+            "device_name": r.device_name,
+            "device_type": r.device_type,
+            "created_at": r.created_at.isoformat() if r.created_at else None,
+            "last_used_at": r.last_used_at.isoformat() if r.last_used_at else None,
+            "last_used_country": lookup_country(str(r.last_used_ip))
+            if r.last_used_ip
+            else None,
+            "counter_regression_count": r.counter_regression_count or 0,
+        }
+        for r in rows
+    ]
+    bc = passkey_recovery.get_status(target.id, db)
+    return {
+        "user_id": str(target.id),
+        "email": target.email,
+        "passkeys": passkeys,
+        "count": len(passkeys),
+        "backup_codes": {
+            "remaining": bc["remaining"],
+            "total": bc["total"],
+            "low": bc["low"],
+        },
+    }
+
+
+@router.post(
+    "/users/{user_id}/reset-passkeys",
+    dependencies=[Depends(_stepup_gate("admin_reset"))],  # Improvement #8 — Phase 5
+)
+def reset_user_passkeys(
+    user_id: str,
+    request: Request,
+    admin: User = Depends(require_hub_admin),
+    db: Session = Depends(get_db),
+):
+    """Admin reset passkey ของ user (กรณี user แจ้ง device หาย) — Phase 4 recovery.
+
+    Revoke passkey ทั้งหมด (soft delete, reason=admin_reset). user ต้อง login
+    ด้วย Google แล้ว enroll passkey ใหม่.
+    """
+    target = db.query(User).filter(User.id == user_id).first()
+    if not target:
+        raise HTTPException(status_code=404, detail="ไม่พบผู้ใช้")
+
+    count = passkey_recovery.admin_reset_passkeys(target.id, db)
+    log_action(
+        db,
+        actor_id=admin.id,
+        action="passkey_admin_reset",
+        target_type="user",
+        target_id=target.id,
+        ip=get_client_ip(request),
+        metadata={"email": target.email, "revoked_count": count},
+    )
+    db.commit()
+    return {
+        "user_id": str(target.id),
+        "email": target.email,
+        "revoked_count": count,
+        "message": f"revoke passkey {count} ตัวของ {target.email} แล้ว",
+    }
+
+
+@router.post(
+    "/subsystems/{subsystem_id}/reject",
+    dependencies=[Depends(_stepup_gate("subsystem_reject"))],
+)
 def reject_subsystem(
     subsystem_id: str,
     request: Request,
@@ -278,7 +371,10 @@ def reject_subsystem(
 # ============ Suspend / Resume ============
 
 
-@router.post("/subsystems/{subsystem_id}/suspend")
+@router.post(
+    "/subsystems/{subsystem_id}/suspend",
+    dependencies=[Depends(_stepup_gate("subsystem_suspend"))],
+)
 def suspend_subsystem(
     subsystem_id: str,
     request: Request,
@@ -318,7 +414,10 @@ def suspend_subsystem(
     }
 
 
-@router.post("/subsystems/{subsystem_id}/resume")
+@router.post(
+    "/subsystems/{subsystem_id}/resume",
+    dependencies=[Depends(_stepup_gate("subsystem_resume"))],
+)
 def resume_subsystem(
     subsystem_id: str,
     request: Request,
@@ -591,7 +690,10 @@ def subsystem_audit(
 _VALID_REVOKE_LEVELS = {"notify", "challenge", "ban"}
 
 
-@router.post("/subsystems/{subsystem_id}/sessions/{session_id}/revoke")
+@router.post(
+    "/subsystems/{subsystem_id}/sessions/{session_id}/revoke",
+    dependencies=[Depends(_stepup_gate("session_revoke"))],
+)
 def revoke_session(
     subsystem_id: str,
     session_id: str,

@@ -16,7 +16,7 @@
  *   }
  */
 
-import { clientFetch } from "./api";
+import { clientFetch, isStepupRequired, type ApiError } from "./api";
 
 // ── Feature detection ──────────────────────────────────────────
 
@@ -336,6 +336,59 @@ export async function stepUpWithPasskey(): Promise<{ granted: boolean; ttl_sec: 
     method: "POST",
     body: JSON.stringify({ credential: encodeAssertionCredential(credential) }),
   });
+}
+
+/**
+ * Inline step-up wrapper (Option C — ไม่ redirect, ไม่เสียข้อมูลในฟอร์ม).
+ *
+ * รัน mutation; ถ้าเจอ 403 stepup_required → ทำ passkey ceremony ในหน้า
+ * (navigator.credentials.get) → retry mutation เดิม 1 ครั้ง.
+ *
+ * mutation ต้องใช้ clientFetch ด้วย ``stepupMode:"throw"`` เพื่อไม่ให้ interceptor
+ * พา redirect ก่อน (ดู lib/api.ts).
+ *
+ * @param run   ฟังก์ชันที่ทำ mutation (เรียกซ้ำได้ — idempotent ฝั่ง intent)
+ * @param onVerifying  callback แจ้ง UI ว่ากำลัง verify (แสดง spinner/ปุ่ม)
+ * @throws ApiError {detail:{code:"no_passkey"}} ถ้า user ไม่มี passkey → caller
+ *         แสดงข้อความให้ไปตั้งค่า/ใช้ Recovery
+ */
+export async function runWithStepup<T>(
+  run: () => Promise<T>,
+  onVerifying?: (active: boolean) => void
+): Promise<T> {
+  try {
+    return await run();
+  } catch (e) {
+    const err = e as ApiError;
+    if (err?.status === 403 && isStepupRequired(err.detail)) {
+      onVerifying?.(true);
+      try {
+        await stepUpWithPasskey(); // inline WebAuthn ceremony → set stepup cache
+      } finally {
+        onVerifying?.(false);
+      }
+      return await run(); // retry once — cache ใหม่แล้ว ผ่าน
+    }
+    throw e;
+  }
+}
+
+/**
+ * Shortcut — mutation + inline step-up ในคำสั่งเดียว.
+ *
+ * เทียบเท่า: runWithStepup(() => clientFetch(path, {...init, stepupMode:"throw"}))
+ * ใช้แทน clientFetch ตรง ๆ ในทุก mutation ที่เป็น critical action (เพิ่ม/ลบ/แก้)
+ * เพื่อให้ verify Passkey ในหน้า ไม่ redirect ไม่เสีย state.
+ */
+export async function mutateWithStepup<T = unknown>(
+  path: string,
+  init: RequestInit = {},
+  onVerifying?: (active: boolean) => void
+): Promise<T> {
+  return runWithStepup<T>(
+    () => clientFetch<T>(path, { ...init, stepupMode: "throw" }),
+    onVerifying
+  );
 }
 
 export async function stepupOtpStart(): Promise<{ sent: boolean; message: string }> {

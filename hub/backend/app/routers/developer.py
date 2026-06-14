@@ -21,6 +21,7 @@ from app.deps import get_client_ip, require_developer
 from app.models import AccessList, SecretRetrievalToken, Subsystem, User
 from app.rate_limiter import limiter
 from app.services.audit_service import log_action
+from app.services.critical_action_policy import gate as _stepup_gate
 from app.services.change_request_service import create_request as create_change_request
 from app.services.email_service import send_secret_retrieval_email
 from app.services.webhook_dispatcher import send_access_revoked
@@ -138,7 +139,10 @@ def _validate_role_in_sub(role: str, subsystem: Subsystem) -> str:
 # ============ 1. ลงทะเบียน subsystem ============
 
 
-@router.post("/subsystems")
+@router.post(
+    "/subsystems",
+    dependencies=[Depends(_stepup_gate("subsystem_register"))],
+)
 @limiter.limit(settings.rate_limit_register)
 def register_subsystem(
     payload: SubsystemCreate,
@@ -277,7 +281,10 @@ def my_subsystems(
 # ============ 3. upload whitelist CSV ============
 
 
-@router.post("/subsystems/{subsystem_id}/whitelist")
+@router.post(
+    "/subsystems/{subsystem_id}/whitelist",
+    dependencies=[Depends(_stepup_gate("whitelist_add"))],
+)
 def upload_whitelist(
     subsystem_id: str,
     request: Request,
@@ -437,7 +444,10 @@ def _get_owned_subsystem(subsystem_id: str, user: User, db: Session) -> Subsyste
     return subsystem
 
 
-@router.post("/subsystems/{subsystem_id}/whitelist/user")
+@router.post(
+    "/subsystems/{subsystem_id}/whitelist/user",
+    dependencies=[Depends(_stepup_gate("whitelist_add"))],
+)
 def add_user_to_whitelist(
     subsystem_id: str,
     payload: WhitelistAddUser,
@@ -514,7 +524,10 @@ def add_user_to_whitelist(
 # ============ 6. ลบ user ออกจาก whitelist ============
 
 
-@router.delete("/subsystems/{subsystem_id}/whitelist/{user_id}")
+@router.delete(
+    "/subsystems/{subsystem_id}/whitelist/{user_id}",
+    dependencies=[Depends(_stepup_gate("whitelist_remove"))],
+)
 def remove_user_from_whitelist(
     subsystem_id: str,
     user_id: str,
@@ -580,7 +593,10 @@ def remove_user_from_whitelist(
 # ============ 7. แก้ไข role ใน whitelist ============
 
 
-@router.patch("/subsystems/{subsystem_id}/whitelist/{user_id}")
+@router.patch(
+    "/subsystems/{subsystem_id}/whitelist/{user_id}",
+    dependencies=[Depends(_stepup_gate("whitelist_role_change"))],
+)
 def update_whitelist_role(
     subsystem_id: str,
     user_id: str,
@@ -708,7 +724,10 @@ def update_whitelist_role(
 # ============ 8. แก้ไข subsystem ============
 
 
-@router.patch("/subsystems/{subsystem_id}")
+@router.patch(
+    "/subsystems/{subsystem_id}",
+    dependencies=[Depends(_stepup_gate("subsystem_update"))],
+)
 def update_subsystem(
     subsystem_id: str,
     payload: SubsystemUpdate,
@@ -969,7 +988,10 @@ def list_my_change_requests(
 # ============ 9b. Bulk role update ============
 
 
-@router.post("/subsystems/{subsystem_id}/whitelist/bulk-update")
+@router.post(
+    "/subsystems/{subsystem_id}/whitelist/bulk-update",
+    dependencies=[Depends(_stepup_gate("whitelist_role_change"))],
+)
 def bulk_update_roles(
     subsystem_id: str,
     payload: WhitelistBulkRoleUpdate,
@@ -1122,7 +1144,10 @@ def bulk_update_roles(
 _TRANSFER_OWNER_ALLOWED = {"teacher", "staff", "admin"}
 
 
-@router.post("/subsystems/{subsystem_id}/transfer-owner")
+@router.post(
+    "/subsystems/{subsystem_id}/transfer-owner",
+    dependencies=[Depends(_stepup_gate("subsystem_transfer_owner"))],
+)
 def transfer_owner(
     subsystem_id: str,
     payload: TransferOwner,
@@ -1194,7 +1219,10 @@ def transfer_owner(
 _SECRET_GRACE_HOURS = 24
 
 
-@router.post("/subsystems/{subsystem_id}/rotate-secret")
+@router.post(
+    "/subsystems/{subsystem_id}/rotate-secret",
+    dependencies=[Depends(_stepup_gate("rotate_oauth_secret"))],
+)
 def rotate_client_secret(
     subsystem_id: str,
     request: Request,
