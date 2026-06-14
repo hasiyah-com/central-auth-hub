@@ -15,12 +15,29 @@ export type ApiError = {
 // Browser เรียกผ่าน Next.js rewrite (/api/hub/*) → backend
 // cookie httpOnly ที่เก็บ JWT จะถูกแนบโดย /api/proxy แทน
 
+// init เพิ่ม field พิเศษ:
+//   stepupMode: "redirect" (default) = 403 stepup_required → พาไปหน้า stepup (เดิม)
+//              "throw"               = โยน ApiError ให้ caller จัดการ inline
+//                                      (ใช้กับ runWithStepup — verify ในหน้าไม่ redirect)
+export type ClientFetchInit = RequestInit & {
+  stepupMode?: "redirect" | "throw";
+};
+
+export function isStepupRequired(detail: unknown): boolean {
+  return (
+    typeof detail === "object" &&
+    detail !== null &&
+    (detail as { code?: string }).code === "stepup_required"
+  );
+}
+
 export async function clientFetch<T = unknown>(
   path: string,
-  init: RequestInit = {}
+  init: ClientFetchInit = {}
 ): Promise<T> {
+  const { stepupMode = "redirect", ...rest } = init;
   const res = await fetch(`/api/proxy${path}`, {
-    ...init,
+    ...rest,
     credentials: "include",
     headers: {
       "Content-Type": "application/json",
@@ -37,11 +54,11 @@ export async function clientFetch<T = unknown>(
     }
     // Step-up required (Phase 5 — critical action gate):
     // backend 403 {code: "stepup_required"} → พาไปยืนยันตัวตน แล้วกลับมาหน้าเดิม
+    // ยกเว้น stepupMode="throw" → ปล่อยให้ caller verify inline (ไม่ redirect)
     if (
+      stepupMode === "redirect" &&
       res.status === 403 &&
-      typeof detail === "object" &&
-      detail !== null &&
-      (detail as { code?: string }).code === "stepup_required" &&
+      isStepupRequired(detail) &&
       typeof window !== "undefined"
     ) {
       const returnTo = encodeURIComponent(

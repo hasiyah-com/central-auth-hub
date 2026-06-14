@@ -49,6 +49,22 @@ CRITICAL_ACTIONS: frozenset[str] = frozenset(
         "promote_to_admin",
         "bulk_permission_change",
         "admin_reset",
+        # Admin user management (Week 9-10) — เพิ่ม/แก้/ลบ ผู้ใช้
+        "create_user",
+        "update_user",
+        "delete_user",
+        # Subsystem management (Week 9-10) — ทุกการกระทำในส่วนระบบย่อยต้อง step-up
+        "subsystem_register",
+        "subsystem_update",
+        "subsystem_approve",
+        "subsystem_reject",
+        "subsystem_suspend",
+        "subsystem_resume",
+        "subsystem_transfer_owner",
+        "whitelist_add",
+        "whitelist_remove",
+        "whitelist_role_change",
+        "session_revoke",
     }
 )
 

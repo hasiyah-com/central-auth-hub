@@ -7,6 +7,21 @@ import { DataTable, type Column } from "@/components/DataTable";
 import { Badge } from "@/components/Badge";
 import { SlidePanel } from "@/components/SlidePanel";
 import { clientFetch } from "@/lib/api";
+import { mutateWithStepup } from "@/lib/passkey";
+
+/** ดึงข้อความ error ที่อ่านได้ — รองรับ detail เป็น object (no_passkey) + ยกเลิก Passkey */
+function errText(e: unknown, fallback: string): string {
+  if (e instanceof DOMException && e.name === "NotAllowedError")
+    return "ยกเลิกการยืนยัน Passkey — ลองอีกครั้ง";
+  const d = (e as { detail?: unknown })?.detail;
+  if (typeof d === "string") return d;
+  if (d && typeof d === "object") {
+    const code = (d as { code?: string }).code;
+    if (code === "no_passkey")
+      return "ต้องมี Passkey เพื่อยืนยันการกระทำนี้ — ตั้งค่าที่หน้าบัญชี/ความปลอดภัย หรือใช้ Account Recovery";
+  }
+  return fallback;
+}
 
 // ── Types ──────────────────────────────────────────────────
 type HealthStatus = {
@@ -194,6 +209,8 @@ export default function SubsystemDetailPage({
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(
     null
   );
+  // inline step-up — true ระหว่างทำ Passkey ceremony (critical action)
+  const [verifying, setVerifying] = useState(false);
 
   // Active sessions
   const [active, setActive] = useState<ActiveSessionsResponse | null>(null);
@@ -361,18 +378,21 @@ export default function SubsystemDetailPage({
     setBusyAdd(true);
     setMsg(null);
     try {
-      await clientFetch(`/developer/subsystems/${id}/whitelist/user`, {
-        method: "POST",
-        // backend WhitelistAddUser ใช้ field 'role' (ไม่ใช่ role_in_sub)
-        body: JSON.stringify({ email: newEmail.trim(), role: newRole }),
-      });
+      await mutateWithStepup(
+        `/developer/subsystems/${id}/whitelist/user`,
+        {
+          method: "POST",
+          // backend WhitelistAddUser ใช้ field 'role' (ไม่ใช่ role_in_sub)
+          body: JSON.stringify({ email: newEmail.trim(), role: newRole }),
+        },
+        setVerifying
+      );
       setMsg({ kind: "ok", text: `เพิ่ม ${newEmail} เข้า whitelist แล้ว` });
       setNewEmail("");
       loadWhitelist();
       loadAudit();
     } catch (e) {
-      const err = e as { detail?: string };
-      setMsg({ kind: "err", text: err.detail || "เพิ่มไม่สำเร็จ" });
+      setMsg({ kind: "err", text: errText(e, "เพิ่มไม่สำเร็จ") });
     } finally {
       setBusyAdd(false);
     }
@@ -382,15 +402,16 @@ export default function SubsystemDetailPage({
     if (!confirm(`ลบ ${email} ออกจาก whitelist?`)) return;
     setMsg(null);
     try {
-      await clientFetch(`/developer/subsystems/${id}/whitelist/${userId}`, {
-        method: "DELETE",
-      });
+      await mutateWithStepup(
+        `/developer/subsystems/${id}/whitelist/${userId}`,
+        { method: "DELETE" },
+        setVerifying
+      );
       setMsg({ kind: "ok", text: `ลบ ${email} แล้ว (soft delete)` });
       loadWhitelist();
       loadAudit();
     } catch (e) {
-      const err = e as { detail?: string };
-      setMsg({ kind: "err", text: err.detail || "ลบไม่สำเร็จ" });
+      setMsg({ kind: "err", text: errText(e, "ลบไม่สำเร็จ") });
     }
   }
 
@@ -406,20 +427,20 @@ export default function SubsystemDetailPage({
     if (!editingRoleValue.trim()) return;
     setMsg(null);
     try {
-      const r = await clientFetch<{ result: string }>(
+      const r = await mutateWithStepup<{ result: string }>(
         `/developer/subsystems/${id}/whitelist/${userId}`,
         {
           method: "PATCH",
           body: JSON.stringify({ role_in_sub: editingRoleValue.trim() }),
-        }
+        },
+        setVerifying
       );
       setMsg({ kind: "ok", text: `${email}: ${r.result}` });
       cancelEditRole();
       loadWhitelist();
       loadAudit();
     } catch (e) {
-      const err = e as { detail?: string };
-      setMsg({ kind: "err", text: err.detail || "เปลี่ยน role ไม่สำเร็จ" });
+      setMsg({ kind: "err", text: errText(e, "เปลี่ยน role ไม่สำเร็จ") });
     }
   }
 
@@ -428,13 +449,16 @@ export default function SubsystemDetailPage({
     setCtlBusy(true);
     setMsg(null);
     try {
-      await clientFetch(`/admin/subsystems/${id}/suspend`, { method: "POST" });
+      await mutateWithStepup(
+        `/admin/subsystems/${id}/suspend`,
+        { method: "POST" },
+        setVerifying
+      );
       setMsg({ kind: "ok", text: "ระงับใช้งานแล้ว" });
       loadSubsystem();
       loadAudit();
     } catch (e) {
-      const err = e as { detail?: string };
-      setMsg({ kind: "err", text: err.detail || "ระงับไม่สำเร็จ" });
+      setMsg({ kind: "err", text: errText(e, "ระงับไม่สำเร็จ") });
     } finally {
       setCtlBusy(false);
     }
@@ -471,21 +495,24 @@ export default function SubsystemDetailPage({
         user_id: uid,
         role_in_sub: bulkRole,
       }));
-      const r = await clientFetch<{
+      const r = await mutateWithStepup<{
         changed: number;
         skipped: number;
         message: string;
-      }>(`/developer/subsystems/${id}/whitelist/bulk-update`, {
-        method: "POST",
-        body: JSON.stringify({ updates }),
-      });
+      }>(
+        `/developer/subsystems/${id}/whitelist/bulk-update`,
+        {
+          method: "POST",
+          body: JSON.stringify({ updates }),
+        },
+        setVerifying
+      );
       setMsg({ kind: "ok", text: r.message });
       clearSelection();
       loadWhitelist();
       loadAudit();
     } catch (e) {
-      const err = e as { detail?: string };
-      setMsg({ kind: "err", text: err.detail || "bulk update ไม่สำเร็จ" });
+      setMsg({ kind: "err", text: errText(e, "bulk update ไม่สำเร็จ") });
     } finally {
       setBulkBusy(false);
     }
@@ -496,12 +523,13 @@ export default function SubsystemDetailPage({
     setTransferBusy(true);
     setMsg(null);
     try {
-      const r = await clientFetch<{ message: string }>(
+      const r = await mutateWithStepup<{ message: string }>(
         `/developer/subsystems/${id}/transfer-owner`,
         {
           method: "POST",
           body: JSON.stringify({ new_owner_email: transferEmail.trim() }),
-        }
+        },
+        setVerifying
       );
       setMsg({ kind: "ok", text: r.message });
       setTransferOpen(false);
@@ -509,8 +537,7 @@ export default function SubsystemDetailPage({
       loadSubsystem();
       loadAudit();
     } catch (e) {
-      const err = e as { detail?: string };
-      setMsg({ kind: "err", text: err.detail || "โอน ownership ไม่สำเร็จ" });
+      setMsg({ kind: "err", text: errText(e, "โอน ownership ไม่สำเร็จ") });
     } finally {
       setTransferBusy(false);
     }
@@ -527,17 +554,17 @@ export default function SubsystemDetailPage({
     setRotateBusy(true);
     setMsg(null);
     try {
-      const r = await clientFetch<RotateSecretResponse>(
+      const r = await mutateWithStepup<RotateSecretResponse>(
         `/developer/subsystems/${id}/rotate-secret`,
-        { method: "POST" }
+        { method: "POST" },
+        setVerifying
       );
       setRotateResult(r);
       setMsg({ kind: "ok", text: r.message });
       loadSubsystem();
       loadAudit();
     } catch (e) {
-      const err = e as { detail?: string };
-      setMsg({ kind: "err", text: err.detail || "rotate secret ไม่สำเร็จ" });
+      setMsg({ kind: "err", text: errText(e, "rotate secret ไม่สำเร็จ") });
     } finally {
       setRotateBusy(false);
     }
@@ -566,17 +593,17 @@ export default function SubsystemDetailPage({
     setRevokeMenuFor(null);
     setMsg(null);
     try {
-      const r = await clientFetch<{ message: string }>(
+      const r = await mutateWithStepup<{ message: string }>(
         `/admin/subsystems/${id}/sessions/${sessionId}/revoke?level=${level}`,
-        { method: "POST" }
+        { method: "POST" },
+        setVerifying
       );
       setMsg({ kind: "ok", text: r.message });
       loadActive();
       loadAudit();
       loadWhitelist();
     } catch (e) {
-      const err = e as { detail?: string };
-      setMsg({ kind: "err", text: err.detail || "revoke ไม่สำเร็จ" });
+      setMsg({ kind: "err", text: errText(e, "revoke ไม่สำเร็จ") });
     } finally {
       setRevokingId(null);
     }
@@ -586,13 +613,16 @@ export default function SubsystemDetailPage({
     setCtlBusy(true);
     setMsg(null);
     try {
-      await clientFetch(`/admin/subsystems/${id}/resume`, { method: "POST" });
+      await mutateWithStepup(
+        `/admin/subsystems/${id}/resume`,
+        { method: "POST" },
+        setVerifying
+      );
       setMsg({ kind: "ok", text: "เปิดใช้งานอีกครั้งแล้ว" });
       loadSubsystem();
       loadAudit();
     } catch (e) {
-      const err = e as { detail?: string };
-      setMsg({ kind: "err", text: err.detail || "เปิดใช้งานไม่สำเร็จ" });
+      setMsg({ kind: "err", text: errText(e, "เปิดใช้งานไม่สำเร็จ") });
     } finally {
       setCtlBusy(false);
     }
@@ -652,9 +682,10 @@ export default function SubsystemDetailPage({
     }
 
     try {
-      const r = await clientFetch<{ result: string; needs_reapproval?: boolean }>(
+      const r = await mutateWithStepup<{ result: string; needs_reapproval?: boolean }>(
         `/developer/subsystems/${id}`,
-        { method: "PATCH", body: JSON.stringify(body) }
+        { method: "PATCH", body: JSON.stringify(body) },
+        setVerifying
       );
       setMsg({
         kind: r.needs_reapproval ? "err" : "ok",
@@ -664,8 +695,7 @@ export default function SubsystemDetailPage({
       loadSubsystem();
       loadAudit();
     } catch (e) {
-      const err = e as { detail?: string };
-      setMsg({ kind: "err", text: err.detail || "แก้ไขไม่สำเร็จ" });
+      setMsg({ kind: "err", text: errText(e, "แก้ไขไม่สำเร็จ") });
     } finally {
       setEditBusy(false);
     }
@@ -1002,6 +1032,14 @@ export default function SubsystemDetailPage({
 
   return (
     <>
+      {verifying && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-2xl px-6 py-5 shadow-xl flex items-center gap-3 text-sm text-ink-700">
+            <span className="animate-pulse text-lg">🔐</span>
+            กำลังยืนยันด้วย Passkey… ทำตามที่อุปกรณ์แจ้ง
+          </div>
+        </div>
+      )}
       <Topbar title={sub.name} />
       <main className="p-8 max-w-7xl mx-auto w-full space-y-6">
         {/* Breadcrumb + status hero */}

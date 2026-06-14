@@ -5,7 +5,9 @@ import { Topbar } from "@/components/Topbar";
 import { DataTable, type Column } from "@/components/DataTable";
 import { Badge } from "@/components/Badge";
 import { clientFetch } from "@/lib/api";
+import { runWithStepup } from "@/lib/passkey";
 import { UserPasskeyModal } from "./_components/UserPasskeyModal";
+import { UserFormModal, type UserRow } from "./_components/UserFormModal";
 
 type User = {
   id: string;
@@ -34,6 +36,37 @@ export default function UsersPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pkUser, setPkUser] = useState<{ id: string; name: string } | null>(null);
+  const [formModal, setFormModal] = useState<{ mode: "create" | "edit"; user?: UserRow } | null>(null);
+  const [deleting, setDeleting] = useState<string | null>(null);
+
+  async function handleDelete(u: User) {
+    if (!confirm(`ลบผู้ใช้ "${u.full_name}" (${u.email})?\n\nบัญชีจะถูกตั้งเป็น deleted (soft delete) และต้องยืนยันด้วย Passkey`))
+      return;
+    setDeleting(u.id);
+    setError(null);
+    try {
+      // Option C — inline step-up: ถ้า 403 → verify Passkey ในหน้า แล้ว retry (ไม่ redirect)
+      await runWithStepup(() =>
+        clientFetch(`/admin/users/${u.id}`, {
+          method: "DELETE",
+          stepupMode: "throw",
+        })
+      );
+      load();
+    } catch (e) {
+      const d = (e as { detail?: unknown })?.detail;
+      const code = typeof d === "object" && d ? (d as { code?: string }).code : undefined;
+      if (code === "no_passkey") {
+        setError("ต้องมี Passkey เพื่อยืนยันการลบ — ตั้งค่าที่หน้าความปลอดภัย หรือใช้ Account Recovery");
+      } else if (e instanceof DOMException && e.name === "NotAllowedError") {
+        setError("ยกเลิกการยืนยัน Passkey");
+      } else {
+        setError(typeof d === "string" ? d : "ลบไม่สำเร็จ");
+      }
+    } finally {
+      setDeleting(null);
+    }
+  }
 
   function load() {
     setLoading(true);
@@ -115,6 +148,35 @@ export default function UsersPage() {
         </button>
       ),
     },
+    {
+      key: "actions",
+      header: "จัดการ",
+      render: (u) => (
+        <div className="flex items-center gap-1.5">
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setFormModal({ mode: "edit", user: u as UserRow });
+            }}
+            className="text-xs px-2 py-1 rounded-md border border-ink-200 hover:border-brand-400 hover:bg-brand-50 text-ink-600"
+            title="แก้ไข"
+          >
+            ✏️
+          </button>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              handleDelete(u);
+            }}
+            disabled={deleting === u.id || u.status === "deleted"}
+            className="text-xs px-2 py-1 rounded-md border border-ink-200 hover:border-rose-400 hover:bg-rose-50 text-ink-600 disabled:opacity-40"
+            title="ลบ (soft delete)"
+          >
+            {deleting === u.id ? "…" : "🗑️"}
+          </button>
+        </div>
+      ),
+    },
   ];
 
   return (
@@ -140,7 +202,13 @@ export default function UsersPage() {
             onChange={(e) => setFaculty(e.target.value)}
             className="px-3 py-2 rounded-lg border border-ink-200 bg-white text-sm focus:outline-none focus:border-brand-500 w-56"
           />
-          <div className="ml-auto text-xs text-ink-500">
+          <button
+            onClick={() => setFormModal({ mode: "create" })}
+            className="ml-auto px-4 py-2 rounded-lg bg-brand-600 text-white text-sm font-medium hover:bg-brand-700"
+          >
+            + เพิ่มผู้ใช้
+          </button>
+          <div className="text-xs text-ink-500">
             {loading ? "กำลังโหลด…" : `${users.length} รายการ`}
           </div>
         </div>
@@ -159,6 +227,18 @@ export default function UsersPage() {
           userId={pkUser.id}
           userName={pkUser.name}
           onClose={() => setPkUser(null)}
+        />
+      )}
+
+      {formModal && (
+        <UserFormModal
+          mode={formModal.mode}
+          user={formModal.user}
+          onClose={() => setFormModal(null)}
+          onSaved={() => {
+            setFormModal(null);
+            load();
+          }}
         />
       )}
     </>

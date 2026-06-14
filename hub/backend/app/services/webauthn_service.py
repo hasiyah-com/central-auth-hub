@@ -332,12 +332,38 @@ def adoption_status(user: User, db: Session) -> dict:
             0, (datetime.now(timezone.utc).replace(tzinfo=None) - user.created_at).days
         )
     nudge = bool(after > 0 and not has and days >= after)
+    in_grace = bool(not has and days < settings.passkey_grace_period_days)
+    grace_days_remaining = (
+        max(0, settings.passkey_grace_period_days - days) if not has else 0
+    )
     return {
         "has_passkey": has,
         "nudge": nudge,
         "days_since_signup": days,
         "required_after_days": after,
+        # Risk-triggered MFA grace period (Week 9-10)
+        "in_grace_period": in_grace,
+        "grace_days_remaining": grace_days_remaining,
+        "grace_period_days": settings.passkey_grace_period_days,
     }
+
+
+def in_grace_period(user: User, db: Session) -> bool:
+    """True ถ้า user ยังไม่มี passkey + account_age < passkey_grace_period_days.
+
+    ใช้ใน finalizer (oauth.py / auth.py) — Risk-triggered MFA branch:
+    score >= challenge + no passkey + in_grace → Allow Once + Show Banner
+    score >= challenge + no passkey + ไม่ grace → Force Enrollment
+
+    Self-contained — ไม่ derive จาก adoption_status เพื่อไม่ shadow logic.
+    """
+    if count_active(user.id, db) > 0:
+        return False
+    if not user.created_at:
+        # ไม่มี created_at = treat as old account (no grace) — เป็นค่า conservative
+        return False
+    days = (datetime.now(timezone.utc).replace(tzinfo=None) - user.created_at).days
+    return days < settings.passkey_grace_period_days
 
 
 def get_owned_passkey(

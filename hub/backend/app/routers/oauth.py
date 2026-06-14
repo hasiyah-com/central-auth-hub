@@ -55,6 +55,7 @@ from app.security.risk_engine import evaluate_login_risk
 from app.services.secret_service import verify_secret
 from app.services import webauthn_service
 from app.services import passkey_recovery
+from app.services import risk_challenge
 
 router = APIRouter()
 
@@ -531,7 +532,19 @@ async def _finalize_subsystem_login(
         )
     )
 
-    if actual_decision == "block":
+    # ─── Risk-Triggered Decision (Week 9-10) ─────────────────────────────
+    # Hard block ที่ finalizer (single source of truth) — ไม่พึ่ง aggregator
+    # >= risk_block_hard_threshold (0.85)  → BLOCK 403
+    # >= challenge (0.50) แต่ < 0.85       → MFA flow (re-auth / grace / force-enroll)
+    # < challenge                          → PASS ปกติ
+    # Shadow mode = log only (would_* ไม่ enforce). MFA/block เด้งเฉพาะ enforce mode.
+    enforcing = not settings.ml_shadow_mode
+    is_hard_block = enforcing and risk_score >= settings.risk_block_hard_threshold
+    is_mfa_required = (
+        enforcing and not is_hard_block and actual_decision in ("block", "challenge")
+    )
+
+    if is_hard_block:
         log_action(
             db,
             actor_id=user.id,
@@ -545,6 +558,7 @@ async def _finalize_subsystem_login(
                 "reasons": risk_reasons,
                 "iforest_explanation": iforest_explanation,
                 "provider": provider,
+                "hard_block_threshold": settings.risk_block_hard_threshold,
             },
         )
         db.commit()
@@ -567,23 +581,112 @@ async def _finalize_subsystem_login(
             ),
         )
 
-    # (challenge decision → Week 9-10 MFA flow — ตอนนี้ปล่อยผ่าน + log)
+    # ─── Risk-Triggered MFA flow (0.50 ≤ score < 0.85) ───────────────────
+    grace_banner_remaining_days: int | None = None  # set ถ้า grace branch
+    if is_mfa_required:
+        has_passkey = webauthn_service.count_active(user.id, db) > 0
+
+        if has_passkey:
+            # Branch A: Passkey Re-Auth
+            challenge_id = risk_challenge.mint(
+                user_id=str(user.id),
+                hub_state=hub_state,
+                authreq=authreq,
+                risk_score=risk_score,
+                risk_breakdown=risk_breakdown,
+                risk_reasons=risk_reasons,
+                provider=provider,
+                kind="reauth",
+                flow="subsystem",
+            )
+            log_action(
+                db,
+                actor_id=user.id,
+                action="risk_mfa_required",
+                target_type="subsystem",
+                target_id=authreq["subsystem_id"],
+                ip=client_ip,
+                metadata={
+                    "kind": "reauth",
+                    "challenge_id": challenge_id,
+                    "risk_score": risk_score,
+                    "reasons": risk_reasons,
+                    "provider": provider,
+                },
+            )
+            db.commit()
+            return f"/auth/passkey/risk-stepup?challenge={challenge_id}"
+
+        # ไม่มี passkey — ตรวจ grace period
+        if webauthn_service.in_grace_period(user, db):
+            # Branch C: Grace — Allow Once + Banner
+            adoption = webauthn_service.adoption_status(user, db)
+            grace_banner_remaining_days = adoption.get("grace_days_remaining")
+            log_action(
+                db,
+                actor_id=user.id,
+                action="risk_grace_period_allowed",
+                target_type="subsystem",
+                target_id=authreq["subsystem_id"],
+                ip=client_ip,
+                metadata={
+                    "risk_score": risk_score,
+                    "reasons": risk_reasons,
+                    "grace_days_remaining": grace_banner_remaining_days,
+                    "days_since_signup": adoption.get("days_since_signup"),
+                    "provider": provider,
+                },
+            )
+            # fall through → สร้าง authorization code (พร้อม banner flag)
+        else:
+            # Branch B: Force Enrollment
+            challenge_id = risk_challenge.mint(
+                user_id=str(user.id),
+                hub_state=hub_state,
+                authreq=authreq,
+                risk_score=risk_score,
+                risk_breakdown=risk_breakdown,
+                risk_reasons=risk_reasons,
+                provider=provider,
+                kind="enroll",
+                flow="subsystem",
+            )
+            log_action(
+                db,
+                actor_id=user.id,
+                action="risk_force_enroll_required",
+                target_type="subsystem",
+                target_id=authreq["subsystem_id"],
+                ip=client_ip,
+                metadata={
+                    "kind": "enroll",
+                    "challenge_id": challenge_id,
+                    "risk_score": risk_score,
+                    "reasons": risk_reasons,
+                    "provider": provider,
+                },
+            )
+            db.commit()
+            return f"/auth/passkey/force-enroll?challenge={challenge_id}"
 
     # สร้าง authorization code (อายุ 60 วินาที, ใช้ครั้งเดียว)
     auth_code = secrets.token_urlsafe(32)
+    authcode_payload = {
+        "user_id": str(user.id),
+        "client_id": authreq["client_id"],
+        "subsystem_id": authreq["subsystem_id"],
+        "code_challenge": authreq["code_challenge"],
+        "scope": authreq["scope"],
+        "role_in_sub": access.role_in_sub,
+    }
+    if grace_banner_remaining_days is not None:
+        # Risk-triggered grace period flag — subsystem แสดง banner
+        # "ลงทะเบียน Passkey ภายใน N วัน"
+        authcode_payload["passkey_grace_remaining_days"] = grace_banner_remaining_days
     redis_client.setex(
         f"authcode:{auth_code}",
         AUTH_CODE_TTL,
-        json.dumps(
-            {
-                "user_id": str(user.id),
-                "client_id": authreq["client_id"],
-                "subsystem_id": authreq["subsystem_id"],
-                "code_challenge": authreq["code_challenge"],
-                "scope": authreq["scope"],
-                "role_in_sub": access.role_in_sub,
-            }
-        ),
+        json.dumps(authcode_payload),
     )
 
     log_action(
@@ -982,13 +1085,19 @@ def token_exchange(
     )
     db.commit()
 
-    return {
+    response = {
         "access_token": access_token,
         "token_type": "bearer",
         "expires_in": settings.jwt_access_token_expire_minutes * 60,
         "scope": code_data["scope"],
         "role_in_subsystem": code_data["role_in_sub"],
     }
+    # Risk-triggered grace period banner — subsystem แสดง banner ให้ user
+    if "passkey_grace_remaining_days" in code_data:
+        response["passkey_grace_remaining_days"] = code_data[
+            "passkey_grace_remaining_days"
+        ]
+    return response
 
 
 # ============ 4. /oauth/logout — back-channel logout จาก subsystem ============
