@@ -44,8 +44,9 @@ FEAT = {
     "active_subsystem_count": 16,
     "weekday_usage_score": 17,
     "scope_sensitivity_score": 18,
-    "permission_change_age": 19,
-    "confirmed_incident_count": 20,
+    "ever_changed_permission": 19,
+    "permission_change_age": 20,
+    "confirmed_incident_count": 21,
 }
 
 # ============ Thresholds ============
