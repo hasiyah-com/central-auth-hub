@@ -30,8 +30,10 @@ from app.model import (
 )
 
 # Threshold
+# mfa = 0.50 (ปรับจาก 0.40) — normal IF baseline ~0.39-0.45 อยู่ติด 0.40 ทำให้
+# login ปกติโดน mfa บ่อยเกิน; 0.50 ตรงกับ hub challenge threshold (risk_aggregator)
 THRESHOLD_BLOCK = 0.70
-THRESHOLD_MFA = 0.40
+THRESHOLD_MFA = 0.50
 
 app = FastAPI(
     title="ML Verifier",

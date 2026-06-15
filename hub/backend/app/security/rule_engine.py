@@ -20,21 +20,32 @@ from sqlalchemy.orm import Session
 from app.models import LoginSession
 from app.services.ip_blacklist import is_blacklisted
 
-# ============ Feature index mapping (ตรงกับ feature_extraction.py) ============
+# ============ Feature index mapping (ต้องตรงกับ feature_extraction.py + features.py) ============
+# ⚠️ B27: ลำดับนี้คือ contract — แก้ feature order ที่ feature_extraction.py แล้ว
+# ต้องอัปเดต map นี้ด้วย (rule_engine + behavior_profiling อ่าน feature ตาม index)
 
 FEAT = {
     "hour_of_day": 0,
     "day_of_week": 1,
-    "is_weekend": 2,
-    "hours_from_typical_login_time": 3,
-    "is_thailand": 4,
-    "is_new_country": 5,
-    "country_change_count_30d": 6,
-    "is_new_device": 7,
-    "is_new_user_agent_family": 8,
-    "log_minutes_since_last_login": 9,
-    "login_count_24h": 10,
-    "failed_logins_24h": 11,
+    "hours_from_typical_login_time": 2,
+    "is_thailand": 3,
+    "is_new_country": 4,
+    "country_change_count_30d": 5,
+    "is_new_device": 6,
+    "is_new_user_agent_family": 7,
+    "log_minutes_since_last_login": 8,
+    "login_count_24h": 9,
+    "failed_logins_24h": 10,
+    "passkey_count": 11,
+    "passkey_age_days": 12,
+    "new_passkey_recently_added": 13,
+    "passkey_last_used_days": 14,
+    "concurrent_session_count": 15,
+    "active_subsystem_count": 16,
+    "weekday_usage_score": 17,
+    "scope_sensitivity_score": 18,
+    "permission_change_age": 19,
+    "confirmed_incident_count": 20,
 }
 
 # ============ Thresholds ============
