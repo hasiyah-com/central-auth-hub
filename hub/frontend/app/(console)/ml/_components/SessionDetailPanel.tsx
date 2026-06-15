@@ -10,7 +10,7 @@ import type {
   FeedbackResponse,
   ShapContribution,
 } from "../_types";
-import { DECISION_TONE, DEVICE_ICON, FEEDBACK_LABELS } from "../_types";
+import { DECISION_TONE, DEVICE_ICON, FEEDBACK_LABELS, featureLabelTh } from "../_types";
 
 type SessionData = Anomaly | (UserSession & { user_email?: string; user_id?: string; session_id?: string; subsystem_name?: string });
 
@@ -385,9 +385,11 @@ function ShapBreakdown({ items }: { items: ShapContribution[] }) {
           return (
             <div key={i}>
               <div className="flex items-baseline justify-between gap-2 mb-0.5">
-                <span className="text-[11px] font-mono text-ink-700 truncate">
-                  {it.feature}
-                  <span className="ml-1.5 text-ink-400">= {fmtFeatureValue(it.value)}</span>
+                <span className="text-[11px] text-ink-700 truncate" title={it.feature}>
+                  {featureLabelTh(it.feature)}
+                  <span className="ml-1.5 font-mono text-ink-400">
+                    = {fmtFeatureValue(it.value)}
+                  </span>
                 </span>
                 <span
                   className={`text-[10px] font-mono font-bold ${
