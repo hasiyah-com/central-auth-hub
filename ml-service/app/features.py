@@ -1,21 +1,32 @@
-"""Feature schema สำหรับ Login Anomaly Detection.
+"""Feature schema สำหรับ Login Anomaly Detection (Hybrid RBA).
 
-ขยายจาก 8 เป็น 12 features เพื่อความแม่นยำที่สูงขึ้น
-ทุก feature มี research-backed citation ลำดับสำคัญ! Hub ส่ง list ตามลำดับนี้เป๊ะ.
+21 features (จากเดิม 17 — ตัด is_weekend + has_passkey ที่ collinear, เพิ่ม 6 ใหม่)
+ทุก feature มี research-backed citation. ลำดับสำคัญ! Hub ส่ง list ตามลำดับนี้เป๊ะ (B27).
+
+ดูรายละเอียดแหล่งข้อมูล + วิธีคำนวณ: docs/guides/ML_FEATURE_DATA_SOURCES.md
 
 หมวด:
-  - Temporal     (4) — เวลา login [Wiefling 2020, 2022]
-  - Geographic   (3) — ภูมิศาสตร์ [Wiefling 2022, Freeman 2016]
-  - Device       (2) — อุปกรณ์ [Laperdrix 2020, Iqbal 2021]
-  - Velocity     (2) — ความถี่/ระยะเวลา [Microsoft Entra, Acien 2021]
-  - Brute-force  (1) — login fail [NIST 800-63B-4]
+  - Temporal    (3) — เวลา login [Wiefling 2020, 2022]
+  - Geographic  (3) — ภูมิศาสตร์ [Wiefling 2022, Freeman 2016]
+  - Device      (2) — อุปกรณ์ [Laperdrix 2020, Iqbal 2021]
+  - Velocity    (2) — ความถี่/ระยะเวลา [Microsoft Entra, Acien 2021]
+  - Brute-force (1) — login fail [NIST 800-63B-4]
+  - Passkey     (4) — device trust [Phase 5, Improvement #5]
+  - Session     (2) — concurrent + lateral movement  ← ใหม่
+  - Behavioral  (1) — personalized weekday baseline   ← ใหม่
+  - OAuth       (1) — scope sensitivity               ← ใหม่
+  - Privilege   (1) — permission change recency        ← ใหม่
+  - History     (1) — confirmed incidents (ground-truth) ← ใหม่
+
+ตัดออก (collinear 100%):
+  - is_weekend  = f(day_of_week)        → weekday_usage_score แทน (personalized)
+  - has_passkey = f(passkey_count > 0)  → passkey_count แทน
 """
 
 FEATURE_NAMES: list[str] = [
-    # === Temporal (4) ===
+    # === Temporal (3) ===
     "hour_of_day",  # 0-23
     "day_of_week",  # 0=Mon, 6=Sun
-    "is_weekend",  # 0/1
     "hours_from_typical_login_time",  # |hour - median user hour| 0-12
     # === Geographic (3) ===
     "is_thailand",  # 0/1
@@ -29,12 +40,22 @@ FEATURE_NAMES: list[str] = [
     "login_count_24h",  # นับการ login ใน 24 ชม.
     # === Brute force (1) ===
     "failed_logins_24h",  # decision IN (block, would_block)
-    # === Passkey / Device Trust (5) — Phase 5, Improvement #5 ===
-    "has_passkey",  # 0/1 — มี active passkey = trusted
-    "passkey_count",  # 0-10 — มากกว่า = mature account
+    # === Passkey / Device Trust (4) ===
+    "passkey_count",  # 0-10 — 0 = ไม่มี passkey (แทน has_passkey)
     "passkey_age_days",  # อายุ passkey เก่าสุด (ใหม่ = น่าสงสัย)
     "new_passkey_recently_added",  # 0/1 — เพิ่ม < 1 ชม. = takeover sign
     "passkey_last_used_days",  # วันที่ไม่ได้ใช้ passkey ล่าสุด
+    # === Session (2) — ใหม่ ===
+    "concurrent_session_count",  # session active (logout_at NULL, < 60m) พร้อมกัน
+    "active_subsystem_count",  # # subsystem distinct ที่ active = lateral movement
+    # === Behavioral (1) — ใหม่ ===
+    "weekday_usage_score",  # 0-1 personalized: วันนี้เป็นวันที่ user ไม่ค่อยใช้
+    # === OAuth (1) — ใหม่ ===
+    "scope_sensitivity_score",  # 0-1 ความ sensitive ของ scope ที่ subsystem ขอ
+    # === Privilege (1) — ใหม่ ===
+    "permission_change_age",  # วันตั้งแต่เปลี่ยนสิทธิ์ล่าสุด (น้อย = เพิ่งเปลี่ยน = เสี่ยง)
+    # === History (1) — ใหม่ (ground-truth) ===
+    "confirmed_incident_count",  # # incident จริงในอดีต (is_account_takeover/is_attack_ip)
 ]
 
 FEATURE_COUNT = len(FEATURE_NAMES)
@@ -43,7 +64,6 @@ FEATURE_COUNT = len(FEATURE_NAMES)
 FEATURE_RANGES: dict[str, tuple[float, float]] = {
     "hour_of_day": (0.0, 23.0),
     "day_of_week": (0.0, 6.0),
-    "is_weekend": (0.0, 1.0),
     "hours_from_typical_login_time": (0.0, 12.0),
     "is_thailand": (0.0, 1.0),
     "is_new_country": (0.0, 1.0),
@@ -53,9 +73,14 @@ FEATURE_RANGES: dict[str, tuple[float, float]] = {
     "log_minutes_since_last_login": (-5.0, 15.0),
     "login_count_24h": (0.0, 1000.0),
     "failed_logins_24h": (0.0, 1000.0),
-    "has_passkey": (0.0, 1.0),
     "passkey_count": (0.0, 20.0),
     "passkey_age_days": (0.0, 3650.0),
     "new_passkey_recently_added": (0.0, 1.0),
     "passkey_last_used_days": (0.0, 3650.0),
+    "concurrent_session_count": (0.0, 50.0),
+    "active_subsystem_count": (0.0, 20.0),
+    "weekday_usage_score": (0.0, 1.0),
+    "scope_sensitivity_score": (0.0, 1.0),
+    "permission_change_age": (0.0, 9999.0),
+    "confirmed_incident_count": (0.0, 1000.0),
 }
