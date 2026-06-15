@@ -148,3 +148,34 @@ export const DEVICE_ICON: Record<string, string> = {
   bot: "🤖",
   unknown: "❓",
 };
+
+// Feature name → ป้ายภาษาไทย (อ่านง่ายใน SHAP/risk breakdown)
+// ครบ 21 features — ดู docs/guides/ML_FEATURE_DATA_SOURCES.md
+export const FEATURE_LABEL_TH: Record<string, string> = {
+  hour_of_day: "ชั่วโมงที่ล็อกอิน",
+  day_of_week: "วันในสัปดาห์",
+  hours_from_typical_login_time: "ห่างจากเวลาที่ใช้ประจำ",
+  is_thailand: "ล็อกอินจากไทย",
+  is_new_country: "ประเทศใหม่",
+  country_change_count_30d: "จำนวนประเทศใน 30 วัน",
+  is_new_device: "อุปกรณ์ใหม่",
+  is_new_user_agent_family: "เบราว์เซอร์ใหม่",
+  log_minutes_since_last_login: "เวลาห่างจากล็อกอินก่อนหน้า",
+  login_count_24h: "จำนวนล็อกอินใน 24 ชม.",
+  failed_logins_24h: "ล็อกอินล้มเหลวใน 24 ชม.",
+  passkey_count: "จำนวน Passkey",
+  passkey_age_days: "อายุ Passkey (วัน)",
+  new_passkey_recently_added: "เพิ่ง เพิ่ม Passkey",
+  passkey_last_used_days: "ใช้ Passkey ล่าสุด (วัน)",
+  concurrent_session_count: "เซสชันพร้อมกัน",
+  active_subsystem_count: "ระบบย่อยที่ใช้พร้อมกัน",
+  weekday_usage_score: "วันที่ผิดจากปกติ",
+  scope_sensitivity_score: "ความอ่อนไหวของ scope",
+  permission_change_age: "เพิ่งเปลี่ยนสิทธิ์ (วัน)",
+  confirmed_incident_count: "เหตุการณ์เสี่ยงในอดีต",
+};
+
+/** คืนป้ายไทยของ feature (fallback เป็นชื่อดิบถ้าไม่มีใน map) */
+export function featureLabelTh(name: string): string {
+  return FEATURE_LABEL_TH[name] ?? name;
+}
