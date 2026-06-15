@@ -1669,6 +1669,15 @@ def approve_change_request(
     )
     db.commit()
 
+    # หลัง commit → ยิง access_updated webhook ให้ subsystem (fail-safe)
+    # role/scope เปลี่ยน → subsystem บังคับ user re-auth → ได้ค่าล่าสุด
+    try:
+        from app.services.change_request_service import notify_subsystem_after_apply
+
+        notify_subsystem_after_apply(req, subsystem, result)
+    except Exception as e:
+        log.warning("notify_subsystem_after_apply failed: %r", e)
+
     # Email requester
     requester = db.query(User).filter(User.id == req.requested_by).first()
     email_sent = False

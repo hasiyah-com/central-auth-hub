@@ -168,10 +168,57 @@ final class Client
         return $_SESSION[$this->config->sessionKey]['access_token'] ?? null;
     }
 
-    /** True ถ้า user มี session อยู่. */
+    /**
+     * True ถ้า user login อยู่ **และ session ยังไม่หมดอายุ**.
+     *
+     * บังคับหมดอายุเหมือน dorm (session.py max_age):
+     *   1. JWT exp claim — token หมด (default 60 นาที) → false → ต้อง login ใหม่
+     *      → login ใหม่ = ได้ JWT ใหม่ที่มี scope ปัจจุบัน (pick up scope ที่เพิ่ง add)
+     *   2. session_max_age (ถ้าตั้ง) — บังคับ re-login เร็วขึ้น (เช่น 300 = 5 นาที)
+     *
+     * หมดอายุ → ล้าง session อัตโนมัติ → หน้า protected เด้งไป login.
+     */
     public function isAuthenticated(): bool
     {
-        return $this->user() !== null;
+        $claims = $this->user();
+        if ($claims === null) {
+            return false;
+        }
+
+        $now = time();
+
+        // (1) JWT exp — token หมดอายุ → session ใช้ไม่ได้
+        $exp = (int) ($claims['exp'] ?? 0);
+        if ($exp > 0 && $now >= $exp) {
+            $this->logout();
+            return false;
+        }
+
+        $loggedInAt = (int) ($_SESSION[$this->config->sessionKey]['logged_in_at'] ?? 0);
+
+        // (2) session_max_age — บังคับ re-login เร็วขึ้นกว่า JWT exp (optional)
+        $maxAge = $this->config->sessionMaxAge;
+        if ($maxAge > 0 && $loggedInAt > 0 && $now >= $loggedInAt + $maxAge) {
+            $this->logout();
+            return false;
+        }
+
+        // (3) real-time revoke/update — Hub webhook (access_revoked/access_updated)
+        // mark user/all ใน RevocationStore → ถ้า revoke หลัง logged_in_at = ต้อง re-auth
+        // (เหมือนหอพัก hub_access_revoked_at — role/scope เปลี่ยน → เด้งทันที)
+        $storePath = $this->config->revocationStorePath;
+        if ($storePath !== '' && $loggedInAt > 0) {
+            $sub = (string) ($claims['sub'] ?? '');
+            if ($sub !== '') {
+                $store = new RevocationStore($storePath);
+                if ($store->isRevokedSince($sub, $loggedInAt)) {
+                    $this->logout();
+                    return false;
+                }
+            }
+        }
+
+        return true;
     }
 
     /**

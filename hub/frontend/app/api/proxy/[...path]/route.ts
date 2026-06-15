@@ -35,8 +35,17 @@ async function forward(req: NextRequest, path: string[]) {
 
   // forward client IP → backend get_client_ip() อ่าน X-Forwarded-For ก่อน
   // (ไม่งั้น audit/ML เห็น IP ของ Next.js container 172.x แทน client จริง)
+  //
+  // ลำดับ fallback:
+  //   1. x-forwarded-for  — มีเมื่ออยู่หลัง reverse proxy (nginx/cloudflare) = prod
+  //   2. x-real-ip        — บาง proxy ใช้ header นี้
+  //   3. req.ip           — Next.js derive จาก connection (Vercel/edge)
+  // หมายเหตุ: dev ที่รันใน Docker published-port (browser→localhost:3000) ตัว
+  // Docker NAT จะ rewrite source เป็น gateway (172.18.0.1) ตั้งแต่ hop แรก →
+  // ทั้ง Next.js และ backend จะเห็น 172.x (กู้ client จริงไม่ได้ใน dev).
+  // prod ที่มี reverse proxy ตั้ง XFF ให้ → ได้ IP จริง.
   const xff = req.headers.get("x-forwarded-for");
-  const realIp = xff || req.headers.get("x-real-ip") || "";
+  const realIp = xff || req.headers.get("x-real-ip") || req.ip || "";
   if (realIp) headers["x-forwarded-for"] = realIp;
 
   const init: RequestInit = {

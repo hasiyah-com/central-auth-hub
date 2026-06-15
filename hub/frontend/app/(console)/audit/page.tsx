@@ -5,6 +5,7 @@ import { Topbar } from "@/components/Topbar";
 import { DataTable, type Column } from "@/components/DataTable";
 import { Badge } from "@/components/Badge";
 import { clientFetch } from "@/lib/api";
+import { parseUserAgent } from "@/lib/ua";
 
 type AuditLog = {
   id: string;
@@ -62,6 +63,51 @@ function formatTime(iso: string | null): string {
 }
 
 const PAGE_SIZE = 50;
+
+// แสดงรายละเอียด audit แบบอ่านง่าย: surface field สำคัญ (ต้นทาง/เหตุผล/เป้าหมาย)
+// ก่อน raw JSON — ตอบ "เข้าทางไหน ใช้อะไร ทำอะไร" ได้ทันทีโดยไม่ต้องอ่าน JSON
+function DetailCell({ row }: { row: AuditLog }) {
+  const meta = row.metadata as Record<string, unknown> | null;
+  if (!meta || Object.keys(meta).length === 0) {
+    return <span className="text-ink-400 text-xs">—</span>;
+  }
+  const ua = parseUserAgent(meta.user_agent as string | undefined);
+  // key fields ที่อยากเชิดขึ้นมา (ถ้ามี)
+  const highlights: [string, string][] = [];
+  if (meta.email) highlights.push(["อีเมล", String(meta.email)]);
+  if (meta.reason) highlights.push(["เหตุผล", String(meta.reason)]);
+  if (meta.role) highlights.push(["role", String(meta.role)]);
+  if (meta.provider) highlights.push(["provider", String(meta.provider)]);
+  if (ua) highlights.push(["อุปกรณ์", ua.label]);
+
+  return (
+    <details className="text-xs">
+      <summary className="cursor-pointer text-brand-600 hover:text-brand-700">
+        ดูรายละเอียด
+      </summary>
+      <div className="mt-1.5 space-y-1.5 max-w-md">
+        {highlights.length > 0 && (
+          <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 p-2 bg-brand-50 rounded border border-brand-100">
+            {highlights.map(([k, v]) => (
+              <div key={k} className="contents">
+                <span className="text-ink-500">{k}</span>
+                <span className="font-mono text-ink-800 break-all">{v}</span>
+              </div>
+            ))}
+          </div>
+        )}
+        <details className="text-[10px]">
+          <summary className="cursor-pointer text-ink-400 hover:text-ink-600">
+            raw JSON
+          </summary>
+          <pre className="mt-1 p-2 bg-ink-50 rounded overflow-x-auto">
+            {JSON.stringify(meta, null, 2)}
+          </pre>
+        </details>
+      </div>
+    </details>
+  );
+}
 
 export default function AuditPage() {
   const [data, setData] = useState<AuditResponse | null>(null);
@@ -134,27 +180,27 @@ export default function AuditPage() {
     },
     {
       key: "ip",
-      header: "IP",
-      render: (r) => (
-        <span className="font-mono text-xs">{r.ip || "—"}</span>
-      ),
+      header: "ต้นทาง (IP · อุปกรณ์)",
+      render: (r) => {
+        const ua = parseUserAgent(
+          (r.metadata as { user_agent?: string } | null)?.user_agent
+        );
+        return (
+          <div className="text-xs">
+            <div className="font-mono">{r.ip || "—"}</div>
+            {ua && (
+              <div className="text-ink-500 text-[10px] mt-0.5" title={ua.raw}>
+                🖥️ {ua.label}
+              </div>
+            )}
+          </div>
+        );
+      },
     },
     {
       key: "metadata",
-      header: "Metadata",
-      render: (r) =>
-        r.metadata ? (
-          <details className="text-xs">
-            <summary className="cursor-pointer text-brand-600 hover:text-brand-700">
-              ดู
-            </summary>
-            <pre className="mt-1 p-2 bg-ink-50 rounded text-[10px] max-w-md overflow-x-auto">
-              {JSON.stringify(r.metadata, null, 2)}
-            </pre>
-          </details>
-        ) : (
-          <span className="text-ink-400">—</span>
-        ),
+      header: "รายละเอียด",
+      render: (r) => <DetailCell row={r} />,
     },
   ];
 

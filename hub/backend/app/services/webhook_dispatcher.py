@@ -47,6 +47,10 @@ _DEV_LOCALHOST_MAP = {
 _HOST_GATEWAY = "host.docker.internal"
 _LOCALHOST_HOSTS = {"localhost", "127.0.0.1"}
 
+# webhook path ที่รู้จัก — ใช้ strip ออกจาก override URL แล้วต่อ path ของ event
+# (กัน override ที่ตั้ง path ตายตัวบล็อก event อื่น — B49)
+_KNOWN_WEBHOOK_PATHS = ("/internal/access-revoked", "/internal/access-updated")
+
 
 def _translate_for_docker(url: str) -> str:
     """ใน dev mode ถ้า URL ชี้ไป localhost ของ host → map ให้ container เข้าถึงได้.
@@ -96,18 +100,27 @@ def _resolve_webhook_url(subsystem: Subsystem, path: str) -> str | None:
     override = subsystem.access_revoke_webhook_url
     if override:
         clean = override.rstrip("/")
+        # ถ้า override จบด้วย known webhook path (access-revoked/access-updated)
+        # → strip ออกก่อน แล้วต่อ path ที่ event นี้ต้องการ
+        # (กันกรณี override ตั้งเป็น .../internal/access-revoked ตายตัว แล้ว
+        #  access_updated ถูกส่งไป endpoint ผิด → B49)
+        for wp in _KNOWN_WEBHOOK_PATHS:
+            if clean.endswith(wp):
+                clean = clean[: -len(wp)].rstrip("/")
+                break
         # ถ้า override จบด้วย path เดียวกัน → ใช้เลย ไม่ต่อซ้ำ
         if clean.endswith(path):
             url = clean
         else:
-            # ถ้า override มีแค่ origin (no path) → ต่อ path
-            # เช่น "http://subsystem-dorm:8000" → "http://subsystem-dorm:8000/internal/access-revoked"
+            # ถ้า clean เหลือแค่ origin (no path) → ต่อ path ที่ขอ
+            # เช่น "http://subsystem-dorm:8000" → "http://subsystem-dorm:8000/internal/access-updated"
             try:
                 p = urlparse(clean)
                 if not p.path or p.path == "/":
                     url = clean + path
                 else:
-                    # มี path อื่น (ไม่ตรง) → ใช้ตามนั้น (assume user รู้ตัวว่าทำอะไร)
+                    # มี path อื่น (custom เช่น /myapp/webhook.php) → ใช้ตามนั้น
+                    # (single-file handler ที่ dispatch จาก body event)
                     url = clean
             except Exception:
                 url = clean + path
@@ -130,6 +143,78 @@ def _sign(body: bytes) -> str:
     """HMAC-SHA256(WEBHOOK_SHARED_KEY, body) → hex string."""
     key = settings.webhook_shared_key.encode("utf-8")
     return hmac.new(key, body, hashlib.sha256).hexdigest()
+
+
+def send_access_updated(subsystem: Subsystem, payload: dict[str, Any]) -> bool:
+    """Fire-and-forget webhook: access ของ user (หรือทั้ง subsystem) ถูก "เปลี่ยน".
+
+    ต่างจาก access_revoked (= ถอดออกจาก whitelist, login ใหม่ไม่ได้):
+    access_updated = role/scope/config เปลี่ยน → subsystem ควรบังคับ re-auth
+    → user login ใหม่ได้ทันที (ยังอยู่ใน whitelist) แล้วได้ JWT ใหม่ที่มีค่าล่าสุด.
+
+    payload:
+      - hub_user_id: str | None  — None = กระทบทุก user (config/scope เปลี่ยน → kick all)
+      - reason: str              — "role_changed" | "config_changed:edit_scope" ...
+      - new_role: str | None     — (เฉพาะ role change)
+
+    Headers/signing เหมือน access_revoked. Returns True ถ้า subsystem ตอบ 200.
+    """
+    if not settings.webhook_shared_key:
+        log.warning(
+            "webhook skipped — WEBHOOK_SHARED_KEY not configured. "
+            "subsystem=%s event=access_updated",
+            subsystem.id,
+        )
+        return False
+
+    url = _resolve_webhook_url(subsystem, "/internal/access-updated")
+    if not url:
+        log.warning(
+            "webhook skipped — no URL resolvable for subsystem=%s", subsystem.id
+        )
+        return False
+
+    body_dict = {
+        "event": "access_updated",
+        "subsystem_id": str(subsystem.id),
+        "client_id": subsystem.client_id,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+        **payload,
+    }
+    body_bytes = json.dumps(body_dict, separators=(",", ":"), sort_keys=True).encode(
+        "utf-8"
+    )
+    sig = _sign(body_bytes)
+    ts = str(int(datetime.now(timezone.utc).timestamp()))
+
+    try:
+        with httpx.Client(timeout=5.0) as client:
+            r = client.post(
+                url,
+                content=body_bytes,
+                headers={
+                    "Content-Type": "application/json",
+                    "X-Hub-Event": "access_updated",
+                    "X-Hub-Signature-256": sig,
+                    "X-Hub-Timestamp": ts,
+                    "User-Agent": "central-auth-hub-webhook/1.0",
+                },
+            )
+            if r.status_code >= 400:
+                log.warning(
+                    "webhook(access_updated) subsystem=%s returned %d: %s",
+                    subsystem.id,
+                    r.status_code,
+                    r.text[:200],
+                )
+                return False
+        log.info(
+            "webhook(access_updated) delivered subsystem=%s url=%s", subsystem.id, url
+        )
+        return True
+    except Exception as e:
+        log.warning("webhook(access_updated) to %s failed: %r", url, e)
+        return False
 
 
 def send_access_revoked(subsystem: Subsystem, payload: dict[str, Any]) -> bool:

@@ -118,3 +118,63 @@ async def access_revoked(
         "member_found": member is not None,
         "marked": marked,
     }
+
+
+@router.post("/internal/access-updated")
+async def access_updated(
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """รับ event จาก Hub: role/scope/config เปลี่ยน → บังคับ user re-auth.
+
+    hub_user_id ระบุ → mark member คนนั้น; null → mark ทุก member (config เปลี่ยน).
+    reuse hub_access_revoked_at เป็น force-reauth flag (re-login reset).
+    """
+    raw = await _verify_signature(request)
+
+    import json as _json
+
+    try:
+        payload = _json.loads(raw.decode("utf-8"))
+    except Exception:
+        raise HTTPException(status_code=400, detail="invalid JSON")
+
+    if payload.get("event") != "access_updated":
+        raise HTTPException(status_code=400, detail="event != access_updated")
+
+    payload_client_id = payload.get("client_id")
+    if payload_client_id and payload_client_id != settings.library_client_id:
+        raise HTTPException(status_code=400, detail="client_id mismatch")
+
+    hub_user_id = payload.get("hub_user_id")  # None = ทุกคน
+    now = datetime.utcnow()
+    marked = 0
+
+    if hub_user_id:
+        member = db.query(Member).filter(Member.hub_user_id == hub_user_id).first()
+        if member and member.hub_access_revoked_at is None:
+            member.hub_access_revoked_at = now
+            marked = 1
+    else:
+        members = db.query(Member).filter(Member.hub_access_revoked_at.is_(None)).all()
+        for m in members:
+            m.hub_access_revoked_at = now
+            marked += 1
+
+    log_action(
+        db,
+        actor_hub_user_id=None,
+        action="hub_access_updated_received",
+        target_type="member",
+        target_id=None,
+        ip=get_client_ip(request),
+        metadata={
+            "hub_user_id": hub_user_id or "ALL",
+            "reason": payload.get("reason"),
+            "new_role": payload.get("new_role"),
+            "marked": marked,
+        },
+    )
+    db.commit()
+
+    return {"status": "ok", "scope": hub_user_id or "ALL", "marked": marked}
