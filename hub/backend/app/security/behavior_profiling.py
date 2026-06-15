@@ -93,7 +93,8 @@ def evaluate_behavior(features: list[float], profile: dict | None) -> BehaviorRe
         reasons.append("is_new_device (+0.20)")
 
     # ── Weekend pattern mismatch ──
-    current_weekend = features[FEAT["is_weekend"]]
+    # is_weekend ถูกตัดออกจาก feature vector → derive จาก day_of_week (>=5 = เสาร์/อาทิตย์)
+    current_weekend = 1 if features[FEAT["day_of_week"]] >= 5 else 0
     typical_weekend = profile.get("typical_weekend", 0)
     if int(current_weekend) != int(typical_weekend):
         score += 0.10
