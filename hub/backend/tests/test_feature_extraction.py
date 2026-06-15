@@ -18,19 +18,20 @@ from sqlalchemy.orm import Session
 from app.database import SessionLocal
 from app.models import AccessList, LoginSession, Subsystem, User
 from app.services.feature_extraction import (
-    PERM_AGE_NEUTRAL,
+    PERM_AGE_CAP,
     extract_session_features,
 )
 
-# index map (0-based) ตาม ml-service/app/features.py
+# index map (0-based) ตาม ml-service/app/features.py (22 features)
 IDX = {
     "passkey_count": 11,
     "concurrent_session_count": 15,
     "active_subsystem_count": 16,
     "weekday_usage_score": 17,
     "scope_sensitivity_score": 18,
-    "permission_change_age": 19,
-    "confirmed_incident_count": 20,
+    "ever_changed_permission": 19,
+    "permission_change_age": 20,
+    "confirmed_incident_count": 21,
 }
 
 
@@ -45,9 +46,9 @@ def test_rule_engine_feat_map_aligned():
 
     assert "is_weekend" not in FEAT  # ตัดแล้ว
     assert "has_passkey" not in FEAT  # ตัดแล้ว
-    assert len(FEAT) == 21
-    # indices ต้อง unique + ครบ 0..20
-    assert sorted(FEAT.values()) == list(range(21))
+    assert len(FEAT) == 22
+    # indices ต้อง unique + ครบ 0..21
+    assert sorted(FEAT.values()) == list(range(22))
     # ตำแหน่งสำคัญ (ที่ rule/behavior ใช้จริง)
     assert FEAT["hours_from_typical_login_time"] == 2
     assert FEAT["is_thailand"] == 3
@@ -64,8 +65,9 @@ def test_benign_login_low_rule_score(db):
     """
     from app.security.rule_engine import evaluate_rules
 
-    # 21-feature vector: คนปกติ — ไม่มี new device/country, failed=0, ไม่มี passkey signal
-    feats = [10, 2, 1, 1, 0, 0, 0, 0, 4, 2, 0, 0, 0, 0, 0, 1, 1, 0.1, 0.3, 500, 0]
+    # 22-feature vector: คนปกติ — ไม่มี new device/country, failed=0, ไม่มี passkey signal
+    # [..., scope=0.3, ever_changed=0, perm_age=365, confirmed=0]
+    feats = [10, 2, 1, 1, 0, 0, 0, 0, 4, 2, 0, 0, 0, 0, 0, 1, 1, 0.1, 0.3, 0, 365, 0]
     res = evaluate_rules(
         feats, db, user_id=str(uuid.uuid4()), ip="203.0.113.9", geo_country=None
     )
@@ -125,9 +127,9 @@ def _add_session(db, user, **kw):
 
 
 @pytest.mark.smoke
-def test_returns_exactly_21_features(user, db):
+def test_returns_exactly_22_features(user, db):
     feats = extract_session_features(db, user.id, "1.2.3.4", "Mozilla/5.0", "TH")
-    assert len(feats) == 21
+    assert len(feats) == 22
 
 
 @pytest.mark.smoke
@@ -135,7 +137,8 @@ def test_cold_start_neutral(user, db):
     """user ใหม่ (ไม่มี history) → personalized/privilege = neutral."""
     feats = extract_session_features(db, user.id, "1.2.3.4", "Mozilla/5.0", "TH")
     assert feats[IDX["weekday_usage_score"]] == 0.0
-    assert feats[IDX["permission_change_age"]] == PERM_AGE_NEUTRAL
+    assert feats[IDX["ever_changed_permission"]] == 0.0  # ไม่เคยเปลี่ยน
+    assert feats[IDX["permission_change_age"]] == PERM_AGE_CAP  # = 365
     assert feats[IDX["confirmed_incident_count"]] == 0.0
     assert feats[IDX["passkey_count"]] == 0.0
 

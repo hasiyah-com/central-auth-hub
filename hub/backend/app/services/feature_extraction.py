@@ -1,4 +1,4 @@
-"""สกัด feature vector 21 ตัวจาก login session + history ใน DB.
+"""สกัด feature vector 22 ตัวจาก login session + history ใน DB.
 
 ลำดับต้องตรงกับ ml-service/app/features.py (B27):
   [hour_of_day, day_of_week, hours_from_typical_login_time,
@@ -35,8 +35,9 @@ MIN_HISTORY_FOR_PERSONALIZATION = 5
 # กัน session ที่หมดอายุแต่ไม่มี logout_at นับเป็น "active" ตลอดกาล
 CONCURRENT_WINDOW_MIN = 60
 
-# permission_change_age — user ที่ไม่เคยเปลี่ยนสิทธิ์ → neutral (เสี่ยงต่ำ)
-PERM_AGE_NEUTRAL = 9999.0
+# permission_change_age — cap ที่ 365 วัน (กัน outlier ใน tree); ไม่เคยเปลี่ยน = 365 (เก่าสุด=ปลอดภัย)
+# แยก "เคยเปลี่ยนไหม" ออกเป็น ever_changed_permission (0/1) เพื่อเลี่ยง sentinel 9999
+PERM_AGE_CAP = 365.0
 
 # scope sensitivity weights — ยิ่ง sensitive ยิ่งสูง (subsystems.scope)
 _SCOPE_WEIGHTS: dict[str, float] = {
@@ -163,7 +164,7 @@ def extract_session_features(
     now: datetime | None = None,
     subsystem_id=None,
 ) -> list[float]:
-    """คืน feature vector 21 ตัว.
+    """คืน feature vector 22 ตัว.
 
     subsystem_id: ใช้คำนวณ scope_sensitivity_score (None = Hub-direct → 0.0)
     """
@@ -358,7 +359,7 @@ def extract_session_features(
                 1.0, sum(_SCOPE_WEIGHTS.get(s, 0.1) for s in sub[0])
             )
 
-    # === Privilege (1) — วันตั้งแต่เปลี่ยนสิทธิ์ล่าสุด (access_list) ===
+    # === Privilege (2) — เคยเปลี่ยนสิทธิ์ไหม + วันตั้งแต่เปลี่ยนล่าสุด (access_list) ===
     perm_rows = (
         db.query(AccessList.granted_at, AccessList.revoked_at)
         .filter(AccessList.user_id == user_id)
@@ -366,12 +367,13 @@ def extract_session_features(
     )
     change_times = [t for row in perm_rows for t in row if t is not None]
     if change_times:
+        ever_changed_permission = 1.0
         latest_change = max(change_times)
-        permission_change_age = max(
-            0.0, (now - latest_change).total_seconds() / 86400.0
-        )
+        age = (now - latest_change).total_seconds() / 86400.0
+        permission_change_age = min(max(0.0, age), PERM_AGE_CAP)  # cap 365
     else:
-        permission_change_age = PERM_AGE_NEUTRAL  # ไม่เคยเปลี่ยน = neutral
+        ever_changed_permission = 0.0
+        permission_change_age = PERM_AGE_CAP  # ไม่เคยเปลี่ยน = เก่าสุด (ปลอดภัย)
 
     # === History (1) — incident จริงในอดีต (ground-truth, กัน feedback loop) ===
     confirmed_incident_count = float(
@@ -407,6 +409,7 @@ def extract_session_features(
         active_subsystem_count,
         float(weekday_usage),
         float(scope_sensitivity),
+        float(ever_changed_permission),
         float(permission_change_age),
         confirmed_incident_count,
     ]

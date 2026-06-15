@@ -1,6 +1,6 @@
 """Feature schema สำหรับ Login Anomaly Detection (Hybrid RBA).
 
-21 features (จากเดิม 17 — ตัด is_weekend + has_passkey ที่ collinear, เพิ่ม 6 ใหม่)
+22 features (17 - ตัด is_weekend/has_passkey + เพิ่ม 7: 6 ใหม่ + ever_changed_permission)
 ทุก feature มี research-backed citation. ลำดับสำคัญ! Hub ส่ง list ตามลำดับนี้เป๊ะ (B27).
 
 ดูรายละเอียดแหล่งข้อมูล + วิธีคำนวณ: docs/guides/ML_FEATURE_DATA_SOURCES.md
@@ -15,7 +15,7 @@
   - Session     (2) — concurrent + lateral movement  ← ใหม่
   - Behavioral  (1) — personalized weekday baseline   ← ใหม่
   - OAuth       (1) — scope sensitivity               ← ใหม่
-  - Privilege   (1) — permission change recency        ← ใหม่
+  - Privilege   (2) — ever_changed + permission change age ← ใหม่
   - History     (1) — confirmed incidents (ground-truth) ← ใหม่
 
 ตัดออก (collinear 100%):
@@ -52,8 +52,9 @@ FEATURE_NAMES: list[str] = [
     "weekday_usage_score",  # 0-1 personalized: วันนี้เป็นวันที่ user ไม่ค่อยใช้
     # === OAuth (1) — ใหม่ ===
     "scope_sensitivity_score",  # 0-1 ความ sensitive ของ scope ที่ subsystem ขอ
-    # === Privilege (1) — ใหม่ ===
-    "permission_change_age",  # วันตั้งแต่เปลี่ยนสิทธิ์ล่าสุด (น้อย = เพิ่งเปลี่ยน = เสี่ยง)
+    # === Privilege (2) — แยก sentinel 9999 เป็น 2 ตัว (กัน outlier ใน tree) ===
+    "ever_changed_permission",  # 0/1 — เคยเปลี่ยนสิทธิ์ไหม (แทน sentinel)
+    "permission_change_age",  # วันตั้งแต่เปลี่ยนสิทธิ์ล่าสุด (cap 365; ไม่เคยเปลี่ยน=365)
     # === History (1) — ใหม่ (ground-truth) ===
     "confirmed_incident_count",  # # incident จริงในอดีต (is_account_takeover/is_attack_ip)
 ]
@@ -81,6 +82,7 @@ FEATURE_RANGES: dict[str, tuple[float, float]] = {
     "active_subsystem_count": (0.0, 20.0),
     "weekday_usage_score": (0.0, 1.0),
     "scope_sensitivity_score": (0.0, 1.0),
-    "permission_change_age": (0.0, 9999.0),
+    "ever_changed_permission": (0.0, 1.0),
+    "permission_change_age": (0.0, 365.0),
     "confirmed_incident_count": (0.0, 1000.0),
 }

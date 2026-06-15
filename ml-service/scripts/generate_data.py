@@ -1,4 +1,4 @@
-"""สร้าง synthetic data สำหรับ train Isolation Forest (21 features).
+"""สร้าง synthetic data สำหรับ train Isolation Forest (22 features).
 
 จำลอง normal 10,000 + anomaly 500 ตาม 6 รูปแบบ:
   - night            ล็อกอินตี 0-5
@@ -8,8 +8,8 @@
   - failed_spike     login fail หลายครั้ง (brute force)
   - passkey_takeover เพิ่ม passkey ใหม่ + lateral movement + permission เพิ่งเปลี่ยน
 
-โครงสร้าง feature (21) — ดู docs/guides/ML_FEATURE_DATA_SOURCES.md:
-  base(11) + passkey(4) + session(2) + behavioral(1) + oauth(1) + privilege(1) + history(1)
+โครงสร้าง feature (22) — ดู docs/guides/ML_FEATURE_DATA_SOURCES.md:
+  base(11) + passkey(4) + session(2) + behavioral(1) + oauth(1) + privilege(2) + history(1)
 
 หมายเหตุ (เทียบเวอร์ชัน 17):
   - ตัด is_weekend (collinear กับ day_of_week) + has_passkey (collinear กับ passkey_count)
@@ -34,8 +34,8 @@ DATA_DIR = Path("/app/data")
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 OUTPUT = DATA_DIR / "sessions.csv"
 
-# ค่ากลางที่ใช้สำหรับ user ที่ "ไม่เคยเปลี่ยนสิทธิ์" — permission_change_age สูง = neutral
-PERM_AGE_NEUTRAL = 9999.0
+# permission_change_age cap 365; ไม่เคยเปลี่ยน = 365 (เก่าสุด=ปลอดภัย) + ever_changed=0
+PERM_AGE_CAP = 365.0
 
 HOUR_WEIGHTS_NORMAL = [
     1,
@@ -105,17 +105,26 @@ def normal_extra_features() -> list[float]:
     - active_sub: รวม 0 (Hub-direct / fresh)
     - weekday_usage: กว้าง 0-0.6 (user history น้อย → ค่าสูงได้แม้ปกติ)
     - scope: ~40% Hub-direct = 0.0, ที่เหลือ subsystem 0.1-0.6
-    - perm_age: ~85% = 9999 (PERM_AGE_NEUTRAL — ไม่เคยเปลี่ยนสิทธิ์), ที่เหลือเพิ่งเปลี่ยน
+    - ever_changed/perm_age: ~85% ไม่เคยเปลี่ยน (ever=0, age=365), ที่เหลือเพิ่งเปลี่ยน
     """
     concurrent = random.choices([0, 1, 2, 3], weights=[40, 35, 18, 7])[0]
     active_sub = random.choices([0, 1, 2], weights=[45, 40, 15])[0]
     weekday_usage = round(random.uniform(0.0, 0.6), 3)
     scope_sens = 0.0 if random.random() < 0.40 else round(random.uniform(0.1, 0.6), 3)
-    perm_age = (
-        PERM_AGE_NEUTRAL if random.random() < 0.85 else round(random.uniform(5, 300), 1)
-    )
+    if random.random() < 0.85:
+        ever_changed, perm_age = 0, PERM_AGE_CAP  # ไม่เคยเปลี่ยน
+    else:
+        ever_changed, perm_age = 1, round(random.uniform(5, 300), 1)
     confirmed = random.choices([0, 1], weights=[99, 1])[0]
-    return [concurrent, active_sub, weekday_usage, scope_sens, perm_age, confirmed]
+    return [
+        concurrent,
+        active_sub,
+        weekday_usage,
+        scope_sens,
+        ever_changed,
+        perm_age,
+        confirmed,
+    ]
 
 
 def anomaly_extra_features(pattern: str) -> list[float]:
@@ -136,22 +145,30 @@ def anomaly_extra_features(pattern: str) -> list[float]:
 
     if pattern == "passkey_takeover":
         scope_sens = round(random.uniform(0.5, 1.0), 3)  # เล็งข้อมูล sensitive
-        perm_age = round(random.uniform(0, 5), 2)  # เพิ่งเปลี่ยนสิทธิ์ (escalation)
+        ever_changed = 1  # เพิ่งได้สิทธิ์ (escalation)
+        perm_age = round(random.uniform(0, 5), 2)  # เปลี่ยนเมื่อกี้
         confirmed = random.choices([0, 1, 2], weights=[50, 35, 15])[0]
     else:
         # การโจมตีอื่น (night/foreign/burst/...) ไม่เกี่ยวกับ permission change
-        # → perm_age ส่วนใหญ่ = 9999 เหมือน normal (perm_age ต่ำ = สัญญาณ takeover ล้วนๆ)
+        # → ส่วนใหญ่ไม่เคยเปลี่ยน เหมือน normal (perm_age ต่ำ = สัญญาณ takeover ล้วนๆ)
         scope_sens = (
             0.0 if random.random() < 0.3 else round(random.uniform(0.1, 0.8), 3)
         )
-        perm_age = (
-            PERM_AGE_NEUTRAL
-            if random.random() < 0.8
-            else round(random.uniform(5, 300), 1)
-        )
+        if random.random() < 0.8:
+            ever_changed, perm_age = 0, PERM_AGE_CAP
+        else:
+            ever_changed, perm_age = 1, round(random.uniform(5, 300), 1)
         confirmed = random.choices([0, 1], weights=[85, 15])[0]
 
-    return [concurrent, active_sub, weekday_usage, scope_sens, perm_age, confirmed]
+    return [
+        concurrent,
+        active_sub,
+        weekday_usage,
+        scope_sens,
+        ever_changed,
+        perm_age,
+        confirmed,
+    ]
 
 
 # ─── Base block (11) — ตัด is_weekend ออก ───────────────────────────────────
@@ -327,6 +344,7 @@ def main():
         "active_subsystem_count",
         "weekday_usage_score",
         "scope_sensitivity_score",
+        "ever_changed_permission",
         "permission_change_age",
         "confirmed_incident_count",
         "label",
@@ -337,12 +355,12 @@ def main():
         writer.writerow(headers)
         writer.writerows(rows)
 
-    print(f"✅ สร้าง dataset (21 features) แล้ว: {OUTPUT}")
+    print(f"✅ สร้าง dataset (22 features) แล้ว: {OUTPUT}")
     print(f"   normal:  {NORMAL_COUNT}")
     print(f"   anomaly: {ANOMALY_COUNT}")
     print(f"   total:   {len(rows)}")
-    # sanity: header (ไม่รวม label) ต้อง = 21
-    assert len(headers) - 1 == 21, f"feature count ผิด: {len(headers) - 1}"
+    # sanity: header (ไม่รวม label) ต้อง = 22
+    assert len(headers) - 1 == 22, f"feature count ผิด: {len(headers) - 1}"
 
 
 if __name__ == "__main__":
