@@ -1,7 +1,7 @@
 # ML Feature Data Sources — Central Auth Hub (Hybrid RBA)
 
 **เอกสารอ้างอิง: แต่ละ feature ใช้ข้อมูลจากไหน + คำนวณยังไง**
-Version 2.0 · 2026-06-14 · สถานะ: ชุด 21 features (ตัด 2 เดิม + เพิ่ม 6 ใหม่)
+Version 2.0 · 2026-06-14 · สถานะ: ชุด 22 features (ตัด 2 + เพิ่ม 7: 6 ใหม่ + ever_changed_permission)
 
 > ใช้คู่กับ `ML_FEATURE_ENGINEERING_AND_RISK_MODELING_PLAN.md` (แผนภาพรวม)
 > Feature order = contract: `ml-service/app/features.py` ↔ `hub/backend/app/services/feature_extraction.py` ต้องเรียงตรงกันเป๊ะ (B27)
@@ -16,11 +16,11 @@ Version 2.0 · 2026-06-14 · สถานะ: ชุด 21 features (ตัด 2
 | ➕ เพิ่มใหม่ (6) | `concurrent_session_count`, `active_subsystem_count`, `weekday_usage_score`, `scope_sensitivity_score`, `permission_change_age`, `confirmed_incident_count` |
 | ✅ คงไว้ | 15 เดิม (รวม `is_new_user_agent_family`) |
 
-**รวม: 17 − 2 + 6 = 21 features**
+**รวม: 17 − 2 + 7 = 22 features** (เพิ่ม ever_changed_permission แยกจาก permission_change_age)
 
 ---
 
-## ตารางรวม 21 Features + แหล่งข้อมูล
+## ตารางรวม 22 Features + แหล่งข้อมูล
 
 | # | Feature | หมวด | แหล่งข้อมูลหลัก | สถานะ |
 |---|---|---|---|---|
@@ -43,8 +43,9 @@ Version 2.0 · 2026-06-14 · สถานะ: ชุด 21 features (ตัด 2
 | 17 | **active_subsystem_count** | Session | `login_sessions.subsystem_id` (active) | 🆕 |
 | 18 | **weekday_usage_score** | Behavioral | `login_sessions.created_at` (history) | 🆕 |
 | 19 | **scope_sensitivity_score** | OAuth | `subsystems.scope` (current client) | 🆕 |
-| 20 | **permission_change_age** | Privilege | `access_list.granted_at/revoked_at` | 🆕 |
-| 21 | **confirmed_incident_count** | History | `login_sessions.is_account_takeover/is_attack_ip` | 🆕 |
+| 20 | **ever_changed_permission** | Privilege | `access_list.granted_at/revoked_at` | 🆕 |
+| 21 | **permission_change_age** | Privilege | `access_list` (cap 365, ไม่เคย=365) | 🆕 |
+| 22 | **confirmed_incident_count** | History | `login_sessions.is_account_takeover/is_attack_ip` | 🆕 |
 
 ---
 
@@ -211,17 +212,19 @@ Version 2.0 · 2026-06-14 · สถานะ: ชุด 21 features (ตัด 2
 
 ---
 
-## หมวด Privilege 🆕
+## หมวด Privilege 🆕 (แยกเป็น 2 ตัว — กัน sentinel outlier ใน tree)
 
-### 20. permission_change_age
+### 20. ever_changed_permission
 - **ข้อมูล:** `access_list.granted_at` + `revoked_at` ของ user
-- **คำนวณ:** วันตั้งแต่การเปลี่ยนสิทธิ์ล่าสุด (max ของ granted_at/revoked_at ทั้งหมด)
-  ```
-  age_days = (now − latest_permission_change) / 1 day
-  ```
-- **Cold start:** ไม่เคยเปลี่ยนสิทธิ์ → ค่าใหญ่ (เช่น 9999 = neutral, เสี่ยงต่ำ)
-- **เหตุผล:** สิทธิ์เพิ่งเปลี่ยน (age น้อย) + login ผิดปกติ = สัญญาณ privilege escalation / ATO
-- **หมายเหตุ:** รวม `recent_role_change` ที่เสนอไว้เดิม (binary) เข้าเป็นตัวต่อเนื่องตัวเดียว — กัน collinearity
+- **คำนวณ:** 1 ถ้ามีบันทึกการเปลี่ยนสิทธิ์, ไม่งั้น 0
+- **เหตุผล:** แยก "เคยเปลี่ยนไหม" ออกมา → เลี่ยง sentinel 9999 เดิมที่ tree มองเป็น outlier
+
+### 21. permission_change_age
+- **ข้อมูล:** `access_list` (granted/revoked ล่าสุด)
+- **คำนวณ:** `min((now − latest_change)/86400, 365)` · **ไม่เคยเปลี่ยน = 365** (cap, เก่าสุด=ปลอดภัย)
+- **เหตุผล:** สิทธิ์เพิ่งเปลี่ยน (age น้อย) + login ผิดปกติ = privilege escalation / ATO
+- **หมายเหตุ:** เปลี่ยนจาก sentinel **9999 → cap 365 + ever_changed_permission** (2026-06-15) เพราะ
+  9999 เป็นเลขโดด ทำให้ IForest มอง "ไม่เคยเปลี่ยน" เป็น anomaly ผิดๆ (SHAP +0.467 → −0.231 หลังแก้)
 
 ---
 
