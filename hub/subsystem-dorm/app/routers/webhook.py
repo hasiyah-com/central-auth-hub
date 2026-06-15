@@ -154,3 +154,81 @@ async def access_revoked(
         "resident_found": resident is not None,
         "marked": marked,
     }
+
+
+@router.post("/internal/access-updated")
+async def access_updated(
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """รับ event จาก Hub: role/scope/config ถูกเปลี่ยน → บังคับ user re-auth.
+
+    Body JSON:
+      {
+        "event": "access_updated",
+        "client_id": "cli_...",
+        "hub_user_id": "..." | null,   # null = กระทบทุก user (config/scope เปลี่ยน)
+        "reason": "role_changed" | "config_changed:edit_scope",
+        "new_role": "staff" | null,
+        "updated_at": "ISO-8601"
+      }
+
+    Action — reuse hub_access_revoked_at เป็น "บังคับ re-auth flag":
+      - hub_user_id ระบุ → mark resident คนนั้น
+      - hub_user_id = null → mark ทุก resident (config เปลี่ยน = kick all)
+      user คนนั้น login ใหม่ได้ทันที (ยังอยู่ใน whitelist) → flag reset + ได้ค่าใหม่
+      (deps.get_or_create_resident reset flag ตอน re-login)
+    """
+    raw = await _verify_signature(request)
+
+    import json as _json
+
+    try:
+        payload = _json.loads(raw.decode("utf-8"))
+    except Exception:
+        raise HTTPException(status_code=400, detail="invalid JSON")
+
+    if payload.get("event") != "access_updated":
+        raise HTTPException(status_code=400, detail="event != access_updated")
+
+    payload_client_id = payload.get("client_id")
+    if payload_client_id and payload_client_id != settings.dorm_client_id:
+        raise HTTPException(status_code=400, detail="client_id mismatch")
+
+    hub_user_id = payload.get("hub_user_id")  # None = ทุกคน
+    now = datetime.utcnow()
+    marked = 0
+
+    if hub_user_id:
+        resident = (
+            db.query(Resident).filter(Resident.hub_user_id == hub_user_id).first()
+        )
+        if resident and resident.hub_access_revoked_at is None:
+            resident.hub_access_revoked_at = now
+            marked = 1
+    else:
+        # config เปลี่ยน → kick ทุก resident ที่ active (force re-auth)
+        residents = (
+            db.query(Resident).filter(Resident.hub_access_revoked_at.is_(None)).all()
+        )
+        for r in residents:
+            r.hub_access_revoked_at = now
+            marked += 1
+
+    log_action(
+        db,
+        actor_hub_user_id=None,
+        action="hub_access_updated_received",
+        target_type="resident",
+        target_id=None,
+        ip=get_client_ip(request),
+        metadata={
+            "hub_user_id": hub_user_id or "ALL",
+            "reason": payload.get("reason"),
+            "new_role": payload.get("new_role"),
+            "marked": marked,
+        },
+    )
+    db.commit()
+
+    return {"status": "ok", "scope": hub_user_id or "ALL", "marked": marked}

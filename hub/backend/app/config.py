@@ -84,6 +84,9 @@ class Settings(BaseSettings):
     rate_limit_login: str = "10/minute"  # /auth/google/login + callback
     rate_limit_token: str = "20/minute"  # /oauth/token + /oauth/authorize
     rate_limit_register: str = "5/minute"  # /developer/subsystems POST
+    # admin/developer mutations (whitelist add/remove/role, user CRUD) — กัน spam
+    # generous พอสำหรับเพิ่มทีละคนหลายคน แต่บล็อกการยิงรัว
+    rate_limit_admin_mutation: str = "30/minute"
 
     # ML Service
     ml_service_url: str = "http://ml-service:9000"

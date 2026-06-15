@@ -160,6 +160,15 @@ def register_subsystem(
     # ตรวจ scope ที่ขอ
     invalid = set(payload.scope) - ALLOWED_SCOPES
     if invalid:
+        _audit_fail(
+            db,
+            request=request,
+            actor_id=user.id,
+            action="subsystem_register_failed",
+            reason="invalid_scope",
+            invalid_scope=sorted(invalid),
+            name=payload.name,
+        )
         raise HTTPException(
             status_code=400,
             detail=f"scope ไม่ถูกต้อง: {invalid}. ใช้ได้: {ALLOWED_SCOPES}",
@@ -300,7 +309,7 @@ def upload_whitelist(
         teacher001@uni.ac.th,staff,
     """
     # owner หรือ hub admin
-    subsystem = _get_owned_subsystem(subsystem_id, user, db)
+    subsystem = _get_owned_subsystem(subsystem_id, user, db, request)
 
     # อ่าน + parse CSV
     content = file.file.read().decode("utf-8-sig")  # utf-8-sig รองรับ BOM จาก Excel
@@ -386,11 +395,12 @@ def upload_whitelist(
 @router.get("/subsystems/{subsystem_id}/whitelist")
 def get_whitelist(
     subsystem_id: str,
+    request: Request,
     user: User = Depends(require_developer),
     db: Session = Depends(get_db),
 ):
     """ดูรายชื่อ user ใน whitelist ของ subsystem (owner หรือ hub admin)."""
-    subsystem = _get_owned_subsystem(subsystem_id, user, db)
+    subsystem = _get_owned_subsystem(subsystem_id, user, db, request)
 
     rows = (
         db.query(AccessList, User)
@@ -422,17 +432,68 @@ def get_whitelist(
 # ============ 5. เพิ่ม user ทีละคน (หลังลงทะเบียนแล้ว) ============
 
 
-def _get_owned_subsystem(subsystem_id: str, user: User, db: Session) -> Subsystem:
+def _audit_fail(
+    db: Session,
+    *,
+    request: Request,
+    actor_id,
+    action: str,
+    target_type: str = "subsystem",
+    target_id=None,
+    reason: str | None = None,
+    **extra,
+) -> None:
+    """log failure attempt (B7) — ใส่ ip + user_agent + reason แล้ว commit ทันที.
+
+    เรียกก่อน raise HTTPException ทุกครั้งที่ปฏิเสธคำขอ — เพื่อให้ตามรอยได้ว่า
+    ใครพยายามทำอะไรที่ fail (probe / IDOR / enumeration).
+    target_id ใส่เฉพาะเมื่อเป็น UUID จริง (กัน insert crash ถ้า path param ปลอม).
+    """
+    meta = {
+        "reason": reason,
+        "user_agent": request.headers.get("user-agent"),
+        **extra,
+    }
+    log_action(
+        db,
+        actor_id=actor_id,
+        action=action,
+        target_type=target_type,
+        target_id=target_id,
+        ip=get_client_ip(request),
+        metadata={k: v for k, v in meta.items() if v is not None},
+    )
+    db.commit()
+
+
+def _get_owned_subsystem(
+    subsystem_id: str,
+    user: User,
+    db: Session,
+    request: Request | None = None,
+) -> Subsystem:
     """helper — หา subsystem ที่ user เป็นเจ้าของ หรือเป็น Hub admin.
 
     Hub admin = supervisor → emergency override ได้ทุก subsystem
     ปกติ dev จัดการของตัวเองเป็นหลัก (self-service)
+
+    request (optional) — ถ้าส่งมา จะ log subsystem_access_denied ตอน 404
+    (กัน IDOR เงียบ — ใครพยายามแตะ subsystem ของคนอื่นมี trail)
     """
     q = db.query(Subsystem).filter(Subsystem.id == subsystem_id)
     if not user.is_hub_admin:
         q = q.filter(Subsystem.owner_user_id == user.id)
     subsystem = q.first()
     if not subsystem:
+        if request is not None:
+            _audit_fail(
+                db,
+                request=request,
+                actor_id=user.id,
+                action="subsystem_access_denied",
+                reason="not_found_or_not_owner",
+                subsystem_id=str(subsystem_id),
+            )
         raise HTTPException(
             status_code=404,
             detail=(
@@ -448,6 +509,7 @@ def _get_owned_subsystem(subsystem_id: str, user: User, db: Session) -> Subsyste
     "/subsystems/{subsystem_id}/whitelist/user",
     dependencies=[Depends(_stepup_gate("whitelist_add"))],
 )
+@limiter.limit(settings.rate_limit_admin_mutation)
 def add_user_to_whitelist(
     subsystem_id: str,
     payload: WhitelistAddUser,
@@ -460,14 +522,32 @@ def add_user_to_whitelist(
     ใช้ได้ตลอดเวลา ไม่ว่า subsystem จะ status ไหน — เจ้าของจัดการ whitelist
     ของตัวเองได้
     """
-    subsystem = _get_owned_subsystem(subsystem_id, user, db)
+    subsystem = _get_owned_subsystem(subsystem_id, user, db, request)
 
     # validate role ตาม allowed_roles ของ subsystem
     role_clean = _validate_role_in_sub(payload.role, subsystem)
 
+    ip = get_client_ip(request)
+    ua = request.headers.get("user-agent")
+
     # หา target user
     target = db.query(User).filter(User.email == payload.email).first()
     if not target:
+        # B7 — log failure path (กัน enumeration เงียบ + เก็บ trail ทุก attempt)
+        log_action(
+            db,
+            actor_id=user.id,
+            action="whitelist_add_failed",
+            target_type="subsystem",
+            target_id=subsystem.id,
+            ip=ip,
+            metadata={
+                "email": payload.email,
+                "reason": "email_not_found",
+                "user_agent": ua,
+            },
+        )
+        db.commit()
         raise HTTPException(
             status_code=404, detail=f"ไม่พบ user อีเมล {payload.email} ใน Hub"
         )
@@ -483,6 +563,22 @@ def add_user_to_whitelist(
     )
     if existing:
         if existing.revoked_at is None:
+            # B7 — log duplicate attempt (เก็บทุกครั้งที่กดซ้ำ ไม่ใช่ครั้งเดียว)
+            log_action(
+                db,
+                actor_id=user.id,
+                action="whitelist_add_blocked_duplicate",
+                target_type="subsystem",
+                target_id=subsystem.id,
+                ip=ip,
+                metadata={
+                    "email": payload.email,
+                    "user_id": str(target.id),
+                    "reason": "already_whitelisted",
+                    "user_agent": ua,
+                },
+            )
+            db.commit()
             raise HTTPException(
                 status_code=400, detail=f"{payload.email} อยู่ใน whitelist อยู่แล้ว"
             )
@@ -508,8 +604,8 @@ def add_user_to_whitelist(
         action=action,
         target_type="subsystem",
         target_id=subsystem.id,
-        ip=get_client_ip(request),
-        metadata={"email": payload.email, "role": role_clean},
+        ip=ip,
+        metadata={"email": payload.email, "role": role_clean, "user_agent": ua},
     )
     db.commit()
 
@@ -528,6 +624,7 @@ def add_user_to_whitelist(
     "/subsystems/{subsystem_id}/whitelist/{user_id}",
     dependencies=[Depends(_stepup_gate("whitelist_remove"))],
 )
+@limiter.limit(settings.rate_limit_admin_mutation)
 def remove_user_from_whitelist(
     subsystem_id: str,
     user_id: str,
@@ -539,7 +636,7 @@ def remove_user_from_whitelist(
 
     user คนนั้นจะ login เข้า subsystem นี้ไม่ได้อีก แต่ประวัติยังเก็บไว้
     """
-    subsystem = _get_owned_subsystem(subsystem_id, user, db)
+    subsystem = _get_owned_subsystem(subsystem_id, user, db, request)
 
     entry = (
         db.query(AccessList)
@@ -551,6 +648,21 @@ def remove_user_from_whitelist(
         .first()
     )
     if not entry:
+        # B7 — log failure path
+        log_action(
+            db,
+            actor_id=user.id,
+            action="whitelist_remove_failed",
+            target_type="subsystem",
+            target_id=subsystem.id,
+            ip=get_client_ip(request),
+            metadata={
+                "removed_user_id": user_id,
+                "reason": "not_in_whitelist",
+                "user_agent": request.headers.get("user-agent"),
+            },
+        )
+        db.commit()
         raise HTTPException(
             status_code=404, detail="ไม่พบ user นี้ใน whitelist (หรือถูกลบไปแล้ว)"
         )
@@ -597,6 +709,7 @@ def remove_user_from_whitelist(
     "/subsystems/{subsystem_id}/whitelist/{user_id}",
     dependencies=[Depends(_stepup_gate("whitelist_role_change"))],
 )
+@limiter.limit(settings.rate_limit_admin_mutation)
 def update_whitelist_role(
     subsystem_id: str,
     user_id: str,
@@ -606,7 +719,7 @@ def update_whitelist_role(
     db: Session = Depends(get_db),
 ):
     """ขอเปลี่ยน role ของ user ใน whitelist — สร้าง pending request รอ admin approve."""
-    subsystem = _get_owned_subsystem(subsystem_id, user, db)
+    subsystem = _get_owned_subsystem(subsystem_id, user, db, request)
 
     entry = (
         db.query(AccessList)
@@ -618,6 +731,21 @@ def update_whitelist_role(
         .first()
     )
     if not entry:
+        # B7 — log failure path
+        log_action(
+            db,
+            actor_id=user.id,
+            action="whitelist_role_change_failed",
+            target_type="subsystem",
+            target_id=subsystem.id,
+            ip=get_client_ip(request),
+            metadata={
+                "user_id": user_id,
+                "reason": "not_in_whitelist",
+                "user_agent": request.headers.get("user-agent"),
+            },
+        )
+        db.commit()
         raise HTTPException(
             status_code=404, detail="ไม่พบ user ใน whitelist หรือถูก revoke แล้ว"
         )
@@ -746,7 +874,7 @@ def update_subsystem(
       - scope           (privilege escalation risk)
       - allowed_roles   (permissioning impact)
     """
-    subsystem = _get_owned_subsystem(subsystem_id, user, db)
+    subsystem = _get_owned_subsystem(subsystem_id, user, db, request)
 
     if (
         payload.description is None
@@ -755,6 +883,14 @@ def update_subsystem(
         and payload.allowed_roles is None
         and payload.access_revoke_webhook_url is None
     ):
+        _audit_fail(
+            db,
+            request=request,
+            actor_id=user.id,
+            action="subsystem_update_failed",
+            target_id=subsystem.id,
+            reason="no_field_to_update",
+        )
         raise HTTPException(status_code=400, detail="ต้องส่งอย่างน้อย 1 field ที่ต้องการแก้")
 
     immediate_changes: dict = {}
@@ -822,6 +958,15 @@ def update_subsystem(
             raise HTTPException(status_code=400, detail="scope ต้องมีอย่างน้อย 1 ตัว")
         invalid = set(cleaned_scope) - ALLOWED_SCOPES
         if invalid:
+            _audit_fail(
+                db,
+                request=request,
+                actor_id=user.id,
+                action="subsystem_update_failed",
+                target_id=subsystem.id,
+                reason="invalid_scope",
+                invalid_scope=sorted(invalid),
+            )
             raise HTTPException(
                 status_code=400,
                 detail=f"scope ไม่ถูกต้อง: {sorted(invalid)} — ใช้ได้: {sorted(ALLOWED_SCOPES)}",
@@ -952,6 +1097,7 @@ def update_subsystem(
 @router.get("/subsystems/{subsystem_id}/change-requests")
 def list_my_change_requests(
     subsystem_id: str,
+    request: Request,
     status: str | None = None,
     user: User = Depends(require_developer),
     db: Session = Depends(get_db),
@@ -959,7 +1105,7 @@ def list_my_change_requests(
     """ดู change requests ของ subsystem ของฉัน (หรือ admin = ดูได้ทุกตัว)."""
     from app.models import SubsystemChangeRequest
 
-    subsystem = _get_owned_subsystem(subsystem_id, user, db)
+    subsystem = _get_owned_subsystem(subsystem_id, user, db, request)
     q = (
         db.query(SubsystemChangeRequest)
         .filter(SubsystemChangeRequest.subsystem_id == subsystem.id)
@@ -1005,11 +1151,28 @@ def bulk_update_roles(
 
     Validate ทุกตัวก่อนสร้าง request — fail-fast ถ้า role ผิด
     """
-    subsystem = _get_owned_subsystem(subsystem_id, user, db)
+    subsystem = _get_owned_subsystem(subsystem_id, user, db, request)
 
     if not payload.updates:
+        _audit_fail(
+            db,
+            request=request,
+            actor_id=user.id,
+            action="whitelist_bulk_failed",
+            target_id=subsystem.id,
+            reason="empty_updates",
+        )
         raise HTTPException(status_code=400, detail="updates ว่าง")
     if len(payload.updates) > 500:
+        _audit_fail(
+            db,
+            request=request,
+            actor_id=user.id,
+            action="whitelist_bulk_failed",
+            target_id=subsystem.id,
+            reason="too_many_updates",
+            count=len(payload.updates),
+        )
         raise HTTPException(status_code=400, detail="updates เกิน 500 รายการต่อ batch")
 
     # Validate role ทั้ง batch ตาม allowed_roles ปัจจุบัน
@@ -1161,14 +1324,31 @@ def transfer_owner(
     - ห้ามโอนให้ตัวเอง
     - ห้ามโอนให้ user ที่ status != active
     """
-    subsystem = _get_owned_subsystem(subsystem_id, user, db)
+    subsystem = _get_owned_subsystem(subsystem_id, user, db, request)
 
     new_owner = db.query(User).filter(User.email == payload.new_owner_email).first()
     if not new_owner:
+        _audit_fail(
+            db,
+            request=request,
+            actor_id=user.id,
+            action="subsystem_transfer_failed",
+            target_id=subsystem.id,
+            reason="new_owner_not_found",
+            new_owner_email=payload.new_owner_email,
+        )
         raise HTTPException(
             status_code=404, detail=f"ไม่พบ user อีเมล {payload.new_owner_email}"
         )
     if new_owner.id == user.id:
+        _audit_fail(
+            db,
+            request=request,
+            actor_id=user.id,
+            action="subsystem_transfer_failed",
+            target_id=subsystem.id,
+            reason="transfer_to_self",
+        )
         raise HTTPException(status_code=400, detail="ห้ามโอนให้ตัวเอง")
     if new_owner.user_type not in _TRANSFER_OWNER_ALLOWED:
         raise HTTPException(
@@ -1236,7 +1416,7 @@ def rotate_client_secret(
       - secret เก่ายังใช้ได้ 24 ชม. (grace)
       - dev จะได้รับ email พร้อม one-time link ดู secret ใหม่
     """
-    subsystem = _get_owned_subsystem(subsystem_id, user, db)
+    subsystem = _get_owned_subsystem(subsystem_id, user, db, request)
 
     try:
         req, applied = create_change_request(

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Topbar } from "@/components/Topbar";
 import { clientFetch } from "@/lib/api";
+import { mutateWithStepup } from "@/lib/passkey";
 
 // ALLOWED_SCOPES — ต้องตรงกับ backend developer.py
 const SCOPE_OPTIONS: Array<{ key: string; label: string; desc: string }> = [
@@ -41,6 +42,7 @@ export default function NewSubsystemPage() {
   const [allowedRoles, setAllowedRoles] = useState("user");
   const [webhookUrl, setWebhookUrl] = useState("");
   const [busy, setBusy] = useState(false);
+  const [verifying, setVerifying] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<RegisterResponse | null>(null);
 
@@ -88,23 +90,42 @@ export default function NewSubsystemPage() {
 
     setBusy(true);
     try {
-      const r = await clientFetch<RegisterResponse>("/developer/subsystems", {
-        method: "POST",
-        body: JSON.stringify({
-          name: name.trim(),
-          description: description.trim() || null,
-          redirect_uris: cleanUris,
-          scope: Array.from(scope),
-          allowed_roles: rolesArr,
-          access_revoke_webhook_url: webhookUrl.trim() || null,
-        }),
-      });
+      // Option C — inline step-up: ถ้า 403 → verify Passkey ในหน้า แล้ว retry
+      // (ไม่ redirect → ข้อมูลในฟอร์มไม่หาย)
+      const r = await mutateWithStepup<RegisterResponse>(
+        "/developer/subsystems",
+        {
+          method: "POST",
+          body: JSON.stringify({
+            name: name.trim(),
+            description: description.trim() || null,
+            redirect_uris: cleanUris,
+            scope: Array.from(scope),
+            allowed_roles: rolesArr,
+            access_revoke_webhook_url: webhookUrl.trim() || null,
+          }),
+        },
+        setVerifying
+      );
       setResult(r);
     } catch (e) {
-      const err = e as { detail?: string };
-      setError(err.detail || "ลงทะเบียนไม่สำเร็จ");
+      const detail = (e as { detail?: unknown })?.detail;
+      const code =
+        typeof detail === "object" && detail
+          ? (detail as { code?: string }).code
+          : undefined;
+      if (code === "no_passkey") {
+        setError(
+          "ต้องมี Passkey เพื่อยืนยันการลงทะเบียน — ตั้งค่าที่หน้าบัญชี/ความปลอดภัย หรือใช้ Account Recovery"
+        );
+      } else if (e instanceof DOMException && e.name === "NotAllowedError") {
+        setError("ยกเลิกการยืนยัน Passkey — ลองอีกครั้ง (ข้อมูลในฟอร์มยังอยู่)");
+      } else {
+        setError(typeof detail === "string" ? detail : "ลงทะเบียนไม่สำเร็จ");
+      }
     } finally {
       setBusy(false);
+      setVerifying(false);
     }
   }
 
@@ -226,6 +247,13 @@ export default function NewSubsystemPage() {
         {error && (
           <div className="mb-5 p-4 rounded-lg bg-rose-50 border border-rose-200 text-rose-700 text-sm">
             {error}
+          </div>
+        )}
+
+        {verifying && (
+          <div className="mb-5 p-4 rounded-lg bg-brand-50 border border-brand-200 text-brand-700 text-sm flex items-center gap-2">
+            <span className="animate-pulse">🔐</span>
+            กำลังยืนยันด้วย Passkey… ทำตามที่อุปกรณ์แจ้ง (ข้อมูลในฟอร์มยังอยู่ครบ)
           </div>
         )}
 
@@ -405,7 +433,11 @@ export default function NewSubsystemPage() {
               disabled={busy}
               className="px-6 py-2.5 rounded-lg bg-brand-600 hover:bg-brand-700 text-white text-sm font-semibold disabled:opacity-50 transition shadow-sm"
             >
-              {busy ? "กำลังลงทะเบียน…" : "ลงทะเบียน →"}
+              {verifying
+                ? "กำลังยืนยัน…"
+                : busy
+                  ? "กำลังลงทะเบียน…"
+                  : "ลงทะเบียน →"}
             </button>
           </div>
         </form>

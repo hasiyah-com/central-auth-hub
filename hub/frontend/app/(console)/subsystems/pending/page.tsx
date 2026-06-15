@@ -14,6 +14,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Topbar } from "@/components/Topbar";
 import { clientFetch } from "@/lib/api";
+import { mutateWithStepup } from "@/lib/passkey";
 
 type PendingSubsystem = {
   id: string;
@@ -60,6 +61,7 @@ export default function PendingSubsystemsPage() {
     { id: string; action: "approve" | "reject" } | null
   >(null);
   const [busy, setBusy] = useState<string | null>(null);
+  const [verifying, setVerifying] = useState(false);
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(
     null
   );
@@ -86,22 +88,45 @@ export default function PendingSubsystemsPage() {
     setMsg(null);
     setConfirming(null);
     try {
-      const r = await clientFetch<{ message: string }>(
+      const r = await mutateWithStepup<{ message: string }>(
         `/admin/subsystems/${id}/${action}`,
-        { method: "POST" }
+        { method: "POST" },
+        setVerifying
       );
       setMsg({ kind: "ok", text: r.message });
       load();
     } catch (e) {
-      const err = e as { detail?: string };
-      setMsg({ kind: "err", text: err.detail || "ทำรายการไม่สำเร็จ" });
+      if (e instanceof DOMException && e.name === "NotAllowedError") {
+        setMsg({ kind: "err", text: "ยกเลิกการยืนยัน Passkey" });
+      } else {
+        const d = (e as { detail?: unknown })?.detail;
+        const code = typeof d === "object" && d ? (d as { code?: string }).code : undefined;
+        setMsg({
+          kind: "err",
+          text:
+            code === "no_passkey"
+              ? "ต้องมี Passkey เพื่อยืนยัน — ตั้งค่าที่หน้าความปลอดภัย"
+              : typeof d === "string"
+                ? d
+                : "ทำรายการไม่สำเร็จ",
+        });
+      }
     } finally {
       setBusy(null);
+      setVerifying(false);
     }
   }
 
   return (
     <>
+      {verifying && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-2xl px-6 py-5 shadow-xl flex items-center gap-3 text-sm text-ink-700">
+            <span className="animate-pulse text-lg">🔐</span>
+            กำลังยืนยันด้วย Passkey… ทำตามที่อุปกรณ์แจ้ง
+          </div>
+        </div>
+      )}
       <Topbar title="คำขอรออนุมัติ" />
       <main className="p-8 max-w-5xl mx-auto w-full">
         <div className="mb-6 flex items-center gap-3">

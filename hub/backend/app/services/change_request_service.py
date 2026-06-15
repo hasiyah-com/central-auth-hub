@@ -141,6 +141,13 @@ def create_request(
                 "applied_result": apply_result,
             },
         )
+        # ยิง access_updated webhook → subsystem บังคับ user re-auth (role/scope ใหม่)
+        # admin auto-apply ไม่ผ่าน approve_change_request endpoint → ต้อง notify ที่นี่
+        # fail-safe: ยิงไม่สำเร็จ = log ไม่ raise (webhook best-effort)
+        try:
+            notify_subsystem_after_apply(req, subsystem, apply_result)
+        except Exception as e:
+            log.warning("notify_subsystem_after_apply (auto-approve) failed: %r", e)
     else:
         log_action(
             db,
@@ -337,3 +344,54 @@ def apply_approved(
     if not handler:
         raise ValueError(f"unhandled type: {req.request_type}")
     return handler(db, subsystem, req.payload or {})
+
+
+# request_type ที่กระทบ config ของทั้ง subsystem → kick ทุก user (re-auth)
+_CONFIG_EDIT_TYPES = frozenset(
+    {"edit_scope", "edit_redirect_uris", "edit_allowed_roles"}
+)
+
+
+def notify_subsystem_after_apply(
+    req: SubsystemChangeRequest, subsystem: Subsystem, result: dict[str, Any]
+) -> dict[str, Any]:
+    """หลัง apply + commit → ยิง access_updated webhook ให้ user ที่กระทบ.
+
+    บังคับ subsystem re-auth user → user login ใหม่ → ได้ role/scope ล่าสุด.
+
+    - change_whitelist_role        → user เฉพาะคน
+    - bulk_change_whitelist_roles  → ทุก user ใน batch ที่เปลี่ยนจริง
+    - edit_scope/redirect/roles    → hub_user_id=None = kick ทุก user (config เปลี่ยน)
+    - rotate_secret                → ไม่กระทบ session user (ไม่ยิง)
+
+    Fail-safe: ยิงไม่สำเร็จ = log ไม่ raise (เหมือน webhook อื่น). Returns สรุป.
+    """
+    from app.services.webhook_dispatcher import send_access_updated
+
+    rt = req.request_type
+    notified: list[str] = []
+    delivered = 0
+
+    def _fire(hub_user_id: str | None, reason: str, **extra) -> None:
+        nonlocal delivered
+        ok = send_access_updated(
+            subsystem,
+            {"hub_user_id": hub_user_id, "reason": reason, **extra},
+        )
+        notified.append(hub_user_id or "ALL")
+        if ok:
+            delivered += 1
+
+    if rt == "change_whitelist_role":
+        uid = result.get("user_id")
+        if uid:
+            _fire(uid, "role_changed", new_role=result.get("new_role"))
+    elif rt == "bulk_change_whitelist_roles":
+        for ch in result.get("changes", []):
+            if ch.get("user_id"):
+                _fire(ch["user_id"], "role_changed", new_role=ch.get("new_role"))
+    elif rt in _CONFIG_EDIT_TYPES:
+        # config ของ subsystem เปลี่ยน → kick ทุก user (hub_user_id=None)
+        _fire(None, f"config_changed:{rt}")
+
+    return {"notified": notified, "delivered": delivered}

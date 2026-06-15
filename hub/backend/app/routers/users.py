@@ -12,9 +12,11 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.database import get_db
 from app.deps import get_client_ip, require_hub_admin
 from app.models import User
+from app.rate_limiter import limiter
 from app.services.audit_service import log_action
 from app.services.critical_action_policy import gate as _stepup_gate
 
@@ -118,11 +120,20 @@ def count_users(
 @router.get("/{user_id}", response_model=UserResponse)
 def get_user(
     user_id: str,
+    request: Request,
     admin: User = Depends(require_hub_admin),
     db: Session = Depends(get_db),
 ):
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
+        _audit_fail(
+            db,
+            request=request,
+            actor_id=admin.id,
+            action="user_access_denied",
+            reason="not_found",
+            requested_user_id=str(user_id),
+        )
         raise HTTPException(status_code=404, detail="User not found")
     return _serialize(user)
 
@@ -145,6 +156,33 @@ def _serialize(u: User) -> UserResponse:
     )
 
 
+def _audit_fail(
+    db: Session,
+    *,
+    request: Request,
+    actor_id,
+    action: str,
+    target_id=None,
+    reason: str | None = None,
+    **extra,
+) -> None:
+    """log failure attempt (B7) — ip + user_agent + reason แล้ว commit.
+
+    ใช้ก่อน raise — ตามรอย "ใครพยายามแก้/ลบ/สร้าง user ที่ fail" (เดา ID / enum).
+    """
+    meta = {"reason": reason, "user_agent": request.headers.get("user-agent"), **extra}
+    log_action(
+        db,
+        actor_id=actor_id,
+        action=action,
+        target_type="user",
+        target_id=target_id,
+        ip=get_client_ip(request),
+        metadata={k: v for k, v in meta.items() if v is not None},
+    )
+    db.commit()
+
+
 # ============ Mutations (critical action — step-up required) ============
 
 
@@ -154,6 +192,7 @@ def _serialize(u: User) -> UserResponse:
     status_code=201,
     dependencies=[Depends(_stepup_gate("create_user"))],
 )
+@limiter.limit(settings.rate_limit_admin_mutation)
 def create_user(
     payload: UserCreate,
     request: Request,
@@ -168,11 +207,27 @@ def create_user(
         )
     email = payload.email.lower()
     if db.query(User).filter(User.email == email).first():
+        _audit_fail(
+            db,
+            request=request,
+            actor_id=admin.id,
+            action="create_user_failed",
+            reason="email_exists",
+            email=email,
+        )
         raise HTTPException(status_code=409, detail="email นี้มีอยู่แล้ว")
     if (
         payload.identifier
         and db.query(User).filter(User.identifier == payload.identifier).first()
     ):
+        _audit_fail(
+            db,
+            request=request,
+            actor_id=admin.id,
+            action="create_user_failed",
+            reason="identifier_exists",
+            identifier=payload.identifier,
+        )
         raise HTTPException(status_code=409, detail="รหัส (identifier) นี้มีอยู่แล้ว")
 
     user = User(
@@ -213,6 +268,7 @@ def create_user(
     response_model=UserResponse,
     dependencies=[Depends(_stepup_gate("update_user"))],
 )
+@limiter.limit(settings.rate_limit_admin_mutation)
 def update_user(
     user_id: str,
     payload: UserUpdate,
@@ -223,6 +279,14 @@ def update_user(
     """แก้ไขข้อมูล user (partial). admin แก้ตัวเองได้ ยกเว้นถอด admin/suspend ตัวเอง."""
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
+        _audit_fail(
+            db,
+            request=request,
+            actor_id=admin.id,
+            action="update_user_failed",
+            reason="not_found",
+            requested_user_id=str(user_id),
+        )
         raise HTTPException(status_code=404, detail="User not found")
 
     data = payload.model_dump(exclude_unset=True)
@@ -277,7 +341,11 @@ def update_user(
     return _serialize(user)
 
 
-@router.delete("/{user_id}", dependencies=[Depends(_stepup_gate("delete_user"))])
+@router.delete(
+    "/{user_id}",
+    dependencies=[Depends(_stepup_gate("delete_user"))],
+)
+@limiter.limit(settings.rate_limit_admin_mutation)
 def delete_user(
     user_id: str,
     request: Request,
@@ -287,8 +355,24 @@ def delete_user(
     """ลบ user (soft delete — status=deleted). ไม่ hard delete เพื่อรักษา FK + history."""
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
+        _audit_fail(
+            db,
+            request=request,
+            actor_id=admin.id,
+            action="delete_user_failed",
+            reason="not_found",
+            requested_user_id=str(user_id),
+        )
         raise HTTPException(status_code=404, detail="User not found")
     if str(user.id) == str(admin.id):
+        _audit_fail(
+            db,
+            request=request,
+            actor_id=admin.id,
+            action="delete_user_failed",
+            target_id=user.id,
+            reason="self_delete_blocked",
+        )
         raise HTTPException(status_code=400, detail="ห้ามลบบัญชีของตัวเอง")
     if user.status == "deleted":
         raise HTTPException(status_code=409, detail="user นี้ถูกลบไปแล้ว")
