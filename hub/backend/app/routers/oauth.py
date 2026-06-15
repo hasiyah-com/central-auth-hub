@@ -472,6 +472,7 @@ async def _finalize_subsystem_login(
         ip=client_ip,
         user_agent=user_agent,
         geo_country=geo_country,
+        subsystem_id=authreq["subsystem_id"],
     )
     risk = await evaluate_login_risk(
         features=features,

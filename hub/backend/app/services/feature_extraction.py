@@ -1,14 +1,21 @@
-"""สกัด feature vector 12 ตัวจาก login session + history ใน DB.
+"""สกัด feature vector 21 ตัวจาก login session + history ใน DB.
 
-ลำดับต้องตรงกับ ml-service/app/features.py:
-  [hour_of_day, day_of_week, is_weekend, hours_from_typical_login_time,
+ลำดับต้องตรงกับ ml-service/app/features.py (B27):
+  [hour_of_day, day_of_week, hours_from_typical_login_time,
    is_thailand, is_new_country, country_change_count_30d,
    is_new_device, is_new_user_agent_family,
-   log_minutes_since_last_login, login_count_24h, failed_logins_24h]
+   log_minutes_since_last_login, login_count_24h, failed_logins_24h,
+   passkey_count, passkey_age_days, new_passkey_recently_added, passkey_last_used_days,
+   concurrent_session_count, active_subsystem_count, weekday_usage_score,
+   scope_sensitivity_score, permission_change_age, confirmed_incident_count]
+
+รายละเอียดแหล่งข้อมูล: docs/guides/ML_FEATURE_DATA_SOURCES.md
 
 Cold Start Policy:
-  - personalized features (hours_from_typical) require MIN_HISTORY ก่อนเริ่มคำนวณ
+  - personalized features (hours_from_typical, weekday_usage) require MIN_HISTORY
   - ถ้า history น้อยไป ให้ค่า neutral (0) — ไม่ลงโทษ user ใหม่
+
+ตัดจากเวอร์ชัน 17: is_weekend (= f(day_of_week)), has_passkey (= f(passkey_count>0))
 """
 
 import math
@@ -16,13 +23,30 @@ import re
 import statistics
 from datetime import datetime, timedelta
 
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.models import LoginSession
 
 # ต้องมี history อย่างน้อยกี่ session ก่อนคำนวณ personalized features
 MIN_HISTORY_FOR_PERSONALIZATION = 5
+
+# concurrent_session_count window = JWT TTL (jwt_access_token_expire_minutes=60)
+# กัน session ที่หมดอายุแต่ไม่มี logout_at นับเป็น "active" ตลอดกาล
+CONCURRENT_WINDOW_MIN = 60
+
+# permission_change_age — user ที่ไม่เคยเปลี่ยนสิทธิ์ → neutral (เสี่ยงต่ำ)
+PERM_AGE_NEUTRAL = 9999.0
+
+# scope sensitivity weights — ยิ่ง sensitive ยิ่งสูง (subsystems.scope)
+_SCOPE_WEIGHTS: dict[str, float] = {
+    "email": 0.1,
+    "name": 0.1,
+    "faculty": 0.3,
+    "major": 0.3,
+    "student_id": 0.6,
+    "employee_id": 0.6,
+}
 
 
 # ============ ตัวช่วย parse user-agent (ตรงกับ RBA dataset ของ Wiefling 2022) ============
@@ -137,16 +161,19 @@ def extract_session_features(
     user_agent: str | None,
     geo_country: str | None = None,
     now: datetime | None = None,
+    subsystem_id=None,
 ) -> list[float]:
-    """คืน feature vector 12 ตัว."""
+    """คืน feature vector 21 ตัว.
+
+    subsystem_id: ใช้คำนวณ scope_sensitivity_score (None = Hub-direct → 0.0)
+    """
     now = now or datetime.utcnow()
 
     # === Temporal ===
     hour = float(now.hour)
     day = float(now.weekday())
-    is_weekend = 1.0 if now.weekday() >= 5 else 0.0
 
-    # hours_from_typical_login_time — เทียบกับ median ของชั่วโมง login เก่า
+    # hours_from_typical_login_time + weekday_usage_score — เทียบกับ history
     # Cold Start: ถ้ามี history < 5 session ให้ค่า 0 (neutral, ไม่ penalize user ใหม่)
     past_sessions = (
         db.query(LoginSession.created_at)
@@ -160,8 +187,14 @@ def extract_session_features(
         typical = statistics.median(past_hours)
         diff = abs(hour - typical)
         hours_from_typical = float(min(diff, 24 - diff))  # circular distance
+        # weekday_usage_score — วันนี้เป็นวันที่ user ไม่ค่อยใช้?
+        same_weekday = sum(
+            1 for row in past_sessions if row[0].weekday() == now.weekday()
+        )
+        weekday_usage = 1.0 - (same_weekday / len(past_sessions))
     else:
         hours_from_typical = 0.0  # cold start — neutral
+        weekday_usage = 0.0
 
     # === Geographic ===
     is_thailand = (
@@ -256,9 +289,9 @@ def extract_session_features(
         or 0
     )
 
-    # === Passkey / Device Trust (5) — Phase 5, Improvement #5 ===
+    # === Passkey / Device Trust (4) — has_passkey ตัดแล้ว (passkey_count>0 แทน) ===
     # cold start: ไม่มี passkey → ทุกตัว 0 (neutral)
-    from app.models import PasskeyCredential
+    from app.models import AccessList, PasskeyCredential, Subsystem
 
     pk_rows = (
         db.query(PasskeyCredential.created_at, PasskeyCredential.last_used_at)
@@ -269,7 +302,6 @@ def extract_session_features(
         .all()
     )
     if pk_rows:
-        has_passkey = 1.0
         passkey_count = float(len(pk_rows))
         oldest = (
             min(r[0] for r in pk_rows if r[0]) if any(r[0] for r in pk_rows) else now
@@ -287,16 +319,77 @@ def extract_session_features(
         else:
             passkey_last_used_days = passkey_age_days  # ไม่เคยใช้เลย
     else:
-        has_passkey = 0.0
         passkey_count = 0.0
         passkey_age_days = 0.0
         new_recently = 0.0
         passkey_last_used_days = 0.0
 
+    # === Session (2) — concurrent + lateral movement ===
+    # นับเฉพาะ session ที่ยัง active (logout_at NULL) และยังไม่หมดอายุ (< JWT TTL)
+    concurrent_cutoff = now - timedelta(minutes=CONCURRENT_WINDOW_MIN)
+    active_q = db.query(LoginSession).filter(
+        LoginSession.user_id == user_id,
+        LoginSession.logout_at.is_(None),
+        LoginSession.created_at >= concurrent_cutoff,
+    )
+    concurrent_session_count = float(
+        db.query(func.count(LoginSession.id))
+        .filter(
+            LoginSession.user_id == user_id,
+            LoginSession.logout_at.is_(None),
+            LoginSession.created_at >= concurrent_cutoff,
+        )
+        .scalar()
+        or 0
+    )
+    active_subsystem_count = float(
+        active_q.filter(LoginSession.subsystem_id.is_not(None))
+        .with_entities(LoginSession.subsystem_id)
+        .distinct()
+        .count()
+    )
+
+    # === OAuth (1) — scope sensitivity ของ subsystem ที่กำลัง login ===
+    scope_sensitivity = 0.0
+    if subsystem_id is not None:
+        sub = db.query(Subsystem.scope).filter(Subsystem.id == subsystem_id).first()
+        if sub and sub[0]:
+            scope_sensitivity = min(
+                1.0, sum(_SCOPE_WEIGHTS.get(s, 0.1) for s in sub[0])
+            )
+
+    # === Privilege (1) — วันตั้งแต่เปลี่ยนสิทธิ์ล่าสุด (access_list) ===
+    perm_rows = (
+        db.query(AccessList.granted_at, AccessList.revoked_at)
+        .filter(AccessList.user_id == user_id)
+        .all()
+    )
+    change_times = [t for row in perm_rows for t in row if t is not None]
+    if change_times:
+        latest_change = max(change_times)
+        permission_change_age = max(
+            0.0, (now - latest_change).total_seconds() / 86400.0
+        )
+    else:
+        permission_change_age = PERM_AGE_NEUTRAL  # ไม่เคยเปลี่ยน = neutral
+
+    # === History (1) — incident จริงในอดีต (ground-truth, กัน feedback loop) ===
+    confirmed_incident_count = float(
+        db.query(func.count(LoginSession.id))
+        .filter(
+            LoginSession.user_id == user_id,
+            or_(
+                LoginSession.is_account_takeover.is_(True),
+                LoginSession.is_attack_ip.is_(True),
+            ),
+        )
+        .scalar()
+        or 0
+    )
+
     return [
         hour,
         day,
-        is_weekend,
         hours_from_typical,
         is_thailand,
         is_new_country,
@@ -306,9 +399,14 @@ def extract_session_features(
         float(log_min),
         float(login_count_24h),
         float(failed_24h),
-        has_passkey,
         passkey_count,
         passkey_age_days,
         new_recently,
         passkey_last_used_days,
+        concurrent_session_count,
+        active_subsystem_count,
+        float(weekday_usage),
+        float(scope_sensitivity),
+        float(permission_change_age),
+        confirmed_incident_count,
     ]
