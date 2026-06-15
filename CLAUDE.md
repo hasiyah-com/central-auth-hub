@@ -579,7 +579,9 @@ docker compose exec ml-service python -m scripts.train_model
 - **Postgres healthcheck** — must include `-d <database>`: `pg_isready -U hub -d hub_db` (else FATAL log spam)
 
 ### ML
-- **Feature order is the contract** — `ml-service/app/features.py:FEATURE_NAMES` defines the order; Hub's `feature_extraction.py` returns in same order
+- **Feature order is the contract — 4 ไฟล์ต้อง sync (B49)** — เปลี่ยน/ตัด/เพิ่ม/สลับ feature ต้องแก้พร้อมกัน: (1) `ml-service/app/features.py:FEATURE_NAMES` (2) `ml-service/scripts/generate_data.py` headers (3) Hub `feature_extraction.py` return order (4) **`hub/backend/app/security/rule_engine.py:FEAT`** (rule_engine + behavior_profiling อ่าน feature ตาม index จาก map นี้). ลืมข้อ 4 = rule/behavior อ่าน feature ผิดตำแหน่ง → score มั่ว (เคยทำ score พุ่ง 1.0). มี `tests/test_feature_extraction.py::test_rule_engine_feat_map_aligned` กันไว้
+- **Train/serve skew — synthetic ต้องตรงค่าจริง (B49)** — `generate_data.py` ต้อง gen ค่าให้ตรงกับที่ `feature_extraction.py` ส่งจริง (เช่น `permission_change_age=9999` neutral, `scope=0` Hub-direct, `concurrent=0` fresh login) ไม่งั้น normal user เป็น OOD → model ดัน anomaly ผิด
+- **Feature data sources** — ดู `docs/guides/ML_FEATURE_DATA_SOURCES.md` (21 features + แหล่งข้อมูล + วิธีคำนวณ)
 - **Cold start for personalized features** — `hours_from_typical_login_time` requires `MIN_HISTORY_FOR_PERSONALIZATION = 5` else neutral (0.0)
 - **ML is fail-safe to pass** — `ml_client.py` catches all exceptions → returns `{score: 0.0, decision: pass, error: "..."}` (Hub never crashes because ML down)
 - **Retrain after feature change** — `generate_data.py` then `train_model.py`, else feature-count mismatch crashes scoring
@@ -639,6 +641,7 @@ docker compose exec ml-service python -m scripts.train_model
 | 🔄 LINE Login + SHAP (Week 9) | B38-B41 | Worktree commit hygiene, SHAP sign, Channel ID format |
 | 🔑 Passkey / WebAuthn (Week 9-10) | B42-B43 | LINE Authlib HS256, Passkey login enumeration (allowCredentials shape) |
 | 🚨 Risk-Triggered MFA (Week 9-10) | B44-B48 | Hard block threshold at finalizer, Force-enroll OTP gate, Browser unsupported → Recovery, atomic consume, runtime grace period |
+| 🧠 ML Feature Expansion (Week 10-11) | B49 | Feature reorder ลืม sync rule_engine.FEAT (score มั่ว) + train/serve skew (synthetic ≠ ค่าจริง) |
 
 ### วิธีเพิ่ม bug ใหม่
 

@@ -260,6 +260,18 @@
 
 ---
 
+## 🧠 ML Feature Expansion (Week 10-11)
+
+**B49. เปลี่ยน feature order ลืม sync `rule_engine.FEAT` + train/serve skew**
+- อาการ: หลังตัด feature (`is_weekend`) แล้ว retrain — score สวิงหนัก (login ปกติพุ่ง `risk_score=1.0`) ทั้งที่ ML/IForest นิ่ง (~0.5)
+- สาเหตุ 2 จุด:
+  1. **FEAT misalign** — `rule_engine.py:FEAT` (และ `behavior_profiling.py` import ไปใช้) เป็น index map ที่ hardcode ลำดับเก่า → ตัด feature กลางทำให้ทุก index เลื่อน → rule/behavior อ่าน feature **ผิดตำแหน่ง** (อ่าน index 11 ว่า `failed_logins_24h` แต่จริงคือ `passkey_count`) → rule+behavior score มั่ว → aggregate ถึง 1.0
+  2. **Train/serve skew** — `generate_data.py` (synthetic) gen ค่าไม่ตรงกับที่ `feature_extraction.py` ส่งจริง: `permission_change_age=9999` (ส่วนใหญ่ไม่เคยเปลี่ยนสิทธิ์) แต่ synthetic max ~800 → OOD; `scope=0` Hub-direct, `concurrent=0` fresh login ก็ไม่อยู่ใน train → normal user ดูเป็น anomaly
+- **กฎ:** feature order = contract **4 ไฟล์** ต้อง sync: `features.py` + `generate_data.py` headers + `feature_extraction.py` + **`rule_engine.py:FEAT`**. และ synthetic ต้อง gen ค่าตรง distribution จริง (รวม neutral values เช่น 9999, 0)
+- **Verify:** `pytest tests/test_feature_extraction.py::test_rule_engine_feat_map_aligned tests/test_feature_extraction.py::test_benign_login_low_rule_score`
+
+---
+
 ## วิธีเพิ่ม bug ใหม่
 
 1. เพิ่มที่ section ที่เหมาะสม (สร้าง section ใหม่ถ้าจำเป็น)
