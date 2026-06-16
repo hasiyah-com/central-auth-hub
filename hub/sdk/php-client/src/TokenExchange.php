@@ -51,6 +51,9 @@ final class TokenExchange
                 'Content-Type: application/x-www-form-urlencoded',
                 'Accept: application/json',
             ],
+            // บังคับ verify TLS — ช่องนี้ส่ง client_secret ห้ามให้ MITM อ่าน
+            CURLOPT_SSL_VERIFYPEER => true,
+            CURLOPT_SSL_VERIFYHOST => 2,
         ]);
         $body = curl_exec($ch);
         $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);

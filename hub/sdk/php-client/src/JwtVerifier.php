@@ -100,6 +100,9 @@ final class JwtVerifier
         curl_setopt_array($ch, [
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_TIMEOUT        => $this->config->httpTimeout,
+            // บังคับ verify TLS — JWKS poisoning ผ่าน MITM = ปลอม JWT ได้
+            CURLOPT_SSL_VERIFYPEER => true,
+            CURLOPT_SSL_VERIFYHOST => 2,
         ]);
         $body = curl_exec($ch);
         $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
@@ -114,12 +117,13 @@ final class JwtVerifier
             throw new JwtException('JWKS returned invalid JSON');
         }
         @file_put_contents($cacheFile, $body, LOCK_EX);
+        @chmod($cacheFile, 0600);  // กัน co-tenant เขียนทับ JWKS → ปลอม JWT (F3)
         return $decoded;
     }
 
     private function jwksCacheFile(string $jwksUri): string
     {
         $hash = substr(sha1($jwksUri), 0, 16);
-        return sys_get_temp_dir() . "/cah_jwks_{$hash}.json";
+        return $this->config->cacheDir() . "/jwks_{$hash}.json";
     }
 }

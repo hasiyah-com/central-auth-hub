@@ -45,6 +45,9 @@ final class Discovery
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_TIMEOUT        => $this->config->httpTimeout,
             CURLOPT_HTTPHEADER     => ['Accept: application/json'],
+            // บังคับ verify TLS — กัน MITM (ช่องนี้ trust เป็น root ของ JWKS/issuer)
+            CURLOPT_SSL_VERIFYPEER => true,
+            CURLOPT_SSL_VERIFYHOST => 2,
         ]);
         $body = curl_exec($ch);
         $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
@@ -58,14 +61,15 @@ final class Discovery
         if (!is_array($decoded)) {
             throw new HubException('Discovery returned non-JSON');
         }
-        // write cache (best-effort)
+        // write cache (best-effort) — perms 0600 กัน co-tenant อ่าน/เขียนทับ (F3)
         @file_put_contents($file, $body, LOCK_EX);
+        @chmod($file, 0600);
         return $this->cached = $decoded;
     }
 
     private function cacheFile(): string
     {
         $hash = substr(sha1($this->config->hubUrl), 0, 16);
-        return sys_get_temp_dir() . "/cah_discovery_{$hash}.json";
+        return $this->config->cacheDir() . "/discovery_{$hash}.json";
     }
 }
