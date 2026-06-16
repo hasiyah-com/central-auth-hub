@@ -26,6 +26,8 @@ final class Config
     public string $webhookSharedKey;
     /** path ไฟล์ revocation store — set เพื่อเปิด real-time re-auth (access_updated/revoked) */
     public string $revocationStorePath;
+    /** dir เก็บ cache (discovery/jwks) — ปล่อยว่าง = per-client private subdir ใน temp */
+    public string $cacheDir;
 
     /**
      * @param array{
@@ -62,5 +64,25 @@ final class Config
         $this->webhookSharedKey = (string) ($opts['webhook_shared_key'] ?? '');
         // ปล่อยว่าง = ปิด real-time revoke check (ใช้แค่ session_max_age/exp)
         $this->revocationStorePath = (string) ($opts['revocation_store_path'] ?? '');
+        // dir เก็บ cache (discovery/jwks) — ปล่อยว่าง = per-client subdir ใน temp (0700)
+        $this->cacheDir = (string) ($opts['cache_dir'] ?? '');
+    }
+
+    /**
+     * Private cache dir สำหรับ discovery/jwks (F3 — กัน cache poisoning บน shared /tmp).
+     *
+     * - ถ้า config 'cache_dir' set → ใช้ตามนั้น
+     * - ไม่งั้น → temp/cah_<hash(client_id)> สร้างด้วย perms 0700
+     *   (per-client + เจ้าของเท่านั้นเข้าได้ → co-tenant บน shared host เขียนทับไม่ได้)
+     */
+    public function cacheDir(): string
+    {
+        $dir = $this->cacheDir !== ''
+            ? $this->cacheDir
+            : sys_get_temp_dir() . '/cah_' . substr(sha1($this->clientId), 0, 12);
+        if (!is_dir($dir)) {
+            @mkdir($dir, 0700, true);
+        }
+        return $dir;
     }
 }

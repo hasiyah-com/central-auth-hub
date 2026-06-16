@@ -10,6 +10,7 @@ Endpoints:
 import csv
 import io
 from datetime import datetime, timedelta
+from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from pydantic import BaseModel, EmailStr
@@ -117,6 +118,27 @@ class SubsystemUpdate(BaseModel):
     access_revoke_webhook_url: str | None = None
 
 
+def _suggest_webhook_endpoints(redirect_uris: list[str] | None) -> dict | None:
+    """แนะนำ public webhook URL จาก origin ของ redirect_uri แรก.
+
+    คืน {access_revoked, access_updated} เป็น URL สาธารณะ (ไม่ docker-translate)
+    ที่ dev ควรสร้าง receiver — None ถ้า redirect_uri ใช้ไม่ได้.
+    """
+    if not redirect_uris:
+        return None
+    try:
+        p = urlparse(redirect_uris[0])
+        if not p.scheme or not p.netloc:
+            return None
+        base = f"{p.scheme}://{p.netloc}"
+        return {
+            "access_revoked": f"{base}/internal/access-revoked",
+            "access_updated": f"{base}/internal/access-updated",
+        }
+    except Exception:
+        return None
+
+
 def _validate_role_in_sub(role: str, subsystem: Subsystem) -> str:
     """Validate role_in_sub กับ subsystem.allowed_roles + ทำความสะอาด whitespace.
 
@@ -174,7 +196,7 @@ def register_subsystem(
             detail=f"scope ไม่ถูกต้อง: {invalid}. ใช้ได้: {ALLOWED_SCOPES}",
         )
 
-    # สร้าง credentials
+    # สร้าง credentials + แนะนำ webhook endpoints (derive จาก redirect origin)
     client_id, client_secret = generate_client_credentials()
 
     # validate allowed_roles (ถ้าระบุมา) — กัน role ว่าง / space-only
@@ -242,6 +264,19 @@ def register_subsystem(
         "status": "pending",
         "message": "ลงทะเบียนสำเร็จ — รอ admin อนุมัติ",
     }
+
+    # แนะนำ webhook endpoints ที่ subsystem ควรสร้าง (derive จาก redirect origin)
+    # Hub จะ POST event มาที่ URL เหล่านี้ — subsystem ต้อง host receiver เอง +
+    # verify HMAC ด้วย WEBHOOK_SHARED_KEY (ดู docs/SDK WebhookReceiver)
+    wh = _suggest_webhook_endpoints(payload.redirect_uris)
+    if wh:
+        response["webhook_endpoints"] = wh
+        response["webhook_note"] = (
+            "สร้าง endpoint รับ webhook ที่ URL เหล่านี้บนเซิร์ฟเวอร์ของคุณ "
+            "(verify X-Hub-Signature-256 ด้วย WEBHOOK_SHARED_KEY ที่ตรงกับ Hub). "
+            "ถ้าใช้ single-file handler (เช่น PHP webhook.php) ให้ตั้ง "
+            "access_revoke_webhook_url ชี้ไฟล์นั้นแทน — Hub จะส่งทุก event ไปที่เดียว"
+        )
 
     if email_ok:
         response["secret_delivery"] = "email"  # pragma: allowlist secret

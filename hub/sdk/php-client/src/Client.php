@@ -53,6 +53,10 @@ final class Client
     public function startLogin(?string $returnPath = null, bool $sendRedirect = true): string
     {
         $this->ensureSession();
+        // กัน open redirect / header injection — รับเฉพาะ relative path ภายในแอป
+        // reject: absolute URL (scheme:// หรือ //host), backslash, CR/LF
+        // (เผื่อ dev เผลอส่ง user input เช่น startLogin($_GET['next']))
+        $returnPath = self::sanitizeReturnPath($returnPath);
         $disc = $this->discovery->get();
         $authorize = $disc['authorization_endpoint'] ?? null;
         if (!$authorize) {
@@ -250,6 +254,33 @@ final class Client
     public function jwtVerifier(): JwtVerifier
     {
         return $this->jwtVerifier;
+    }
+
+    /**
+     * รับเฉพาะ relative path ที่ปลอดภัย — กัน open redirect + header injection (F1).
+     *
+     * คืน null ถ้า:
+     *   - มี CR/LF (header injection)
+     *   - เป็น absolute URL: "http://", "//evil.com", "https:..." (open redirect)
+     *   - มี backslash (browser บางตัวตีความเป็น /)
+     * path ที่ผ่านต้องขึ้นต้นด้วย "/" หรือเป็น relative ภายในแอป
+     */
+    private static function sanitizeReturnPath(?string $path): ?string
+    {
+        if ($path === null || $path === '') {
+            return null;
+        }
+        if (preg_match('/[\r\n\t]/', $path)) {
+            return null; // CRLF / tab → header injection
+        }
+        if (str_contains($path, '\\')) {
+            return null; // backslash → บาง browser ตีเป็น //
+        }
+        // absolute / protocol-relative URL → open redirect
+        if (preg_match('#^[a-z][a-z0-9+.-]*:#i', $path) || str_starts_with($path, '//')) {
+            return null;
+        }
+        return $path;
     }
 
     private function ensureSession(): void

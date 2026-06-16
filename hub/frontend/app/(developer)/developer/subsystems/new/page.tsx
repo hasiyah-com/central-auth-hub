@@ -31,6 +31,8 @@ type RegisterResponse = {
   secret_retrieval_url?: string;
   warning?: string;
   note?: string;
+  webhook_endpoints?: { access_revoked: string; access_updated: string };
+  webhook_note?: string;
 };
 
 export default function NewSubsystemPage() {
@@ -207,6 +209,42 @@ export default function NewSubsystemPage() {
                 >
                   เปิดลิงก์ในแท็บใหม่ →
                 </a>
+              </div>
+            )}
+
+            {result.webhook_endpoints && (
+              <div className="rounded-lg bg-ink-50 border border-ink-200 p-5 mb-6">
+                <div className="text-xl mb-1">🔔</div>
+                <h3 className="font-bold text-ink-900 mb-1">
+                  Webhook Endpoints (สร้างบนเซิร์ฟเวอร์ของคุณ)
+                </h3>
+                <p className="text-xs text-ink-600 mb-3">
+                  Hub จะ POST event มาที่ URL เหล่านี้ — สร้าง receiver + verify
+                  HMAC ด้วย <code className="font-mono">WEBHOOK_SHARED_KEY</code>
+                </p>
+                <div className="space-y-2">
+                  <div>
+                    <div className="text-[10px] font-bold uppercase tracking-wider text-ink-500 mb-0.5">
+                      ถอดสิทธิ์ (access_revoked)
+                    </div>
+                    <div className="bg-white border border-ink-200 rounded px-2 py-1.5 font-mono text-[11px] break-all text-ink-800">
+                      {result.webhook_endpoints.access_revoked}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-[10px] font-bold uppercase tracking-wider text-ink-500 mb-0.5">
+                      เปลี่ยน role/scope (access_updated)
+                    </div>
+                    <div className="bg-white border border-ink-200 rounded px-2 py-1.5 font-mono text-[11px] break-all text-ink-800">
+                      {result.webhook_endpoints.access_updated}
+                    </div>
+                  </div>
+                </div>
+                {result.webhook_note && (
+                  <p className="text-[11px] text-ink-500 mt-3 leading-relaxed">
+                    💡 {result.webhook_note}
+                  </p>
+                )}
               </div>
             )}
 
