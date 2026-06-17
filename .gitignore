@@ -65,6 +65,12 @@ hub/backend/tmp_*.py
 
 # ============ GeoIP database (download separately, large binary) ============
 hub/backend/data/*.mmdb
+
+# ============ Benchmark dataset (generated from external RBA dataset — reproducible via scripts) ============
+ml-service/data/benchmark_rba.csv
+ml-service/data/rba_base_sample.csv
+ml-service/data/real_only_rba.csv
+ml-service/data/shap/
 hub/frontend/tsconfig.tsbuildinfo
 
 # Playwright
@@ -93,3 +99,7 @@ hub/sdk/python-client/src/*.egg-info/
 # Go
 hub/sdk/auth-proxy/proxy
 hub/sdk/auth-proxy/proxy.exe
+
+# Phase 2.2 feedback loop — real labeled data (real user features, ห้าม commit)
+real_labeled.csv
+**/real_labeled.csv

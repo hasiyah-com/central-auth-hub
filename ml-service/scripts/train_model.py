@@ -28,6 +28,9 @@ from sklearn.metrics import (
 from sklearn.model_selection import train_test_split
 
 DATA_PATH = Path("/app/data/sessions.csv")
+# Phase 2.2 — feedback loop: real labeled data (export จาก hub: export_labeled_data.py)
+# ถ้ามี → merge เข้า training (real normal ลด FPR; real attack ใช้ eval recall)
+REAL_DATA_PATH = Path("/app/data/real_labeled.csv")
 MODEL_DIR = Path("/app/models")
 MODEL_DIR.mkdir(parents=True, exist_ok=True)
 MODEL_PATH = MODEL_DIR / "iforest_v1.pkl"
@@ -36,16 +39,39 @@ RANDOM_STATE = 42
 TEST_SIZE = 0.20
 
 
-def load_data() -> tuple[np.ndarray, np.ndarray]:
-    if not DATA_PATH.exists():
-        raise FileNotFoundError(f"ไม่พบ {DATA_PATH} — รัน scripts/generate_data ก่อน")
+def _read_csv(path: Path) -> tuple[list, list]:
     X, y = [], []
-    with open(DATA_PATH, encoding="utf-8") as f:
+    with open(path, encoding="utf-8") as f:
         reader = csv.reader(f)
         next(reader)  # header
         for row in reader:
+            if not row:
+                continue
             X.append([float(v) for v in row[:-1]])
             y.append(int(row[-1]))
+    return X, y
+
+
+def load_data() -> tuple[np.ndarray, np.ndarray]:
+    if not DATA_PATH.exists():
+        raise FileNotFoundError(f"ไม่พบ {DATA_PATH} — รัน scripts/generate_data ก่อน")
+    X, y = _read_csv(DATA_PATH)
+
+    # Phase 2.2 — merge real labeled data ถ้ามี (feedback loop)
+    if REAL_DATA_PATH.exists():
+        Xr, yr = _read_csv(REAL_DATA_PATH)
+        if Xr and len(Xr[0]) == len(X[0]):  # feature count ต้องตรง (B49)
+            X += Xr
+            y += yr
+            print(
+                f"🔁 feedback loop: merge real labeled {len(Xr)} แถว "
+                f"(normal={yr.count(0)}, attack={yr.count(1)})"
+            )
+        else:
+            print(
+                f"⚠️ real_labeled.csv feature count ไม่ตรง — ข้าม (synthetic={len(X[0])})"
+            )
+
     return np.array(X), np.array(y)
 
 
