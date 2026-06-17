@@ -47,6 +47,14 @@ async def main() -> None:
         attack_scores: list[float] = []
         decisions: Counter = Counter()
         errors = 0
+        # นับ "flagged" ตาม decision จริง (challenge/block = friction) + แยก rule hard-block
+        normal_flagged = 0  # would_challenge/would_block (รวม hard-block)
+        normal_hardblock = 0  # subset: rule hard-block (ปรับ threshold ไม่ได้)
+
+        def _is_flagged(dec: str) -> bool:
+            return any(
+                k in dec for k in ("challenge", "block")
+            )  # ไม่นับ warn (ไม่ friction)
 
         for s in sessions:
             try:
@@ -73,14 +81,26 @@ async def main() -> None:
                 continue
 
             score = float(risk["score"])
-            decisions[risk["decision"]] += 1
+            dec = risk["decision"]
+            decisions[dec] += 1
             is_attack = bool(s.is_account_takeover or s.is_attack_ip)
-            (attack_scores if is_attack else normal_scores).append(score)
+            if is_attack:
+                attack_scores.append(score)
+            else:
+                normal_scores.append(score)
+                if _is_flagged(dec):
+                    normal_flagged += 1
+                    reasons = " ".join(risk.get("reasons", []))
+                    if "hard block" in reasons or "blacklist" in reasons:
+                        normal_hardblock += 1
 
         n_normal = len(normal_scores)
         n_attack = len(attack_scores)
-        fp = sum(1 for sc in normal_scores if sc >= FLAG_THRESHOLD)
+        fp = normal_flagged
         fpr = (fp / n_normal) if n_normal else 0.0
+        # FPR เฉพาะส่วนที่ ML/threshold คุมได้ (ตัด rule hard-block ออก)
+        ml_denom = n_normal - normal_hardblock
+        fpr_ml = ((normal_flagged - normal_hardblock) / ml_denom) if ml_denom else 0.0
         tp = sum(1 for sc in attack_scores if sc >= FLAG_THRESHOLD)
         recall = (tp / n_attack) if n_attack else None
 
@@ -90,7 +110,11 @@ async def main() -> None:
         # ── console ──
         print(f"\n📊 Real-data evaluation — {len(sessions)} sessions (errors={errors})")
         print(f"   normal (label=0): {n_normal}  · attack (label=1): {n_attack}")
-        print(f"   FALSE-POSITIVE RATE: {fpr:.1%} ({fp}/{n_normal} normal ถูก flag)")
+        print(f"   FPR (decision challenge/block): {fpr:.1%} ({fp}/{n_normal})")
+        print(
+            f"     - rule hard-block: {normal_hardblock} (ปรับ threshold ไม่ได้ — dev/test burst)"
+        )
+        print(f"     - FPR(ML-driven, ตัด hard-block): {fpr_ml:.1%}")
         print(f"   normal score เฉลี่ย: {_mean(normal_scores):.3f}")
         if recall is not None:
             print(f"   RECALL: {recall:.1%} ({tp}/{n_attack})")
@@ -110,7 +134,9 @@ async def main() -> None:
             "## ผล",
             f"- sessions ทั้งหมด: **{len(sessions)}** (extract error {errors})",
             f"- normal (label=0): **{n_normal}** · attack (label=1): **{n_attack}**",
-            f"- **False-Positive Rate: {fpr:.1%}** ({fp}/{n_normal} normal ถูก flag ที่ score ≥ {FLAG_THRESHOLD})",
+            f"- **FPR (decision challenge/block): {fpr:.1%}** ({fp}/{n_normal})",
+            f"  - rule hard-block: {normal_hardblock} (login_count≥50 ฯลฯ — dev/test burst, ปรับ threshold ไม่ได้)",
+            f"  - **FPR(ML-driven, ตัด hard-block): {fpr_ml:.1%}** ← calibrate (2.1) คุมตัวนี้",
             f"- normal score เฉลี่ย: {_mean(normal_scores):.3f}",
             (
                 f"- **Recall: {recall:.1%}** ({tp}/{n_attack})"
