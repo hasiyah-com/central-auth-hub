@@ -34,6 +34,8 @@ MIN_HISTORY_FOR_PERSONALIZATION = 5
 # concurrent_session_count window = JWT TTL (jwt_access_token_expire_minutes=60)
 # กัน session ที่หมดอายุแต่ไม่มี logout_at นับเป็น "active" ตลอดกาล
 CONCURRENT_WINDOW_MIN = 60
+# cap concurrent = FEATURE_RANGES max (ml-service validate 0-50); ≥cap = "เยอะมาก" เท่ากัน
+CONCURRENT_COUNT_CAP = 50.0
 
 # permission_change_age — cap ที่ 365 วัน (กัน outlier ใน tree); ไม่เคยเปลี่ยน = 365 (เก่าสุด=ปลอดภัย)
 # แยก "เคยเปลี่ยนไหม" ออกเป็น ever_changed_permission (0/1) เพื่อเลี่ยง sentinel 9999
@@ -333,15 +335,20 @@ def extract_session_features(
         LoginSession.logout_at.is_(None),
         LoginSession.created_at >= concurrent_cutoff,
     )
-    concurrent_session_count = float(
-        db.query(func.count(LoginSession.id))
-        .filter(
-            LoginSession.user_id == user_id,
-            LoginSession.logout_at.is_(None),
-            LoginSession.created_at >= concurrent_cutoff,
-        )
-        .scalar()
-        or 0
+    # cap ที่ FEATURE_RANGES max (กันเกิน validation → ml-service reject → fail-safe 0
+    # = ปัญหาแฝง: concurrent สูงถูกมองเป็นปกติ). ≥cap = "เยอะมาก" เท่ากันหมด
+    concurrent_session_count = min(
+        CONCURRENT_COUNT_CAP,
+        float(
+            db.query(func.count(LoginSession.id))
+            .filter(
+                LoginSession.user_id == user_id,
+                LoginSession.logout_at.is_(None),
+                LoginSession.created_at >= concurrent_cutoff,
+            )
+            .scalar()
+            or 0
+        ),
     )
     active_subsystem_count = float(
         active_q.filter(LoginSession.subsystem_id.is_not(None))

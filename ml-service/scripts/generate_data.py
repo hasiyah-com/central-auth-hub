@@ -130,7 +130,10 @@ def normal_extra_features() -> list[float]:
 def anomaly_extra_features(pattern: str) -> list[float]:
     """anomaly — feature ใหม่โผล่ pattern จริงตามชนิดการโจมตี."""
     if pattern == "burst":
-        concurrent = random.choices([3, 5, 10, 20], weights=[30, 30, 25, 15])[0]
+        # ครอบถึง cap 50 (feature_extraction cap; กัน real > train → OOD)
+        concurrent = random.choices(
+            [3, 5, 10, 20, 35, 50], weights=[25, 25, 20, 15, 10, 5]
+        )[0]
         active_sub = random.choices([1, 2, 3], weights=[40, 40, 20])[0]
     elif pattern == "passkey_takeover":
         concurrent = random.choices([2, 3, 5, 10], weights=[30, 30, 25, 15])[0]
