@@ -5,17 +5,19 @@
 ## ผล
 - sessions ทั้งหมด: **243** (extract error 0)
 - normal (label=0): **243** · attack (label=1): **0**
-- **False-Positive Rate: 57.2%** (139/243 normal ถูก flag ที่ score ≥ 0.5)
+- **FPR (decision challenge/block): 46.9%** (114/243)
+  - rule hard-block: 106 (login_count≥50 ฯลฯ — dev/test burst, ปรับ threshold ไม่ได้)
+  - **FPR(ML-driven, ตัด hard-block): 5.8%** ← calibrate (2.1) คุมตัวนี้
 - normal score เฉลี่ย: 0.656
 - **Recall: วัดไม่ได้** — attack label จริง = 0 (ต้อง label ผ่าน admin toggle-attack-ip / MLFeedback)
 
 ## Decision distribution
 | decision | count |
 |---|---|
-| allow | 38 |
-| would_block | 110 |
-| would_challenge | 29 |
-| would_warn | 66 |
+| allow | 104 |
+| would_block | 109 |
+| would_challenge | 5 |
+| would_warn | 25 |
 
 ## ข้อจำกัด (เขียนใน thesis ตามตรง)
 - โมเดลเทรนบน synthetic; eval นี้วัดบน real normal เป็นหลัก (FPR)

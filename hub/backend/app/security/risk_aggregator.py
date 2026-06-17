@@ -13,10 +13,13 @@ from app.security.iforest_scorer import IForestResult
 
 # ============ Decision Thresholds ============
 
+# Calibrated จาก real-data (Phase 2.1, scripts/calibrate_thresholds.py):
+# ML-driven normal score p90=0.6 p95=0.7 → challenge 0.7 ทำให้ FPR 24%→5.8%
+# (เดิม block 0.8/challenge 0.5/warn 0.3 ทำ FPR สูงบน real data)
 THRESHOLDS = {
-    "block": 0.8,
-    "challenge": 0.5,
-    "warn": 0.3,
+    "block": 0.85,
+    "challenge": 0.7,
+    "warn": 0.5,
 }
 
 
