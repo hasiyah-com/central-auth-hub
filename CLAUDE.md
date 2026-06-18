@@ -729,7 +729,7 @@ docker compose exec hub-backend pytest . -v -s
 | 7 | Subsystem B — ระบบห้องสมุด (FastAPI + Jinja2 + postgres-library) | ✅ |
 | 8 | Admin Dashboard frontend (Next.js) + audit log viewer + pending triage | ✅ |
 | 8.5 | Migration B — split docker-compose (Hub/Dorm/Library stacks) + SHAP TreeExplainer + LINE Login alternate IdP + Subsystem A React SPA + ML eval split/GeoIP + RBA 4-Layer scoring + secret rotation | ✅ |
-| 9-10 | Passkey 8 phase ✅ + **Risk-Triggered MFA (Re-Auth/Force-Enroll/Grace) ✅** (22 new tests, B44-B48) + Session Downgrade + Token Revocation | 🔄 |
+| 9-10 | Passkey 8 phase ✅ + **Risk-Triggered MFA via Passkey risk-stepup ✅** (B44-B48; legacy OTP-only flow ลบแล้ว) + ML 23-feature expansion ✅ + cross-subsystem risk ✅ · Session Downgrade ⏳ + Token Revocation ⏳ | 🔄 |
 | 11-12 | Security hardening (rate limit, CSRF, CSP, prod fail-fast) + threat-model doc + pentest checklist | ⏳ |
 | 13-14 | Test suite (pytest scaffold ✅) + Jest/RTL frontend tests + GitHub Actions CI + full documentation | ⏳ |
 | 15-16 | Buffer + thesis writing + defense | ⏳ |
@@ -745,10 +745,16 @@ docker compose exec hub-backend pytest . -v -s
 - ✅ **Dev infrastructure** — daily routine scripts (morning.sh, eod.sh), domain skills, pre-commit hooks
 - ✅ **Documentation** — `docs/ml-12-features-risk-matrix.pdf` (8 หน้า), `docs/guides/add-line-login.md` (604 บรรทัด), MFA options analysis, P2 Session Downgrade plan
 
-**สิ่งที่ scaffold แล้วยังไม่ wire (Week 9 priority):**
-- ⚠️ MFA OTP — `routers/mfa.py` + `services/mfa_service.py` + frontend `/auth/mfa` ครบ แต่ `routers/mfa` ไม่ได้ register ใน `main.py` + oauth.py challenge branch comment ว่า "ปล่อยผ่าน + log" (ยังไม่ trigger MFA flow)
+**Risk-triggered MFA — wire เสร็จแล้ว (ผ่าน Passkey ไม่ใช่ OTP-only flow):**
+- ✅ 4-Layer RBA ตัดสิน mfa → `risk_challenge.mint()` (Redis one-time token, B9) → redirect
+  `/auth/passkey/risk-stepup` → ยืนยันด้วย **Passkey** (`risk-stepup/start+verify`) +
+  **email OTP fallback** (`/auth/stepup/otp/*` ผ่าน `mfa_service`)
+- 🗑️ legacy `routers/mfa.py` + `MFAChallenge` model + frontend `/auth/mfa` **ถูกลบ (2026-06-18)** —
+  เป็น dead code ที่ถูก supersede (ไม่เคย register ใน main.py). `mfa_service.py` **ยังเก็บไว้** (passkey OTP fallback + recovery ใช้)
+
+**สิ่งที่ยังไม่ทำ (Week 9–10 ที่เหลือ):**
 - ⚠️ Session Downgrade — restrict JWT claim + `require_write_access()` dependency ใน subsystems — design พร้อม (`docs/p2-session-downgrade-plan.md`) แต่ยัง implement ไม่เสร็จ
-- ⚠️ Token Revocation — ยังไม่มี jti claim + Redis blacklist
+- ⚠️ Token Revocation — ยังไม่มี Redis jti blacklist (JWT มี jti แล้ว แต่ยังไม่มี revoke list)
 
 **Strategy A (Single-stack Docker policy, 2026-05-21):**
 ใช้ main stack เท่านั้นเป็นปกติ — worktree stacks (cah-hub, cah-dorm worktrees) ใช้เฉพาะ experimental code isolation

@@ -279,36 +279,9 @@ class MLFeedback(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
-class MFAChallenge(Base):
-    """Multi-Factor Auth challenge — Email OTP (อนาคต TOTP).
-
-    Flow:
-      1. ML decision = "mfa" → backend สร้าง MFAChallenge + ส่ง OTP ทาง email
-      2. user กรอก OTP ใน /auth/mfa frontend → POST /mfa/verify
-      3. ถ้าถูก: mark used_at + ออก JWT จริง
-      4. ถ้าผิด: attempts++; ถ้า attempts >= MAX → lockout
-
-    1 login_session = 1 active challenge (latest)
-    """
-
-    __tablename__ = "mfa_challenges"
-
-    id = uuid_pk()
-    user_id = Column(
-        UUID(as_uuid=True), ForeignKey("users.id"), index=True, nullable=False
-    )
-    login_session_id = Column(
-        UUID(as_uuid=True),
-        ForeignKey("login_sessions.id"),
-        index=True,
-        nullable=False,
-    )
-    code_hash = Column(String(64), nullable=False)  # HMAC-SHA256 hex ของ OTP
-    method = Column(String(20), default="email", nullable=False)  # email / totp
-    expires_at = Column(DateTime, nullable=False)
-    used_at = Column(DateTime, nullable=True)
-    attempts = Column(Integer, default=0, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow, index=True)
+# NOTE: MFAChallenge model ถูกลบ (2026-06-18) — risk-triggered MFA ย้ายไปใช้
+# risk_challenge.py (Redis one-time token) + passkey risk-stepup (passkey + OTP fallback)
+# แทน. ตาราง mfa_challenges เก่าใน DB ปล่อยทิ้งได้ (ไม่มีโค้ดอ้างถึงแล้ว)
 
 
 class ApiAlert(Base):
