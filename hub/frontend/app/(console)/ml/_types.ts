@@ -173,6 +173,8 @@ export const FEATURE_LABEL_TH: Record<string, string> = {
   scope_sensitivity_score: "ความอ่อนไหวของ scope",
   permission_change_age: "เพิ่งเปลี่ยนสิทธิ์ (วัน)",
   confirmed_incident_count: "เหตุการณ์เสี่ยงในอดีต",
+  ever_changed_permission: "เคยเปลี่ยนสิทธิ์",
+  impossible_travel_score: "เดินทางเร็วผิดปกติ",
 };
 
 /** คืนป้ายไทยของ feature (fallback เป็นชื่อดิบถ้าไม่มีใน map) */

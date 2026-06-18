@@ -46,9 +46,9 @@ def test_rule_engine_feat_map_aligned():
 
     assert "is_weekend" not in FEAT  # ตัดแล้ว
     assert "has_passkey" not in FEAT  # ตัดแล้ว
-    assert len(FEAT) == 22
+    assert len(FEAT) == 23
     # indices ต้อง unique + ครบ 0..21
-    assert sorted(FEAT.values()) == list(range(22))
+    assert sorted(FEAT.values()) == list(range(23))
     # ตำแหน่งสำคัญ (ที่ rule/behavior ใช้จริง)
     assert FEAT["hours_from_typical_login_time"] == 2
     assert FEAT["is_thailand"] == 3
@@ -65,9 +65,9 @@ def test_benign_login_low_rule_score(db):
     """
     from app.security.rule_engine import evaluate_rules
 
-    # 22-feature vector: คนปกติ — ไม่มี new device/country, failed=0, ไม่มี passkey signal
-    # [..., scope=0.3, ever_changed=0, perm_age=365, confirmed=0]
-    feats = [10, 2, 1, 1, 0, 0, 0, 0, 4, 2, 0, 0, 0, 0, 0, 1, 1, 0.1, 0.3, 0, 365, 0]
+    # 23-feature vector: คนปกติ — ไม่มี new device/country, failed=0, ไม่มี passkey signal
+    # [..., scope=0.3, ever_changed=0, perm_age=365, confirmed=0, impossible_travel=0]
+    feats = [10, 2, 1, 1, 0, 0, 0, 0, 4, 2, 0, 0, 0, 0, 0, 1, 1, 0.1, 0.3, 0, 365, 0, 0]
     res = evaluate_rules(
         feats, db, user_id=str(uuid.uuid4()), ip="203.0.113.9", geo_country=None
     )
@@ -127,9 +127,9 @@ def _add_session(db, user, **kw):
 
 
 @pytest.mark.smoke
-def test_returns_exactly_22_features(user, db):
+def test_returns_exactly_23_features(user, db):
     feats = extract_session_features(db, user.id, "1.2.3.4", "Mozilla/5.0", "TH")
-    assert len(feats) == 22
+    assert len(feats) == 23
 
 
 @pytest.mark.smoke
