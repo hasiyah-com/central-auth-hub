@@ -46,6 +46,7 @@ TRAIN_EXPECTED: dict[str, tuple[float, float]] = {
     "ever_changed_permission": (0, 1),
     "permission_change_age": (0, 365),
     "confirmed_incident_count": (0, 2),
+    "impossible_travel_score": (0, 1),
 }
 
 SAMPLE_LIMIT = 500  # session ล่าสุดกี่อันมาดู

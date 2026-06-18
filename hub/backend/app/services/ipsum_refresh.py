@@ -33,6 +33,11 @@ REFRESH_INTERVAL_SEC = 24 * 60 * 60  # 24 ชม.
 INITIAL_DELAY_SEC = 60 * 60  # หลัง start รอ 1 ชม. ก่อน refresh ครั้งแรก
 HTTP_TIMEOUT_SEC = 60.0
 IPSUM_URL_L5 = "https://raw.githubusercontent.com/stamparm/ipsum/master/levels/5.txt"
+# Phase 3.2 — offline fallback: ถ้าไม่มีเน็ต (เช่น dev/air-gapped) โหลด blocklist จากไฟล์
+# วาง ipsum L5 ไว้ที่นี่ได้ (gitignored) — ip_reputation จะทำงานต่อได้แม้ fetch ล้ม
+from pathlib import Path  # noqa: E402
+
+LOCAL_IPSUM_PATH = Path("/app/data/ipsum_l5.txt")
 LABEL_PREFIX = "ipsum-auto"
 
 _IPV4_RE = re.compile(r"^(?:\d{1,3}\.){3}\d{1,3}$")
@@ -53,11 +58,21 @@ def _parse_ips(text: str) -> list[str]:
 
 
 async def _fetch_ipsum() -> list[str]:
-    """ดาวน์โหลด ipsum L5 จาก GitHub."""
-    async with httpx.AsyncClient(timeout=HTTP_TIMEOUT_SEC) as client:
-        r = await client.get(IPSUM_URL_L5)
-        r.raise_for_status()
-        return _parse_ips(r.text)
+    """ดาวน์โหลด ipsum L5 จาก GitHub; ถ้า fetch ล้ม fallback ไฟล์ offline (ถ้ามี)."""
+    try:
+        async with httpx.AsyncClient(timeout=HTTP_TIMEOUT_SEC) as client:
+            r = await client.get(IPSUM_URL_L5)
+            r.raise_for_status()
+            return _parse_ips(r.text)
+    except Exception as e:
+        if LOCAL_IPSUM_PATH.exists():
+            log.warning(
+                "[ipsum] online fetch ล้ม (%s) — ใช้ offline file %s",
+                e.__class__.__name__,
+                LOCAL_IPSUM_PATH,
+            )
+            return _parse_ips(LOCAL_IPSUM_PATH.read_text(encoding="utf-8"))
+        raise  # ไม่มี fallback → ให้ _refresh_once จัดการ (log.warning เงียบๆ)
 
 
 def _bulk_upsert(ips: list[str]) -> tuple[int, int]:
@@ -108,11 +123,17 @@ async def _refresh_once() -> dict:
     try:
         ips = await _fetch_ipsum()
     except Exception as e:
-        log.exception("[ipsum] fetch failed: %r", e)
+        # ไม่มีเน็ต + ไม่มี offline file = สภาพปกติใน dev → log เงียบ (ไม่ spam traceback)
+        log.warning(
+            "[ipsum] fetch ล้ม (offline?) — ข้ามรอบนี้: %s. "
+            "วางไฟล์ offline ที่ %s เพื่อให้ ip_reputation ทำงานต่อได้",
+            e.__class__.__name__,
+            LOCAL_IPSUM_PATH,
+        )
         return {
             "ok": False,
             "stage": "fetch",
-            "error": repr(e),
+            "error": e.__class__.__name__,
             "started_at": started_at.isoformat(),
         }
 
