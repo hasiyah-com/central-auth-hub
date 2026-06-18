@@ -45,8 +45,9 @@ CANONICAL_FEATURES = [
     "ever_changed_permission",
     "permission_change_age",
     "confirmed_incident_count",
+    "impossible_travel_score",
 ]
-FEATURE_COUNT = len(CANONICAL_FEATURES)  # 22
+FEATURE_COUNT = len(CANONICAL_FEATURES)  # 23
 
 
 @pytest.fixture
@@ -60,9 +61,9 @@ def db() -> Session:
 
 
 @pytest.mark.smoke
-def test_canonical_count_is_22():
-    assert FEATURE_COUNT == 22
-    assert len(set(CANONICAL_FEATURES)) == 22  # ไม่มีชื่อซ้ำ
+def test_canonical_count_is_23():
+    assert FEATURE_COUNT == 23
+    assert len(set(CANONICAL_FEATURES)) == 23  # ไม่มีชื่อซ้ำ
     assert "is_weekend" not in CANONICAL_FEATURES  # ตัดแล้ว
     assert "has_passkey" not in CANONICAL_FEATURES  # ตัดแล้ว
 

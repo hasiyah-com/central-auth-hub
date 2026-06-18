@@ -103,3 +103,7 @@ hub/sdk/auth-proxy/proxy.exe
 # Phase 2.2 feedback loop — real labeled data (real user features, ห้าม commit)
 real_labeled.csv
 **/real_labeled.csv
+
+# Phase 3.2 — offline ipsum blocklist (optional, ไม่ commit)
+ipsum_l5.txt
+**/ipsum_l5.txt
