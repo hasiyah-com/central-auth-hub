@@ -1,6 +1,6 @@
 # ML Explained — Hybrid RBA (Central Auth Hub)
 
-**อธิบายระบบ ML ทั้งหมด: 4 Layers + 22 features (ข้อมูล/สูตร/ตัวอย่าง/หน่วย) + SHAP**
+**อธิบายระบบ ML ทั้งหมด: 4 Layers + 23 features (ข้อมูล/สูตร/ตัวอย่าง/หน่วย) + SHAP**
 Version 1.0 · 2026-06-15 · คู่กับ `ML_FEATURE_DATA_SOURCES.md`
 
 ---
@@ -14,7 +14,7 @@ login → [Layer 1 Rule] → ถ้า hard block → block ทันที
              ↓ (ไม่ block)
         [Layer 2 Behavior] เทียบ baseline ส่วนตัว 30 วัน
              ↓
-        [Layer 3 Isolation Forest] โมเดล anomaly (22 features) + SHAP
+        [Layer 3 Isolation Forest] โมเดล anomaly (23 features) + SHAP
              ↓
         [Layer 4 Aggregation] total = rule + behavior + iforest → decision
 ```
@@ -23,7 +23,7 @@ login → [Layer 1 Rule] → ถ้า hard block → block ทันที
 |---|---|---|
 | 1 Rule | กฎตายตัว (จับ known attack เร็ว) | hard block หรือ score 0–1 |
 | 2 Behavior | เทียบ pattern ส่วนตัว (เวลา/วัน/ประเทศ) | score 0–1 |
-| 3 IForest | โมเดล unsupervised บน 22 features | score 0–0.4 + SHAP |
+| 3 IForest | โมเดล unsupervised บน 23 features | score 0–0.4 + SHAP |
 | 4 Aggregate | รวม 3 ชั้น cap 1.0 → ตัดสิน | allow/warn/challenge/block |
 
 **Decision thresholds** (Layer 4): `block ≥ 0.8 · challenge ≥ 0.5 · warn ≥ 0.3 · else allow`
@@ -37,20 +37,23 @@ login → [Layer 1 Rule] → ถ้า hard block → block ทันที
 - **ข้อมูลนอก feature:** IP blacklist (ipsum), impossible travel (geo+เวลา), multi-account จาก IP เดียว
 - **feature ที่อ่าน:** `is_new_device` `is_new_country` `is_new_user_agent_family` `failed_logins_24h` `is_thailand`
 - **hard block ถ้า:** `failed_logins_24h ≥ 10` หรือ `login_count_24h ≥ 50` หรือ `country_change_count_30d ≥ 8` หรือ IP blacklist
+- **Cross-subsystem risk propagation:** ระบบย่อย *อื่น* เพิ่งมี login เสี่ยง ≥ 0.6 ภายใน 30 นาที
+  → escalate ระบบนี้ (+`recent_max_risk × 0.3`). ทำเป็น rule (inference-time) ไม่ใช่ ML feature
+  → เลี่ยง feedback loop. ปรับค่าได้ที่ค่าคงที่ `CROSS_SUBSYSTEM_*` บนสุด `rule_engine.py`
 
 ### Layer 2 — Behavior Profiling
 - ต้องมี history ≥ 5 session (ไม่งั้น cold start score = 0.20)
 - **feature ที่อ่าน:** `hours_from_typical_login_time` `is_new_country` `is_new_device` `day_of_week` (คำนวณ weekend)
 
 ### Layer 3 — Isolation Forest
-- ใช้ **ครบทั้ง 22 features** → anomaly score → map เป็น 0–0.4 + SHAP per-feature
+- ใช้ **ครบทั้ง 23 features** → anomaly score → map เป็น 0–0.4 + SHAP per-feature
 
 ### Layer 4 — Aggregation
 - `total = min(rule + behavior + iforest, 1.0)` → decision
 
 ---
 
-## 3. 22 Features — ข้อมูล / สูตร / ตัวอย่าง / หน่วย
+## 3. 23 Features — ข้อมูล / สูตร / ตัวอย่าง / หน่วย
 
 > ค่าทั้งหมดสกัดตอน login จาก **request ปัจจุบัน + ประวัติใน DB** (`feature_extraction.py`)
 
@@ -178,6 +181,29 @@ login → [Layer 1 Rule] → ถ้า hard block → block ทันที
 - ข้อมูล: `login_sessions.is_account_takeover` / `is_attack_ip` (admin ยืนยัน) · สูตร: นับที่เป็น true
 - ตัวอย่าง: เคยถูก mark เป็น attack 1 ครั้ง → **1** · หน่วย: จำนวนครั้ง (count)
 
+### 🌐 Geographic Velocity — Phase 3.1
+
+**23. impossible_travel_score** — เดินทางเร็วผิดปกติ (เปลี่ยนประเทศเร็วเกินจริง)
+- ข้อมูล: `login_sessions.geo_country` + `created_at` (login ก่อนหน้า vs ปัจจุบัน)
+- สูตร: ถ้าเปลี่ยนประเทศ → `max(0, 1 − ชั่วโมงที่ห่าง / 24)` · ประเทศเดิม/ไม่มี geo → 0
+- เหตุผล: มนุษย์บินข้ามประเทศใน 1 ชม. ไม่ได้ — เปลี่ยนประเทศเร็ว = บัญชีถูกใช้หลายที่ (ATO) [Microsoft Entra]
+- **ทำได้ด้วย GeoLite2-Country ที่มีอยู่ — ไม่ต้อง lat/lon (City DB)**
+- หน่วย: คะแนน 0–1
+
+**ตัวอย่างการคำนวณ (ละเอียด):**
+
+| สถานการณ์ | login ก่อน | login นี้ | ห่าง | คำนวณ | score |
+|---|---|---|---|---|---|
+| บินข้ามโลกใน 1 ชม. (เป็นไปไม่ได้) | 🇹🇭 TH 14:00 | 🇺🇸 US 15:00 | 1 ชม. | `1 − 1/24` | **0.96** 🔴 |
+| TH→JP ใน 6 ชม. (เร็วผิดปกติ) | 🇹🇭 TH 08:00 | 🇯🇵 JP 14:00 | 6 ชม. | `1 − 6/24` | **0.75** 🔴 |
+| TH→UK ใน 12 ชม. (พอเป็นไปได้) | 🇹🇭 TH 00:00 | 🇬🇧 GB 12:00 | 12 ชม. | `1 − 12/24` | **0.50** 🟡 |
+| เปลี่ยนประเทศหลัง 1 วัน (ปกติ) | 🇹🇭 TH | 🇸🇬 SG +25 ชม. | 25 ชม. | `max(0, 1−25/24)` | **0** 🟢 |
+| ประเทศเดิม (ไม่เปลี่ยน) | 🇹🇭 TH | 🇹🇭 TH | — | ประเทศเดิม | **0** 🟢 |
+| login แรก / ไม่มี geo (dev IP) | — | 🇹🇭 / NULL | — | ไม่มีข้อมูลเทียบ | **0** 🟢 |
+
+> ยิ่ง**เปลี่ยนประเทศเร็ว** ยิ่งเข้าใกล้ 1 (เป็นไปไม่ได้มากขึ้น) · เกิน 24 ชม. = 0 (เดินทางทันแล้ว)
+> ผลจริง: score 0.9 → decision **mfa** (vs ปกติ pass)
+
 ---
 
 ## 4. สรุปประเภทหน่วย (7 แบบ)
@@ -189,7 +215,7 @@ login → [Layer 1 Rule] → ถ้า hard block → block ทันที
 | วัน (days) | passkey_age_days, passkey_last_used_days, permission_change_age |
 | ชั่วโมง (hours) | hour_of_day, hours_from_typical_login_time |
 | เลขวัน (ordinal) | day_of_week |
-| สัดส่วน/คะแนน (0–1) | weekday_usage_score, scope_sensitivity_score |
+| สัดส่วน/คะแนน (0–1) | weekday_usage_score, scope_sensitivity_score, **impossible_travel_score** |
 | log-scale | log_minutes_since_last_login |
 
 ---
