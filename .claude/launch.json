@@ -1,0 +1,33 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "hub-stack (backend + frontend + ML + postgres + redis)",
+      "runtimeExecutable": "docker",
+      "runtimeArgs": ["compose", "up", "-d"],
+      "port": 8000,
+      "autoPort": false
+    },
+    {
+      "name": "subsystem-dorm (postgres-dorm + dorm app)",
+      "runtimeExecutable": "docker",
+      "runtimeArgs": ["compose", "-f", "docker-compose.dorm.yml", "up", "-d"],
+      "port": 8001,
+      "autoPort": false
+    },
+    {
+      "name": "subsystem-library (postgres-library + library app)",
+      "runtimeExecutable": "docker",
+      "runtimeArgs": ["compose", "-f", "docker-compose.library.yml", "up", "-d"],
+      "port": 8002,
+      "autoPort": false
+    },
+    {
+      "name": "hub-frontend (Next.js dev, host)",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--prefix", "hub/frontend"],
+      "port": 3000,
+      "autoPort": false
+    }
+  ]
+}
