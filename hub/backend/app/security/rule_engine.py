@@ -74,6 +74,12 @@ MULTI_ACCOUNT_WINDOW_SEC = 3600  # 1 hour
 # Impossible travel
 IMPOSSIBLE_TRAVEL_WINDOW_SEC = 3600  # country change within 1 hour
 
+# Cross-subsystem risk propagation — ระบบย่อยอื่นเพิ่งมี login เสี่ยง → ระบบนี้เข้มขึ้น
+# (ทำเป็น rule ไม่ใช่ ML feature เพื่อเลี่ยง feedback loop: ไม่เอา risk_score ไป train)
+CROSS_SUBSYSTEM_WINDOW_MIN = 30  # ดู login ของระบบอื่นใน 30 นาทีล่าสุด
+CROSS_SUBSYSTEM_RISK_THRESHOLD = 0.6  # ระบบอื่นเสี่ยง >= 0.6 ถึง escalate
+CROSS_SUBSYSTEM_BOOST_FACTOR = 0.3  # boost = recent_max_risk * factor (graded)
+
 
 @dataclass
 class RuleResult:
@@ -88,8 +94,13 @@ def evaluate_rules(
     user_id: str,
     ip: str | None,
     geo_country: str | None,
+    subsystem_id=None,
 ) -> RuleResult:
-    """Layer 1: ประเมินกฎตายตัว → hard block หรือ risk score."""
+    """Layer 1: ประเมินกฎตายตัว → hard block หรือ risk score.
+
+    subsystem_id: ระบบย่อยที่กำลัง login (ใช้ cross-subsystem risk propagation —
+    ถ้าระบบอื่นเพิ่งเสี่ยง → escalate ระบบนี้). None = Hub-direct (ไม่ propagate)
+    """
 
     # ── IP Blacklist check ──
     if ip and is_blacklisted(db, ip):
@@ -130,6 +141,16 @@ def evaluate_rules(
             score += weight
             reasons.append(f"{feat_name} (+{weight})")
 
+    # ── Cross-subsystem risk propagation ──
+    # ระบบย่อยอื่นเพิ่งมี login เสี่ยงสูง (เช่น ระบบ 1 ได้ 0.7) → พอ user เข้าระบบนี้
+    # ให้ "ระแวง" มากขึ้น (escalate). Hub เห็น login ทุกระบบใน DB เดียว → ทำได้
+    if subsystem_id is not None:
+        cross = _check_cross_subsystem_risk(db, user_id, subsystem_id)
+        if cross:
+            boost, reason = cross
+            score += boost
+            reasons.append(reason)
+
     # ── Multiple accounts from same IP ──
     if ip:
         multi = _check_multi_account_ip(db, ip)
@@ -143,6 +164,43 @@ def evaluate_rules(
 
 
 # ============ Helpers ============
+
+
+def _check_cross_subsystem_risk(
+    db: Session, user_id: str, current_subsystem_id
+) -> tuple[float, str] | None:
+    """ระบบย่อย *อื่น* เพิ่งมี login เสี่ยงสูงไหม (risk propagation ระหว่างระบบ).
+
+    ดู max(risk_score) ของ login ใน subsystem อื่น (≠ current) ภายใน window.
+    ถ้า >= threshold คืน (boost, reason) — boost แปรตามความเสี่ยง (graded).
+    None ถ้าไม่มี/ไม่ถึงเกณฑ์.
+
+    หมายเหตุ: ใช้ risk_score ที่ inference-time เป็น "policy" — ไม่เอาไป train โมเดล
+    (เลี่ยง feedback loop). Explainable: โผล่ใน rule reasons.
+    """
+    cutoff = datetime.utcnow() - timedelta(minutes=CROSS_SUBSYSTEM_WINDOW_MIN)
+    recent_max = (
+        db.query(func.max(LoginSession.risk_score))
+        .filter(
+            LoginSession.user_id == user_id,
+            LoginSession.subsystem_id.is_not(None),
+            LoginSession.subsystem_id != current_subsystem_id,
+            LoginSession.created_at >= cutoff,
+            LoginSession.risk_score.is_not(None),
+        )
+        .scalar()
+    )
+    if recent_max is None:
+        return None
+    recent_max = float(recent_max)
+    if recent_max < CROSS_SUBSYSTEM_RISK_THRESHOLD:
+        return None
+    boost = round(recent_max * CROSS_SUBSYSTEM_BOOST_FACTOR, 2)
+    reason = (
+        f"cross_subsystem_risk: ระบบอื่นเสี่ยง {recent_max:.2f} "
+        f"ใน {CROSS_SUBSYSTEM_WINDOW_MIN} นาที (+{boost})"
+    )
+    return boost, reason
 
 
 def _check_impossible_travel(

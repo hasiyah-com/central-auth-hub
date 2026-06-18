@@ -29,6 +29,7 @@ async def evaluate_login_risk(
     geo_country: str | None,
     db: Session,
     shadow_mode: bool = False,
+    subsystem_id=None,
 ) -> dict:
     """ประเมินความเสี่ยงของ login 4 ชั้น.
 
@@ -40,8 +41,10 @@ async def evaluate_login_risk(
             "breakdown": {"rule": 0.3, "behavior": 0.2, "iforest": 0.1, "iforest_raw": 0.45},
         }
     """
-    # ── Layer 1: Rule Engine ──
-    rule_result = evaluate_rules(features, db, user_id, ip, geo_country)
+    # ── Layer 1: Rule Engine (+ cross-subsystem risk propagation) ──
+    rule_result = evaluate_rules(
+        features, db, user_id, ip, geo_country, subsystem_id=subsystem_id
+    )
 
     if rule_result.blocked:
         # Hard block → ข้าม Layer 2+3 (ไม่ต้องเสียเวลาเรียก ML)
