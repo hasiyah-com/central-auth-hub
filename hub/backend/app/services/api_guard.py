@@ -21,7 +21,7 @@ from datetime import datetime, timedelta
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from app.models import ApiAlert, RequestLog
+from app.models import ApiAlert, AuditLog, RequestLog, User
 from app.services.alert_service import send_alert
 
 log = logging.getLogger(__name__)
@@ -60,7 +60,17 @@ RULES = {
         "severity": "warning",
         "desc": "Request pattern สม่ำเสมอผิดปกติ (อาจเป็น bot)",
     },
+    "repeated_failed_mutation": {
+        "window_sec": 300,
+        "threshold": 10,  # > 10 failed mutation / 5 min per actor
+        "severity": "warning",
+        "desc": "Actor พยายามทำ action ที่ล้มเหลวซ้ำๆ (อาจ IDOR/enumeration/probe)",
+    },
 }
+
+# audit action ที่ถือเป็น failure attempt (business-level) — track per actor
+# ครอบ failure-path logging ทั้งหมด (whitelist/subsystem/user CRUD + access denied)
+_FAILED_ACTION_LIKE = ("%_failed", "%_denied", "%_blocked%")
 
 
 def scan_request_logs(db: Session, minutes: int = 5) -> list[dict]:
@@ -218,6 +228,67 @@ def scan_request_logs(db: Session, minutes: int = 5) -> list[dict]:
                 }
             )
 
+    # ── Rule 5: repeated_failed_mutation (audit_logs per actor) ──
+    # ครอบ business-level failures ที่ request_logs ไม่เห็น (404 = ไม่ใช่ "ผิดปกติ" แต่ถ้า
+    # actor เดียวยิงซ้ำ 10+ ครั้ง = สงสัย IDOR/enumeration) — แหล่ง = audit_logs *_failed
+    rule = RULES["repeated_failed_mutation"]
+    cutoff = now - timedelta(seconds=rule["window_sec"])
+    failed_filter = AuditLog.action.like(_FAILED_ACTION_LIKE[0])
+    for pat in _FAILED_ACTION_LIKE[1:]:
+        failed_filter = failed_filter | AuditLog.action.like(pat)
+    rows = (
+        db.query(AuditLog.actor_id, func.count(AuditLog.id).label("cnt"))
+        .filter(
+            AuditLog.created_at >= cutoff,
+            AuditLog.actor_id.is_not(None),
+            failed_filter,
+        )
+        .group_by(AuditLog.actor_id)
+        .having(func.count(AuditLog.id) > rule["threshold"])
+        .all()
+    )
+    for actor_id, cnt in rows:
+        # ดึง action ที่ fail บ่อยสุด + ip ของ actor ใน window
+        top_actions = (
+            db.query(AuditLog.action, func.count(AuditLog.id).label("c"))
+            .filter(
+                AuditLog.created_at >= cutoff,
+                AuditLog.actor_id == actor_id,
+                failed_filter,
+            )
+            .group_by(AuditLog.action)
+            .order_by(func.count(AuditLog.id).desc())
+            .limit(5)
+            .all()
+        )
+        latest_ip = (
+            db.query(AuditLog.ip)
+            .filter(
+                AuditLog.created_at >= cutoff,
+                AuditLog.actor_id == actor_id,
+                AuditLog.ip.is_not(None),
+            )
+            .order_by(AuditLog.created_at.desc())
+            .first()
+        )
+        actor_email = db.query(User.email).filter(User.id == actor_id).scalar()
+        alerts.append(
+            {
+                "rule": "repeated_failed_mutation",
+                "severity": rule["severity"],
+                "ip": str(latest_ip[0]) if latest_ip and latest_ip[0] else None,
+                "user_id": str(actor_id),
+                "detail": {
+                    "actor_email": actor_email,
+                    "count": cnt,
+                    "window_sec": rule["window_sec"],
+                    "threshold": rule["threshold"],
+                    "top_actions": [{"action": a, "count": c} for a, c in top_actions],
+                    "desc": rule["desc"],
+                },
+            }
+        )
+
     return alerts
 
 
@@ -228,17 +299,19 @@ def scan_and_persist(db: Session, minutes: int = 5) -> list[ApiAlert]:
     persisted: list[ApiAlert] = []
 
     for a in raw_alerts:
-        # Dedup: ถ้ามี alert เดียวกัน (rule + ip) ใน 10 นาที → ข้าม
-        existing = (
-            db.query(ApiAlert)
-            .filter(
-                ApiAlert.rule == a["rule"],
-                ApiAlert.ip == a["ip"],
-                ApiAlert.created_at >= dedup_cutoff,
-            )
-            .first()
+        # Dedup: ถ้ามี alert เดียวกัน (rule + ip + user_id) ใน 10 นาที → ข้าม
+        # (รวม user_id เพราะ rule actor-based อย่าง repeated_failed_mutation อาจ ip=None)
+        dedup_q = db.query(ApiAlert).filter(
+            ApiAlert.rule == a["rule"],
+            ApiAlert.created_at >= dedup_cutoff,
         )
-        if existing:
+        if a.get("ip"):
+            dedup_q = dedup_q.filter(ApiAlert.ip == a["ip"])
+        else:
+            dedup_q = dedup_q.filter(ApiAlert.ip.is_(None))
+        if a.get("user_id"):
+            dedup_q = dedup_q.filter(ApiAlert.user_id == a["user_id"])
+        if dedup_q.first():
             continue
 
         alert = ApiAlert(
