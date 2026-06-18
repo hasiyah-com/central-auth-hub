@@ -10,8 +10,13 @@ from app.services import stepup_cache
 
 @pytest.mark.smoke
 def test_critical_actions_set_complete():
-    """CRITICAL_ACTIONS ต้องครบ 7 actions ตาม plan § 6.3."""
-    expected = {
+    """7 core actions (plan §6.3) ต้องอยู่ครบใน CRITICAL_ACTIONS.
+
+    ใช้ subset check (ไม่ใช่ == เป๊ะ) — set ขยายได้ (risk-challenge เพิ่ม
+    create_user/subsystem_*/whitelist_*/session_revoke ฯลฯ) โดยไม่ทำ test พัง
+    ตราบใดที่ 7 core ยังอยู่.
+    """
+    core = {
         "delete_passkey",
         "register_new_passkey",
         "regenerate_backup_codes",
@@ -20,7 +25,9 @@ def test_critical_actions_set_complete():
         "bulk_permission_change",
         "admin_reset",
     }
-    assert cap.CRITICAL_ACTIONS == expected
+    assert (
+        core <= cap.CRITICAL_ACTIONS
+    ), f"core actions หาย: {core - cap.CRITICAL_ACTIONS}"
 
 
 @pytest.mark.smoke
