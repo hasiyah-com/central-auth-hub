@@ -1,7 +1,7 @@
 # ML Feature Data Sources — Central Auth Hub (Hybrid RBA)
 
 **เอกสารอ้างอิง: แต่ละ feature ใช้ข้อมูลจากไหน + คำนวณยังไง**
-Version 2.0 · 2026-06-14 · สถานะ: ชุด 22 features (ตัด 2 + เพิ่ม 7: 6 ใหม่ + ever_changed_permission)
+Version 2.1 · 2026-06-18 · สถานะ: ชุด 23 features (ตัด 2 + เพิ่ม 8: 6 ใหม่ + ever_changed_permission + impossible_travel_score)
 
 > ใช้คู่กับ `ML_FEATURE_ENGINEERING_AND_RISK_MODELING_PLAN.md` (แผนภาพรวม)
 > Feature order = contract: `ml-service/app/features.py` ↔ `hub/backend/app/services/feature_extraction.py` ต้องเรียงตรงกันเป๊ะ (B27)
@@ -16,11 +16,11 @@ Version 2.0 · 2026-06-14 · สถานะ: ชุด 22 features (ตัด 2
 | ➕ เพิ่มใหม่ (6) | `concurrent_session_count`, `active_subsystem_count`, `weekday_usage_score`, `scope_sensitivity_score`, `permission_change_age`, `confirmed_incident_count` |
 | ✅ คงไว้ | 15 เดิม (รวม `is_new_user_agent_family`) |
 
-**รวม: 17 − 2 + 7 = 22 features** (เพิ่ม ever_changed_permission แยกจาก permission_change_age)
+**รวม: 17 − 2 + 8 = 23 features** (+ ever_changed_permission แยกจาก permission_change_age, + impossible_travel_score Phase 3.1)
 
 ---
 
-## ตารางรวม 22 Features + แหล่งข้อมูล
+## ตารางรวม 23 Features + แหล่งข้อมูล
 
 | # | Feature | หมวด | แหล่งข้อมูลหลัก | สถานะ |
 |---|---|---|---|---|
@@ -46,6 +46,7 @@ Version 2.0 · 2026-06-14 · สถานะ: ชุด 22 features (ตัด 2
 | 20 | **ever_changed_permission** | Privilege | `access_list.granted_at/revoked_at` | 🆕 |
 | 21 | **permission_change_age** | Privilege | `access_list` (cap 365, ไม่เคย=365) | 🆕 |
 | 22 | **confirmed_incident_count** | History | `login_sessions.is_account_takeover/is_attack_ip` | 🆕 |
+| 23 | **impossible_travel_score** | Geo velocity | `login_sessions.geo_country + created_at` | 🆕 |
 
 ---
 
@@ -243,6 +244,27 @@ Version 2.0 · 2026-06-14 · สถานะ: ชุด 22 features (ตัด 2
 
 ---
 
+## หมวด Geographic Velocity 🆕 (Phase 3.1)
+
+### 23. impossible_travel_score
+- **ข้อมูล:** `login_sessions.geo_country` + `created_at` (login ก่อนหน้า vs ปัจจุบัน)
+- **คำนวณ:** ถ้าเปลี่ยนประเทศ → `max(0, 1 − ชั่วโมงที่ห่าง / 24)` · ประเทศเดิม / ไม่มี geo / login แรก → 0
+  ```python
+  prev = login ล่าสุดที่มี geo_country (created_at < now)
+  if prev and prev.country != current_country:
+      hours = (now − prev.created_at) / 3600
+      score = max(0, min(1, 1 − hours/24))
+  ```
+- **Range:** 0–1
+- **เหตุผล:** มนุษย์บินข้ามประเทศใน 1 ชม. ไม่ได้ → เปลี่ยนประเทศเร็ว = บัญชีถูกใช้หลายที่ (ATO) [Microsoft Entra]
+- **✅ ทำได้ด้วย GeoLite2-Country ที่มีอยู่ — ไม่ต้อง lat/lon (City DB ที่ download ไม่ได้)**
+- **ตัวอย่าง:** TH→US ใน 1 ชม. → 1−1/24 = **0.96** · TH→JP ใน 6 ชม. → **0.75** · เกิน 24 ชม. → **0**
+
+> หมายเหตุ: Layer 1 rule มี hard-block impossible-travel (binary, country change < 1 ชม.) อยู่แล้ว —
+> feature นี้เป็นเวอร์ชัน **graded** ให้ IForest ใช้ร่วมกับ feature อื่น
+
+---
+
 # Features ที่ตัดออก (เก็บไว้อ้างอิง)
 
 | Feature | เหตุผลที่ตัด |
@@ -270,7 +292,8 @@ Version 2.0 · 2026-06-14 · สถานะ: ชุด 22 features (ตัด 2
 | `login_sessions` | is_account_takeover, is_attack_ip | 21 |
 | `passkey_credentials` | created_at, last_used_at, revoked_at | 12, 13, 14, 15 |
 | `subsystems` | scope | 19 |
-| `access_list` | granted_at, revoked_at | 20 |
+| `access_list` | granted_at, revoked_at | 20, 21 |
+| `login_sessions` | geo_country, created_at | 23 (impossible travel) |
 
 ---
 
