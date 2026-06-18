@@ -1,4 +1,4 @@
-"""สร้าง synthetic data สำหรับ train Isolation Forest (22 features).
+"""สร้าง synthetic data สำหรับ train Isolation Forest (23 features).
 
 จำลอง normal 10,000 + anomaly 500 ตาม 6 รูปแบบ:
   - night            ล็อกอินตี 0-5
@@ -210,7 +210,18 @@ def normal_session() -> list[float]:
         ]
         + normal_passkey_features()
         + normal_extra_features()
+        # impossible_travel_score — คนปกติแทบไม่เปลี่ยนประเทศเร็ว
+        + [round(random.uniform(0.0, 0.05), 3)]
     )
+
+
+def _anomaly_impossible(pattern: str) -> float:
+    """impossible_travel_score ต่อ pattern — foreign = เปลี่ยนประเทศเร็ว (สูง)."""
+    if pattern == "foreign":
+        return round(random.uniform(0.6, 1.0), 3)
+    if pattern == "passkey_takeover":
+        return round(random.uniform(0.0, 0.7), 3)  # บางทีมาจากต่างประเทศ
+    return round(random.uniform(0.0, 0.2), 3)
 
 
 def anomaly_session() -> list[float]:
@@ -298,7 +309,12 @@ def anomaly_session() -> list[float]:
         ]
         # passkey: เพิ่งเพิ่มเมื่อกี้ (takeover sign) — count, age<5ชม, recently=1, last_used ทันที
         passkey = [1, random.uniform(0, 0.2), 1, random.uniform(0, 0.2)]
-        return base + passkey + anomaly_extra_features(pattern)
+        return (
+            base
+            + passkey
+            + anomaly_extra_features(pattern)
+            + [_anomaly_impossible(pattern)]
+        )
     else:  # failed_spike — brute force
         day = random.randint(0, 6)
         base = [
@@ -315,7 +331,12 @@ def anomaly_session() -> list[float]:
             random.choices([5, 10, 15, 20, 30], weights=[20, 30, 25, 15, 10])[0],
         ]
 
-    return base + anomaly_passkey_features() + anomaly_extra_features(pattern)
+    return (
+        base
+        + anomaly_passkey_features()
+        + anomaly_extra_features(pattern)
+        + [_anomaly_impossible(pattern)]
+    )
 
 
 def main():
@@ -350,6 +371,7 @@ def main():
         "ever_changed_permission",
         "permission_change_age",
         "confirmed_incident_count",
+        "impossible_travel_score",
         "label",
     ]
 
@@ -358,12 +380,12 @@ def main():
         writer.writerow(headers)
         writer.writerows(rows)
 
-    print(f"✅ สร้าง dataset (22 features) แล้ว: {OUTPUT}")
+    print(f"✅ สร้าง dataset (23 features) แล้ว: {OUTPUT}")
     print(f"   normal:  {NORMAL_COUNT}")
     print(f"   anomaly: {ANOMALY_COUNT}")
     print(f"   total:   {len(rows)}")
-    # sanity: header (ไม่รวม label) ต้อง = 22
-    assert len(headers) - 1 == 22, f"feature count ผิด: {len(headers) - 1}"
+    # sanity: header (ไม่รวม label) ต้อง = 23
+    assert len(headers) - 1 == 23, f"feature count ผิด: {len(headers) - 1}"
 
 
 if __name__ == "__main__":

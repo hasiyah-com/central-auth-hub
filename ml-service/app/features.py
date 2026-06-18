@@ -1,6 +1,6 @@
 """Feature schema สำหรับ Login Anomaly Detection (Hybrid RBA).
 
-22 features (17 - ตัด is_weekend/has_passkey + เพิ่ม 7: 6 ใหม่ + ever_changed_permission)
+23 features (17 - ตัด is_weekend/has_passkey + เพิ่ม 7: 6 ใหม่ + ever_changed_permission)
 ทุก feature มี research-backed citation. ลำดับสำคัญ! Hub ส่ง list ตามลำดับนี้เป๊ะ (B27).
 
 ดูรายละเอียดแหล่งข้อมูล + วิธีคำนวณ: docs/guides/ML_FEATURE_DATA_SOURCES.md
@@ -17,6 +17,7 @@
   - OAuth       (1) — scope sensitivity               ← ใหม่
   - Privilege   (2) — ever_changed + permission change age ← ใหม่
   - History     (1) — confirmed incidents (ground-truth) ← ใหม่
+  - GeoVelocity (1) — impossible travel (country + เวลา; ไม่ต้อง lat/lon) ← Phase 3.1
 
 ตัดออก (collinear 100%):
   - is_weekend  = f(day_of_week)        → weekday_usage_score แทน (personalized)
@@ -57,6 +58,8 @@ FEATURE_NAMES: list[str] = [
     "permission_change_age",  # วันตั้งแต่เปลี่ยนสิทธิ์ล่าสุด (cap 365; ไม่เคยเปลี่ยน=365)
     # === History (1) — ใหม่ (ground-truth) ===
     "confirmed_incident_count",  # # incident จริงในอดีต (is_account_takeover/is_attack_ip)
+    # === Geographic velocity (1) — Phase 3.1 (append ท้าย กัน index shift) ===
+    "impossible_travel_score",  # 0-1 เปลี่ยนประเทศเร็วผิดปกติ (country + เวลา; ไม่ต้อง lat/lon)
 ]
 
 FEATURE_COUNT = len(FEATURE_NAMES)
@@ -85,4 +88,5 @@ FEATURE_RANGES: dict[str, tuple[float, float]] = {
     "ever_changed_permission": (0.0, 1.0),
     "permission_change_age": (0.0, 365.0),
     "confirmed_incident_count": (0.0, 1000.0),
+    "impossible_travel_score": (0.0, 1.0),
 }

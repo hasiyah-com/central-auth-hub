@@ -47,6 +47,7 @@ FEAT = {
     "ever_changed_permission": 19,
     "permission_change_age": 20,
     "confirmed_incident_count": 21,
+    "impossible_travel_score": 22,
 }
 
 # ============ Thresholds ============

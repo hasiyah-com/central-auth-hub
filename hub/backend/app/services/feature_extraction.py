@@ -1,4 +1,4 @@
-"""สกัด feature vector 22 ตัวจาก login session + history ใน DB.
+"""สกัด feature vector 23 ตัวจาก login session + history ใน DB.
 
 ลำดับต้องตรงกับ ml-service/app/features.py (B27):
   [hour_of_day, day_of_week, hours_from_typical_login_time,
@@ -166,7 +166,7 @@ def extract_session_features(
     now: datetime | None = None,
     subsystem_id=None,
 ) -> list[float]:
-    """คืน feature vector 22 ตัว.
+    """คืน feature vector 23 ตัว.
 
     subsystem_id: ใช้คำนวณ scope_sensitivity_score (None = Hub-direct → 0.0)
     """
@@ -396,6 +396,25 @@ def extract_session_features(
         or 0
     )
 
+    # === Geographic velocity (1) — Phase 3.1: impossible travel (country + เวลา) ===
+    # ไม่ต้อง lat/lon: เปลี่ยนประเทศเร็วผิดปกติ (เช่น TH→US ใน 1 ชม.) = score สูง
+    impossible_travel_score = 0.0
+    if geo_country:
+        prev = (
+            db.query(LoginSession.geo_country, LoginSession.created_at)
+            .filter(
+                LoginSession.user_id == user_id,
+                LoginSession.geo_country.is_not(None),
+                LoginSession.created_at < now,
+            )
+            .order_by(LoginSession.created_at.desc())
+            .first()
+        )
+        if prev and prev[0] and prev[0] != geo_country:
+            hours = max(0.0, (now - prev[1]).total_seconds() / 3600.0)
+            # เปลี่ยนประเทศ + ยิ่งเร็ว ยิ่งเป็นไปไม่ได้ (linear decay ถึง 24 ชม.)
+            impossible_travel_score = max(0.0, min(1.0, 1.0 - hours / 24.0))
+
     return [
         hour,
         day,
@@ -419,4 +438,5 @@ def extract_session_features(
         float(ever_changed_permission),
         float(permission_change_age),
         confirmed_incident_count,
+        float(impossible_travel_score),
     ]
