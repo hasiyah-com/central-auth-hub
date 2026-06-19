@@ -49,7 +49,7 @@ from app.services.hooks import (
     EVT_OAUTH_FAILURE,
     emit,
 )
-from app.services.jwt_service import create_subsystem_token
+from app.services.jwt_service import create_subsystem_token, revoke_jti
 from app.services.pkce import generate_pkce_pair, verify_pkce
 from app.security.risk_engine import evaluate_login_risk
 from app.services.secret_service import verify_secret
@@ -1145,9 +1145,22 @@ def logout(
         .first()
     )
     closed = False
+    revoked = False
     if sess:
         sess.logout_at = _dt.utcnow()
         closed = True
+        # Token Revocation — invalidate JWT จริง ไม่ใช่แค่ mark logout_at
+        # (ไม่งั้น subsystem token ยังใช้ได้จนถึง exp แม้ logout แล้ว)
+        if sess.jti:
+            from datetime import timedelta as _td, timezone as _tz
+
+            exp_unix = int(
+                (
+                    sess.created_at.replace(tzinfo=_tz.utc)
+                    + _td(minutes=settings.jwt_access_token_expire_minutes)
+                ).timestamp()
+            )
+            revoked = revoke_jti(sess.jti, exp_unix)
 
     log_action(
         db,
@@ -1159,10 +1172,11 @@ def logout(
         metadata={
             "session_closed": closed,
             "session_id": str(sess.id) if sess else None,
+            "token_revoked": revoked,
         },
     )
     db.commit()
-    return {"status": "ok", "session_closed": closed}
+    return {"status": "ok", "session_closed": closed, "token_revoked": revoked}
 
 
 # ============ Passkey enrollment interstitial (E) ============

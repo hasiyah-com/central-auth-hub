@@ -729,7 +729,7 @@ docker compose exec hub-backend pytest . -v -s
 | 7 | Subsystem B — ระบบห้องสมุด (FastAPI + Jinja2 + postgres-library) | ✅ |
 | 8 | Admin Dashboard frontend (Next.js) + audit log viewer + pending triage | ✅ |
 | 8.5 | Migration B — split docker-compose (Hub/Dorm/Library stacks) + SHAP TreeExplainer + LINE Login alternate IdP + Subsystem A React SPA + ML eval split/GeoIP + RBA 4-Layer scoring + secret rotation | ✅ |
-| 9-10 | Passkey 8 phase ✅ + **Risk-Triggered MFA via Passkey risk-stepup ✅** (B44-B48; legacy OTP-only flow ลบแล้ว) + ML 23-feature expansion ✅ + cross-subsystem risk ✅ · Session Downgrade ⏳ + Token Revocation ⏳ | 🔄 |
+| 9-10 | Passkey 8 phase ✅ + **Risk-Triggered MFA via Passkey risk-stepup ✅** (B44-B48; legacy OTP-only flow ลบแล้ว) + ML 23-feature expansion ✅ + cross-subsystem risk ✅ · Token Revocation ✅ · Session Downgrade ⏳ | 🔄 |
 | 11-12 | Security hardening (rate limit, CSRF, CSP, prod fail-fast) + threat-model doc + pentest checklist | ⏳ |
 | 13-14 | Test suite (pytest scaffold ✅) + Jest/RTL frontend tests + GitHub Actions CI + full documentation | ⏳ |
 | 15-16 | Buffer + thesis writing + defense | ⏳ |
@@ -752,9 +752,15 @@ docker compose exec hub-backend pytest . -v -s
 - 🗑️ legacy `routers/mfa.py` + `MFAChallenge` model + frontend `/auth/mfa` **ถูกลบ (2026-06-18)** —
   เป็น dead code ที่ถูก supersede (ไม่เคย register ใน main.py). `mfa_service.py` **ยังเก็บไว้** (passkey OTP fallback + recovery ใช้)
 
+**Token Revocation — เสร็จแล้ว (2026-06-18):**
+- ✅ Redis jti blacklist (`jwt_service.revoke_jti`/`is_revoked`, TTL = remaining exp) +
+  `verify_token` เช็ค `is_revoked` ทุกครั้ง (+ OIDC introspection)
+- ✅ revoke จุดต่างๆ: admin force-logout (`/admin/.../sessions/{id}/revoke`),
+  subsystem back-channel (`/oauth/logout`), **user self-logout (`/auth/logout`)** + mark `logout_at`
+- ✅ test: `tests/test_token_revocation.py` (5 tests)
+
 **สิ่งที่ยังไม่ทำ (Week 9–10 ที่เหลือ):**
 - ⚠️ Session Downgrade — restrict JWT claim + `require_write_access()` dependency ใน subsystems — design พร้อม (`docs/p2-session-downgrade-plan.md`) แต่ยัง implement ไม่เสร็จ
-- ⚠️ Token Revocation — ยังไม่มี Redis jti blacklist (JWT มี jti แล้ว แต่ยังไม่มี revoke list)
 
 **Strategy A (Single-stack Docker policy, 2026-05-21):**
 ใช้ main stack เท่านั้นเป็นปกติ — worktree stacks (cah-hub, cah-dorm worktrees) ใช้เฉพาะ experimental code isolation

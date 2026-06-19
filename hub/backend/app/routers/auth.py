@@ -15,7 +15,9 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.database import get_db
-from app.deps import get_client_ip, get_current_user
+from fastapi.security import HTTPAuthorizationCredentials
+
+from app.deps import bearer_scheme, get_client_ip, get_current_user
 from app.rate_limiter import limiter
 from app.models import LoginSession, User
 from app.services.audit_service import log_action
@@ -1137,6 +1139,58 @@ def _confirm_html(ok: bool, title: str, msg: str) -> str:
   <div class="footer">Central Auth Hub · One-time identity verification</div>
 </div>
 </body></html>"""
+
+
+@router.post("/logout")
+def logout(
+    request: Request,
+    credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
+    db: Session = Depends(get_db),
+):
+    """User logout ตัวเอง — revoke JWT ปัจจุบัน (Token Revocation).
+
+    decode token → revoke jti (Redis blacklist จนถึง exp) + mark LoginSession.logout_at
+    → token ใช้ต่อไม่ได้ทันที (verify_token เช็ค is_revoked). idempotent.
+    """
+    from datetime import datetime as _dt
+
+    from app.services.jwt_service import revoke_jti, verify_token
+
+    try:
+        payload = verify_token(credentials.credentials)
+    except Exception:
+        # token เสีย/หมดอายุ/revoke แล้ว → ถือว่า logout สำเร็จ (idempotent)
+        return {"status": "ok", "token_revoked": False}
+
+    jti = payload.get("jti")
+    revoked = revoke_jti(jti, int(payload["exp"])) if jti else False
+
+    # mark active hub-direct session ของ user นี้
+    user_id = payload.get("sub")
+    if user_id:
+        sess = (
+            db.query(LoginSession)
+            .filter(
+                LoginSession.user_id == user_id,
+                LoginSession.subsystem_id.is_(None),
+                LoginSession.logout_at.is_(None),
+            )
+            .order_by(LoginSession.created_at.desc())
+            .first()
+        )
+        if sess:
+            sess.logout_at = _dt.utcnow()
+        log_action(
+            db,
+            actor_id=user_id,
+            action="hub_logout",
+            target_type="user",
+            target_id=user_id,
+            ip=get_client_ip(request),
+            metadata={"token_revoked": revoked},
+        )
+        db.commit()
+    return {"status": "ok", "token_revoked": revoked}
 
 
 @router.get("/me")
