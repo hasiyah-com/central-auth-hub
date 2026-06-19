@@ -151,7 +151,7 @@ def main():
     X_train_normal = X_train[y_train == 0]
     model = IsolationForest(
         n_estimators=100,
-        contamination=0.05,  # คาดว่าใน production จะมี anomaly ~5%
+        contamination=0.02,  # calibrate 0.05→0.02: normal จริง df>0 ชัดขึ้น
         max_samples=256,
         random_state=RANDOM_STATE,
         n_jobs=-1,

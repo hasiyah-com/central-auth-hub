@@ -78,7 +78,7 @@ def normal_passkey_features() -> list[float]:
     if not has_pk:
         return [0, 0, 0, 0]
     count = random.choices([1, 2, 3], weights=[70, 25, 5])[0]
-    age = random.uniform(14, 400)
+    age = random.uniform(1, 400)  # รวม passkey ที่เพิ่ง enroll (< 14 วัน) = ปกติ
     recently_added = random.choices([0, 1], weights=[98, 2])[0]
     last_used = random.uniform(0, 14)
     return [count, age, recently_added, last_used]
@@ -109,8 +109,10 @@ def normal_extra_features() -> list[float]:
     """
     concurrent = random.choices([0, 1, 2, 3], weights=[40, 35, 18, 7])[0]
     active_sub = random.choices([0, 1, 2], weights=[45, 40, 15])[0]
-    weekday_usage = round(random.uniform(0.0, 0.6), 3)
-    scope_sens = 0.0 if random.random() < 0.40 else round(random.uniform(0.1, 0.6), 3)
+    # weekday_usage: history น้อย (ระบบจริง) → ค่าสูงได้แม้ปกติ → ครอบ 0-0.9
+    weekday_usage = round(random.uniform(0.0, 0.9), 3)
+    # scope: subsystem ขอ scope sensitive (student_id ฯลฯ) จนถึง 1.0 ได้ปกติ
+    scope_sens = 0.0 if random.random() < 0.35 else round(random.uniform(0.1, 1.0), 3)
     if random.random() < 0.85:
         ever_changed, perm_age = 0, PERM_AGE_CAP  # ไม่เคยเปลี่ยน
     else:
@@ -189,7 +191,9 @@ def normal_session() -> list[float]:
     is_new_ua_family = (
         0 if is_new_device == 0 else random.choices([0, 1], weights=[70, 30])[0]
     )
-    log_min_last = random.uniform(2.0, 6.0)
+    # logmin ครอบทั้ง re-login เร็ว/แรก (ติดลบ ~−0.7) ถึง gap ปกติ — real fresh login
+    # ได้ negative บ่อย (ก่อนหน้านี้ synthetic normal=2..6 ทำให้ real เป็น OOD)
+    log_min_last = random.uniform(-1.0, 7.0)
     login_count_24h = random.choices(
         [1, 2, 3, 4, 5, 6], weights=[20, 25, 25, 15, 10, 5]
     )[0]
