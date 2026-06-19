@@ -365,6 +365,9 @@ function BreakdownBar({
  */
 function ShapBreakdown({ items }: { items: ShapContribution[] }) {
   const maxAbs = Math.max(...items.map((i) => Math.abs(i.shap)), 0.001);
+  const COLLAPSED = 6;
+  const [showAll, setShowAll] = useState(false);
+  const shown = showAll ? items : items.slice(0, COLLAPSED);
 
   return (
     <div className="mt-3 p-3 rounded-lg bg-amber-50/50 border border-amber-200">
@@ -372,13 +375,13 @@ function ShapBreakdown({ items }: { items: ShapContribution[] }) {
         <span>SHAP (Layer 3 · IForest)</span>
         <span
           className="text-amber-500 font-normal normal-case tracking-normal"
-          title="Top features ranked by |SHAP value|. Red = pushed score toward anomaly, green = toward normal."
+          title="ทุก feature เรียงตาม |SHAP|. แดง = ดันไป anomaly, เขียว = ดันไป normal. (หน่วย SHAP = decision-function ไม่ใช่ 0-1)"
         >
-          (top {items.length})
+          {showAll ? `ทั้งหมด ${items.length}` : `top ${Math.min(COLLAPSED, items.length)} / ${items.length}`}
         </span>
       </div>
       <div className="space-y-1.5">
-        {items.map((it, i) => {
+        {shown.map((it, i) => {
           const pct = Math.round((Math.abs(it.shap) / maxAbs) * 100);
           const isAnomaly = it.direction === "anomaly";
           const bar = isAnomaly ? "bg-rose-500" : "bg-emerald-500";
@@ -407,6 +410,14 @@ function ShapBreakdown({ items }: { items: ShapContribution[] }) {
           );
         })}
       </div>
+      {items.length > COLLAPSED && (
+        <button
+          onClick={() => setShowAll((v) => !v)}
+          className="mt-2 text-[11px] font-medium text-amber-700 hover:text-amber-900 hover:underline"
+        >
+          {showAll ? "▲ ย่อ" : `▼ ดูทั้งหมด (${items.length} features)`}
+        </button>
+      )}
     </div>
   );
 }
