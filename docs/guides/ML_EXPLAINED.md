@@ -53,6 +53,39 @@ login → [Layer 1 Rule] → ถ้า hard block → block ทันที
 
 ---
 
+## 2.5 ป้ายไทยใน Dashboard ↔ feature name
+
+ดีเทล session บน dashboard แสดง **ป้ายไทย** — ตารางนี้ map กลับเป็นชื่อ feature จริง
+(source: `hub/frontend/app/(console)/ml/_types.ts:FEATURE_LABEL_TH`)
+
+| # | ป้ายไทย (dashboard) | feature name |
+|---|---|---|
+| 1 | ชั่วโมงที่ล็อกอิน | `hour_of_day` |
+| 2 | วันในสัปดาห์ | `day_of_week` |
+| 3 | ห่างจากเวลาที่ใช้ประจำ | `hours_from_typical_login_time` |
+| 4 | ล็อกอินจากไทย | `is_thailand` |
+| 5 | ประเทศใหม่ | `is_new_country` |
+| 6 | จำนวนประเทศใน 30 วัน | `country_change_count_30d` |
+| 7 | อุปกรณ์ใหม่ | `is_new_device` |
+| 8 | เบราว์เซอร์ใหม่ | `is_new_user_agent_family` |
+| 9 | เวลาห่างจากล็อกอินก่อนหน้า | `log_minutes_since_last_login` |
+| 10 | จำนวนล็อกอินใน 24 ชม. | `login_count_24h` |
+| 11 | ล็อกอินล้มเหลวใน 24 ชม. | `failed_logins_24h` |
+| 12 | จำนวน Passkey | `passkey_count` |
+| 13 | อายุ Passkey (วัน) | `passkey_age_days` |
+| 14 | เพิ่ง เพิ่ม Passkey | `new_passkey_recently_added` |
+| 15 | ใช้ Passkey ล่าสุด (วัน) | `passkey_last_used_days` |
+| 16 | เซสชันพร้อมกัน | `concurrent_session_count` |
+| 17 | ระบบย่อยที่ใช้พร้อมกัน | `active_subsystem_count` |
+| 18 | วันที่ผิดจากปกติ | `weekday_usage_score` |
+| 19 | ความอ่อนไหวของ scope | `scope_sensitivity_score` |
+| 20 | เคยเปลี่ยนสิทธิ์ | `ever_changed_permission` |
+| 21 | เพิ่งเปลี่ยนสิทธิ์ (วัน) | `permission_change_age` |
+| 22 | เหตุการณ์เสี่ยงในอดีต | `confirmed_incident_count` |
+| 23 | เดินทางเร็วผิดปกติ | `impossible_travel_score` |
+
+---
+
 ## 3. 23 Features — ข้อมูล / สูตร / ตัวอย่าง / หน่วย
 
 > ค่าทั้งหมดสกัดตอน login จาก **request ปัจจุบัน + ประวัติใน DB** (`feature_extraction.py`)
@@ -107,8 +140,18 @@ login → [Layer 1 Rule] → ถ้า hard block → block ทันที
 
 **9. log_minutes_since_last_login** — เวลาห่างจาก login ก่อน (log)
 - ข้อมูล: created_at ของ session ล่าสุด · สูตร: `ln(max(Δนาที, 0.5))` · ไม่มี login เก่า = 6.0
-- ตัวอย่าง: ห่าง 60 นาที → ln(60) = **4.09**
-- หน่วย: ln(นาที) — log scale
+- หน่วย: ln(นาที) — log scale (ค่าติดลบ = login ซ้ำเร็วกว่า 1 นาที)
+- **ตัวอย่าง + พิสูจน์ (เช่นค่า −0.38 ที่เห็นใน dashboard):**
+
+  | Δ ห่างจาก login ก่อน | คำนวณ | ค่า |
+  |---|---|---|
+  | ≤ 30 วินาที (clamp 0.5) | ln(0.5) | **−0.69** (เพดานต่ำสุด) |
+  | **41 วินาที (0.68 นาที)** | ln(0.68) | **−0.38** ← พิสูจน์: e^(−0.38)=0.68 นาที=41 วิ |
+  | 1 นาที | ln(1) | **0.00** |
+  | 5 นาที | ln(5) | **+1.61** |
+  | 60 นาที | ln(60) | **+4.09** |
+
+  → **−0.38 แปลว่า login ก่อนหน้าห่างแค่ ~41 วินาที** (re-login เร็วผิดปกติ → SHAP ดันไป anomaly)
 
 **10. login_count_24h** — จำนวนล็อกอินใน 24 ชม.
 - ข้อมูล: นับ session ใน 24 ชม. · สูตร: COUNT
