@@ -170,12 +170,13 @@ def score(req: ScoreRequest, request: Request):
 
     Standard response wrapper: {data: {...}, meta: {...}}
 
-    `data.explanation` lists top-5 features by |SHAP contribution|. Empty
-    list means SHAP wasn't available (Hub will fall back to Layer 1+2
-    reasons only — never crashes).
+    `data.explanation` lists **ทุก feature** เรียงตาม |SHAP contribution| (มาก→น้อย).
+    Empty list means SHAP wasn't available (Hub will fall back to Layer 1+2
+    reasons only — never crashes). UI เลือกแสดง top-N เอง.
     """
     try:
-        s, explanation = predict_with_explanation(req.features, top_k=5)
+        # ส่ง SHAP ครบทุก feature (UI/dashboard เลือกแสดง top-N หรือทั้งหมดเอง)
+        s, explanation = predict_with_explanation(req.features, top_k=FEATURE_COUNT)
     except FileNotFoundError as e:
         raise HTTPException(status_code=503, detail=str(e))
 
