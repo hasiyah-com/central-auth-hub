@@ -16,11 +16,12 @@
 <body>
   <div id="root"></div>
 
-  <!-- React 18 + ReactDOM + Babel standalone — self-hosted (เลิกพึ่ง unpkg CDN
-       เพราะ dev ไม่มีเน็ต/adblock บล็อก → app ไม่ render = หน้าว่าง) -->
-  <script src="/static/vendor/react.production.min.js"></script>
-  <script src="/static/vendor/react-dom.production.min.js"></script>
-  <script src="/static/vendor/babel.min.js"></script>
-  <script type="text/babel" src="/static/app.js?v=5"></script>
+  <!-- React 18 + ReactDOM + Babel 7.x standalone — self-hosted (เลิกพึ่ง unpkg CDN)
+       babel 7.x = classic JSX runtime (React.createElement ใช้ global React) —
+       กัน automatic runtime ของ babel 8 ที่ inject `import {jsx}` → classic script พัง -->
+  <script src="/static/vendor/react.production.min.js?v=7"></script>
+  <script src="/static/vendor/react-dom.production.min.js?v=7"></script>
+  <script src="/static/vendor/babel.min.js?v=7"></script>
+  <script type="text/babel" src="/static/app.js?v=7"></script>
 </body>
 </html>

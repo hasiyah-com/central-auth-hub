@@ -1,3 +1,7 @@
+/** @jsxRuntime classic */
+/* บังคับ JSX → React.createElement (ใช้ global React) — กัน Babel automatic runtime
+   ที่ inject `import {jsx} from "react/jsx-runtime"` ทำให้ classic script พัง
+   ("Cannot use import statement outside a module") */
 /* ============================================================
    ระบบหอพักนักศึกษา — React SPA
    Theme B · Hostel Pop (Bauhaus) · Sidebar layout
