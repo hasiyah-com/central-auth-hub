@@ -9,6 +9,8 @@ repos:
     hooks:
       - id: check-added-large-files
         args: ['--maxkb=500']
+        # vendor JS (babel standalone 2.4MB) self-host แทน CDN — intentional, exempt
+        exclude: ^hub/subsystem-dorm/app/static/vendor/
       - id: check-yaml
         exclude: ^docker-compose\.ya?ml$  # docker-compose ใช้ !reset tag custom, skip
       - id: check-json
