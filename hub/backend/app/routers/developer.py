@@ -19,12 +19,13 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.database import get_db
 from app.deps import get_client_ip, require_developer
-from app.models import AccessList, SecretRetrievalToken, Subsystem, User
+from app.models import AccessList, LoginSession, SecretRetrievalToken, Subsystem, User
 from app.rate_limiter import limiter
 from app.services.audit_service import log_action
 from app.services.critical_action_policy import gate as _stepup_gate
 from app.services.change_request_service import create_request as create_change_request
 from app.services.email_service import send_secret_retrieval_email
+from app.services.jwt_service import revoke_jti
 from app.services.webhook_dispatcher import send_access_revoked
 from app.services.secret_service import (
     encrypt_secret,
@@ -621,6 +622,7 @@ def add_user_to_whitelist(
         existing.revoked_at = None
         existing.role_in_sub = role_clean
         existing.granted_by = user.id
+        existing.granted_at = datetime.utcnow()  # re-grant → อัปเดตเวลา (ML perm_age ถูก)
         action = "whitelist_user_restored"
     else:
         db.add(
@@ -705,6 +707,32 @@ def remove_user_from_whitelist(
     # soft delete — ไม่ลบ record จริง เก็บประวัติไว้
     entry.revoked_at = datetime.utcnow()
 
+    # Close active Hub LoginSession(s) ของ user นี้ใน subsystem นี้ + revoke JWT
+    # (ไม่งั้น admin dashboard "ผู้ใช้กำลัง active" ค้างจนกว่า JWT จะหมดอายุ)
+    active_sessions = (
+        db.query(LoginSession)
+        .filter(
+            LoginSession.subsystem_id == subsystem.id,
+            LoginSession.user_id == user_id,
+            LoginSession.logout_at.is_(None),
+        )
+        .all()
+    )
+    closed_count = 0
+    revoked_jti_count = 0
+    for sess in active_sessions:
+        sess.logout_at = datetime.utcnow()
+        closed_count += 1
+        if sess.jti:
+            exp_unix = int(
+                (
+                    sess.created_at
+                    + timedelta(minutes=settings.jwt_access_token_expire_minutes)
+                ).timestamp()
+            )
+            if revoke_jti(sess.jti, exp_unix):
+                revoked_jti_count += 1
+
     log_action(
         db,
         actor_id=user.id,
@@ -712,7 +740,11 @@ def remove_user_from_whitelist(
         target_type="subsystem",
         target_id=subsystem.id,
         ip=get_client_ip(request),
-        metadata={"removed_user_id": user_id},
+        metadata={
+            "removed_user_id": user_id,
+            "sessions_closed": closed_count,
+            "jti_revoked": revoked_jti_count,
+        },
     )
     db.commit()
 

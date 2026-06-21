@@ -30,12 +30,14 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.models import (
     AccessList,
+    LoginSession,
     SecretRetrievalToken,
     Subsystem,
     SubsystemChangeRequest,
     User,
 )
 from app.services.audit_service import log_action
+from app.services.jwt_service import revoke_jti
 from app.services.secret_service import (
     encrypt_secret,
     generate_client_credentials,
@@ -200,13 +202,51 @@ def _apply_rotate_secret(db: Session, subsystem: Subsystem) -> dict[str, Any]:
     }
 
 
+def close_subsystem_login_sessions(
+    db: Session,
+    subsystem_id: Any,
+    user_ids: list[str] | None = None,
+) -> dict[str, int]:
+    """Mark LoginSession.logout_at + revoke jti สำหรับ session ที่ยัง active.
+
+    user_ids=None → ทุก user ใน subsystem (ใช้กับ config change: scope/roles/redirect,
+                    subsystem suspend)
+    user_ids=[...] → เฉพาะ user ที่ระบุ (ใช้กับ role change รายคน/batch)
+
+    ทำเพื่อให้ Active Sessions panel ที่ Hub สะท้อนสถานะจริง (kicked ทันที
+    ไม่ค้างจนกว่า JWT จะหมดอายุ) — mirror logic ของ remove_user_from_whitelist
+    """
+    q = db.query(LoginSession).filter(
+        LoginSession.subsystem_id == subsystem_id,
+        LoginSession.logout_at.is_(None),
+    )
+    if user_ids is not None:
+        if not user_ids:
+            return {"closed": 0, "jti_revoked": 0}
+        q = q.filter(LoginSession.user_id.in_(user_ids))
+
+    now = datetime.utcnow()
+    closed = 0
+    revoked = 0
+    ttl = timedelta(minutes=settings.jwt_access_token_expire_minutes)
+    for sess in q.all():
+        sess.logout_at = now
+        closed += 1
+        if sess.jti:
+            exp_unix = int((sess.created_at + ttl).timestamp())
+            if revoke_jti(sess.jti, exp_unix):
+                revoked += 1
+    return {"closed": closed, "jti_revoked": revoked}
+
+
 def _apply_edit_scope(
     db: Session, subsystem: Subsystem, payload: dict[str, Any]
 ) -> dict[str, Any]:
     new_scope = list(payload.get("scope") or [])
     old_scope = list(subsystem.scope or [])
     subsystem.scope = new_scope
-    return {"old_scope": old_scope, "new_scope": new_scope}
+    closed = close_subsystem_login_sessions(db, subsystem.id)
+    return {"old_scope": old_scope, "new_scope": new_scope, **closed}
 
 
 def _apply_edit_allowed_roles(
@@ -215,7 +255,12 @@ def _apply_edit_allowed_roles(
     new_roles = list(payload.get("allowed_roles") or [])
     old_roles = list(subsystem.allowed_roles or [])
     subsystem.allowed_roles = new_roles
-    return {"old_allowed_roles": old_roles, "new_allowed_roles": new_roles}
+    closed = close_subsystem_login_sessions(db, subsystem.id)
+    return {
+        "old_allowed_roles": old_roles,
+        "new_allowed_roles": new_roles,
+        **closed,
+    }
 
 
 def _apply_edit_redirect_uris(
@@ -224,7 +269,12 @@ def _apply_edit_redirect_uris(
     new_uris = list(payload.get("redirect_uris") or [])
     old_uris = list(subsystem.redirect_uris or [])
     subsystem.redirect_uris = new_uris
-    return {"old_redirect_uris": old_uris, "new_redirect_uris": new_uris}
+    closed = close_subsystem_login_sessions(db, subsystem.id)
+    return {
+        "old_redirect_uris": old_uris,
+        "new_redirect_uris": new_uris,
+        **closed,
+    }
 
 
 def _apply_change_whitelist_role(
@@ -260,10 +310,15 @@ def _apply_change_whitelist_role(
 
     old_role = entry.role_in_sub
     entry.role_in_sub = new_role
+    entry.granted_at = (
+        datetime.utcnow()
+    )  # role change = permission change → อัปเดตเวลา (ML perm_age ถูก)
+    closed = close_subsystem_login_sessions(db, subsystem.id, user_ids=[uid])
     return {
         "user_id": uid,
         "old_role": old_role,
         "new_role": new_role,
+        **closed,
     }
 
 
@@ -314,12 +369,16 @@ def _apply_bulk_change_whitelist_roles(
             {"user_id": uid, "old_role": entry.role_in_sub, "new_role": role}
         )
         entry.role_in_sub = role
+        entry.granted_at = datetime.utcnow()  # role change → อัปเดตเวลา (ML perm_age ถูก)
 
+    changed_uids = [c["user_id"] for c in changed]
+    closed = close_subsystem_login_sessions(db, subsystem.id, user_ids=changed_uids)
     return {
         "changed_count": len(changed),
         "skipped_count": len(skipped),
         "changes": changed,
         "skipped": skipped,
+        **closed,
     }
 
 

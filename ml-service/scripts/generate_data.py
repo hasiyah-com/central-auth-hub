@@ -113,10 +113,12 @@ def normal_extra_features() -> list[float]:
     weekday_usage = round(random.uniform(0.0, 0.9), 3)
     # scope: subsystem ขอ scope sensitive (student_id ฯลฯ) จนถึง 1.0 ได้ปกติ
     scope_sens = 0.0 if random.random() < 0.35 else round(random.uniform(0.1, 1.0), 3)
-    if random.random() < 0.85:
-        ever_changed, perm_age = 0, PERM_AGE_CAP  # ไม่เคยเปลี่ยน
+    # user ระบบย่อยส่วนใหญ่ "มี grant" (ever=1) = ปกติ — grant เก่า (age 7-365)
+    # ever=0 เฉพาะ Hub-direct/ไม่มี subsystem grant. (กัน user มี role ดูผิดปกติ)
+    if random.random() < 0.65:
+        ever_changed, perm_age = 1, round(random.uniform(7, 365), 1)  # มี grant เก่า
     else:
-        ever_changed, perm_age = 1, round(random.uniform(5, 300), 1)
+        ever_changed, perm_age = 0, PERM_AGE_CAP  # Hub-direct / ไม่มี grant
     confirmed = random.choices([0, 1], weights=[99, 1])[0]
     return [
         concurrent,
@@ -150,19 +152,19 @@ def anomaly_extra_features(pattern: str) -> list[float]:
 
     if pattern == "passkey_takeover":
         scope_sens = round(random.uniform(0.5, 1.0), 3)  # เล็งข้อมูล sensitive
-        ever_changed = 1  # เพิ่งได้สิทธิ์ (escalation)
-        perm_age = round(random.uniform(0, 5), 2)  # เปลี่ยนเมื่อกี้
+        ever_changed = 1  # เพิ่งได้/เปลี่ยนสิทธิ์ (escalation)
+        perm_age = round(random.uniform(0, 4), 2)  # เปลี่ยนเมื่อกี้ (< normal 7 = สัญญาณ)
         confirmed = random.choices([0, 1, 2], weights=[50, 35, 15])[0]
     else:
         # การโจมตีอื่น (night/foreign/burst/...) ไม่เกี่ยวกับ permission change
-        # → ส่วนใหญ่ไม่เคยเปลี่ยน เหมือน normal (perm_age ต่ำ = สัญญาณ takeover ล้วนๆ)
+        # → ever/perm distribution เหมือน normal (perm_age ต่ำมาก = สัญญาณ takeover ล้วนๆ)
         scope_sens = (
             0.0 if random.random() < 0.3 else round(random.uniform(0.1, 0.8), 3)
         )
-        if random.random() < 0.8:
-            ever_changed, perm_age = 0, PERM_AGE_CAP
+        if random.random() < 0.65:
+            ever_changed, perm_age = 1, round(random.uniform(7, 365), 1)
         else:
-            ever_changed, perm_age = 1, round(random.uniform(5, 300), 1)
+            ever_changed, perm_age = 0, PERM_AGE_CAP
         confirmed = random.choices([0, 1], weights=[85, 15])[0]
 
     return [
