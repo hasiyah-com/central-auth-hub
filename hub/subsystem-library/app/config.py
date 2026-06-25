@@ -24,6 +24,11 @@ class Settings(BaseSettings):
     # Hub URLs
     hub_internal_url: str = "http://hub-backend:8000"
     hub_public_url: str = "http://localhost:8000"
+    # Hub frontend (Next.js) — สำหรับ link ไปหน้า passkey recover ของ Hub
+    hub_frontend_url: str = "http://localhost:3000"
+
+    # Public URL ของ subsystem ตัวเอง — ใช้ encode เป็น return_to ตอนลิงก์ไป Hub
+    library_public_url: str = "http://localhost:8002"
 
     # Callback URL ของ subsystem (ต้อง register กับ Hub)
     library_callback_url: str = "http://localhost:8002/oauth/callback"

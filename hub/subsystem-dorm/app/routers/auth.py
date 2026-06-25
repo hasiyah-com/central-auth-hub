@@ -74,7 +74,19 @@ def login_page(
     """หน้า login — ถ้า login อยู่แล้ว redirect ไปหน้าแรก."""
     if user is not None:
         return RedirectResponse(url="/app.html", status_code=302)
-    return templates.TemplateResponse("login.html", {"request": request})
+    # passkey recover URL ของ Hub (backend, same-origin กับ OAuth flow)
+    # พร้อม return_to กลับมาที่หน้า login ของ subsystem
+    from urllib.parse import quote
+    from app.config import settings as _s
+
+    recover_url = (
+        f"{_s.hub_public_url}/oauth/passkey/recover"
+        f"?return_to={quote(_s.dorm_public_url + '/login', safe='')}"
+    )
+    return templates.TemplateResponse(
+        "login.html",
+        {"request": request, "passkey_recover_url": recover_url},
+    )
 
 
 # ============ /oauth/start ============

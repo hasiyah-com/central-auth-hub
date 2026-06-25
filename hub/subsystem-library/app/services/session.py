@@ -2,6 +2,7 @@
 
 HttpOnly + SameSite=Lax + secure (controlled by env)
 """
+
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 
 from app.config import settings

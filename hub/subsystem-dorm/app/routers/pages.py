@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.deps import CurrentUser, get_current_user, get_current_user_optional
-from app.models import Reservation, Resident, Room
+from app.models import DormAuditLog, Reservation, Resident, Room
 
 router = APIRouter()
 templates = Jinja2Templates(directory="app/templates")
@@ -78,6 +78,84 @@ def api_me(
         .order_by(Reservation.created_at.desc())
         .all()
     )
+
+    # ── Staff/teacher block: managed stats + their recent actions ──
+    work_stats: dict | None = None
+    recent_actions: list[dict] = []
+    if user.role_in_sub in ("staff", "teacher"):
+        from datetime import datetime
+
+        now = datetime.utcnow()
+        first_of_month = datetime(now.year, now.month, 1)
+
+        total_residents = db.query(func.count(Resident.id)).scalar() or 0
+        total_rooms = db.query(func.count(Room.id)).scalar() or 0
+        pending_res = (
+            db.query(func.count(Reservation.id))
+            .filter(
+                Reservation.status == "pending",
+                Reservation.cancelled_at.is_(None),
+            )
+            .scalar()
+            or 0
+        )
+        approved_this_month = (
+            db.query(func.count(Reservation.id))
+            .filter(
+                Reservation.status.in_(["approved", "checked_in"]),
+                Reservation.approved_at.is_not(None),
+                Reservation.approved_at >= first_of_month,
+            )
+            .scalar()
+            or 0
+        )
+        my_actions_this_month = (
+            db.query(func.count(DormAuditLog.id))
+            .filter(
+                DormAuditLog.actor_hub_user_id == user.hub_user_id,
+                DormAuditLog.created_at >= first_of_month,
+            )
+            .scalar()
+            or 0
+        )
+        # First action ของ user คนนี้ (proxy "first_login" ของ staff/teacher)
+        first_action = (
+            db.query(DormAuditLog.created_at)
+            .filter(DormAuditLog.actor_hub_user_id == user.hub_user_id)
+            .order_by(DormAuditLog.created_at.asc())
+            .first()
+        )
+        work_stats = {
+            "total_residents": total_residents,
+            "total_rooms": total_rooms,
+            "pending_reservations": pending_res,
+            "approved_this_month": approved_this_month,
+            "my_actions_this_month": my_actions_this_month,
+            "first_action_at": (
+                first_action[0].isoformat()
+                if first_action and first_action[0]
+                else None
+            ),
+        }
+        # ประวัติการทำงานล่าสุด 10 รายการ
+        logs = (
+            db.query(DormAuditLog)
+            .filter(DormAuditLog.actor_hub_user_id == user.hub_user_id)
+            .order_by(DormAuditLog.created_at.desc())
+            .limit(10)
+            .all()
+        )
+        recent_actions = [
+            {
+                "action": lg.action,
+                "target_type": lg.target_type,
+                "target_id": str(lg.target_id) if lg.target_id else None,
+                "metadata": lg.metadata_json or {},
+                "created_at": lg.created_at.isoformat() if lg.created_at else None,
+            }
+            for lg in logs
+        ]
+
     return JSONResponse(
         {
             "user": {
@@ -103,6 +181,8 @@ def api_me(
                 {"reservation": _reservation_dict(r), "room": _room_dict(rm)}
                 for r, rm in reservations
             ],
+            "work_stats": work_stats,
+            "recent_actions": recent_actions,
         }
     )
 
