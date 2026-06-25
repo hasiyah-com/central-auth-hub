@@ -5,6 +5,7 @@
 
 Advisory only — exit 0
 """
+
 import json
 import sys
 from pathlib import PurePosixPath
@@ -33,7 +34,6 @@ def main() -> int:
         return 0
 
     has_raise = "raise HTTPException" in content
-    has_commit = "db.commit()" in content
     has_log_action = "log_action(" in content
 
     if has_raise and has_log_action:

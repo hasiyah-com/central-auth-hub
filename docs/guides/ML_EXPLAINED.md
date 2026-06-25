@@ -45,6 +45,11 @@ login → [Layer 1 Rule] → ถ้า hard block → block ทันที
 - ต้องมี history ≥ 5 session (ไม่งั้น cold start score = 0.20)
 - **feature ที่อ่าน:** `hours_from_typical_login_time` `is_new_country` `is_new_device` `day_of_week` (คำนวณ weekend)
 
+reason (Layer 2) |  มาจาก feature	                                              | วิธีคิด (behavior_profiling.py)
+hours_diff	     | #3 hours_from_typical_login_time(ป้ายไทย "ห่างจากเวลาที่ใช้ประจำ") | hours_diff = features[hours_from_typical] · ≥10 → +0.40, ≥6 → +0.20
+weekend_mismatch | #2 day_of_week (เทียบกับ profile)	                    | current_weekend = day_of_week >= 5 แล้วเทียบกับ typical_weekend ของ user (จาก 30 วัน) · ต่างกัน → +0.10
+
+
 ### Layer 3 — Isolation Forest
 - ใช้ **ครบทั้ง 23 features** → anomaly score → map เป็น 0–0.4 + SHAP per-feature
 

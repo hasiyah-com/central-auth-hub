@@ -3,6 +3,7 @@
 Advisory: print error ไป stderr แต่ exit 0 (ไม่ block flow)
 ทำให้ Claude เห็น error แล้วแก้รอบถัดไป
 """
+
 import json
 import py_compile
 import sys
