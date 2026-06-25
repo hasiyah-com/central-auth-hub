@@ -6,6 +6,8 @@ design-bundle.bin
 .env
 .env.local
 .env.*.local
+.env.prod
+.env.*.prod
 *.pem
 *.key
 keys/
@@ -70,6 +72,10 @@ hub/backend/data/*.mmdb
 ml-service/data/benchmark_rba.csv
 ml-service/data/rba_base_sample.csv
 ml-service/data/real_only_rba.csv
+ml-service/data/synthetic_attacks_40.csv
+ml-service/data/real_users.csv
+ml-service/data/real_access.csv
+ml-service/data/simulated_month.csv
 ml-service/data/shap/
 hub/frontend/tsconfig.tsbuildinfo
 

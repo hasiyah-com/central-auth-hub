@@ -1,0 +1,6 @@
+# http-context helpers (loaded ก่อน server blocks ด้วย prefix 00-)
+# $connection_upgrade — ใช้ใน proxy-params.conf สำหรับ WebSocket upgrade
+map $http_upgrade $connection_upgrade {
+    default upgrade;
+    ''      close;
+}

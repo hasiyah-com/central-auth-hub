@@ -1,0 +1,153 @@
+# Hub Auth Platform — PRODUCTION stack (cah-hub)
+#
+# Standalone production compose (NOT an override of docker-compose.yml — Compose
+# *appends* list options like `ports`/`volumes`, so a dev base can't have them
+# removed by an override. A separate file is the only way to guarantee NO host
+# ports and NO source mounts in prod).
+#
+# Differences from dev (docker-compose.yml):
+#   - NO host `ports:` except nginx 80/443  → backend/frontend/ml/pg/redis เข้าได้แค่ผ่าน cah-net
+#   - NO source `volumes:` mounts            → ใช้ image ที่ build แล้ว (immutable)
+#   - NO `--reload`                          → uvicorn proxy-headers, frontend `next start`
+#   - `restart: unless-stopped`              → ทุก service
+#   - nginx + certbot                        → TLS termination (Let's Encrypt), 4 subdomains
+#   - JWT keys / GeoIP                        → persist ผ่าน named volume / bind mount
+#
+# Run (interpolation + container env ต้องอ่านจาก .env.prod):
+#   docker network create cah-net          # ครั้งแรกเท่านั้น (ถ้ายังไม่มี)
+#   docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --build
+# หรือใช้ helper: bash deploy/up.sh hub
+#
+# ก่อน start ครั้งแรก: ออก cert ด้วย bash deploy/init-letsencrypt.sh (ดู DEPLOYMENT.md)
+
+name: cah-hub
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: hub-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?set in .env.prod}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set in .env.prod}
+      POSTGRES_DB: ${POSTGRES_DB:?set in .env.prod}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    # ไม่มี ports: — เข้าถึงได้แค่ภายใน cah-net
+
+  redis:
+    image: redis:7-alpine
+    container_name: hub-redis
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    # ไม่มี ports: — internal only (ไม่มี auth เพราะไม่ expose ออก public)
+
+  ml-service:
+    build:
+      context: ./ml-service
+      dockerfile: Dockerfile
+    container_name: hub-ml
+    restart: unless-stopped
+    # ไม่มี ports: — hub-backend เรียกผ่าน http://ml-service:9000 (cah-net) เท่านั้น
+    # persist model + data (ไม่มี source mount แล้ว → train ครั้งเดียวเก็บใน volume)
+    volumes:
+      - ml_models:/app/models
+      - ml_data:/app/data
+    command: uvicorn app.main:app --host 0.0.0.0 --port 9000
+
+  hub-backend:
+    build:
+      context: ./hub/backend
+      dockerfile: Dockerfile
+    container_name: hub-backend
+    restart: unless-stopped
+    env_file:
+      - .env.prod
+    environment:
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      # JWT RSA keys — persist (regenerate = invalidate token ทุกใบ). generate ครั้งเดียวเข้า volume นี้
+      - hub_jwt_keys:/app/keys
+      # GeoIP DB (large binary, gitignored) — วางไฟล์ GeoLite2-Country.mmdb ที่ host ./hub/backend/data
+      - ./hub/backend/data:/app/data
+    # --proxy-headers + forwarded-allow-ips: อยู่หลัง nginx → อ่าน X-Forwarded-Proto/For ถูก
+    # 1 worker: lifespan มี background scheduler (api_guard/subsystem_health/ipsum) — หลาย worker = รันซ้ำ
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips='*'
+
+  hub-frontend:
+    build:
+      context: ./hub/frontend
+      dockerfile: Dockerfile.prod
+      args:
+        # NEXT_PUBLIC_* ถูก inline ตอน build (client pages: login, passkey/recover)
+        NEXT_PUBLIC_HUB_URL: https://auth.${DOMAIN:?set in .env.prod}
+    container_name: hub-frontend
+    restart: unless-stopped
+    environment:
+      # server-side proxy (app/api/proxy + next.config rewrites) → runtime env
+      HUB_INTERNAL_URL: http://hub-backend:8000
+      NODE_ENV: production
+    depends_on:
+      hub-backend:
+        condition: service_started
+    # ไม่มี ports: — nginx (admin.<domain>) proxy เข้ามา
+
+  nginx:
+    image: nginx:alpine
+    container_name: hub-nginx
+    restart: unless-stopped
+    depends_on:
+      - hub-backend
+      - hub-frontend
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      # nginx:alpine envsubst เฉพาะตัวแปรที่ list ไว้ → $host/$proxy_add_x_forwarded_for ไม่โดนแทน
+      DOMAIN: ${DOMAIN:?set in .env.prod}
+    volumes:
+      - ./deploy/nginx/templates:/etc/nginx/templates:ro
+      - ./deploy/nginx/snippets:/etc/nginx/snippets:ro
+      - certbot_www:/var/www/certbot:ro
+      - letsencrypt:/etc/letsencrypt:ro
+    # image entrypoint รัน envsubst (/etc/nginx/templates → conf.d) ก่อน แล้ว exec command นี้
+    # reload ทุก 6 ชม. → รับ cert ที่ certbot renew มาใหม่โดยไม่ต้อง restart (wmnnd recipe)
+    command: /bin/sh -c "while :; do sleep 6h & wait $${!}; nginx -s reload; done & nginx -g 'daemon off;'"
+
+  certbot:
+    image: certbot/certbot
+    container_name: hub-certbot
+    restart: unless-stopped
+    volumes:
+      - certbot_www:/var/www/certbot
+      - letsencrypt:/etc/letsencrypt
+    # renew ทุก 12 ชม. (no-op ถ้ายังไม่ถึงเวลา) — nginx reload เองตอน cert ใหม่ผ่าน deploy.sh hook หรือ restart
+    entrypoint: /bin/sh -c 'trap exit TERM; while :; do certbot renew --webroot -w /var/www/certbot --quiet; sleep 12h & wait $${!}; done'
+
+networks:
+  default:
+    name: cah-net
+    external: true
+
+volumes:
+  postgres_data:
+  hub_jwt_keys:
+  ml_models:
+  ml_data:
+  certbot_www:
+  letsencrypt:

@@ -1,0 +1,48 @@
+# Subsystem B — ระบบห้องสมุด (Library) — PRODUCTION stack (cah-library)
+#
+# Mirror ของ docker-compose.dorm.prod.yml — pattern เดียวกัน คนละ domain.
+#
+# Run:  docker compose --env-file .env.library.prod -f docker-compose.library.prod.yml up -d --build
+# หรือ: bash deploy/up.sh library
+
+name: cah-library
+
+services:
+  postgres-library:
+    image: postgres:15-alpine
+    container_name: hub-postgres-library
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${LIBRARY_POSTGRES_USER:?set in .env.library.prod}
+      POSTGRES_PASSWORD: ${LIBRARY_POSTGRES_PASSWORD:?set in .env.library.prod}
+      POSTGRES_DB: ${LIBRARY_POSTGRES_DB:?set in .env.library.prod}
+    volumes:
+      - postgres_library_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${LIBRARY_POSTGRES_USER} -d ${LIBRARY_POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  subsystem-library:
+    build:
+      context: ./hub/subsystem-library
+      dockerfile: Dockerfile
+    container_name: hub-subsystem-library
+    restart: unless-stopped
+    env_file:
+      - ./hub/subsystem-library/.env.prod
+    environment:
+      DATABASE_URL: postgresql+psycopg2://${LIBRARY_POSTGRES_USER}:${LIBRARY_POSTGRES_PASSWORD}@postgres-library:5432/${LIBRARY_POSTGRES_DB}
+    depends_on:
+      postgres-library:
+        condition: service_healthy
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips='*'
+
+networks:
+  default:
+    name: cah-net
+    external: true
+
+volumes:
+  postgres_library_data:
