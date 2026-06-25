@@ -14,6 +14,7 @@ type Me = {
 
 const ADMIN_NAV = [
   { href: "/dashboard", label: "ภาพรวม", icon: "📊" },
+  { href: "/activity", label: "การเข้าใช้งาน", icon: "📡" },
   { href: "/notifications", label: "แจ้งเตือน", icon: "🔔" },
   { href: "/users", label: "ผู้ใช้งาน", icon: "👥" },
   { href: "/subsystems", label: "ระบบย่อย", icon: "🧩" },

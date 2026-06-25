@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import Link from "next/link";
 import { Topbar } from "@/components/Topbar";
 import { DataTable, type Column } from "@/components/DataTable";
@@ -97,14 +97,24 @@ type WhitelistEntry = {
   email: string;
   full_name?: string;
   user_type?: string;
+  user_status?: string;
   role_in_sub?: string;
   granted_at?: string;
+  revoked_at?: string | null;
 };
 
 type WhitelistResponse = {
   subsystem: string;
   total: number;
   users: WhitelistEntry[];
+};
+
+type CsvUploadResponse = {
+  subsystem: string;
+  added: number;
+  skipped: number;
+  added_emails: string[];
+  skipped_details: Array<{ email: string; reason: string }>;
 };
 
 type AuditItem = {
@@ -205,6 +215,10 @@ export default function SubsystemDetailPage({
 
   const [newEmail, setNewEmail] = useState("");
   const [newRole, setNewRole] = useState("user");
+  // CSV bulk upload
+  const [csvResult, setCsvResult] = useState<CsvUploadResponse | null>(null);
+  const [csvUploading, setCsvUploading] = useState(false);
+  const csvInputRef = useRef<HTMLInputElement>(null);
   const [busyAdd, setBusyAdd] = useState(false);
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(
     null
@@ -366,11 +380,46 @@ export default function SubsystemDetailPage({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sub]);
 
-  // Auto-refresh active sessions ทุก 30 วินาที
+  // Auto-refresh active sessions ทุก 10 วินาที (เด้งทันทีหลัง config/whitelist/role change)
   useEffect(() => {
-    const t = setInterval(loadActive, 30_000);
+    const t = setInterval(loadActive, 10_000);
     return () => clearInterval(t);
   }, [loadActive]);
+
+  async function uploadCsv(file: File) {
+    setCsvUploading(true);
+    setCsvResult(null);
+    setMsg(null);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      // FormData → ยิง /api/proxy ตรง (clientFetch บังคับ JSON header)
+      // backend admin override → admin อัปโหลด whitelist ของ subsystem ใดก็ได้
+      const res = await fetch(`/api/proxy/developer/subsystems/${id}/whitelist`, {
+        method: "POST",
+        credentials: "include",
+        body: form,
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.detail || `Upload failed: ${res.status}`);
+      }
+      const data = (await res.json()) as CsvUploadResponse;
+      setCsvResult(data);
+      setMsg({
+        kind: "ok",
+        text: `Upload เสร็จ — เพิ่ม ${data.added} คน, ข้าม ${data.skipped} คน`,
+      });
+      loadWhitelist();
+      loadAudit();
+      loadActive();
+    } catch (e) {
+      setMsg({ kind: "err", text: errText(e, "Upload CSV ไม่สำเร็จ") });
+    } finally {
+      setCsvUploading(false);
+      if (csvInputRef.current) csvInputRef.current.value = "";
+    }
+  }
 
   async function addUser(e: React.FormEvent) {
     e.preventDefault();
@@ -391,6 +440,7 @@ export default function SubsystemDetailPage({
       setNewEmail("");
       loadWhitelist();
       loadAudit();
+      loadActive();
     } catch (e) {
       setMsg({ kind: "err", text: errText(e, "เพิ่มไม่สำเร็จ") });
     } finally {
@@ -410,6 +460,7 @@ export default function SubsystemDetailPage({
       setMsg({ kind: "ok", text: `ลบ ${email} แล้ว (soft delete)` });
       loadWhitelist();
       loadAudit();
+      loadActive();
     } catch (e) {
       setMsg({ kind: "err", text: errText(e, "ลบไม่สำเร็จ") });
     }
@@ -439,6 +490,7 @@ export default function SubsystemDetailPage({
       cancelEditRole();
       loadWhitelist();
       loadAudit();
+      loadActive();
     } catch (e) {
       setMsg({ kind: "err", text: errText(e, "เปลี่ยน role ไม่สำเร็จ") });
     }
@@ -457,6 +509,7 @@ export default function SubsystemDetailPage({
       setMsg({ kind: "ok", text: "ระงับใช้งานแล้ว" });
       loadSubsystem();
       loadAudit();
+      loadActive();
     } catch (e) {
       setMsg({ kind: "err", text: errText(e, "ระงับไม่สำเร็จ") });
     } finally {
@@ -511,6 +564,7 @@ export default function SubsystemDetailPage({
       clearSelection();
       loadWhitelist();
       loadAudit();
+      loadActive();
     } catch (e) {
       setMsg({ kind: "err", text: errText(e, "bulk update ไม่สำเร็จ") });
     } finally {
@@ -694,6 +748,7 @@ export default function SubsystemDetailPage({
       setEditOpen(false);
       loadSubsystem();
       loadAudit();
+      loadActive();
     } catch (e) {
       setMsg({ kind: "err", text: errText(e, "แก้ไขไม่สำเร็จ") });
     } finally {
@@ -753,12 +808,32 @@ export default function SubsystemDetailPage({
     {
       key: "full_name",
       header: "ผู้ใช้",
-      render: (u) => (
-        <div>
-          <div className="font-semibold text-ink-900">{u.full_name || u.email}</div>
-          <div className="text-[11px] text-ink-500 font-mono">{u.email}</div>
-        </div>
-      ),
+      render: (u) => {
+        const isDeleted = u.user_status === "deleted";
+        return (
+          <div className={isDeleted ? "opacity-60" : ""}>
+            <div className="flex items-center gap-2 flex-wrap">
+              <span
+                className={
+                  "font-semibold " +
+                  (isDeleted ? "text-ink-500 line-through" : "text-ink-900")
+                }
+              >
+                {u.full_name || u.email}
+              </span>
+              {isDeleted && (
+                <span
+                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider bg-rose-100 text-rose-700 border border-rose-200"
+                  title="user ถูกลบที่ Hub — sessions ถูกตัด + whitelist ถูก revoke"
+                >
+                  🚫 deleted
+                </span>
+              )}
+            </div>
+            <div className="text-[11px] text-ink-500 font-mono">{u.email}</div>
+          </div>
+        );
+      },
     },
     {
       key: "user_type",
@@ -1472,6 +1547,58 @@ export default function SubsystemDetailPage({
             </button>
           </form>
 
+          {/* CSV bulk upload */}
+          <div className="mb-3 bg-white rounded-xl border border-dashed border-ink-300 p-4 flex flex-wrap items-center gap-3">
+            <div className="flex-1 min-w-[200px]">
+              <div className="text-xs font-bold text-ink-700">
+                📄 อัปโหลด CSV (เพิ่มหลายคนพร้อมกัน)
+              </div>
+              <div className="text-[11px] text-ink-500 mt-0.5">
+                CSV header: <code className="font-mono">email,role,note</code> —
+                ระบบ skip คนที่ไม่อยู่ใน Hub หรือ role ไม่ตรง allowed_roles
+              </div>
+            </div>
+            <input
+              ref={csvInputRef}
+              type="file"
+              accept=".csv"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) uploadCsv(f);
+              }}
+              disabled={csvUploading}
+              className="text-xs"
+            />
+            {csvUploading && (
+              <span className="text-xs text-ink-500 animate-pulse">
+                กำลังอัปโหลด…
+              </span>
+            )}
+          </div>
+
+          {csvResult && (
+            <div className="mb-3 p-4 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm">
+              <div className="font-semibold mb-1">
+                ✓ Upload สำเร็จ — เพิ่ม {csvResult.added} คน, ข้าม{" "}
+                {csvResult.skipped} คน
+              </div>
+              {csvResult.skipped_details.length > 0 && (
+                <details className="mt-2 text-xs">
+                  <summary className="cursor-pointer font-medium">
+                    ดูรายการที่ข้าม ({csvResult.skipped_details.length})
+                  </summary>
+                  <ul className="mt-2 space-y-1 ml-4 list-disc">
+                    {csvResult.skipped_details.map((d, i) => (
+                      <li key={i}>
+                        <span className="font-mono">{d.email}</span> — {d.reason}
+                      </li>
+                    ))}
+                  </ul>
+                </details>
+              )}
+            </div>
+          )}
+
           {/* Bulk action toolbar — แสดงเมื่อเลือกแล้ว 1+ */}
           {selectedIds.size > 0 && (
             <div className="mb-2 p-3 rounded-lg bg-brand-50 border border-brand-200 flex flex-wrap items-center gap-3 text-sm">
@@ -2063,8 +2190,8 @@ function AuditDetailBody({
                     level === "ban"
                       ? "danger"
                       : level === "challenge"
-                      ? "warning"
-                      : "info"
+                      ? "warn"
+                      : "brand"
                   }
                 >
                   {level.toUpperCase()}

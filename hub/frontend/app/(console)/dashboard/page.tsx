@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Topbar } from "@/components/Topbar";
 import { StatsCard } from "@/components/StatsCard";
 import { clientFetch } from "@/lib/api";
+import { LoginMethodsCard } from "./_components/LoginMethodsCard";
 
 type Overview = {
   users: { total: number; active: number };
@@ -215,6 +216,9 @@ export default function DashboardPage() {
             </div>
           </Link>
         )}
+
+        {/* Global auth-policy — เลือกวิธี login (Google / Passkey) */}
+        <LoginMethodsCard />
 
         {data && (
           <>
