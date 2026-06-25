@@ -9,6 +9,7 @@ Security:
   - max_age บังคับหมดอายุ
   - URLSafeTimedSerializer ตรวจ signature + อายุ
 """
+
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 
 from app.config import settings
@@ -26,6 +27,7 @@ _oauth_serializer = URLSafeTimedSerializer(
 
 
 # ============ Session ของผู้ใช้ที่ login แล้ว ============
+
 
 def make_session_token(data: dict) -> str:
     """sign session data เป็น token string."""
@@ -46,6 +48,7 @@ def load_session(token: str | None) -> dict | None:
 
 # ============ State ระหว่าง OAuth flow (สั้นๆ ระหว่าง redirect) ============
 
+
 def make_oauth_state_token(data: dict) -> str:
     """sign {state, code_verifier} ก่อนเด้งไป Hub."""
     return _oauth_serializer.dumps(data)
@@ -62,6 +65,7 @@ def load_oauth_state(token: str | None, max_age: int = 600) -> dict | None:
 
 
 # ============ Cookie config helper ============
+
 
 def cookie_kwargs(max_age: int | None = None) -> dict:
     """kwargs สำหรับ response.set_cookie() — รวม security flag.

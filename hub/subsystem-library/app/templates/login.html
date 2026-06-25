@@ -97,6 +97,15 @@
       ✦&nbsp; เข้าสู่ระบบด้วย Central Auth Hub
     </a>
 
+    {% if passkey_recover_url %}
+    <div style="margin-top:14px; text-align:center;">
+      <a href="{{ passkey_recover_url }}"
+         style="font-family:var(--font-serif); font-size:13px; font-style:italic; color:var(--ink-3); text-decoration:underline; text-underline-offset:3px;">
+        ทำ Passkey หาย? กู้บัญชี
+      </a>
+    </div>
+    {% endif %}
+
     <hr class="dashed-rule" style="margin:32px 0 18px;">
 
     <div style="text-align:center; font-family:var(--font-serif); font-size:12px; color:var(--ink-3); letter-spacing:.04em;">

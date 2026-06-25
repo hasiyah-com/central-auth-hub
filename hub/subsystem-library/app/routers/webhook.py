@@ -178,3 +178,58 @@ async def access_updated(
     db.commit()
 
     return {"status": "ok", "scope": hub_user_id or "ALL", "marked": marked}
+
+
+@router.post("/internal/access-restored")
+async def access_restored(
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    """รับ event จาก Hub: user X ที่เคยถูก revoke → คืนสิทธิ์กลับมา.
+
+    Action: clear members.hub_access_revoked_at = NULL → user login กลับมาได้ทันที
+    """
+    raw = await _verify_signature(request)
+
+    import json as _json
+
+    try:
+        payload = _json.loads(raw.decode("utf-8"))
+    except Exception:
+        raise HTTPException(status_code=400, detail="invalid JSON")
+
+    if payload.get("event") != "access_restored":
+        raise HTTPException(status_code=400, detail="event != access_restored")
+
+    hub_user_id = payload.get("hub_user_id")
+    if not hub_user_id:
+        raise HTTPException(status_code=400, detail="missing hub_user_id")
+
+    payload_client_id = payload.get("client_id")
+    if payload_client_id and payload_client_id != settings.library_client_id:
+        raise HTTPException(status_code=400, detail="client_id mismatch")
+
+    member = db.query(Member).filter(Member.hub_user_id == hub_user_id).first()
+    cleared = False
+    if member and member.hub_access_revoked_at is not None:
+        member.hub_access_revoked_at = None
+        cleared = True
+
+    log_action(
+        db,
+        actor_hub_user_id=None,
+        action="hub_access_restored_received",
+        target_type="member",
+        target_id=member.id if member else None,
+        ip=get_client_ip(request),
+        metadata={
+            "hub_user_id": hub_user_id,
+            "restored_by": payload.get("restored_by"),
+            "reason": payload.get("reason"),
+            "member_found": member is not None,
+            "cleared": cleared,
+        },
+    )
+    db.commit()
+
+    return {"status": "ok", "cleared": cleared}

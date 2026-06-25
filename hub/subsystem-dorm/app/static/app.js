@@ -95,11 +95,13 @@ const SideNav = ({ user, page, setPage }) => {
     { id: "home",      icon: I.chart, label: "ภาพรวม" },
     { id: "residents", icon: I.users, label: "รายชื่อผู้พัก" },
     { id: "rooms",     icon: I.bed,   label: "ห้องทั้งหมด" },
+    { id: "me",        icon: I.user,  label: "โปรไฟล์ของฉัน" },
   ];
   const staffMenu = [
     { id: "home",         icon: I.chart, label: "ภาพรวม" },
     { id: "reservations", icon: I.doc,   label: "คำขอจอง" },
     { id: "residents",    icon: I.users, label: "ผู้พักทั้งหมด" },
+    { id: "me",           icon: I.user,  label: "โปรไฟล์ของฉัน" },
   ];
 
   const menu = role === "staff" ? staffMenu : role === "teacher" ? teacherMenu : studentMenu;
@@ -832,6 +834,238 @@ const RoomDetailPage = ({ user, roomId, setPage }) => {
 };
 
 // ═══════════════════════════════════════════════════════════════
+// STAFF / TEACHER ME PAGE (work profile + recent actions)
+// ═══════════════════════════════════════════════════════════════
+const ACTION_LABELS = {
+  approve_reservation: { icon: "✅", label: "อนุมัติคำขอจอง", color: "good" },
+  reject_reservation:  { icon: "❌", label: "ปฏิเสธคำขอจอง",  color: "danger" },
+  check_in_resident:   { icon: "🏠", label: "Check-in ผู้พัก",  color: "good" },
+  check_out_resident:  { icon: "🚪", label: "Check-out ผู้พัก", color: "warn" },
+  create_reservation:  { icon: "📝", label: "สร้างคำขอจอง",   color: "info" },
+  cancel_reservation:  { icon: "🗑️", label: "ยกเลิกคำขอจอง",  color: "warn" },
+};
+
+const StaffMePage = ({ user, setPage }) => {
+  const [data, setData] = useState(null);
+
+  useEffect(() => { api.get("/api/me").then(setData).catch(console.error); }, []);
+
+  if (!data) return <Loading />;
+  const { work_stats: ws, recent_actions } = data;
+  const role = user.role_in_sub;
+
+  const fmtDate = (iso) => iso ? new Date(iso).toLocaleDateString("th-TH", { year: "numeric", month: "short", day: "numeric" }) : "—";
+  const fmtTime = (iso) => iso ? new Date(iso).toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" }) : "";
+  const fmtRel = (iso) => {
+    if (!iso) return "—";
+    const diff = (Date.now() - new Date(iso).getTime()) / 1000;
+    if (diff < 60) return "เมื่อสักครู่";
+    if (diff < 3600) return `${Math.floor(diff / 60)} นาทีก่อน`;
+    if (diff < 86400) return `${Math.floor(diff / 3600)} ชั่วโมงก่อน`;
+    if (diff < 604800) return `${Math.floor(diff / 86400)} วันก่อน`;
+    return fmtDate(iso);
+  };
+
+  const roleLabel = role === "staff" ? "เจ้าหน้าที่" : "อาจารย์";
+  const roleScopeLabel = role === "staff" ? "STAFF_SCOPE" : "TEACHER_SCOPE";
+
+  return (
+    <div className="fade-up">
+      <div className="page-header">
+        <div>
+          <div className="chip chip-primary" style={{ marginBottom: 10 }}>USER_PROFILE</div>
+          <h1 className="display" style={{ fontSize: 34, margin: 0 }}>โปรไฟล์ของฉัน</h1>
+          <p style={{ color: "var(--ink-mute)", fontSize: 14, marginTop: 6 }}>
+            ข้อมูลจาก Central Auth Hub + กิจกรรมการจัดการในระบบหอพัก
+          </p>
+        </div>
+        <div className="page-header-stats">
+          <div className="ph-stat ph-stat-good">
+            <div className="ph-stat-num display">{ws?.pending_reservations ?? 0}</div>
+            <div className="ph-stat-label mono">รออนุมัติ</div>
+          </div>
+          <div className="ph-stat">
+            <div className="ph-stat-num display">{ws?.my_actions_this_month ?? 0}</div>
+            <div className="ph-stat-label mono">ทำเดือนนี้</div>
+          </div>
+        </div>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 24 }}>
+        {/* Hub info — เหมือนของ student */}
+        <div className="card" style={{ padding: 24 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 20 }}>
+            <div className="avatar avatar-lg">{(user.full_name || "?")[0].toUpperCase()}</div>
+            <div>
+              <h2 className="display" style={{ fontSize: 20, margin: 0 }}>{user.full_name}</h2>
+              <p style={{ fontSize: 13, margin: "4px 0 0", color: "var(--ink-mute)", fontFamily: "JetBrains Mono, monospace" }}>{user.email}</p>
+              <StatusBadge status={user.role_in_sub} />
+            </div>
+          </div>
+
+          <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 10, fontWeight: 700, color: "var(--ink)", letterSpacing: ".12em", marginBottom: 12 }}>
+            HUB_DATA · scope ปัจจุบัน {((user.provided_scope || []).length + 2)} fields
+          </div>
+          <dl style={{ display: "flex", flexDirection: "column", gap: 0 }}>
+            {(() => {
+              const scope = user.provided_scope || [];
+              const ALL_FIELDS = [
+                ["student_id", "🎓 รหัสนักศึกษา"],
+                ["employee_id", "👔 รหัสบุคลากร"],
+                ["faculty", "🏛️ คณะ"],
+                ["major", "📚 สาขา"],
+                ["year", "🗓️ ชั้นปี"],
+                ["position", "💼 ตำแหน่ง"],
+                ["phone", "📞 โทรศัพท์"],
+                ["address", "🏠 ที่อยู่"],
+              ];
+              const items = [
+                ["📧 อีเมล", user.email],
+                ["👤 ชื่อ-นามสกุล", user.full_name],
+              ];
+              ALL_FIELDS.forEach(([key, label]) => {
+                if (scope.includes(key)) {
+                  items.push([label, user[key] || "— ไม่มีใน Hub"]);
+                }
+              });
+              return items.map(([label, value], i) => (
+                <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 0", borderBottom: "1px solid var(--line-soft)" }}>
+                  <dt style={{ fontSize: 13, color: "var(--ink-mute)" }}>{label}</dt>
+                  <dd style={{ fontSize: 13, fontWeight: 700, margin: 0, fontFamily: "JetBrains Mono, monospace" }}>{value}</dd>
+                </div>
+              ));
+            })()}
+          </dl>
+          <div style={{ marginTop: 6, fontSize: 11, color: "var(--ink-mute)", fontFamily: "JetBrains Mono, monospace" }}>
+            scope: [email, name{(user.provided_scope || []).map(s => `, ${s}`).join("")}]
+          </div>
+
+          <div style={{ marginTop: 14, padding: 12, background: "var(--bg-soft)", border: "2px solid var(--line)", borderRadius: "var(--radius-sm)", fontSize: 12, color: "var(--ink-soft)", display: "flex", gap: 8 }}>
+            <span>ℹ️</span>
+            <span>ข้อมูลนี้มาจาก Hub ตาม JWT scope — หากต้องการแก้ไข กรุณาติดต่อ admin มหาวิทยาลัย</span>
+          </div>
+        </div>
+
+        {/* Work stats — replaces DORM_STATUS for staff/teacher */}
+        <div className="card" style={{ padding: 24 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+            <h2 className="display" style={{ fontSize: 20, margin: 0 }}>
+              {role === "staff" ? "🛠️" : "📊"} ขอบเขตงานของ{roleLabel}
+            </h2>
+            <span className="chip mono">{roleScopeLabel}</span>
+          </div>
+
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {[
+              { icon: "🏘️", label: "TOTAL_RESIDENTS",      value: `${ws?.total_residents ?? 0} คน`,            sub: `จัดการได้ทั้งหมด` },
+              { icon: "🛏️", label: "TOTAL_ROOMS",          value: `${ws?.total_rooms ?? 0} ห้อง`,             sub: `ในระบบหอพัก` },
+              { icon: "⏳", label: "PENDING_RESERVATIONS", value: `${ws?.pending_reservations ?? 0} รายการ`,  sub: `รออนุมัติ` },
+              { icon: "✅", label: "APPROVED_THIS_MONTH",  value: `${ws?.approved_this_month ?? 0} รายการ`,  sub: `อนุมัติเดือนนี้` },
+              ws?.first_action_at && {
+                icon: "🕐", label: "FIRST_ACTION", value: fmtDate(ws.first_action_at), sub: `เริ่มทำงานในระบบ`,
+              },
+            ].filter(Boolean).map((item, i) => (
+              <div key={i} style={{ display: "flex", alignItems: "center", gap: 12, padding: 14, background: "var(--bg-soft)", border: "2px solid var(--line)", borderRadius: "var(--radius-sm)" }}>
+                <span style={{ fontSize: 22 }}>{item.icon}</span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 10, fontWeight: 700, color: "var(--ink-mute)", letterSpacing: ".08em", marginBottom: 2 }}>{item.label}</div>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
+                    <div style={{ fontWeight: 700, color: "var(--ink)" }}>{item.value}</div>
+                    <div style={{ fontSize: 11, color: "var(--ink-mute)" }}>{item.sub}</div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {ws?.pending_reservations > 0 && role === "staff" && (
+            <button
+              className="btn btn-primary"
+              style={{ width: "100%", justifyContent: "center", marginTop: 14 }}
+              onClick={() => setPage("reservations")}
+            >
+              {I.doc} ดูคำขอที่รออนุมัติ ({ws.pending_reservations})
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Recent actions table — replaces reservation history */}
+      <div className="card" style={{ padding: 0, overflow: "hidden" }}>
+        <div style={{ padding: "18px 24px", display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "2px solid var(--ink)" }}>
+          <h2 className="display" style={{ fontSize: 20, margin: 0, display: "flex", alignItems: "center", gap: 8 }}>
+            {I.doc} ประวัติการทำงานล่าสุด
+          </h2>
+          <span className="chip mono">{(recent_actions || []).length} รายการ</span>
+        </div>
+
+        {(recent_actions || []).length > 0 ? (
+          <div style={{ overflowX: "auto" }}>
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>เวลา</th>
+                  <th>การกระทำ</th>
+                  <th>ประเภทเป้าหมาย</th>
+                  <th>รายละเอียด</th>
+                </tr>
+              </thead>
+              <tbody>
+                {recent_actions.map((a, i) => {
+                  const def = ACTION_LABELS[a.action] || { icon: "•", label: a.action, color: "default" };
+                  return (
+                    <tr key={i}>
+                      <td>
+                        <div style={{ fontWeight: 700 }}>{fmtRel(a.created_at)}</div>
+                        <div style={{ fontSize: 10, color: "var(--ink-mute)", fontFamily: "JetBrains Mono, monospace" }}>
+                          {fmtDate(a.created_at)} · {fmtTime(a.created_at)}
+                        </div>
+                      </td>
+                      <td>
+                        <span className={`chip chip-${def.color}`}>
+                          <span style={{ marginRight: 4 }}>{def.icon}</span>{def.label}
+                        </span>
+                      </td>
+                      <td style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 12, color: "var(--ink-soft)" }}>
+                        {a.target_type || "—"}
+                      </td>
+                      <td style={{ fontSize: 12, color: "var(--ink-soft)", maxWidth: 280 }}>
+                        {(() => {
+                          const m = a.metadata || {};
+                          const keys = Object.keys(m).filter(k => k !== "ip" && k !== "user_agent");
+                          if (!keys.length) return <span style={{ color: "var(--ink-mute)" }}>—</span>;
+                          return (
+                            <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 11, lineHeight: 1.4 }}>
+                              {keys.slice(0, 3).map(k => (
+                                <div key={k}>
+                                  <span style={{ color: "var(--ink-mute)" }}>{k}:</span>{" "}
+                                  <span>{String(m[k]).slice(0, 60)}</span>
+                                </div>
+                              ))}
+                            </div>
+                          );
+                        })()}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <div className="empty-state" style={{ padding: "32px 16px" }}>
+            <div className="empty-state-icon">📋</div>
+            <h3>ยังไม่มีกิจกรรมในระบบ</h3>
+            <p>เมื่อคุณอนุมัติ / ปฏิเสธคำขอ หรือจัดการผู้พัก จะแสดงที่นี่</p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+
+// ═══════════════════════════════════════════════════════════════
 // ME PAGE (student profile + history)
 // ═══════════════════════════════════════════════════════════════
 const MePage = ({ user, setPage }) => {
@@ -1373,9 +1607,9 @@ const App = () => {
     switch (page) {
       case "home":         return <HomePage user={user} setPage={setPage} />;
       case "rooms":        return <RoomsPage user={user} setPage={setPage} />;
-      case "me":           return role !== "staff" && role !== "teacher"
-                                  ? <MePage user={user} setPage={setPage} />
-                                  : <HomePage user={user} setPage={setPage} />;
+      case "me":           return (role === "staff" || role === "teacher")
+                                  ? <StaffMePage user={user} setPage={setPage} />
+                                  : <MePage user={user} setPage={setPage} />;
       case "reservations": return role === "staff"
                                   ? <StaffReservationsPage />
                                   : <HomePage user={user} setPage={setPage} />;

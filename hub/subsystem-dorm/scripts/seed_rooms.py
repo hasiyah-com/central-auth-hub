@@ -5,6 +5,7 @@
 Run:
     docker compose exec subsystem-dorm python -m scripts.seed_rooms
 """
+
 from app.database import Base, SessionLocal, engine
 from app.models import Room
 
@@ -34,14 +35,16 @@ def seed():
     for building in BUILDINGS:
         for floor in FLOORS:
             for i in range(1, ROOMS_PER_FLOOR + 1):
-                room_number = f"{building}{floor}{i:02d}"   # A101, A102, ...
-                db.add(Room(
-                    building=building,
-                    floor=floor,
-                    room_number=room_number,
-                    capacity=CAPACITY,
-                    status="available",
-                ))
+                room_number = f"{building}{floor}{i:02d}"  # A101, A102, ...
+                db.add(
+                    Room(
+                        building=building,
+                        floor=floor,
+                        room_number=room_number,
+                        capacity=CAPACITY,
+                        status="available",
+                    )
+                )
                 count += 1
     db.commit()
 

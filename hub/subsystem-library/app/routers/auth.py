@@ -69,7 +69,16 @@ def login_page(
 ):
     if user is not None:
         return RedirectResponse(url="/", status_code=302)
-    return templates.TemplateResponse("login.html", {"request": request})
+    from urllib.parse import quote
+
+    recover_url = (
+        f"{settings.hub_public_url}/oauth/passkey/recover"
+        f"?return_to={quote(settings.library_public_url + '/login', safe='')}"
+    )
+    return templates.TemplateResponse(
+        "login.html",
+        {"request": request, "passkey_recover_url": recover_url},
+    )
 
 
 @router.get("/oauth/start")
