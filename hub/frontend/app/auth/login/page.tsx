@@ -15,9 +15,25 @@ export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Global auth-policy — admin อาจปิด Google หรือ Passkey
+  const [policy, setPolicy] = useState<{ google: boolean; passkey: boolean }>({
+    google: true,
+    passkey: true,
+  });
 
   useEffect(() => {
     setPasskeySupported(isPasskeySupported());
+    // อ่าน policy ผ่าน Next rewrite (/api/hub → backend) — ไม่มี CORS
+    fetch("/api/hub/auth/policy")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((p) => {
+        if (p && typeof p.google === "boolean" && typeof p.passkey === "boolean") {
+          setPolicy(p);
+        }
+      })
+      .catch(() => {
+        /* fail-safe: คงค่า default (เปิดทั้งคู่) */
+      });
   }, []);
 
   const persistAndRedirect = async (token: string, isAdmin: boolean) => {
@@ -103,8 +119,8 @@ export default function LoginPage() {
             สำหรับผู้ดูแลระบบ — ใช้ Passkey หรือบัญชี Google ที่ลงทะเบียนไว้
           </p>
 
-          {/* Passkey login (Phase 2) — conditional on browser support */}
-          {passkeySupported && !showPasskeyDialog && (
+          {/* Passkey login (Phase 2) — conditional on browser support + policy */}
+          {policy.passkey && passkeySupported && !showPasskeyDialog && (
             <button
               onClick={() => setShowPasskeyDialog(true)}
               className="w-full flex items-center justify-center gap-3 px-4 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold transition mb-3"
@@ -115,7 +131,7 @@ export default function LoginPage() {
           )}
 
           {/* Passkey email-first dialog */}
-          {showPasskeyDialog && (
+          {policy.passkey && showPasskeyDialog && (
             <div className="mb-3 p-4 rounded-xl border-2 border-emerald-200 bg-emerald-50 space-y-3">
               <div className="flex items-center justify-between">
                 <div className="font-semibold text-emerald-900">
@@ -179,13 +195,22 @@ export default function LoginPage() {
             </div>
           )}
 
-          {passkeySupported === false && (
+          {policy.passkey && policy.google && passkeySupported === false && (
             <div className="mb-3 p-3 text-xs text-amber-900 bg-amber-50 border border-amber-200 rounded-lg">
               ⚠️ เบราว์เซอร์นี้ไม่รองรับ Passkey — กรุณาใช้ Google login แทน
             </div>
           )}
 
-          {/* Google login — fallback ทุก browser */}
+          {/* Passkey ปิด + browser ไม่รองรับ → เตือนว่าใช้ไม่ได้ */}
+          {!policy.google && policy.passkey && passkeySupported === false && (
+            <div className="mb-3 p-3 text-xs text-rose-900 bg-rose-50 border border-rose-200 rounded-lg">
+              ⚠️ เบราว์เซอร์นี้ไม่รองรับ Passkey และผู้ดูแลปิด Google login —
+              กรุณาใช้เบราว์เซอร์ที่รองรับ Passkey
+            </div>
+          )}
+
+          {/* Google login — fallback ทุก browser (เคารพ policy) */}
+          {policy.google && (
           <a
             href={`${HUB_URL}/auth/google/login`}
             className="w-full flex items-center justify-center gap-3 px-4 py-3 rounded-xl bg-ink-900 hover:bg-ink-800 text-white font-semibold transition"
@@ -210,6 +235,7 @@ export default function LoginPage() {
             </svg>
             <span>Sign in with Google</span>
           </a>
+          )}
 
           {/* LINE login — ปิดชั่วคราว (Q3 decision 2026-06-10)
               email scope ยังแก้ไม่ตก, code อยู่ใน git/backend จะกลับมาเมื่อแก้ได้
@@ -222,7 +248,7 @@ export default function LoginPage() {
           <div className="mt-6 text-xs text-ink-400 text-center">
             เฉพาะผู้ใช้ที่มีสิทธิ์ <code className="font-mono">is_hub_admin</code> เท่านั้น
           </div>
-          {passkeySupported && (
+          {policy.passkey && passkeySupported && (
             <div className="mt-2 text-center">
               <a
                 href="/auth/passkey/recover"

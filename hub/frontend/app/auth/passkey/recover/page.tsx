@@ -6,9 +6,14 @@
  *   - Email OTP   → revoke passkey + codes ใหม่
  *   - ขอ codes ใหม่ → regenerate codes (ไม่แตะ passkey)
  * codes ใหม่ → CodesAck (copy/download/checkbox/ยืนยัน → login).
+ *
+ * return_to: ถ้ามาจาก subsystem flow → ?return_to=<url> ให้กลับไป login ของ subsystem
+ *   เพื่อกัน open-redirect: รับเฉพาะ path relative ('/...') หรือ URL ที่ hostname
+ *   ตรงกับ Hub origin (subsystem ใน dev อยู่บน localhost คนละ port → match แล้ว)
  */
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import {
   recoverEmailOtpStart,
   recoverEmailOtpVerify,
@@ -19,6 +24,25 @@ import {
 import { CodesAck } from "./_CodesAck";
 
 type Tab = "backup" | "otp" | "regen";
+
+const HUB_URL = process.env.NEXT_PUBLIC_HUB_URL || "http://localhost:8000";
+
+/** Allow return_to เฉพาะ relative path หรือ URL ที่ hostname เดียวกับ Hub
+ *  (ครอบคลุม subsystem ใน dev: localhost:8001/8002 — hostname=localhost เหมือนกัน) */
+function safeReturnTo(raw: string | null): string {
+  if (!raw) return "/auth/login";
+  if (raw.startsWith("/") && !raw.startsWith("//")) return raw;
+  try {
+    const url = new URL(raw);
+    const hubHost = new URL(HUB_URL).hostname;
+    if ((url.protocol === "http:" || url.protocol === "https:") && url.hostname === hubHost) {
+      return url.toString();
+    }
+  } catch {
+    // ignore — fallthrough
+  }
+  return "/auth/login";
+}
 
 function errMsg(e: unknown): string {
   if (typeof e === "object" && e && "detail" in e) {
@@ -31,7 +55,11 @@ function errMsg(e: unknown): string {
   return e instanceof Error ? e.message : "ไม่สำเร็จ";
 }
 
-export default function RecoverPage() {
+function RecoverInner() {
+  const params = useSearchParams();
+  const returnTo = safeReturnTo(params.get("return_to"));
+  const isExternal = returnTo !== "/auth/login";
+
   const [tab, setTab] = useState<Tab>("backup");
   const [email, setEmail] = useState("");
   const [code, setCode] = useState("");
@@ -49,7 +77,7 @@ export default function RecoverPage() {
   };
 
   const goLogin = () => {
-    window.location.href = "/auth/login";
+    window.location.href = returnTo;
   };
 
   const doBackup = async () => {
@@ -143,7 +171,7 @@ export default function RecoverPage() {
                 onClick={goLogin}
                 className="block text-center w-full py-2.5 rounded-lg bg-ink-900 text-white font-semibold hover:bg-ink-800"
               >
-                ไปหน้า Login
+                {isExternal ? "← กลับไปหน้า login ของระบบย่อย" : "ไปหน้า Login"}
               </button>
             </div>
           ) : (
@@ -222,15 +250,23 @@ export default function RecoverPage() {
               )}
 
               <a
-                href="/auth/login"
+                href={returnTo}
                 className="block text-center text-xs text-ink-400 mt-4 hover:text-ink-600"
               >
-                ← กลับหน้า Login
+                {isExternal ? "← กลับหน้า login ของระบบย่อย" : "← กลับหน้า Login"}
               </a>
             </>
           )}
         </div>
       </div>
     </main>
+  );
+}
+
+export default function RecoverPage() {
+  return (
+    <Suspense fallback={null}>
+      <RecoverInner />
+    </Suspense>
   );
 }
