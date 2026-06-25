@@ -11,6 +11,7 @@
 Run:
     docker compose exec hub-backend python -m app.seeds.seed_users
 """
+
 import random
 import re
 
@@ -18,12 +19,17 @@ from faker import Faker
 
 from app.database import SessionLocal, Base, engine
 from app.models import (
-    User, Subsystem, AccessList, LoginSession, AuditLog, SecretRetrievalToken,
+    User,
+    Subsystem,
+    AccessList,
+    LoginSession,
+    AuditLog,
+    SecretRetrievalToken,
     RequestLog,
 )
 
-fake = Faker("th_TH")        # ชื่อ-สกุล ภาษาไทย สำหรับ full_name
-fake_en = Faker("en_US")     # ชื่อภาษาอังกฤษ สำหรับสร้าง email ของอาจารย์/เจ้าหน้าที่
+fake = Faker("th_TH")  # ชื่อ-สกุล ภาษาไทย สำหรับ full_name
+fake_en = Faker("en_US")  # ชื่อภาษาอังกฤษ สำหรับสร้าง email ของอาจารย์/เจ้าหน้าที่
 Faker.seed(42)
 random.seed(42)
 
@@ -59,13 +65,14 @@ def en_name_slug() -> str:
 
 # ============ ตัวสร้าง user แต่ละประเภท ============
 
+
 def make_student(i: int) -> dict:
     faculty, majors = random.choice(FACULTIES)
     major = random.choice(majors)
     year = random.randint(1, 4)
-    student_id = f"65{str(i).zfill(4)}"          # 650001, 650002, ...
+    student_id = f"65{str(i).zfill(4)}"  # 650001, 650002, ...
     return {
-        "email": f"{student_id}@uni.ac.th",      # 650001@uni.ac.th
+        "email": f"{student_id}@uni.ac.th",  # 650001@uni.ac.th
         "full_name": f"{fake.first_name()} {fake.last_name()}",
         "user_type": "student",
         "identifier": student_id,
@@ -80,9 +87,9 @@ def make_student(i: int) -> dict:
 def make_teacher(i: int) -> dict:
     faculty, majors = random.choice(FACULTIES)
     position = random.choice(POSITIONS_TEACHER)
-    email_name = f"{en_name_slug()}{unique_suffix()}"   # somchai006
+    email_name = f"{en_name_slug()}{unique_suffix()}"  # somchai006
     return {
-        "email": f"{email_name}@uni.ac.th",             # somchai006@uni.ac.th
+        "email": f"{email_name}@uni.ac.th",  # somchai006@uni.ac.th
         "full_name": f"{fake.first_name()} {fake.last_name()}",
         "user_type": "teacher",
         "identifier": f"T{str(i).zfill(4)}",
@@ -95,7 +102,7 @@ def make_teacher(i: int) -> dict:
 
 
 def make_staff(i: int) -> dict:
-    email_name = f"{en_name_slug()}{unique_suffix()}"   # รูปแบบเดียวกับอาจารย์
+    email_name = f"{en_name_slug()}{unique_suffix()}"  # รูปแบบเดียวกับอาจารย์
     return {
         "email": f"{email_name}@uni.ac.th",
         "full_name": f"{fake.first_name()} {fake.last_name()}",
@@ -111,7 +118,7 @@ def make_staff(i: int) -> dict:
 
 def make_admin(i: int) -> dict:
     return {
-        "email": f"admin{i:02d}@hub.local",             # เหมือนเดิม
+        "email": f"admin{i:02d}@hub.local",  # เหมือนเดิม
         "full_name": f"Admin {i}",
         "user_type": "admin",
         "identifier": f"A{str(i).zfill(2)}",
@@ -140,9 +147,7 @@ def seed():
     # นับ seed users เดิม (เฉพาะ @uni.ac.th และ @hub.local)
     seed_existing = (
         db.query(User)
-        .filter(
-            (User.email.like("%@uni.ac.th")) | (User.email.like("%@hub.local"))
-        )
+        .filter((User.email.like("%@uni.ac.th")) | (User.email.like("%@hub.local")))
         .count()
     )
     if seed_existing > 0:
@@ -168,10 +173,7 @@ def seed():
         # ตอนนี้ลบ seed users ได้แล้ว (ไม่มีตารางลูกอ้างอิง)
         deleted = (
             db.query(User)
-            .filter(
-                (User.email.like("%@uni.ac.th"))
-                | (User.email.like("%@hub.local"))
-            )
+            .filter((User.email.like("%@uni.ac.th")) | (User.email.like("%@hub.local")))
             .delete(synchronize_session=False)
         )
         db.commit()

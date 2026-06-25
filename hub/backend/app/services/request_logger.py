@@ -61,12 +61,11 @@ class RequestLoggerMiddleware(BaseHTTPMiddleware):
 
         start = time.time()
         user_id = _extract_user_id(request)
-        # ใช้ X-Forwarded-For ถ้ามี (Docker/nginx/cloudflare) — กัน 172.x.x.x
-        xff = request.headers.get("x-forwarded-for")
-        if xff:
-            client_ip = xff.split(",")[0].strip()
-        else:
-            client_ip = request.client.host if request.client else None
+        # ใช้ helper เดียวกับ deps — validate IP (กัน INET insert crash +
+        # malformed X-Forwarded-For DoS); คืน None ถ้าไม่ใช่ IP จริง
+        from app.deps import get_client_ip
+
+        client_ip = get_client_ip(request)
         user_agent = request.headers.get("user-agent")
 
         # เรียก endpoint จริง

@@ -13,6 +13,7 @@ so they can be copied into hub/subsystem-library/.env.
 Run inside hub-backend container:
     docker exec hub-backend python -m scripts.setup_library_users
 """
+
 from __future__ import annotations
 
 from datetime import datetime
@@ -78,18 +79,16 @@ def upsert_user(db, spec: dict) -> User:
     return user
 
 
-def upsert_subsystem(db, owner: User, rotate: bool = False) -> tuple[Subsystem, str | None]:
+def upsert_subsystem(
+    db, owner: User, rotate: bool = False
+) -> tuple[Subsystem, str | None]:
     """Returns (Subsystem, plaintext_client_secret_or_None).
 
     Default: preserve existing client_id + secret_hash on rerun
              (only update scope, redirect_uris, status). Returns None for secret.
     rotate=True: regenerate credentials (use only when intentionally rotating).
     """
-    sub = (
-        db.query(Subsystem)
-        .filter(Subsystem.name == SUBSYSTEM_NAME)
-        .one_or_none()
-    )
+    sub = db.query(Subsystem).filter(Subsystem.name == SUBSYSTEM_NAME).one_or_none()
 
     if sub is None:
         # First creation — must generate credentials
@@ -123,7 +122,9 @@ def upsert_subsystem(db, owner: User, rotate: bool = False) -> tuple[Subsystem, 
         print(f"[!] subsystem exists, ROTATED client_id + secret: id={sub.id}")
         return sub, client_secret
 
-    print(f"[=] subsystem exists, updated scope only (preserved client_id/secret): id={sub.id}")
+    print(
+        f"[=] subsystem exists, updated scope only (preserved client_id/secret): id={sub.id}"
+    )
     return sub, None
 
 
@@ -153,6 +154,7 @@ def upsert_access(db, sub: Subsystem, user: User, role_in_sub: str, granted_by: 
 
 def main():
     import sys
+
     rotate = "--rotate" in sys.argv
 
     db = SessionLocal()

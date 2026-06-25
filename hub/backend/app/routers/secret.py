@@ -6,6 +6,7 @@
   - token ใช้ครั้งเดียว + หมดอายุ 15 นาที (ถึงรั่วก็ใช้ไม่ได้)
   - refresh หน้าหลัง replaceState จะไปที่ /secret/retrieved (ไม่มี token)
 """
+
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, Request
@@ -62,6 +63,7 @@ def _error_page(title: str, message: str, status: int = 410) -> HTMLResponse:
 
 
 # ============ 1. retrieve — ดู secret ครั้งเดียว ============
+
 
 @router.get("/retrieve", response_class=HTMLResponse)
 def retrieve_secret(
@@ -141,6 +143,7 @@ def retrieve_secret(
 
 
 # ============ 2. retrieved — หน้าปลายทางหลัง replaceState ============
+
 
 @router.get("/retrieved", response_class=HTMLResponse)
 def secret_retrieved_landing():

@@ -35,6 +35,7 @@ from app.services.hooks import (
     emit,
 )
 from app.services.jwt_service import create_access_token
+from app.services.auth_policy import get_auth_policy
 from app.services.ip_blacklist import is_blacklisted
 from app.services.alert_service import maybe_alert_ml_risk
 from app.services.identity_challenge import is_user_challenged
@@ -62,13 +63,33 @@ oauth.register(
     client_kwargs={"scope": "openid email profile"},
 )
 
+# ============ 0. Public: อ่าน auth-policy (วิธี login ที่เปิดใช้) ============
+
+
+@router.get("/policy")
+def auth_policy_public(db: Session = Depends(get_db)):
+    """Public — หน้า login (admin console + subsystem) เรียกดูว่าเปิดวิธีไหนบ้าง.
+
+    ไม่มีข้อมูล sensitive — แค่บอกว่า Google/Passkey เปิดไหม → frontend ซ่อนปุ่ม.
+    """
+    return get_auth_policy(db)
+
+
 # ============ 1. เริ่ม login — redirect ไป Google ============
 
 
 @router.get("/google/login")
 @limiter.limit(settings.rate_limit_login)
-async def google_login(request: Request):
-    """พาผู้ใช้ไปหน้า login ของ Google. (rate-limited per-IP)"""
+async def google_login(request: Request, db: Session = Depends(get_db)):
+    """พาผู้ใช้ไปหน้า login ของ Google. (rate-limited per-IP)
+
+    เคารพ global auth-policy — ถ้า admin ปิด Google login จะปฏิเสธ (403).
+    """
+    if not get_auth_policy(db)["google"]:
+        raise HTTPException(
+            status_code=403,
+            detail="Google login ถูกปิดใช้งานโดยผู้ดูแลระบบ — ใช้ Passkey แทน",
+        )
     await emit(
         EVT_LOGIN_PRE,
         {
@@ -362,6 +383,7 @@ async def google_callback(request: Request, db: Session = Depends(get_db)):
         risk_reasons=risk_reasons,
         decision=actual_decision,
         is_attack_ip=is_blacklisted(db, client_ip),
+        login_method="google",
     )
     db.add(login_session)
     db.flush()  # ต้องการ login_session.id สำหรับ MFA challenge
@@ -853,6 +875,7 @@ async def line_callback(request: Request, db: Session = Depends(get_db)):
         risk_reasons=risk_reasons,
         decision=actual_decision,
         is_attack_ip=is_blacklisted(db, client_ip),
+        login_method="line",
     )
     db.add(login_session)
     db.flush()  # ต้องการ login_session.id สำหรับ MFA challenge

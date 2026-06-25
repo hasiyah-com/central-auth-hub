@@ -435,7 +435,15 @@ def get_whitelist(
     user: User = Depends(require_developer),
     db: Session = Depends(get_db),
 ):
-    """ดูรายชื่อ user ใน whitelist ของ subsystem (owner หรือ hub admin)."""
+    """ดูรายชื่อ user ใน whitelist ของ subsystem (owner หรือ hub admin).
+
+    แสดง:
+      - active access (revoked_at IS NULL)
+      - user ที่ถูกลบ (User.status='deleted') แม้ AccessList ถูก revoke จาก delete_user
+        เพื่อให้ admin เห็นว่ามีใครถูกลบไป (badge "DELETED" ใน UI)
+    """
+    from sqlalchemy import or_
+
     subsystem = _get_owned_subsystem(subsystem_id, user, db, request)
 
     rows = (
@@ -443,7 +451,10 @@ def get_whitelist(
         .join(User, User.id == AccessList.user_id)
         .filter(
             AccessList.subsystem_id == subsystem.id,
-            AccessList.revoked_at.is_(None),
+            or_(
+                AccessList.revoked_at.is_(None),
+                User.status == "deleted",
+            ),
         )
         .all()
     )
@@ -457,8 +468,10 @@ def get_whitelist(
                 "email": u.email,
                 "full_name": u.full_name,
                 "user_type": u.user_type,
+                "user_status": u.status,
                 "role_in_sub": al.role_in_sub,
                 "granted_at": al.granted_at,
+                "revoked_at": al.revoked_at,
             }
             for al, u in rows
         ],

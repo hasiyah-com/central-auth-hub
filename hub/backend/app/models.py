@@ -152,6 +152,10 @@ class LoginSession(Base):
 
     decision = Column(String(20))  # allow/warn/challenge/block/would_*
 
+    # ช่องทางที่ login เข้ามา (Week 10) — google / passkey / discoverable / line / hub_direct
+    # ใช้ในหน้า Access Activity (admin) — NULL = row เก่าก่อนเพิ่ม column
+    login_method = Column(String(20), nullable=True, index=True)
+
     # Ground truth labels (ตรงกับ RBA dataset columns)
     is_attack_ip = Column(Boolean, default=False)  # IP อยู่ใน blacklist
     is_account_takeover = Column(Boolean, default=False)  # admin ยืนยันว่าเป็น attacker จริง
@@ -408,3 +412,18 @@ class PasskeyBackupCode(Base):
     # Improvement #3 — Mandatory acknowledge before close modal
     # NULL = user ยังไม่ confirm "I saved my codes"
     acknowledged_at = Column(DateTime, nullable=True)
+
+
+class AppSetting(Base):
+    """Singleton key-value config สำหรับ global runtime settings ของ Hub.
+
+    ใช้กับค่าที่ admin ปรับได้ตอน runtime (ไม่ใช่ secret/env) เช่น auth-policy
+    (login methods ที่เปิดใช้). value เป็น JSON ยืดหยุ่นต่อ setting หลายแบบ.
+    """
+
+    __tablename__ = "app_settings"
+
+    key = Column(String(100), primary_key=True)
+    value = Column(JSON, nullable=False)
+    updated_by = Column(UUID(as_uuid=True), nullable=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)

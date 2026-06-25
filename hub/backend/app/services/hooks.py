@@ -15,6 +15,7 @@
     # ใน router/service
     await emit(EVT_LOGIN_SUCCESS, {"user_id": ..., "email": ...})
 """
+
 import asyncio
 import logging
 from collections import defaultdict
@@ -41,6 +42,7 @@ EVT_AUDIT_LOGGED = "audit.logged"
 
 # ============ Register / emit ============
 
+
 def register(event: str, handler: Handler) -> None:
     """Register handler สำหรับ event. Handler จะ sync หรือ async ก็ได้."""
     _listeners[event].append(handler)
@@ -65,7 +67,9 @@ async def emit(event: str, payload: dict) -> None:
             # log แต่ไม่ propagate — flow หลักต้องเดินต่อได้
             logger.exception(
                 "hook listener failed: event=%s handler=%s error=%s",
-                event, getattr(handler, "__name__", repr(handler)), e,
+                event,
+                getattr(handler, "__name__", repr(handler)),
+                e,
             )
 
 

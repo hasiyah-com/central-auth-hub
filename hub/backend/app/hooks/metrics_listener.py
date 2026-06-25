@@ -2,6 +2,7 @@
 
 ไม่ persist ไป DB ในรอบนี้ — ค่าจะ reset เมื่อ restart container.
 """
+
 from collections import Counter
 
 from app.services.hooks import (

@@ -17,7 +17,7 @@ from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
-from sqlalchemy import func
+from sqlalchemy import and_, case, func, not_, or_
 from sqlalchemy.orm import Session, aliased
 
 from app.config import settings
@@ -41,10 +41,15 @@ from app.services.email_service import (
     send_revoke_notification,
     send_secret_retrieval_email,
 )
+from app.services.change_request_service import close_subsystem_login_sessions
+from app.services.auth_policy import get_auth_policy, set_auth_policy
 from app.services.identity_challenge import create_challenge
 from app.services.jwt_service import revoke_jti
-from app.services.webhook_dispatcher import send_access_revoked
-from app.services.subsystem_health import get_status as get_health_status
+from app.services.webhook_dispatcher import send_access_revoked, send_access_updated
+from app.services.subsystem_health import (
+    get_status as get_health_status,
+    clear_status as clear_health_status,
+)
 from app.redis_client import redis_client
 
 log = logging.getLogger(__name__)
@@ -383,8 +388,8 @@ def suspend_subsystem(
 ):
     """ระงับการใช้งาน subsystem ที่ active แล้ว → status='suspended'.
 
-    หลังจากนี้ /oauth/authorize จะ reject — token เก่ายังใช้ได้ถึงหมดอายุ
-    (force-revoke session ทำในข้อ 6 ต่อ)
+    หลังจากนี้ /oauth/authorize จะ reject + ทุก session ที่ active อยู่ถูกตัดทันที
+    (logout_at=NOW, jti revoked, webhook → subsystem ลบ local session)
     """
     subsystem = db.query(Subsystem).filter(Subsystem.id == subsystem_id).first()
     if not subsystem:
@@ -396,6 +401,14 @@ def suspend_subsystem(
         )
 
     subsystem.status = "suspended"
+
+    # ล้าง health cache — กัน entry เก่าค้างใน Redis ระหว่างถูกระงับ
+    # (health loop ข้าม subsystem ที่ไม่ active อยู่แล้ว)
+    clear_health_status(str(subsystem.id))
+
+    # Force-revoke ทุก session ที่ active (logout_at + jti) ก่อน commit
+    closed = close_subsystem_login_sessions(db, subsystem.id)
+
     log_action(
         db,
         actor_id=admin.id,
@@ -403,14 +416,38 @@ def suspend_subsystem(
         target_type="subsystem",
         target_id=subsystem.id,
         ip=get_client_ip(request),
-        metadata={"name": subsystem.name},
+        metadata={
+            "name": subsystem.name,
+            "sessions_closed": closed["closed"],
+            "jti_revoked": closed["jti_revoked"],
+        },
     )
     db.commit()
+
+    # Webhook → subsystem ตัด local session ทุก user (fail-safe)
+    # ใช้ access_updated (รองรับ hub_user_id=None = kick all) ไม่ใช่ access_revoked
+    # (access_revoked ที่ฝั่ง subsystem-dorm/library require hub_user_id เป็นรายคน)
+    try:
+        send_access_updated(
+            subsystem,
+            {
+                "hub_user_id": None,
+                "reason": "subsystem_suspended",
+            },
+        )
+    except Exception:
+        pass
+
     return {
         "id": str(subsystem.id),
         "name": subsystem.name,
         "status": "suspended",
-        "message": f"ระงับ '{subsystem.name}' แล้ว — login ใหม่จะถูกปฏิเสธ",
+        "sessions_closed": closed["closed"],
+        "jti_revoked": closed["jti_revoked"],
+        "message": (
+            f"ระงับ '{subsystem.name}' แล้ว — "
+            f"ตัด {closed['closed']} session, revoke {closed['jti_revoked']} JWT"
+        ),
     }
 
 
@@ -437,6 +474,11 @@ def resume_subsystem(
     subsystem.status = "active"
     if not subsystem.approved_at:
         subsystem.approved_at = datetime.utcnow()
+
+    # ล้าง health cache เก่า (อาจเป็น 'down' จากก่อน suspend) → preflight ไม่ block
+    # ผิด ๆ จนกว่า health loop รอบถัดไป (≤5 นาที) จะ refresh ค่าจริง
+    clear_health_status(str(subsystem.id))
+
     log_action(
         db,
         actor_id=admin.id,
@@ -1855,4 +1897,346 @@ def list_audit_logs(
         "total": total,
         "skip": skip,
         "limit": limit,
+    }
+
+
+# ============ Global Auth Policy (login methods) ============
+
+
+class AuthPolicyUpdate(BaseModel):
+    google: bool
+    passkey: bool
+
+
+def _kick_all_subsystems(db: Session, admin_id, reason: str) -> dict:
+    """ตัดทุก session ที่ active ในทุก subsystem + ยิง webhook kick-all.
+
+    ใช้ตอนเปลี่ยน global auth-policy → บังคับ user ทั้งระบบ login ใหม่ตามวิธีที่เลือก.
+    คืนสรุป {total_sessions_closed, total_jti_revoked, subsystems: [...]}
+    """
+    subs = db.query(Subsystem).all()
+    total_closed = 0
+    total_jti = 0
+    per_sub: list[dict] = []
+    for sub in subs:
+        closed = close_subsystem_login_sessions(db, sub.id)
+        total_closed += closed["closed"]
+        total_jti += closed["jti_revoked"]
+        if closed["closed"]:
+            per_sub.append(
+                {
+                    "subsystem_id": str(sub.id),
+                    "subsystem_name": sub.name,
+                    "sessions_closed": closed["closed"],
+                    "jti_revoked": closed["jti_revoked"],
+                }
+            )
+    return {
+        "total_sessions_closed": total_closed,
+        "total_jti_revoked": total_jti,
+        "subsystems": per_sub,
+        "_all_subs": subs,  # ใช้ยิง webhook หลัง commit
+    }
+
+
+@router.get("/auth-policy")
+def read_auth_policy(
+    admin: User = Depends(require_hub_admin),
+    db: Session = Depends(get_db),
+):
+    """อ่าน global auth-policy ปัจจุบัน (วิธี login ที่เปิดใช้)."""
+    return get_auth_policy(db)
+
+
+@router.put(
+    "/auth-policy",
+    dependencies=[Depends(_stepup_gate("auth_policy_update"))],
+)
+def update_auth_policy(
+    payload: AuthPolicyUpdate,
+    request: Request,
+    admin: User = Depends(require_hub_admin),
+    db: Session = Depends(get_db),
+):
+    """เปลี่ยน global auth-policy → kick ทุก session ทุก subsystem ให้ login ใหม่.
+
+    - ต้องเปิดอย่างน้อย 1 วิธี (กัน lockout) — ไม่งั้น 400
+    - step-up gate (critical action)
+    - หลังเปลี่ยน: ตัด session ทุก subsystem + webhook kick-all → user login ใหม่
+      จะเห็นเฉพาะวิธีที่เปิดไว้
+    """
+    old_policy = get_auth_policy(db)
+    try:
+        new_policy = set_auth_policy(
+            db, google=payload.google, passkey=payload.passkey, actor_id=admin.id
+        )
+    except ValueError as e:
+        # B7 — log failure path
+        log_action(
+            db,
+            actor_id=admin.id,
+            action="auth_policy_update_failed",
+            target_type="app_setting",
+            target_id=None,
+            ip=get_client_ip(request),
+            metadata={"reason": str(e), "attempted": payload.model_dump()},
+        )
+        db.commit()
+        raise HTTPException(status_code=400, detail=str(e))
+
+    # เปลี่ยนจริงไหม — ถ้าไม่เปลี่ยน ไม่ต้อง kick
+    changed = old_policy != new_policy
+    kick = {
+        "total_sessions_closed": 0,
+        "total_jti_revoked": 0,
+        "subsystems": [],
+        "_all_subs": [],
+    }
+    if changed:
+        kick = _kick_all_subsystems(db, admin.id, reason="auth_policy_changed")
+
+    log_action(
+        db,
+        actor_id=admin.id,
+        action="auth_policy_updated",
+        target_type="app_setting",
+        target_id=None,
+        ip=get_client_ip(request),
+        metadata={
+            "old": old_policy,
+            "new": new_policy,
+            "changed": changed,
+            "total_sessions_closed": kick["total_sessions_closed"],
+            "total_jti_revoked": kick["total_jti_revoked"],
+            "subsystems_kicked": kick["subsystems"],
+        },
+    )
+    db.commit()
+
+    # ยิง webhook kick-all ทุก subsystem หลัง commit (fail-safe)
+    if changed:
+        for sub in kick["_all_subs"]:
+            try:
+                send_access_updated(
+                    sub,
+                    {"hub_user_id": None, "reason": "auth_policy_changed"},
+                )
+            except Exception:
+                pass
+
+    methods = [m for m, on in new_policy.items() if on]
+    return {
+        "policy": new_policy,
+        "changed": changed,
+        "total_sessions_closed": kick["total_sessions_closed"],
+        "total_jti_revoked": kick["total_jti_revoked"],
+        "subsystems_kicked": kick["subsystems"],
+        "message": (
+            f"อัปเดตวิธี login เป็น: {', '.join(methods)} — "
+            + (
+                f"ตัด {kick['total_sessions_closed']} session ทุก subsystem แล้ว"
+                if changed
+                else "ไม่มีการเปลี่ยนแปลง"
+            )
+        ),
+    }
+
+
+# ============ Access Activity (realtime login feed — email-centric) ============
+
+# decision → กลุ่มสำหรับ KPI
+_BLOCKED_DECISIONS = ("block", "would_block")
+_CHALLENGED_DECISIONS = ("challenge", "mfa", "would_mfa", "would_challenge")
+
+
+def _activity_item(ls, email, full_name, user_type, sub_name, now=None) -> dict:
+    """แปลง (LoginSession + joined fields) → dict สำหรับ feed.
+
+    now != None → ใส่ online_seconds (สำหรับ active section).
+    """
+    d = {
+        "id": str(ls.id),
+        "created_at": ls.created_at.isoformat() if ls.created_at else None,
+        "user_id": str(ls.user_id) if ls.user_id else None,
+        "user_email": email,
+        "full_name": full_name,
+        "user_type": user_type,
+        "subsystem_id": str(ls.subsystem_id) if ls.subsystem_id else None,
+        "subsystem_name": sub_name,  # None = Hub-direct
+        "login_method": ls.login_method,
+        "anomaly_score": float(ls.anomaly_score)
+        if ls.anomaly_score is not None
+        else None,
+        "risk_score": float(ls.risk_score) if ls.risk_score is not None else None,
+        "decision": ls.decision,
+        "ip": str(ls.ip) if ls.ip else None,
+        "geo_country": ls.geo_country,
+        "geo_city": ls.geo_city,
+        "browser": ls.browser,
+        "os_name": ls.os_name,
+        "device_type": ls.device_type,
+        "is_attack_ip": bool(ls.is_attack_ip),
+        "logout_at": ls.logout_at.isoformat() if ls.logout_at else None,
+    }
+    if now is not None and ls.created_at is not None:
+        d["online_seconds"] = int((now - ls.created_at).total_seconds())
+    return d
+
+
+@router.get("/activity")
+def access_activity(
+    q: str | None = Query(None, description="ค้นหา email / ชื่อ"),
+    decision: str | None = Query(None, description="filter decision"),
+    subsystem_id: str | None = Query(
+        None, description="filter subsystem (uuid) หรือ 'hub' = Hub-direct"
+    ),
+    channel: str | None = Query(None, description="filter login_method"),
+    hours: int = Query(24, ge=1, le=720, description="ช่วงเวลาย้อนหลัง (ชม.)"),
+    skip: int = 0,
+    limit: int = Query(50, ge=1, le=200),
+    admin: User = Depends(require_hub_admin),
+    db: Session = Depends(get_db),
+):
+    """Feed การเข้าใช้งานทั้งหมด (login_sessions) — pivot ด้วย email.
+
+    แสดง: ใคร (email/ชื่อ/type) · ระบบย่อยไหน · ช่องทาง (login_method) ·
+          ML/risk เท่าไร · decision · ที่ไหน (geo/ip) · device · เมื่อไหร่.
+
+    + KPIs (total/blocked/challenged/unique users/avg risk) ในช่วง `hours`
+    + hourly series (24 ช่อง) สำหรับ chart
+    ใช้ใน admin /activity (auto-refresh realtime).
+    """
+    now = datetime.utcnow()
+    window_start = now - timedelta(hours=hours)
+
+    base = (
+        db.query(
+            LoginSession,
+            User.email,
+            User.full_name,
+            User.user_type,
+            Subsystem.name.label("subsystem_name"),
+        )
+        .outerjoin(User, User.id == LoginSession.user_id)
+        .outerjoin(Subsystem, Subsystem.id == LoginSession.subsystem_id)
+        .filter(LoginSession.created_at >= window_start)
+    )
+
+    # ── filters ──
+    if q:
+        like = f"%{q.strip()}%"
+        base = base.filter(or_(User.email.ilike(like), User.full_name.ilike(like)))
+    if decision:
+        base = base.filter(LoginSession.decision == decision)
+    if channel:
+        base = base.filter(LoginSession.login_method == channel)
+    if subsystem_id == "hub":
+        base = base.filter(LoginSession.subsystem_id.is_(None))
+    elif subsystem_id:
+        base = base.filter(LoginSession.subsystem_id == subsystem_id)
+
+    # ── แยก "กำลังออนไลน์" ออกจาก "ประวัติ" ──
+    #   active = logout_at NULL + อยู่ใน JWT window + ไม่ถูก block
+    #   history = ที่เหลือ (logout แล้ว / JWT หมดอายุ / ถูก block)
+    #   → พอ user logout (logout_at set) row จะหลุดจาก active ไปอยู่ history
+    jwt_cutoff = now - timedelta(minutes=settings.jwt_access_token_expire_minutes)
+    active_cond = and_(
+        LoginSession.logout_at.is_(None),
+        LoginSession.created_at >= jwt_cutoff,
+        LoginSession.decision.notin_(_BLOCKED_DECISIONS),
+    )
+
+    # Active (online now) — ทุก subsystem รวมกัน, ไม่ paginate (cap 200)
+    active_rows = (
+        base.filter(active_cond)
+        .order_by(LoginSession.created_at.desc())
+        .limit(200)
+        .all()
+    )
+    active = [
+        _activity_item(ls, email, fn, ut, sn, now=now)
+        for ls, email, fn, ut, sn in active_rows
+    ]
+
+    # History — ที่ไม่ active (paginated)
+    hist_q = base.filter(not_(active_cond))
+    total = hist_q.count()
+    rows = (
+        hist_q.order_by(LoginSession.created_at.desc()).offset(skip).limit(limit).all()
+    )
+    items = [_activity_item(ls, email, fn, ut, sn) for ls, email, fn, ut, sn in rows]
+
+    # ── KPIs (ทั้งช่วง window — ไม่จำกัด page) ──
+    kpi_q = db.query(LoginSession).filter(LoginSession.created_at >= window_start)
+    # ใช้ filter เดียวกับ base (ยกเว้น pagination) สำหรับ KPI ให้สอดคล้องกับ filter
+    if decision:
+        kpi_q = kpi_q.filter(LoginSession.decision == decision)
+    if channel:
+        kpi_q = kpi_q.filter(LoginSession.login_method == channel)
+    if subsystem_id == "hub":
+        kpi_q = kpi_q.filter(LoginSession.subsystem_id.is_(None))
+    elif subsystem_id:
+        kpi_q = kpi_q.filter(LoginSession.subsystem_id == subsystem_id)
+    if q:
+        like = f"%{q.strip()}%"
+        kpi_q = kpi_q.outerjoin(User, User.id == LoginSession.user_id).filter(
+            or_(User.email.ilike(like), User.full_name.ilike(like))
+        )
+
+    kpi_total = kpi_q.count()
+    blocked = kpi_q.filter(LoginSession.decision.in_(_BLOCKED_DECISIONS)).count()
+    challenged = kpi_q.filter(LoginSession.decision.in_(_CHALLENGED_DECISIONS)).count()
+    unique_users = (
+        kpi_q.with_entities(func.count(func.distinct(LoginSession.user_id))).scalar()
+        or 0
+    )
+    avg_risk = kpi_q.with_entities(func.avg(LoginSession.risk_score)).scalar()
+    avg_risk = round(float(avg_risk), 3) if avg_risk is not None else None
+
+    # ── channel distribution ──
+    chan_rows = (
+        kpi_q.with_entities(LoginSession.login_method, func.count(LoginSession.id))
+        .group_by(LoginSession.login_method)
+        .all()
+    )
+    channels = {(m or "unknown"): c for m, c in chan_rows}
+
+    # ── hourly series (date_trunc) ──
+    hour_rows = (
+        kpi_q.with_entities(
+            func.date_trunc("hour", LoginSession.created_at).label("h"),
+            func.count(LoginSession.id),
+            func.sum(case((LoginSession.decision.in_(_BLOCKED_DECISIONS), 1), else_=0)),
+        )
+        .group_by("h")
+        .order_by("h")
+        .all()
+    )
+    hourly = [
+        {
+            "hour": h.isoformat() if h else None,
+            "count": int(c or 0),
+            "blocked": int(b or 0),
+        }
+        for h, c, b in hour_rows
+    ]
+
+    return {
+        "active": active,
+        "active_count": len(active),
+        "items": items,
+        "total": total,
+        "skip": skip,
+        "limit": limit,
+        "window_hours": hours,
+        "kpis": {
+            "total": kpi_total,
+            "blocked": blocked,
+            "challenged": challenged,
+            "unique_users": unique_users,
+            "avg_risk": avg_risk,
+            "online": len(active),
+        },
+        "channels": channels,
+        "hourly": hourly,
     }

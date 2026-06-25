@@ -2,6 +2,7 @@
 
 Register เฉพาะตอน APP_ENV=development เพื่อไม่ noise production log
 """
+
 import json
 import logging
 
@@ -21,9 +22,14 @@ logger = logging.getLogger("app.hooks.dev")
 
 
 ALL_EVENTS = [
-    EVT_LOGIN_PRE, EVT_LOGIN_SUCCESS, EVT_LOGIN_FAILURE,
-    EVT_TOKEN_ISSUED, EVT_OAUTH_AUTHORIZED, EVT_OAUTH_FAILURE,
-    EVT_ML_SCORED, EVT_AUDIT_LOGGED,
+    EVT_LOGIN_PRE,
+    EVT_LOGIN_SUCCESS,
+    EVT_LOGIN_FAILURE,
+    EVT_TOKEN_ISSUED,
+    EVT_OAUTH_AUTHORIZED,
+    EVT_OAUTH_FAILURE,
+    EVT_ML_SCORED,
+    EVT_AUDIT_LOGGED,
 ]
 
 
@@ -34,6 +40,7 @@ def _make_handler(event_name: str):
         except Exception:
             body = repr(payload)
         logger.info("[hook] %s %s", event_name, body)
+
     _handler.__name__ = f"dev_log_{event_name.replace('.', '_')}"
     return _handler
 

@@ -49,7 +49,11 @@ _LOCALHOST_HOSTS = {"localhost", "127.0.0.1"}
 
 # webhook path ที่รู้จัก — ใช้ strip ออกจาก override URL แล้วต่อ path ของ event
 # (กัน override ที่ตั้ง path ตายตัวบล็อก event อื่น — B49)
-_KNOWN_WEBHOOK_PATHS = ("/internal/access-revoked", "/internal/access-updated")
+_KNOWN_WEBHOOK_PATHS = (
+    "/internal/access-revoked",
+    "/internal/access-updated",
+    "/internal/access-restored",
+)
 
 
 def _translate_for_docker(url: str) -> str:
@@ -290,4 +294,81 @@ def send_access_revoked(subsystem: Subsystem, payload: dict[str, Any]) -> bool:
         return True
     except Exception as e:
         log.warning("webhook to %s failed: %r", url, e)
+        return False
+
+
+def send_access_restored(subsystem: Subsystem, payload: dict[str, Any]) -> bool:
+    """Fire-and-forget webhook: user X ถูก restore กลับเข้า whitelist ของ subsystem.
+
+    ตรงข้ามกับ access_revoked — ใช้ตอน admin reactivate user (status deleted→active).
+    Subsystem ควร clear `hub_access_revoked_at = NULL` → user login กลับมาได้ทันที.
+
+    Body:
+      {
+        "event": "access_restored",
+        "subsystem_id": "...",
+        "client_id": "...",
+        "hub_user_id": "...",
+        "restored_at": "ISO-8601 UTC",
+        "restored_by": "...",
+        "reason": "user_reactivated_at_hub"
+      }
+
+    Headers/signing เหมือน access_revoked. Returns True ถ้า subsystem ตอบ 200.
+    """
+    if not settings.webhook_shared_key:
+        log.warning(
+            "webhook skipped — WEBHOOK_SHARED_KEY not configured. "
+            "subsystem=%s event=access_restored",
+            subsystem.id,
+        )
+        return False
+
+    url = _resolve_webhook_url(subsystem, "/internal/access-restored")
+    if not url:
+        log.warning(
+            "webhook skipped — no URL resolvable for subsystem=%s", subsystem.id
+        )
+        return False
+
+    body_dict = {
+        "event": "access_restored",
+        "subsystem_id": str(subsystem.id),
+        "client_id": subsystem.client_id,
+        "restored_at": datetime.now(timezone.utc).isoformat(),
+        **payload,
+    }
+    body_bytes = json.dumps(body_dict, separators=(",", ":"), sort_keys=True).encode(
+        "utf-8"
+    )
+    sig = _sign(body_bytes)
+    ts = str(int(datetime.now(timezone.utc).timestamp()))
+
+    try:
+        with httpx.Client(timeout=5.0) as client:
+            r = client.post(
+                url,
+                content=body_bytes,
+                headers={
+                    "Content-Type": "application/json",
+                    "X-Hub-Event": "access_restored",
+                    "X-Hub-Signature-256": sig,
+                    "X-Hub-Timestamp": ts,
+                    "User-Agent": "central-auth-hub-webhook/1.0",
+                },
+            )
+            if r.status_code >= 400:
+                log.warning(
+                    "webhook(access_restored) subsystem=%s returned %d: %s",
+                    subsystem.id,
+                    r.status_code,
+                    r.text[:200],
+                )
+                return False
+        log.info(
+            "webhook(access_restored) delivered subsystem=%s url=%s", subsystem.id, url
+        )
+        return True
+    except Exception as e:
+        log.warning("webhook(access_restored) to %s failed: %r", url, e)
         return False

@@ -8,6 +8,7 @@
 
 ถ้า attacker ขโมย authorization code ไปก็ใช้ไม่ได้ เพราะไม่มี code_verifier
 """
+
 import base64
 import hashlib
 import hmac
@@ -31,7 +32,7 @@ def generate_pkce_pair() -> tuple[str, str]:
     """
     import secrets
 
-    code_verifier = secrets.token_urlsafe(48)   # 43-128 ตัวอักษร ตาม spec
+    code_verifier = secrets.token_urlsafe(48)  # 43-128 ตัวอักษร ตาม spec
     digest = hashlib.sha256(code_verifier.encode("ascii")).digest()
     code_challenge = base64.urlsafe_b64encode(digest).decode("ascii").rstrip("=")
     return code_verifier, code_challenge

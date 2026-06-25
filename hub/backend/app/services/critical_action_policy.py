@@ -65,6 +65,8 @@ CRITICAL_ACTIONS: frozenset[str] = frozenset(
         "whitelist_remove",
         "whitelist_role_change",
         "session_revoke",
+        # Global auth-policy (Week 10) — เปลี่ยนวิธี login ที่ระบบยอมรับ
+        "auth_policy_update",
     }
 )
 

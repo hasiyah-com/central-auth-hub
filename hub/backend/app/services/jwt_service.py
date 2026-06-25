@@ -201,15 +201,24 @@ def create_subsystem_token(
         "jti": jti,
         "role_in_subsystem": role_in_sub,
     }
+    # identifier + year_or_position ในตาราง users เก็บค่าเดียว — ใช้ user_type
+    # ตัดสินว่าจะ map ไป field "student_*" หรือ "employee_*" / "year" หรือ "position"
+    # (กันส่งซ้ำ 2 field ค่าเหมือนกัน → UI ของ subsystem แสดงปนกัน)
+    is_student = user.user_type == "student"
+    student_id_val = user.identifier if is_student else None
+    employee_id_val = None if is_student else user.identifier
+    year_val = user.year_or_position if is_student else None
+    position_val = None if is_student else user.year_or_position
+
     scope_field_map = {
         "email": ("email", user.email),
         "name": ("name", user.full_name),
-        "student_id": ("student_id", user.identifier),
-        "employee_id": ("employee_id", user.identifier),
+        "student_id": ("student_id", student_id_val),
+        "employee_id": ("employee_id", employee_id_val),
         "faculty": ("faculty", user.faculty),
         "major": ("major", user.major),
-        "year": ("year", user.year_or_position),
-        "position": ("position", user.year_or_position),
+        "year": ("year", year_val),
+        "position": ("position", position_val),
         "phone": ("phone", user.phone),
         "address": ("address", user.address),
     }
@@ -240,7 +249,10 @@ def create_subsystem_token(
     for s in effective_scope:
         if s in scope_field_map:
             k, v = scope_field_map[s]
-            payload[k] = v
+            if v is not None:
+                # ไม่ใส่ field ที่ไม่มีค่า → ฝั่ง subsystem (deps.py) อ่าน claims.get(f)
+                # is not None → ไม่ติดใน provided_scope → UI ไม่แสดง row "— ไม่มีใน Hub"
+                payload[k] = v
 
     token = jwt.encode(
         payload,

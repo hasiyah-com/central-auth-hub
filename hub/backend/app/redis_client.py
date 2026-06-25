@@ -2,6 +2,7 @@
 
 decode_responses=True ทำให้ค่าที่ดึงมาเป็น str (ไม่ใช่ bytes)
 """
+
 import redis
 
 from app.config import settings

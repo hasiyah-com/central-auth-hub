@@ -4,6 +4,7 @@
   1. สร้าง <ชื่อ>_listener.py พร้อม register_listeners() function
   2. เพิ่มใน register_default_listeners() ด้านล่าง
 """
+
 import logging
 
 from app.config import settings
@@ -21,6 +22,7 @@ def register_default_listeners() -> None:
     # dev logger เฉพาะ development — ไม่ noise production log
     if settings.app_env == "development":
         from app.hooks import dev_logger_listener
+
         dev_logger_listener.register_listeners()
 
     logger.info("hook listeners registered: %d total", listeners_count())
