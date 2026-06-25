@@ -1,0 +1,29 @@
+# dorm.${DOMAIN}  →  subsystem-dorm:8000 (ระบบหอพัก — OAuth client)
+
+server {
+    listen 80;
+    server_name dorm.${DOMAIN};
+
+    location /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+    }
+    location / {
+        return 301 https://$host$request_uri;
+    }
+}
+
+server {
+    listen 443 ssl;
+    http2 on;
+    server_name dorm.${DOMAIN};
+
+    ssl_certificate     /etc/letsencrypt/live/dorm.${DOMAIN}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/dorm.${DOMAIN}/privkey.pem;
+    include /etc/nginx/snippets/ssl-params.conf;
+
+    location / {
+        include /etc/nginx/snippets/proxy-params.conf;
+        # service name "subsystem-dorm" resolve ผ่าน cah-net ข้าม compose project ได้
+        proxy_pass http://subsystem-dorm:8000;
+    }
+}

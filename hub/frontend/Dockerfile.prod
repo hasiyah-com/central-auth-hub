@@ -1,0 +1,25 @@
+# Hub Admin Frontend — Next.js 14 PRODUCTION (build + start, no hot reload)
+#
+# NEXT_PUBLIC_* ถูก inline ตอน build (ใช้ใน client เช่น app/auth/login/page.tsx)
+# → ต้องส่งเป็น build ARG, ไม่ใช่ runtime env. HUB_INTERNAL_URL เป็น server-side
+# (proxy route + next.config rewrites) → ตั้งเป็น runtime env ใน compose ได้
+FROM node:20-alpine
+
+WORKDIR /app
+
+# Install deps (ci = reproducible จาก lockfile)
+COPY package.json package-lock.json* ./
+RUN npm ci
+
+COPY . .
+
+# Browser-facing Hub URL — inline ตอน build
+ARG NEXT_PUBLIC_HUB_URL=http://localhost:8000
+ENV NEXT_PUBLIC_HUB_URL=${NEXT_PUBLIC_HUB_URL}
+ENV NODE_ENV=production
+
+RUN npm run build
+
+EXPOSE 3000
+
+CMD ["npm", "run", "start"]

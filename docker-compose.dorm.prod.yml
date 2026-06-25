@@ -1,0 +1,49 @@
+# Subsystem A — ระบบหอพัก (Dorm) — PRODUCTION stack (cah-dorm)
+#
+# Standalone prod compose (see docker-compose.prod.yml header for why not an override).
+# NO host ports (nginx ที่ dorm.<domain> proxy เข้ามา), NO source mount, NO --reload.
+#
+# Run:  docker compose --env-file .env.dorm.prod -f docker-compose.dorm.prod.yml up -d --build
+# หรือ: bash deploy/up.sh dorm   (Hub stack ต้องขึ้นก่อน — subsystem fetch JWKS จาก hub-backend)
+
+name: cah-dorm
+
+services:
+  postgres-dorm:
+    image: postgres:15-alpine
+    container_name: hub-postgres-dorm
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DORM_POSTGRES_USER:?set in .env.dorm.prod}
+      POSTGRES_PASSWORD: ${DORM_POSTGRES_PASSWORD:?set in .env.dorm.prod}
+      POSTGRES_DB: ${DORM_POSTGRES_DB:?set in .env.dorm.prod}
+    volumes:
+      - postgres_dorm_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DORM_POSTGRES_USER} -d ${DORM_POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  subsystem-dorm:
+    build:
+      context: ./hub/subsystem-dorm
+      dockerfile: Dockerfile
+    container_name: hub-subsystem-dorm
+    restart: unless-stopped
+    env_file:
+      - ./hub/subsystem-dorm/.env.prod
+    environment:
+      DATABASE_URL: postgresql+psycopg2://${DORM_POSTGRES_USER}:${DORM_POSTGRES_PASSWORD}@postgres-dorm:5432/${DORM_POSTGRES_DB}
+    depends_on:
+      postgres-dorm:
+        condition: service_healthy
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips='*'
+
+networks:
+  default:
+    name: cah-net
+    external: true
+
+volumes:
+  postgres_dorm_data:

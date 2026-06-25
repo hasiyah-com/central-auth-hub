@@ -1,0 +1,30 @@
+# admin.${DOMAIN}  →  hub-frontend:3000 (Next.js console UI)
+# ${DOMAIN} ถูกแทนโดย nginx:alpine envsubst ตอน container start (env DOMAIN)
+
+server {
+    listen 80;
+    server_name admin.${DOMAIN};
+
+    # ACME challenge (certbot webroot) — ต้องตอบ HTTP ก่อนออก cert ได้
+    location /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+    }
+    location / {
+        return 301 https://$host$request_uri;
+    }
+}
+
+server {
+    listen 443 ssl;
+    http2 on;
+    server_name admin.${DOMAIN};
+
+    ssl_certificate     /etc/letsencrypt/live/admin.${DOMAIN}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/admin.${DOMAIN}/privkey.pem;
+    include /etc/nginx/snippets/ssl-params.conf;
+
+    location / {
+        include /etc/nginx/snippets/proxy-params.conf;
+        proxy_pass http://hub-frontend:3000;
+    }
+}

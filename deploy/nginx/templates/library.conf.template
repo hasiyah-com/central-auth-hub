@@ -1,0 +1,28 @@
+# library.${DOMAIN}  →  subsystem-library:8000 (ระบบห้องสมุด — OAuth client)
+
+server {
+    listen 80;
+    server_name library.${DOMAIN};
+
+    location /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+    }
+    location / {
+        return 301 https://$host$request_uri;
+    }
+}
+
+server {
+    listen 443 ssl;
+    http2 on;
+    server_name library.${DOMAIN};
+
+    ssl_certificate     /etc/letsencrypt/live/library.${DOMAIN}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/library.${DOMAIN}/privkey.pem;
+    include /etc/nginx/snippets/ssl-params.conf;
+
+    location / {
+        include /etc/nginx/snippets/proxy-params.conf;
+        proxy_pass http://subsystem-library:8000;
+    }
+}
