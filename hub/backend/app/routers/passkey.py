@@ -44,6 +44,7 @@ from app.services import (
     webauthn_service,
 )
 from app.services.audit_service import log_action
+from app.services.auth_policy import get_auth_policy
 from app.services.critical_action_policy import _bearer, _extract_jti, gate
 from app.services.alert_service import maybe_alert_ml_risk
 from app.services.feature_extraction import (
@@ -187,6 +188,7 @@ async def _build_login_session(result, request, jti, db, method: str) -> LoginSe
         decision=risk["decision"] if risk["decision"] != "block" else "would_block",
         is_attack_ip=is_blacklisted(db, ip),
         jti=jti,
+        login_method=method,
     )
 
 
@@ -771,6 +773,12 @@ async def login_start(
     body: LoginStartRequest,
     db: Session = Depends(get_db),
 ) -> dict:
+    # เคารพ global auth-policy — ถ้า admin ปิด Passkey login จะปฏิเสธ
+    if not get_auth_policy(db)["passkey"]:
+        raise HTTPException(
+            status_code=403,
+            detail="Passkey login ถูกปิดใช้งานโดยผู้ดูแลระบบ — ใช้ Google แทน",
+        )
     # EmailStr ตรวจ format แล้ว (ไม่ใช่ email → 422 ก่อนถึงตรงนี้)
     # auth_begin is opaque on miss (Decision #1) — returns options either way
     return webauthn_service.auth_begin(body.email.strip().lower(), db)
@@ -895,6 +903,11 @@ async def login_discoverable_start(
     db: Session = Depends(get_db),
 ) -> dict:
     """Assertion options แบบไม่มี email — browser โชว์ resident keys ให้เลือก."""
+    if not get_auth_policy(db)["passkey"]:
+        raise HTTPException(
+            status_code=403,
+            detail="Passkey login ถูกปิดใช้งานโดยผู้ดูแลระบบ — ใช้ Google แทน",
+        )
     return webauthn_service.discoverable_begin(db)
 
 

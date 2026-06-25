@@ -34,6 +34,7 @@ from app.redis_client import redis_client
 from app.routers.auth import oauth  # ใช้ Authlib client ตัวเดียวกับ Week 2
 from app.services.alert_service import maybe_alert_ml_risk
 from app.services.audit_service import log_action
+from app.services.auth_policy import get_auth_policy
 from app.services.identity_challenge import is_user_challenged
 from app.services.subsystem_health import get_status as get_health_status
 from app.services.feature_extraction import (
@@ -83,10 +84,30 @@ async def authorize(
     subsystem = db.query(Subsystem).filter(Subsystem.client_id == client_id).first()
     if not subsystem:
         raise HTTPException(status_code=400, detail="client_id ไม่ถูกต้อง")
+    if subsystem.status == "suspended":
+        # ระงับใช้งานชั่วคราว → 503 Service Unavailable + หน้า HTML
+        log_action(
+            db,
+            actor_id=None,
+            action="oauth_authorize_blocked_suspended",
+            target_type="subsystem",
+            target_id=subsystem.id,
+            ip=get_client_ip(request),
+            metadata={"client_id": client_id, "redirect_uri": redirect_uri},
+        )
+        db.commit()
+        return HTMLResponse(
+            content=_suspended_html(subsystem_name=subsystem.name),
+            status_code=503,
+        )
     if subsystem.status != "active":
+        # pending — 403 (ยังไม่ได้รับอนุมัติ ≠ ระงับ)
         raise HTTPException(
             status_code=403,
-            detail=f"subsystem ยังเป็น '{subsystem.status}' — รอ admin อนุมัติก่อน",
+            detail=(
+                f"subsystem '{subsystem.name}' ยังไม่ได้รับอนุมัติจาก admin "
+                f"(status: {subsystem.status})"
+            ),
         )
 
     # 1b. Pre-flight health check — ถ้า subsystem ล่ม อย่าให้ user เสียเวลาผ่าน Google
@@ -152,11 +173,14 @@ async def authorize(
     #    nonce → CSP อนุญาต inline style+script เฉพาะของหน้านี้ (กัน XSS)
     nonce = secrets.token_urlsafe(16)
     request.state.csp_nonce = nonce
+    policy = get_auth_policy(db)
     return HTMLResponse(
         content=_login_chooser_html(
             hub_state=hub_state,
             subsystem_name=subsystem.name,
             nonce=nonce,
+            allow_google=policy["google"],
+            allow_passkey=policy["passkey"],
         )
     )
 
@@ -176,21 +200,48 @@ async def authorize_google(
         raise HTTPException(
             status_code=400, detail="OAuth request หมดอายุ — เริ่ม login ใหม่"
         )
+    if not get_auth_policy(db)["google"]:
+        raise HTTPException(
+            status_code=403,
+            detail="Google login ถูกปิดใช้งานโดยผู้ดูแลระบบ — ใช้ Passkey แทน",
+        )
     return await oauth.google.authorize_redirect(
         request, settings.oauth_callback_uri, state=hub_state
     )
 
 
+def _safe_return_to(raw: str | None) -> str:
+    """รับเฉพาะ http/https URL — กัน open-redirect (javascript:, data: ฯลฯ).
+
+    ไม่ผูก allowlist แน่นหนา เพราะ subsystem มีหลายตัว — ตรวจ scheme พอ
+    """
+    if not raw:
+        return ""
+    raw = raw.strip()
+    if raw.startswith("/") and not raw.startswith("//"):
+        return raw
+    if raw.startswith("http://") or raw.startswith("https://"):
+        return raw
+    return ""
+
+
 @router.get("/passkey/recover")
-async def passkey_recover_page(request: Request):
+async def passkey_recover_page(
+    request: Request,
+    return_to: str | None = None,
+):
     """หน้ากู้บัญชี Passkey (เสิร์ฟจาก Hub — subsystem user ใช้ได้เอง).
 
     backup code / email OTP → fetch /auth/passkey/recover/* same-origin.
     ไม่พึ่ง admin frontend (subsystem user อยู่บน Hub domain ตลอด).
+
+    return_to: URL กลับไปหลังกู้สำเร็จ (ปกติคือ login page ของ subsystem)
     """
     nonce = secrets.token_urlsafe(16)
     request.state.csp_nonce = nonce
-    return HTMLResponse(content=_passkey_recover_html(nonce=nonce))
+    return HTMLResponse(
+        content=_passkey_recover_html(nonce=nonce, return_to=_safe_return_to(return_to))
+    )
 
 
 # ============ 2. /oauth/callback — Google ส่งกลับ ============
@@ -531,6 +582,7 @@ async def _finalize_subsystem_login(
             risk_reasons=risk_reasons,
             decision=actual_decision,
             is_attack_ip=is_blacklisted(db, client_ip),
+            login_method=provider,
         )
     )
 
@@ -777,6 +829,11 @@ async def oauth_passkey_start(
     (anti-enumeration — เหมือน /auth/passkey/login/start).
     """
     _load_authreq(body.hub_state)  # validate flow context (400 ถ้าไม่มี)
+    if not get_auth_policy(db)["passkey"]:
+        raise HTTPException(
+            status_code=403,
+            detail="Passkey login ถูกปิดใช้งานโดยผู้ดูแลระบบ — ใช้ Google แทน",
+        )
     return webauthn_service.auth_begin(body.email.strip().lower(), db)
 
 
@@ -1131,10 +1188,14 @@ def logout(
         # idempotent — user อาจถูกลบไปแล้ว
         return {"status": "noop", "reason": "user not found"}
 
-    # 3. หา LoginSession ล่าสุดที่ active (logout_at IS NULL)
+    # 3. ปิด *ทุก* LoginSession ที่ยัง active (logout_at IS NULL)
+    # subsystem มี session cookie ได้ทีละหนึ่ง — logout ครั้งเดียวต้องล้าง zombie
+    # ที่เกิดจาก re-auth (OAuth ทำ session ใหม่ทุกครั้งโดยไม่ปิดอันเก่า)
     from datetime import datetime as _dt
+    from datetime import timedelta as _td
+    from datetime import timezone as _tz
 
-    sess = (
+    sessions = (
         db.query(LoginSession)
         .filter(
             LoginSession.user_id == user.id,
@@ -1142,25 +1203,23 @@ def logout(
             LoginSession.logout_at.is_(None),
         )
         .order_by(LoginSession.created_at.desc())
-        .first()
+        .all()
     )
-    closed = False
-    revoked = False
-    if sess:
-        sess.logout_at = _dt.utcnow()
-        closed = True
-        # Token Revocation — invalidate JWT จริง ไม่ใช่แค่ mark logout_at
-        # (ไม่งั้น subsystem token ยังใช้ได้จนถึง exp แม้ logout แล้ว)
+    closed_ids: list[str] = []
+    revoked_jti_count = 0
+    now = _dt.utcnow()
+    for sess in sessions:
+        sess.logout_at = now
+        closed_ids.append(str(sess.id))
         if sess.jti:
-            from datetime import timedelta as _td, timezone as _tz
-
             exp_unix = int(
                 (
                     sess.created_at.replace(tzinfo=_tz.utc)
                     + _td(minutes=settings.jwt_access_token_expire_minutes)
                 ).timestamp()
             )
-            revoked = revoke_jti(sess.jti, exp_unix)
+            if revoke_jti(sess.jti, exp_unix):
+                revoked_jti_count += 1
 
     log_action(
         db,
@@ -1170,13 +1229,17 @@ def logout(
         target_id=subsystem.id,
         ip=get_client_ip(request),
         metadata={
-            "session_closed": closed,
-            "session_id": str(sess.id) if sess else None,
-            "token_revoked": revoked,
+            "sessions_closed": len(closed_ids),
+            "session_ids": closed_ids,
+            "jti_revoked": revoked_jti_count,
         },
     )
     db.commit()
-    return {"status": "ok", "session_closed": closed, "token_revoked": revoked}
+    return {
+        "status": "ok",
+        "sessions_closed": len(closed_ids),
+        "jti_revoked": revoked_jti_count,
+    }
 
 
 # ============ Passkey enrollment interstitial (E) ============
@@ -1412,12 +1475,17 @@ function showBackupCodes(codes){{
 # ============ Passkey recovery page (Hub-served) ============
 
 
-def _passkey_recover_html(nonce: str) -> str:
+def _passkey_recover_html(nonce: str, return_to: str = "") -> str:
     """หน้ากู้บัญชี Passkey — backup code / email OTP. เสิร์ฟจาก Hub.
 
     fetch /auth/passkey/recover/* same-origin (localhost:8000). subsystem user
     ใช้ได้โดยไม่ต้องเข้า admin frontend.
+
+    return_to: ถ้ามี — โชว์ปุ่ม "← กลับหน้า login ของระบบย่อย" หลังกู้สำเร็จ
     """
+    import json as _json
+
+    return_to_js = _json.dumps(return_to)  # safe JS string literal
     return f"""<!DOCTYPE html><html lang="th"><head><meta charset="UTF-8">
 <title>กู้บัญชี Passkey · Central Auth Hub</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -1470,6 +1538,81 @@ def _passkey_recover_html(nonce: str) -> str:
            color:var(--muted); text-decoration:none; }}
   .back:hover {{ color:var(--ink); }}
   .hide {{ display:none; }}
+
+  /* Result area — แยกจาก .msg เพราะ success card มี background/border ของตัวเอง */
+  #result {{ display:none; }}
+  #result.show {{ display:block; }}
+
+  /* Success card — กู้สำเร็จ */
+  .success-card {{
+    padding:22px 20px 22px; border-radius:16px; text-align:center;
+    background:radial-gradient(110% 130% at 50% 0%, rgba(52,232,196,.12), rgba(52,232,196,.02) 70%);
+    border:1px solid rgba(52,232,196,.28);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.04);
+    animation:successPop .42s cubic-bezier(.2,.7,.3,1.15) both;
+  }}
+  .success-icon {{
+    width:56px; height:56px; margin:0 auto 14px; border-radius:50%;
+    display:grid; place-items:center; position:relative;
+    background:radial-gradient(circle at 35% 30%, rgba(52,232,196,.35), rgba(52,232,196,.06));
+    border:1px solid rgba(52,232,196,.45);
+    box-shadow:0 0 28px rgba(52,232,196,.28), inset 0 0 12px rgba(52,232,196,.12);
+  }}
+  .success-icon::after {{
+    content:''; position:absolute; inset:-6px; border-radius:50%;
+    border:1px solid rgba(52,232,196,.25); animation:ringPulse 1.6s ease-out .15s 1;
+  }}
+  .success-icon svg {{
+    width:30px; height:30px; stroke:var(--mint); stroke-width:3; fill:none;
+    stroke-linecap:round; stroke-linejoin:round;
+    stroke-dasharray:28; stroke-dashoffset:28;
+    animation:checkDraw .55s .12s cubic-bezier(.4,1.4,.5,1) forwards;
+  }}
+  .success-title {{
+    font-family:'Kanit',sans-serif; font-weight:600; font-size:17px;
+    color:var(--mint); margin:0 0 6px; letter-spacing:-.01em;
+  }}
+  .success-msg {{
+    font-size:12.5px; color:#bfe8dc; line-height:1.6; margin:0 0 18px;
+    padding:0 4px;
+  }}
+  .btn-return {{
+    display:flex; align-items:center; justify-content:center; gap:9px;
+    width:100%; padding:12px 14px; border-radius:11px;
+    background:rgba(7,11,20,.55); border:1px solid rgba(52,232,196,.4);
+    color:var(--mint); font-family:'Kanit',sans-serif; font-weight:500;
+    font-size:13.5px; text-decoration:none; cursor:pointer;
+    transition:transform .18s ease, background .18s ease, border-color .18s ease, box-shadow .18s ease;
+  }}
+  .btn-return:hover {{
+    background:rgba(52,232,196,.14); border-color:var(--mint);
+    transform:translateY(-1px); box-shadow:0 8px 24px -10px rgba(52,232,196,.55);
+  }}
+  .btn-return-arrow {{ display:inline-block; transition:transform .22s ease; }}
+  .btn-return:hover .btn-return-arrow {{ transform:translateX(-3px); }}
+  .return-hint {{
+    font-family:'IBM Plex Mono',monospace; font-size:10px; color:var(--muted);
+    margin-top:10px; letter-spacing:.06em; text-transform:uppercase;
+    display:flex; align-items:center; justify-content:center; gap:6px;
+  }}
+  .return-hint .dot {{
+    width:5px; height:5px; border-radius:50%; background:var(--mint);
+    animation:dotPulse 1.3s ease-in-out infinite;
+  }}
+
+  @keyframes successPop {{
+    0% {{ opacity:0; transform:translateY(10px) scale(.96); }}
+    100% {{ opacity:1; transform:translateY(0) scale(1); }}
+  }}
+  @keyframes checkDraw {{ to {{ stroke-dashoffset:0; }} }}
+  @keyframes ringPulse {{
+    0% {{ opacity:.7; transform:scale(.7); }}
+    100% {{ opacity:0; transform:scale(1.3); }}
+  }}
+  @keyframes dotPulse {{
+    0%,100% {{ opacity:.4; transform:scale(.85); }}
+    50% {{ opacity:1; transform:scale(1.15); }}
+  }}
   .foot {{ padding:13px 30px; border-top:1px solid var(--line); text-align:center;
            font-family:'IBM Plex Mono',monospace; font-size:10px; color:#56657f; }}
 
@@ -1520,7 +1663,7 @@ def _passkey_recover_html(nonce: str) -> str:
     <p class="sub">ทำอุปกรณ์หาย? ใช้ backup code หรือ email OTP เพื่อลบ Passkey เก่า แล้วตั้งค่าใหม่</p>
   </div>
   <div class="body">
-    <div id="result" class="msg ok"></div>
+    <div id="result"></div>
     <div id="form">
       <div class="tabs">
         <button class="tab active" id="tabBackup">Backup Code</button>
@@ -1547,22 +1690,51 @@ def _passkey_recover_html(nonce: str) -> str:
           <button class="btn" id="btnOtpVerify">ยืนยัน OTP</button>
         </div>
       </div>
-      <a class="back" href="javascript:history.back()">← กลับ</a>
+      <a class="back" id="backLink" href="javascript:history.back()">← กลับ</a>
     </div>
   </div>
   <div class="foot">WebAuthn Recovery · Argon2id · HMAC OTP</div>
 </div>
 
 <script nonce="{nonce}">
+const RETURN_TO = {return_to_js};
 const $ = id => document.getElementById(id);
 const errEl = $('err'), resultEl = $('result'), formEl = $('form');
 function showErr(m) {{ errEl.textContent = m; errEl.classList.add('show'); }}
 function clearErr() {{ errEl.classList.remove('show'); }}
+// ถ้ามี RETURN_TO → เปลี่ยน back link เป็นกลับ subsystem
+if (RETURN_TO) {{
+  const bl = $('backLink');
+  if (bl) {{ bl.href = RETURN_TO; bl.textContent = '← กลับหน้า login ของระบบย่อย'; }}
+}}
+function buildReturnButton() {{
+  if (!RETURN_TO) return '';
+  return '<a href="' + RETURN_TO + '" class="btn-return" style="margin-top:14px">' +
+    '<span class="btn-return-arrow">←</span>' +
+    '<span>กลับหน้า login ของระบบย่อย</span>' +
+    '</a>';
+}}
+function buildSuccessCard(m) {{
+  const action = RETURN_TO
+    ? '<a href="' + RETURN_TO + '" class="btn-return">' +
+        '<span class="btn-return-arrow">←</span>' +
+        '<span>กลับหน้า login ของระบบย่อย</span>' +
+      '</a>' +
+      '<div class="return-hint"><span class="dot"></span>redirect อัตโนมัติ</div>'
+    : '';
+  return '<div class="success-card">' +
+    '<div class="success-icon"><svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg></div>' +
+    '<h3 class="success-title">กู้บัญชีสำเร็จ</h3>' +
+    '<p class="success-msg">' + m + '</p>' +
+    action +
+  '</div>';
+}}
 function done(m, codes) {{
   formEl.classList.add('hide');
   if (!codes || !codes.length) {{
-    resultEl.innerHTML = '<div style="padding:14px;border-radius:11px;background:rgba(52,232,196,.08);border:1px solid rgba(52,232,196,.3);color:var(--mint);font-size:13px;line-height:1.5">✓ ' + m + '</div>';
+    resultEl.innerHTML = buildSuccessCard(m);
     resultEl.classList.add('show');
+    if (RETURN_TO) setTimeout(() => {{ window.location.href = RETURN_TO; }}, 3500);
     return;
   }}
   const txt = codes.join('\\n');
@@ -1634,7 +1806,10 @@ function done(m, codes) {{
         '<div style="font-size:28px;margin-bottom:6px">✓</div>' +
         '<div style="font-family:\\'Kanit\\',sans-serif;font-weight:500;color:var(--mint);font-size:15px;margin-bottom:4px">เก็บ backup codes เรียบร้อย</div>' +
         '<div style="font-size:12px;color:var(--muted);line-height:1.5">กลับไป login ที่ระบบของคุณได้เลย</div>' +
-      '</div>';
+      '</div>' +
+      buildReturnButton();
+    // auto-redirect หลัง 2 วินาที ถ้ามี RETURN_TO
+    if (RETURN_TO) setTimeout(() => {{ window.location.href = RETURN_TO; }}, 2000);
   }});
 }}
 
@@ -1701,7 +1876,13 @@ $('btnOtpVerify').addEventListener('click', async () => {{
 # ============ Login chooser page (A) — Google / Passkey ============
 
 
-def _login_chooser_html(hub_state: str, subsystem_name: str, nonce: str) -> str:
+def _login_chooser_html(
+    hub_state: str,
+    subsystem_name: str,
+    nonce: str,
+    allow_google: bool = True,
+    allow_passkey: bool = True,
+) -> str:
     """หน้าเลือกวิธี login — Google (redirect) หรือ Passkey (WebAuthn JS).
 
     Aesthetic: "Secure Vault" — dark glassmorphism, gradient mesh, Thai display
@@ -1709,6 +1890,8 @@ def _login_chooser_html(hub_state: str, subsystem_name: str, nonce: str) -> str:
 
     Same-origin: เสิร์ฟจาก Hub → fetch /oauth/passkey/* ตรง ไม่ผ่าน proxy.
     inline style+script ใช้ CSP nonce (กัน XSS — middleware ตั้ง nonce-{nonce}).
+
+    allow_google / allow_passkey: ตาม global auth-policy — ปิดวิธีไหน ซ่อนปุ่มนั้น.
     """
     # esc ชื่อ subsystem (กัน HTML injection — ชื่อมาจาก DB)
     safe_name = (
@@ -1716,6 +1899,50 @@ def _login_chooser_html(hub_state: str, subsystem_name: str, nonce: str) -> str:
         .replace("<", "&lt;")
         .replace(">", "&gt;")
         .replace('"', "&quot;")
+    )
+
+    # ── สร้าง fragment ตาม auth-policy (ปิดวิธีไหน ซ่อนปุ่มนั้น) ──
+    passkey_block = (
+        """
+    <button class="btn btn-pk stagger s1" id="pkToggle">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg>
+      ดำเนินการด้วย Passkey
+    </button>
+
+    <div class="pk-form stagger s2" id="pkForm" aria-hidden="true">
+      <div class="err" id="pkErr"></div>
+      <label class="fld" for="pkEmail">อีเมลของคุณ</label>
+      <input type="email" id="pkEmail" placeholder="you@uni.ac.th" autocomplete="username webauthn" inputmode="email">
+      <button class="btn btn-pk" id="pkSubmit">ยืนยันตัวตน</button>
+      <p class="hint" id="pkHint">ระบบจะขอ biometric หรือ security key ของอุปกรณ์นี้</p>
+    </div>
+"""
+        if allow_passkey
+        else ""
+    )
+
+    google_block = (
+        f"""
+    <a class="btn btn-ghost stagger s4" href="/oauth/authorize/google?hub_state={hub_state}">
+      <svg class="gicon" viewBox="0 0 24 24"><path d="M21.6 12.227c0-.709-.064-1.39-.182-2.045H12v3.868h5.382a4.6 4.6 0 0 1-1.996 3.018v2.51h3.232c1.891-1.742 2.982-4.305 2.982-7.35Z" fill="#4285F4"/><path d="M12 22c2.7 0 4.964-.895 6.618-2.423l-3.232-2.509c-.895.6-2.04.955-3.386.955-2.605 0-4.81-1.76-5.595-4.123H3.064v2.59A9.996 9.996 0 0 0 12 22Z" fill="#34A853"/><path d="M6.405 13.9a6.003 6.003 0 0 1 0-3.8V7.51H3.064a9.996 9.996 0 0 0 0 8.98l3.341-2.59Z" fill="#FBBC05"/><path d="M12 5.977c1.468 0 2.786.505 3.823 1.496l2.868-2.868C16.96 2.99 14.695 2 12 2A9.996 9.996 0 0 0 3.064 7.51l3.341 2.59C7.19 7.736 9.395 5.977 12 5.977Z" fill="#EA4335"/></svg>
+      ดำเนินการด้วย Google
+    </a>
+"""
+        if allow_google
+        else ""
+    )
+
+    # divider "หรือ" แสดงเฉพาะเมื่อเปิดทั้งคู่
+    divider_block = (
+        '<div class="divider stagger s3">หรือ</div>'
+        if (allow_google and allow_passkey)
+        else ""
+    )
+    # recover link เฉพาะเมื่อ passkey เปิด
+    recover_block = (
+        '<a class="recover-link" href="/oauth/passkey/recover">ทำ Passkey หาย? กู้บัญชี</a>'
+        if allow_passkey
+        else ""
     )
     return f"""<!DOCTYPE html><html lang="th"><head><meta charset="UTF-8">
 <title>เข้าสู่ระบบ · {safe_name}</title>
@@ -1857,26 +2084,10 @@ def _login_chooser_html(hub_state: str, subsystem_name: str, nonce: str) -> str:
     <p class="sub">เลือกวิธียืนยันตัวตนเพื่อดำเนินการต่อ</p>
   </div>
   <div class="body">
-    <button class="btn btn-pk stagger s1" id="pkToggle">
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg>
-      ดำเนินการด้วย Passkey
-    </button>
-
-    <div class="pk-form stagger s2" id="pkForm" aria-hidden="true">
-      <div class="err" id="pkErr"></div>
-      <label class="fld" for="pkEmail">อีเมลของคุณ</label>
-      <input type="email" id="pkEmail" placeholder="you@uni.ac.th" autocomplete="username webauthn" inputmode="email">
-      <button class="btn btn-pk" id="pkSubmit">ยืนยันตัวตน</button>
-      <p class="hint" id="pkHint">ระบบจะขอ biometric หรือ security key ของอุปกรณ์นี้</p>
-    </div>
-
-    <div class="divider stagger s3">หรือ</div>
-
-    <a class="btn btn-ghost stagger s4" href="/oauth/authorize/google?hub_state={hub_state}">
-      <svg class="gicon" viewBox="0 0 24 24"><path d="M21.6 12.227c0-.709-.064-1.39-.182-2.045H12v3.868h5.382a4.6 4.6 0 0 1-1.996 3.018v2.51h3.232c1.891-1.742 2.982-4.305 2.982-7.35Z" fill="#4285F4"/><path d="M12 22c2.7 0 4.964-.895 6.618-2.423l-3.232-2.509c-.895.6-2.04.955-3.386.955-2.605 0-4.81-1.76-5.595-4.123H3.064v2.59A9.996 9.996 0 0 0 12 22Z" fill="#34A853"/><path d="M6.405 13.9a6.003 6.003 0 0 1 0-3.8V7.51H3.064a9.996 9.996 0 0 0 0 8.98l3.341-2.59Z" fill="#FBBC05"/><path d="M12 5.977c1.468 0 2.786.505 3.823 1.496l2.868-2.868C16.96 2.99 14.695 2 12 2A9.996 9.996 0 0 0 3.064 7.51l3.341 2.59C7.19 7.736 9.395 5.977 12 5.977Z" fill="#EA4335"/></svg>
-      ดำเนินการด้วย Google
-    </a>
-    <a class="recover-link" href="/oauth/passkey/recover">ทำ Passkey หาย? กู้บัญชี</a>
+    {passkey_block}
+    {divider_block}
+    {google_block}
+    {recover_block}
   </div>
   <div class="foot">OAuth 2.0 · PKCE · WebAuthn · JWT RS256</div>
 </div>
@@ -1900,6 +2111,8 @@ function pkSupported() {{
 }}
 
 const toggle = document.getElementById('pkToggle');
+// Passkey ถูกปิดโดย policy → ไม่มี element → ข้าม JS ทั้งบล็อก (กัน null crash)
+if (toggle) {{
 const form = document.getElementById('pkForm');
 const emailEl = document.getElementById('pkEmail');
 const submit = document.getElementById('pkSubmit');
@@ -1990,6 +2203,7 @@ async function doPasskey() {{
 submit.addEventListener('click', doPasskey);
 emailEl.addEventListener('keydown', e => {{ if (e.key==='Enter') doPasskey(); }});
 emailEl.addEventListener('input', clearErr);
+}}  // end if (toggle)
 </script>
 </body></html>"""
 
@@ -2047,6 +2261,59 @@ def _maintenance_html(subsystem_name: str, health: dict) -> str:
   </div>
   <div class="footer">
     Central Auth Hub · pre-flight check ก่อน OAuth redirect
+  </div>
+</div>
+</body></html>"""
+
+
+def _suspended_html(subsystem_name: str) -> str:
+    """หน้า HTML แสดงตอน subsystem ถูก admin ระงับ (status=suspended)."""
+    return f"""<!DOCTYPE html><html lang="th"><head><meta charset="UTF-8">
+<title>{subsystem_name} ถูกระงับการใช้งาน</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  body {{ font-family: 'Sarabun', system-ui, sans-serif; background: #f8fafc;
+          margin: 0; min-height: 100vh; display: grid; place-items: center;
+          padding: 40px 16px; color: #0f172a; }}
+  .card {{ max-width: 560px; width: 100%; background: #fff; border-radius: 16px;
+           overflow: hidden; box-shadow: 0 4px 12px rgba(15,23,42,0.08); }}
+  .hero {{ background: linear-gradient(135deg,#f59e0b,#b45309); padding: 32px;
+           color: #fff; text-align: center; }}
+  .icon {{ font-size: 56px; line-height: 1; }}
+  .title {{ font-size: 22px; font-weight: 800; margin-top: 12px; }}
+  .body {{ padding: 28px 32px; line-height: 1.6; }}
+  .reason {{ background: #fef3c7; border: 1px solid #fde68a; border-radius: 10px;
+             padding: 12px 14px; margin: 14px 0; font-size: 13px; color: #78350f; }}
+  .actions {{ margin-top: 22px; }}
+  .btn {{ display: inline-block; padding: 10px 18px; background: #0f172a;
+          color: #fff; text-decoration: none; border-radius: 8px;
+          font-weight: 600; font-size: 14px; }}
+  .footer {{ padding: 14px 32px; font-size: 11px; color: #94a3b8;
+             border-top: 1px solid #f1f5f9; }}
+</style></head><body>
+<div class="card">
+  <div class="hero">
+    <div class="icon">🚫</div>
+    <div class="title">{subsystem_name}<br>ถูกระงับการใช้งาน</div>
+  </div>
+  <div class="body">
+    <p>ระบบนี้ถูก admin <strong>ระงับการใช้งานชั่วคราว</strong> —
+       ไม่สามารถเข้าใช้งานได้จนกว่าจะถูกเปิดใช้งานใหม่</p>
+    <div class="reason">
+      <strong>เหตุผลที่พบบ่อย:</strong><br>
+      • กำลังตรวจสอบความปลอดภัย<br>
+      • รอแก้ไขปัญหาจากเจ้าของระบบ<br>
+      • ละเมิดเงื่อนไขการใช้งาน
+    </div>
+    <p style="font-size:13px;color:#64748b;">
+      หากคิดว่าเป็นข้อผิดพลาด กรุณาติดต่อผู้ดูแลระบบ
+    </p>
+    <div class="actions">
+      <a href="javascript:history.back()" class="btn">← กลับหน้าก่อน</a>
+    </div>
+  </div>
+  <div class="footer">
+    Central Auth Hub · HTTP 503 Service Unavailable
   </div>
 </div>
 </body></html>"""

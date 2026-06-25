@@ -651,3 +651,16 @@ def get_status(subsystem_id: str) -> dict | None:
     except Exception as e:
         log.warning("[health] redis get failed for %s: %r", subsystem_id, e)
         return None
+
+
+def clear_status(subsystem_id: str) -> None:
+    """ลบ cache health ของ subsystem (เรียกตอน suspend/resume).
+
+    - suspend: ลบ entry เก่า กันค้างใน Redis ระหว่างถูกระงับ (loop ข้าม active แล้ว)
+    - resume:  ลบ entry เก่า (อาจเป็น 'down' จากก่อน suspend) เพื่อบังคับให้
+               preflight ไม่ block จนกว่า health loop รอบถัดไปจะ refresh ค่าจริง
+    """
+    try:
+        redis_client.delete(_redis_key(subsystem_id))
+    except Exception as e:
+        log.warning("[health] redis clear failed for %s: %r", subsystem_id, e)

@@ -14,6 +14,7 @@
 Fail-safe: ทุก error → คืน None (geo features ใน feature_extraction
 จะ fallback เป็น is_thailand=1 / is_new_country=0 = neutral)
 """
+
 from __future__ import annotations
 
 import ipaddress
@@ -25,6 +26,7 @@ logger = logging.getLogger(__name__)
 try:
     import geoip2.database
     import geoip2.errors  # noqa: F401
+
     _GEOIP2_AVAILABLE = True
 except ImportError:
     _GEOIP2_AVAILABLE = False
@@ -33,11 +35,11 @@ except ImportError:
         "(เพิ่ม geoip2 ใน requirements.txt + rebuild)"
     )
 
-from app.config import settings
+from app.config import settings  # noqa: E402
 
 # Singleton reader — เปิดครั้งเดียว, thread-safe (geoip2 รองรับ concurrent reads)
 _reader: "geoip2.database.Reader | None" = None
-_reader_loaded = False   # กัน retry การโหลด DB ที่หายซ้ำๆ
+_reader_loaded = False  # กัน retry การโหลด DB ที่หายซ้ำๆ
 
 
 def _is_public_ip(ip: str) -> bool:
@@ -61,7 +63,7 @@ def _get_reader():
     global _reader, _reader_loaded
     if _reader_loaded:
         return _reader
-    _reader_loaded = True   # ลองโหลดครั้งเดียวเท่านั้น
+    _reader_loaded = True  # ลองโหลดครั้งเดียวเท่านั้น
 
     if not _GEOIP2_AVAILABLE:
         return None
@@ -103,11 +105,12 @@ def lookup_country(ip: str | None) -> str | None:
 
     try:
         response = reader.country(ip)
-        return response.country.iso_code   # None ถ้า MaxMind ไม่รู้
-    except Exception as e:   # noqa: BLE001
+        return response.country.iso_code  # None ถ้า MaxMind ไม่รู้
+    except Exception as e:  # noqa: BLE001
         # geoip2.errors.AddressNotFoundError + ทุกอย่าง — ห้ามให้ login ล้ม
         if _GEOIP2_AVAILABLE:
             import geoip2.errors
+
             if isinstance(e, geoip2.errors.AddressNotFoundError):
                 return None
         logger.warning(f"GeoIP lookup failed for {ip}: {type(e).__name__}: {e}")

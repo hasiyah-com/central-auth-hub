@@ -13,6 +13,7 @@ Run:
     docker compose exec hub-backend python -m scripts.backfill_geo --dry-run
     docker compose exec hub-backend python -m scripts.backfill_geo --batch-size 200
 """
+
 import argparse
 import sys
 from collections import Counter
@@ -42,7 +43,9 @@ def backfill(db: Session, batch_size: int = 500, dry_run: bool = False) -> dict:
     )
     rows = db.execute(q).all()
 
-    print(f"📋 พบ {len(rows)} sessions ที่ต้อง backfill (geo_country IS NULL + ip IS NOT NULL)")
+    print(
+        f"📋 พบ {len(rows)} sessions ที่ต้อง backfill (geo_country IS NULL + ip IS NOT NULL)"
+    )
     if not rows:
         return dict(stats)
 
@@ -69,7 +72,9 @@ def backfill(db: Session, batch_size: int = 500, dry_run: bool = False) -> dict:
     return dict(stats)
 
 
-def _apply_batch(db: Session, pending: list[tuple], dry_run: bool, stats: Counter) -> None:
+def _apply_batch(
+    db: Session, pending: list[tuple], dry_run: bool, stats: Counter
+) -> None:
     if dry_run:
         stats["would_update"] += len(pending)
         print(f"  [dry-run] would update {len(pending)} sessions")
@@ -85,9 +90,13 @@ def _apply_batch(db: Session, pending: list[tuple], dry_run: bool, stats: Counte
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Backfill geo_country for login_sessions")
+    parser = argparse.ArgumentParser(
+        description="Backfill geo_country for login_sessions"
+    )
     parser.add_argument("--dry-run", action="store_true", help="แสดงผลโดยไม่ commit")
-    parser.add_argument("--batch-size", type=int, default=500, help="จำนวนต่อ commit (default 500)")
+    parser.add_argument(
+        "--batch-size", type=int, default=500, help="จำนวนต่อ commit (default 500)"
+    )
     args = parser.parse_args()
 
     db = SessionLocal()

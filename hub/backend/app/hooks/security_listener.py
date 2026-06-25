@@ -3,6 +3,7 @@
 Threshold: 5 failures / 5 minutes per IP → log warning + เก็บ flag
 ใน production จริงควรย้ายไป Redis (กระจาย instance) — รอบนี้ใช้ memory
 """
+
 import logging
 import time
 from collections import defaultdict, deque
@@ -41,7 +42,9 @@ def _track_failure(payload: dict) -> None:
         flagged_ips.add(ip)
         logger.warning(
             "[security] IP %s reached %d failed logins in %ds — flagged",
-            ip, len(bucket), WINDOW_SECONDS,
+            ip,
+            len(bucket),
+            WINDOW_SECONDS,
         )
 
 

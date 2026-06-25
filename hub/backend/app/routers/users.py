@@ -12,13 +12,17 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
 from sqlalchemy.orm import Session
 
+from datetime import datetime
+
 from app.config import settings
 from app.database import get_db
 from app.deps import get_client_ip, require_hub_admin
-from app.models import User
+from app.models import AccessList, AuditLog, Subsystem, User
 from app.rate_limiter import limiter
 from app.services.audit_service import log_action
+from app.services.change_request_service import close_subsystem_login_sessions
 from app.services.critical_action_policy import gate as _stepup_gate
+from app.services.webhook_dispatcher import send_access_restored, send_access_revoked
 
 router = APIRouter()
 
@@ -321,11 +325,75 @@ def update_user(
             raise HTTPException(status_code=409, detail="รหัสนี้มีอยู่แล้ว")
 
     before = {k: getattr(user, k) for k in data}
+
+    # Detect transition: deleted → active = "reactivation"
+    # ต้อง restore AccessList + ยิง access_restored webhook ทุก subsystem
+    is_reactivation = (
+        "status" in data and data["status"] == "active" and user.status == "deleted"
+    )
+
     for k, v in data.items():
         setattr(user, k, v)
     # sync is_hub_admin ตาม user_type
     if "user_type" in data:
         user.is_hub_admin = data["user_type"] == "admin"
+
+    subsystems_restored: list[dict] = []
+    if is_reactivation:
+        # หา subsystems ที่ user เคยถูก kick จากการ delete (ล่าสุด)
+        # → restore เฉพาะที่ตรงกัน (กันสับสนกับ manual revoke ของ owner)
+        latest_delete = (
+            db.query(AuditLog)
+            .filter(
+                AuditLog.action == "delete_user",
+                AuditLog.target_id == user.id,
+            )
+            .order_by(AuditLog.created_at.desc())
+            .first()
+        )
+        kicked_sub_ids: list[str] = []
+        if latest_delete and latest_delete.metadata_json:
+            meta = latest_delete.metadata_json
+            for sk in meta.get("subsystems_kicked") or []:
+                if sid := sk.get("subsystem_id"):
+                    kicked_sub_ids.append(sid)
+
+        if kicked_sub_ids:
+            # restore AccessList rows (revoked_at -> NULL) เฉพาะ subsystems ใน kick list
+            entries = (
+                db.query(AccessList, Subsystem)
+                .join(Subsystem, Subsystem.id == AccessList.subsystem_id)
+                .filter(
+                    AccessList.user_id == user.id,
+                    AccessList.subsystem_id.in_(kicked_sub_ids),
+                    AccessList.revoked_at.is_not(None),
+                )
+                .all()
+            )
+            for access, sub in entries:
+                access.revoked_at = None
+                subsystems_restored.append(
+                    {
+                        "subsystem_id": str(sub.id),
+                        "subsystem_name": sub.name,
+                        "role_in_sub": access.role_in_sub,
+                    }
+                )
+                # per-subsystem audit log (โผล่ใน subsystem audit panel)
+                log_action(
+                    db,
+                    actor_id=admin.id,
+                    action="user_restored_after_reactivation",
+                    target_type="subsystem",
+                    target_id=sub.id,
+                    ip=get_client_ip(request),
+                    metadata={
+                        "restored_user_id": str(user.id),
+                        "restored_user_email": user.email,
+                        "restored_user_name": user.full_name,
+                        "role_in_sub": access.role_in_sub,
+                    },
+                )
 
     log_action(
         db,
@@ -334,9 +402,50 @@ def update_user(
         target_type="user",
         target_id=user.id,
         ip=get_client_ip(request),
-        metadata={"changed": list(data.keys()), "before": _jsonable(before)},
+        metadata={
+            "changed": list(data.keys()),
+            "before": _jsonable(before),
+            "reactivation": is_reactivation,
+            "subsystems_restored": subsystems_restored,
+        },
     )
     db.commit()
+
+    # ยิง webhook ให้ subsystem เคลียร์ hub_access_revoked_at (fail-safe)
+    if is_reactivation and subsystems_restored:
+        for item in subsystems_restored:
+            sub = (
+                db.query(Subsystem).filter(Subsystem.id == item["subsystem_id"]).first()
+            )
+            if not sub:
+                continue
+            ok = False
+            try:
+                ok = send_access_restored(
+                    sub,
+                    {
+                        "hub_user_id": str(user.id),
+                        "restored_by": str(admin.id),
+                        "reason": "user_reactivated_at_hub",
+                    },
+                )
+            except Exception:
+                pass
+            log_action(
+                db,
+                actor_id=admin.id,
+                action="access_restored_webhook_sent",
+                target_type="subsystem",
+                target_id=sub.id,
+                ip=get_client_ip(request),
+                metadata={
+                    "restored_user_id": str(user.id),
+                    "restored_user_email": user.email,
+                    "delivered": ok,
+                },
+            )
+        db.commit()
+
     db.refresh(user)
     return _serialize(user)
 
@@ -377,7 +486,60 @@ def delete_user(
     if user.status == "deleted":
         raise HTTPException(status_code=409, detail="user นี้ถูกลบไปแล้ว")
 
+    # 1. หาทุก subsystem ที่ user มี access อยู่ — เพื่อ kick + แจ้ง subsystem
+    active_access = (
+        db.query(AccessList, Subsystem)
+        .join(Subsystem, Subsystem.id == AccessList.subsystem_id)
+        .filter(
+            AccessList.user_id == user.id,
+            AccessList.revoked_at.is_(None),
+        )
+        .all()
+    )
+
+    now = datetime.utcnow()
+    subsystems_kicked: list[dict] = []
+    total_sessions_closed = 0
+    total_jti_revoked = 0
+
+    for access, sub in active_access:
+        # (a) soft-revoke whitelist entry
+        access.revoked_at = now
+        # (b) close active LoginSession + revoke jti (เห็นผลใน Active Sessions panel ทันที)
+        closed = close_subsystem_login_sessions(db, sub.id, user_ids=[str(user.id)])
+        total_sessions_closed += closed["closed"]
+        total_jti_revoked += closed["jti_revoked"]
+        subsystems_kicked.append(
+            {
+                "subsystem_id": str(sub.id),
+                "subsystem_name": sub.name,
+                "sessions_closed": closed["closed"],
+                "jti_revoked": closed["jti_revoked"],
+            }
+        )
+        # (c) per-subsystem audit log — เพื่อให้โผล่ในหน้า "AUDIT · กิจกรรมที่เกิดกับ SUBSYSTEM นี้"
+        #     (panel filter target_type='subsystem' AND target_id=sub.id)
+        log_action(
+            db,
+            actor_id=admin.id,
+            action="user_kicked_by_deletion",
+            target_type="subsystem",
+            target_id=sub.id,
+            ip=get_client_ip(request),
+            metadata={
+                "kicked_user_id": str(user.id),
+                "kicked_user_email": user.email,
+                "kicked_user_name": user.full_name,
+                "role_in_sub": access.role_in_sub,
+                "sessions_closed": closed["closed"],
+                "jti_revoked": closed["jti_revoked"],
+                "reason": "user_deleted_at_hub",
+            },
+        )
+
+    # 2. mark user deleted
     user.status = "deleted"
+
     log_action(
         db,
         actor_id=admin.id,
@@ -385,10 +547,61 @@ def delete_user(
         target_type="user",
         target_id=user.id,
         ip=get_client_ip(request),
-        metadata={"email": user.email, "soft_delete": True},
+        metadata={
+            "email": user.email,
+            "soft_delete": True,
+            "subsystems_kicked": subsystems_kicked,
+            "total_sessions_closed": total_sessions_closed,
+            "total_jti_revoked": total_jti_revoked,
+        },
     )
     db.commit()
-    return {"deleted": True, "id": str(user.id), "status": user.status}
+
+    # 3. ยิง webhook ทุก subsystem (fail-safe — webhook fail ไม่ block flow)
+    #    subsystem-dorm/library /internal/access-revoked → mark hub_access_revoked_at
+    #    → คุกกี้ session ของ user ใช้ไม่ได้ทันที (ดู deps.read_session)
+    webhook_delivered = 0
+    for _, sub in active_access:
+        ok = False
+        try:
+            ok = send_access_revoked(
+                sub,
+                {
+                    "hub_user_id": str(user.id),
+                    "revoked_by": str(admin.id),
+                    "reason": "user_deleted",
+                },
+            )
+            if ok:
+                webhook_delivered += 1
+        except Exception:
+            pass  # webhook dispatcher logs already
+        # log webhook outcome per subsystem (โผล่ใน subsystem audit panel ด้วย)
+        log_action(
+            db,
+            actor_id=admin.id,
+            action="access_revoked_webhook_sent",
+            target_type="subsystem",
+            target_id=sub.id,
+            ip=get_client_ip(request),
+            metadata={
+                "kicked_user_id": str(user.id),
+                "kicked_user_email": user.email,
+                "delivered": ok,
+                "reason": "user_deleted",
+            },
+        )
+    db.commit()
+
+    return {
+        "deleted": True,
+        "id": str(user.id),
+        "status": user.status,
+        "subsystems_kicked": len(subsystems_kicked),
+        "sessions_closed": total_sessions_closed,
+        "jti_revoked": total_jti_revoked,
+        "webhook_delivered": webhook_delivered,
+    }
 
 
 def _jsonable(d: dict) -> dict:

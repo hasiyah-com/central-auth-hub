@@ -1,4 +1,5 @@
 """Health check endpoints."""
+
 from fastapi import APIRouter, Depends
 from sqlalchemy import text
 from sqlalchemy.orm import Session
