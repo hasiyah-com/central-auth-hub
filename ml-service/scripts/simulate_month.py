@@ -1,33 +1,30 @@
-"""จำลอง login 1 เดือน จาก "ผู้ใช้จริง" + "สิทธิ์จริง" ใน DB (anchor).
+"""จำลอง login 1 เดือน — anchor ผู้ใช้จริง 5 คน + clone เป็น persona ~150 คน.
 
-อ่าน:
-  ml-service/data/real_users.csv   (email, full_name, user_type, identifier, faculty)
-  ml-service/data/real_access.csv  (email, subsystem, client_id, role) — active เท่านั้น
+ผู้ใช้จริง 5 คน (จาก DB) = "ต้นแบบ" ของแต่ละกลุ่ม; clone เพิ่มให้ครบ ~155 users
+เพื่อให้ได้ ~10,000 login (attack ~5%) โดยพฤติกรรม+สิทธิ์ยึดตามกลุ่มจริง
 
-สร้าง:
-  - พฤติกรรม normal 30 วัน ต่อ user ตาม profile (นศ./อาจารย์/จนท./admin)
-  - login เข้าได้เฉพาะ subsystem ที่มีสิทธิ์จริง (+ Hub สำหรับ teacher/staff/admin)
-  - ฉีด anomaly แบบคุมระดับ (1=เปลี่ยนคอลัมน์เดียว ... 3=ATO เต็มรูป) พร้อม ground-truth
-
-Output: ml-service/data/simulated_month.csv
-  columns: created_at,email,user_type,subsystem,role,ip,geo_country,device_type,os_name,
-           browser,user_agent,login_successful,label,anomaly_level,scenario,columns_changed
+อ่าน: real_users.csv, real_access.csv  ·  Output: simulated_month.csv
+columns: created_at,email,user_type,subsystem,role,ip,geo_country,device_type,os_name,
+         browser,user_agent,login_successful,is_attack_ip,label,anomaly_level,scenario,columns_changed
 
 Run: py ml-service/scripts/simulate_month.py
 """
 
 import csv
 import random
+from collections import Counter
 from datetime import datetime, timedelta
 from pathlib import Path
 
 random.seed(2026)
 DATA = Path(__file__).resolve().parents[1] / "data"
 OUT = DATA / "simulated_month.csv"
-START = datetime(2026, 5, 18, 0, 0, 0)  # เริ่มเดือนจำลอง
+START = datetime(2026, 5, 18)
 DAYS = 30
+ATTACK_FRAC = 0.05  # attack ~5% ของทั้งหมด
+# จำนวน users ต่อกลุ่ม (สัดส่วนแบบมหา'ลัย) — รวมผู้ใช้จริงด้วย
+CLONES = {"student": 108, "teacher": 22, "staff": 14, "admin": 6}
 
-# ---------- device / UA pool (สมจริง) ----------
 UA = {
     "mobile_ios": (
         "Mozilla/5.0 (iPhone; CPU iPhone OS 16_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.5 Mobile/15E148 Safari/604.1",
@@ -66,24 +63,24 @@ UA = {
         "desktop",
     ),
 }
-TH_IP_PREFIXES = ["1.46", "171.6", "183.88", "49.228", "27.55"]
+TH_IP = ["1.46", "171.6", "183.88", "49.228", "27.55", "180.183", "118.173"]
 FOREIGN = [
     ("RU", "5.45"),
     ("CN", "39.96"),
     ("US", "45.83"),
     ("NL", "185.2"),
     ("SG", "103.6"),
+    ("DE", "91.7"),
 ]
 
-# ---------- behavior profile ต่อกลุ่ม ----------
 PROFILES = {
     "student": {
         "per_day": (1, 3),
         "hours": [8, 9, 10, 12, 17, 18, 19, 20, 21, 22],
         "weekend_p": 0.4,
         "device": "mobile_ios",
-        "alt_device": "mobile_android",
-        "ip_volatility": 0.55,
+        "alt": "mobile_android",
+        "ipvol": 0.55,
         "hub": False,
     },
     "teacher": {
@@ -91,8 +88,8 @@ PROFILES = {
         "hours": [8, 9, 10, 11, 13, 14, 15, 16, 17, 20],
         "weekend_p": 0.2,
         "device": "desktop_win",
-        "alt_device": "laptop_edge",
-        "ip_volatility": 0.15,
+        "alt": "laptop_edge",
+        "ipvol": 0.15,
         "hub": True,
     },
     "staff": {
@@ -100,8 +97,8 @@ PROFILES = {
         "hours": [9, 10, 11, 13, 14, 15, 16, 17],
         "weekend_p": 0.1,
         "device": "desktop_win",
-        "alt_device": "desktop_mac",
-        "ip_volatility": 0.05,
+        "alt": "desktop_mac",
+        "ipvol": 0.05,
         "hub": True,
     },
     "admin": {
@@ -109,21 +106,22 @@ PROFILES = {
         "hours": list(range(7, 23)),
         "weekend_p": 0.6,
         "device": "desktop_win",
-        "alt_device": "laptop_edge",
-        "ip_volatility": 0.1,
+        "alt": "laptop_edge",
+        "ipvol": 0.1,
         "hub": True,
     },
 }
 HUB = "Hub (direct)"
-
-
-def load_anchor():
-    users = list(csv.DictReader(open(DATA / "real_users.csv", encoding="utf-8")))
-    access = list(csv.DictReader(open(DATA / "real_access.csv", encoding="utf-8")))
-    acc_by_user = {}
-    for a in access:
-        acc_by_user.setdefault(a["email"], []).append((a["subsystem"], a["role"]))
-    return users, acc_by_user
+GROUP_ACCESS = {
+    "student": [("ระบบห้องสมุด", "member"), ("ระบบหอพัก", "resident")],
+    "teacher": [
+        ("ระบบหอพัก", "teacher"),
+        ("ระบบห้องสมุด", "librarian"),
+        ("เทสเตอร์", "user"),
+    ],
+    "staff": [("ระบบห้องสมุด", "librarian")],
+    "admin": [],
+}
 
 
 def th_ip(prefix, volatile=False):
@@ -131,25 +129,31 @@ def th_ip(prefix, volatile=False):
     return f"{prefix}.{third}.{random.randint(1, 254)}"
 
 
-def row(
+def foreign_ip(pfx):
+    return f"{pfx}.{random.randint(0, 255)}.{random.randint(1, 254)}"
+
+
+def mk_row(
     dt,
-    u,
+    email,
+    utype,
     sub,
     role,
     ip,
     country,
-    dev_key,
-    login_ok=True,
+    dev,
+    ok=True,
+    aip=0,
     label=0,
     level=0,
     scenario="normal",
     changed="",
 ):
-    ua, os_n, br, dtype = UA[dev_key]
+    ua, os_n, br, dtype = UA[dev]
     return {
         "created_at": dt.isoformat(sep=" "),
-        "email": u["email"],
-        "user_type": u["user_type"],
+        "email": email,
+        "user_type": utype,
         "subsystem": sub,
         "role": role,
         "ip": ip,
@@ -158,7 +162,8 @@ def row(
         "os_name": os_n,
         "browser": br,
         "user_agent": ua,
-        "login_successful": "True" if login_ok else "False",
+        "login_successful": "True" if ok else "False",
+        "is_attack_ip": str(aip),
         "label": label,
         "anomaly_level": level,
         "scenario": scenario,
@@ -166,230 +171,301 @@ def row(
     }
 
 
-def gen_normal(u, acc_by_user):
-    """พฤติกรรมปกติ 30 วัน ตาม profile + สิทธิ์จริง."""
-    prof = PROFILES[u["user_type"]]
-    home_prefix = random.choice(TH_IP_PREFIXES)
-    subs = acc_by_user.get(u["email"], [])
-    targets = subs + ([(HUB, u["user_type"])] if prof["hub"] else [])
+def build_users():
+    """ผู้ใช้จริง (real_users.csv) + clone persona ให้ครบ CLONES."""
+    reals = list(csv.DictReader(open(DATA / "real_users.csv", encoding="utf-8")))
+    racc = {}
+    for a in csv.DictReader(open(DATA / "real_access.csv", encoding="utf-8")):
+        racc.setdefault(a["email"], []).append((a["subsystem"], a["role"]))
+    users = []
+    for r in reals:
+        users.append(
+            {
+                "email": r["email"],
+                "type": r["user_type"],
+                "access": racc.get(r["email"], []),
+                "real": True,
+            }
+        )
+    have = Counter(u["type"] for u in users)
+    seq = 1
+    for g, n in CLONES.items():
+        for _ in range(max(0, n - have.get(g, 0))):
+            users.append(
+                {
+                    "email": f"sim{seq:04d}@sim.local",
+                    "type": g,
+                    "access": list(GROUP_ACCESS[g]),
+                    "real": False,
+                }
+            )
+            seq += 1
+    return users
+
+
+def gen_normal(u):
+    prof = PROFILES[u["type"]]
+    home = random.choice(TH_IP)
+    targets = list(u["access"]) + ([(HUB, u["type"])] if prof["hub"] else [])
     if not targets:
-        targets = [(HUB, u["user_type"])]  # admin ไม่มี access_list → Hub
+        targets = [(HUB, u["type"])]
     rows = []
     for d in range(DAYS):
         day = START + timedelta(days=d)
-        is_weekend = day.weekday() >= 5
-        if is_weekend and random.random() > prof["weekend_p"]:
+        if day.weekday() >= 5 and random.random() > prof["weekend_p"]:
             continue
-        n = random.randint(*prof["per_day"])
-        for _ in range(n):
+        for _ in range(random.randint(*prof["per_day"])):
             hour = random.choice(prof["hours"])
             dt = day.replace(
                 hour=hour, minute=random.randint(0, 59), second=random.randint(0, 59)
             )
             sub, role = random.choice(targets)
-            # ปกติ: ไทย เครื่องหลัก; "ความปกติที่ดูแปลก" = IP มือถือเปลี่ยน + เครื่องสำรองนานๆครั้ง
-            volatile = random.random() < prof["ip_volatility"]
-            dev = prof["device"] if random.random() > 0.12 else prof["alt_device"]
+            vol = random.random() < prof["ipvol"]
+            dev = prof["device"] if random.random() > 0.12 else prof["alt"]
             rows.append(
-                row(
+                mk_row(
                     dt,
-                    u,
+                    u["email"],
+                    u["type"],
                     sub,
                     role,
-                    th_ip(home_prefix, volatile),
+                    th_ip(home, vol),
                     "TH",
                     dev,
                     level=0,
-                    scenario="normal",
-                    changed="ip(mobile)" if volatile else "",
+                    changed="ip(mobile)" if vol else "",
                 )
             )
-    return rows, home_prefix, targets
+    return rows, home, targets
+
+
+def inject_attacks(users, home_of, target_n):
+    """ฉีด attack แบบคุมระดับจนได้ ~target_n แถว."""
+    rows = []
+    victims = [
+        u for u in users if u["access"] or u["type"] in ("admin", "teacher", "staff")
+    ]
+    random.shuffle(victims)
+    vi = 0
+    scenarios = [
+        "ato_full",
+        "impossible_travel",
+        "credential_stuffing",
+        "lateral_movement",
+        "country_change_only",
+        "ip_change_only",
+        "new_device_night",
+    ]
+    while sum(r["label"] == 1 for r in rows) < target_n and victims:
+        u = victims[vi % len(victims)]
+        vi += 1
+        home, targets = home_of[u["email"]]
+        sub, role = targets[0]
+        prof = PROFILES[u["type"]]
+        sc = random.choice(scenarios)
+        d = random.randint(20, 29)
+        if sc == "ato_full":  # 🔴3 country+device+night
+            cc, pfx = random.choice(FOREIGN[:2])
+            dt = (START + timedelta(days=d)).replace(
+                hour=random.choice([2, 3, 4]), minute=random.randint(0, 59)
+            )
+            rows.append(
+                mk_row(
+                    dt,
+                    u["email"],
+                    u["type"],
+                    sub,
+                    role,
+                    foreign_ip(pfx),
+                    cc,
+                    "attacker_linux",
+                    aip=1,
+                    label=1,
+                    level=3,
+                    scenario=sc,
+                    changed="country,ip,device,time",
+                )
+            )
+        elif sc == "impossible_travel":  # 🔴3 TH -> ตปท. ภายในไม่กี่นาที
+            base = (START + timedelta(days=d)).replace(
+                hour=random.choice(prof["hours"]), minute=random.randint(0, 50)
+            )
+            rows.append(
+                mk_row(
+                    base,
+                    u["email"],
+                    u["type"],
+                    sub,
+                    role,
+                    th_ip(home),
+                    "TH",
+                    prof["device"],
+                    label=0,
+                    level=0,
+                    scenario="normal_before_travel",
+                )
+            )
+            cc, pfx = random.choice(FOREIGN)
+            rows.append(
+                mk_row(
+                    base + timedelta(minutes=random.randint(5, 12)),
+                    u["email"],
+                    u["type"],
+                    sub,
+                    role,
+                    foreign_ip(pfx),
+                    cc,
+                    "attacker_linux",
+                    aip=1,
+                    label=1,
+                    level=3,
+                    scenario=sc,
+                    changed="country,ip,device",
+                )
+            )
+        elif sc == "credential_stuffing":  # 🔴3 failed รัว ดึก แล้วสำเร็จ
+            cc, pfx = random.choice(FOREIGN[:3])
+            night = (START + timedelta(days=d)).replace(
+                hour=3, minute=random.randint(0, 50)
+            )
+            for i in range(random.randint(4, 8)):
+                rows.append(
+                    mk_row(
+                        night + timedelta(minutes=i),
+                        u["email"],
+                        u["type"],
+                        sub,
+                        role,
+                        foreign_ip(pfx),
+                        cc,
+                        "attacker_linux",
+                        ok=False,
+                        aip=1,
+                        label=1,
+                        level=3,
+                        scenario=sc,
+                        changed="failed,country,device,time",
+                    )
+                )
+            rows.append(
+                mk_row(
+                    night + timedelta(minutes=9),
+                    u["email"],
+                    u["type"],
+                    sub,
+                    role,
+                    foreign_ip(pfx),
+                    cc,
+                    "attacker_linux",
+                    ok=True,
+                    aip=1,
+                    label=1,
+                    level=3,
+                    scenario="credential_stuffing_success",
+                    changed="failed,country,device,time",
+                )
+            )
+        elif sc == "lateral_movement" and len(targets) >= 2:  # 🔴3 หลาย subsystem รัว
+            cc, pfx = random.choice(FOREIGN)
+            t0 = (START + timedelta(days=d)).replace(
+                hour=23, minute=random.randint(0, 50)
+            )
+            for j, (s2, r2) in enumerate(targets):
+                rows.append(
+                    mk_row(
+                        t0 + timedelta(minutes=2 * j),
+                        u["email"],
+                        u["type"],
+                        s2,
+                        r2,
+                        foreign_ip(pfx),
+                        cc,
+                        "attacker_linux",
+                        aip=1,
+                        label=1,
+                        level=3,
+                        scenario=sc,
+                        changed="country,ip,device,multi_subsystem",
+                    )
+                )
+        elif (
+            sc == "country_change_only"
+        ):  # 🟠2 ประเทศเปลี่ยนเดี่ยว (เครื่อง/เวลาเดิม) -> label 1
+            cc, pfx = random.choice(FOREIGN[2:])
+            dt = (START + timedelta(days=d)).replace(
+                hour=random.choice(prof["hours"]), minute=random.randint(0, 59)
+            )
+            rows.append(
+                mk_row(
+                    dt,
+                    u["email"],
+                    u["type"],
+                    sub,
+                    role,
+                    foreign_ip(pfx),
+                    cc,
+                    prof["device"],
+                    label=1,
+                    level=2,
+                    scenario=sc,
+                    changed="country,ip",
+                )
+            )
+        elif sc == "new_device_night":  # 🟠2 เครื่องใหม่ + ดึก (ยัง TH) -> label 1
+            dt = (START + timedelta(days=d)).replace(
+                hour=random.choice([1, 2, 3, 23]), minute=random.randint(0, 59)
+            )
+            rows.append(
+                mk_row(
+                    dt,
+                    u["email"],
+                    u["type"],
+                    sub,
+                    role,
+                    th_ip(home, True),
+                    "TH",
+                    "attacker_linux",
+                    label=1,
+                    level=2,
+                    scenario=sc,
+                    changed="device,time",
+                )
+            )
+        else:  # ip_change_only 🟡1 -> label 0 (ปกติที่ดูแปลก, กัน FP)
+            dt = (START + timedelta(days=d)).replace(
+                hour=random.choice(prof["hours"]), minute=random.randint(0, 59)
+            )
+            rows.append(
+                mk_row(
+                    dt,
+                    u["email"],
+                    u["type"],
+                    sub,
+                    role,
+                    th_ip(random.choice(TH_IP), True),
+                    "TH",
+                    prof["device"],
+                    label=0,
+                    level=1,
+                    scenario=sc,
+                    changed="ip",
+                )
+            )
+    return rows
 
 
 def main():
-    users, acc_by_user = load_anchor()
+    users = build_users()
     all_rows = []
-    home = {}
+    home_of = {}
     for u in users:
-        rows, prefix, targets = gen_normal(u, acc_by_user)
+        rows, home, targets = gen_normal(u)
         all_rows += rows
-        home[u["email"]] = (prefix, targets, u)
+        home_of[u["email"]] = (home, targets)
 
-    # ---------- ฉีด anomaly (อ้างผู้ใช้จริง) ----------
-    def U(email):
-        return home[email][2]
-
-    inj = []
-    # 🟡 Level 1 — เปลี่ยน IP อย่างเดียว (เนียน, ยัง TH) → label 0 (กัน FP) แต่ tag level 1
-    for email in ["6660506018@pnu.ac.th", "bts97531@gmail.com"]:
-        u = U(email)
-        sub, role = home[email][1][0]
-        dt = START + timedelta(
-            days=random.randint(20, 28),
-            hours=random.choice(PROFILES[u["user_type"]]["hours"]),
-        )
-        inj.append(
-            row(
-                dt,
-                u,
-                sub,
-                role,
-                th_ip(random.choice(TH_IP_PREFIXES), True),
-                "TH",
-                PROFILES[u["user_type"]]["device"],
-                label=0,
-                level=1,
-                scenario="ip_change_only",
-                changed="ip",
-            )
-        )
-
-    # 🟠 Level 2 — ประเทศเปลี่ยนคอลัมน์เดียว (เครื่อง/เวลายังเดิม) → suspicious (label 1)
-    for email in ["furafae@gmail.com", "6660506018@pnu.ac.th"]:
-        u = U(email)
-        sub, role = home[email][1][0]
-        cc, pfx = random.choice(FOREIGN[2:])  # US/NL/SG (พอเป็นไปได้)
-        dt = START + timedelta(
-            days=random.randint(22, 29),
-            hours=random.choice(PROFILES[u["user_type"]]["hours"]),
-        )
-        inj.append(
-            row(
-                dt,
-                u,
-                sub,
-                role,
-                f"{pfx}.{random.randint(0,255)}.{random.randint(1,254)}",
-                cc,
-                PROFILES[u["user_type"]]["device"],
-                label=1,
-                level=2,
-                scenario="country_change_only",
-                changed="country,ip",
-            )
-        )
-
-    # 🔴 Level 3a — ATO เต็มรูป: ประเทศใหม่ + เครื่องใหม่ + ดึก พร้อมกัน
-    for email in ["6660506018@pnu.ac.th", "hasiyahdama5@gmail.com"]:
-        u = U(email)
-        sub, role = home[email][1][0]
-        cc, pfx = random.choice(FOREIGN[:2])  # RU/CN
-        dt = START + timedelta(
-            days=random.randint(25, 29), hours=random.choice([2, 3, 4])
-        )
-        inj.append(
-            row(
-                dt,
-                u,
-                sub,
-                role,
-                f"{pfx}.{random.randint(0,255)}.{random.randint(1,254)}",
-                cc,
-                "attacker_linux",
-                label=1,
-                level=3,
-                scenario="ato_full",
-                changed="country,ip,device,time",
-            )
-        )
-
-    # 🔴 Level 3b — Impossible travel: TH แล้ว ตปท. ภายในไม่กี่นาที
-    email = "6660506018@pnu.ac.th"
-    u = U(email)
-    sub, role = home[email][1][0]
-    base = START + timedelta(days=27, hours=14)
-    inj.append(
-        row(
-            base,
-            u,
-            sub,
-            role,
-            th_ip(home[email][0]),
-            "TH",
-            PROFILES["student"]["device"],
-            label=0,
-            level=0,
-            scenario="normal_before_travel",
-        )
-    )
-    cc, pfx = ("SG", "103.6")
-    inj.append(
-        row(
-            base + timedelta(minutes=8),
-            u,
-            sub,
-            role,
-            f"{pfx}.{random.randint(0,255)}.{random.randint(1,254)}",
-            cc,
-            "attacker_linux",
-            label=1,
-            level=3,
-            scenario="impossible_travel",
-            changed="country,ip,device",
-        )
-    )
-
-    # 🔴 Level 3c — Credential stuffing: ล้มเหลวรัวๆ ดึก แล้วสำเร็จ
-    email = "hasiyahdama5@gmail.com"
-    u = U(email)
-    night = START + timedelta(days=26, hours=3)
-    for i in range(6):
-        inj.append(
-            row(
-                night + timedelta(minutes=i),
-                u,
-                HUB,
-                "admin",
-                th_ip("45.83", True),
-                "RU",
-                "attacker_linux",
-                login_ok=False,
-                label=1,
-                level=3,
-                scenario="credential_stuffing",
-                changed="failed,country,device,time",
-            )
-        )
-    inj.append(
-        row(
-            night + timedelta(minutes=7),
-            u,
-            HUB,
-            "admin",
-            th_ip("45.83", True),
-            "RU",
-            "attacker_linux",
-            login_ok=True,
-            label=1,
-            level=3,
-            scenario="credential_stuffing_success",
-            changed="failed,country,device,time",
-        )
-    )
-
-    # 🔴 Level 3d — Lateral movement: teacher เข้าหลาย subsystem รัวๆ จากเครื่องแปลก
-    email = "bts97531@gmail.com"
-    u = U(email)
-    t0 = START + timedelta(days=28, hours=23)
-    for j, (sub, role) in enumerate(home[email][1]):
-        inj.append(
-            row(
-                t0 + timedelta(minutes=2 * j),
-                u,
-                sub,
-                role,
-                th_ip("185.2", True),
-                "NL",
-                "attacker_linux",
-                label=1,
-                level=3,
-                scenario="lateral_movement",
-                changed="country,ip,device,multi_subsystem",
-            )
-        )
-
-    all_rows += inj
+    n_normal = len(all_rows)
+    target_attack = round(n_normal * ATTACK_FRAC / (1 - ATTACK_FRAC))
+    all_rows += inject_attacks(users, home_of, target_attack)
     all_rows.sort(key=lambda r: r["created_at"])
 
     cols = [
@@ -405,6 +481,7 @@ def main():
         "browser",
         "user_agent",
         "login_successful",
+        "is_attack_ip",
         "label",
         "anomaly_level",
         "scenario",
@@ -416,16 +493,18 @@ def main():
         w.writerows(all_rows)
 
     n_atk = sum(1 for r in all_rows if r["label"] == 1)
-    print("✅ จำลอง login 1 เดือน จากผู้ใช้จริง 5 คน + สิทธิ์จริง")
-    print(f"   total      : {len(all_rows)}")
-    print(f"   normal     : {len(all_rows) - n_atk}")
-    print(f"   attack(=1) : {n_atk}")
-    from collections import Counter
-
-    print(f"   per user   : {dict(Counter(r['email'] for r in all_rows))}")
-    print(f"   by level   : {dict(Counter(r['anomaly_level'] for r in all_rows))}")
+    reals = sum(1 for u in users if u["real"])
+    print("✅ จำลอง login 1 เดือน (anchor ผู้ใช้จริง + clone persona)")
+    print(f"   users      : {len(users)} (จริง {reals} + clone {len(users) - reals})")
+    print(f"   total rows : {len(all_rows)}")
     print(
-        f"   by scenario(attack): {dict(Counter(r['scenario'] for r in all_rows if r['label']==1))}"
+        f"   normal     : {len(all_rows) - n_atk}  | attack(=1): {n_atk} ({n_atk / len(all_rows) * 100:.1f}%)"
+    )
+    print(
+        f"   by level   : {dict(sorted(Counter(r['anomaly_level'] for r in all_rows).items()))}"
+    )
+    print(
+        f"   attack scn : {dict(Counter(r['scenario'] for r in all_rows if r['label'] == 1))}"
     )
     print(f"   output     : {OUT}")
 
