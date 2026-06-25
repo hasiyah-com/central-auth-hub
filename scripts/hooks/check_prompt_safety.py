@@ -2,6 +2,7 @@
 
 ไม่ block — แค่ inject context warning ให้ Claude เห็น แล้วถาม user
 """
+
 import json
 import sys
 

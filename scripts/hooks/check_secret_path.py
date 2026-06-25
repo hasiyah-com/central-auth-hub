@@ -10,6 +10,7 @@ Exit codes:
   0 = allow
   2 = block (Claude เห็น stderr message)
 """
+
 import json
 import re
 import sys
@@ -17,7 +18,9 @@ from pathlib import PurePosixPath
 
 
 BLOCK_PATTERNS = [
-    re.compile(r"(^|/)\.env(\..+)?$"),     # .env, .env.local, .env.production — แต่ไม่ .env.example
+    re.compile(
+        r"(^|/)\.env(\..+)?$"
+    ),  # .env, .env.local, .env.production — แต่ไม่ .env.example
     re.compile(r"\.pem$"),
     re.compile(r"\.key$"),
     re.compile(r"(^|/)keys/"),
