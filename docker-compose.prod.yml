@@ -127,7 +127,9 @@ services:
       - letsencrypt:/etc/letsencrypt:ro
     # image entrypoint รัน envsubst (/etc/nginx/templates → conf.d) ก่อน แล้ว exec command นี้
     # reload ทุก 6 ชม. → รับ cert ที่ certbot renew มาใหม่โดยไม่ต้อง restart (wmnnd recipe)
-    command: /bin/sh -c "while :; do sleep 6h & wait $${!}; nginx -s reload; done & nginx -g 'daemon off;'"
+    # ต้องรัน envsubst เอง: entrypoint แปลง templates→conf.d เฉพาะเมื่อ arg แรก = "nginx"
+    # แต่ command นี้ขึ้นต้นด้วย /bin/sh → ต้องเรียก 20-envsubst-on-templates.sh ตรงๆ ก่อน
+    command: /bin/sh -c "/docker-entrypoint.d/20-envsubst-on-templates.sh; while :; do sleep 6h & wait $${!}; nginx -s reload; done & nginx -g 'daemon off;'"
 
   certbot:
     image: certbot/certbot

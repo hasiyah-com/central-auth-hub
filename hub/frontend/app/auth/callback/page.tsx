@@ -1,5 +1,8 @@
 "use client";
 
+// useSearchParams() ต้อง render ตอน request time — กัน prerender error ตอน next build
+export const dynamic = "force-dynamic";
+
 import { useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
