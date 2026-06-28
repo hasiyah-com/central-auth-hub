@@ -3,10 +3,10 @@
 // useSearchParams() ต้อง render ตอน request time — กัน prerender error ตอน next build
 export const dynamic = "force-dynamic";
 
-import { useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
-export default function CallbackPage() {
+function CallbackInner() {
   const router = useRouter();
   const params = useSearchParams();
   const [error, setError] = useState<string | null>(null);
@@ -87,5 +87,13 @@ export default function CallbackPage() {
         )}
       </div>
     </main>
+  );
+}
+
+export default function CallbackPage() {
+  return (
+    <Suspense fallback={null}>
+      <CallbackInner />
+    </Suspense>
   );
 }
