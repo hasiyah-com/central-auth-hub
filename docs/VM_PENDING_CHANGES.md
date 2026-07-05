@@ -45,6 +45,8 @@ docker compose --env-file .env.prod -f docker-compose.prod.yml exec hub-backend 
 |---|---|
 | `6cf07d2` feat(passkey): dev จัดการ passkey ตัวเองได้ + nudge banner 7 วัน | hub-backend + hub-frontend |
 | `18fff8f` feat(hub): refresh token + re-validate risk ทุกครั้งที่ renew — **แก้บั๊ก logout ค้าง "ออนไลน์"** (ปุ่ม logout เดิมไม่เคยเรียก `/auth/logout` เลย แค่ลบ cookie ฝั่ง client) | hub-backend + hub-frontend |
+| `7e61080` fix(frontend): admin passkey step-up prompts เป็น inline popup ทั้งหมด | hub-frontend |
+| `7e19247` fix(oauth): เช็คสิทธิ์เข้าระบบย่อยก่อนโชว์หน้าตั้ง passkey (เดิมเช็ค passkey ก่อน — เสียเวลาตั้งก่อนมาเจอ "ไม่มีสิทธิ์") | hub-backend |
 
 **คำสั่ง apply (บน VM):**
 ```bash
