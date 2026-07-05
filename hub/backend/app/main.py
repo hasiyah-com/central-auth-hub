@@ -13,7 +13,6 @@ from starlette.middleware.sessions import SessionMiddleware
 from starlette.responses import Response
 
 from app.config import settings
-from app.database import Base, engine
 from app.hooks import register_default_listeners
 from app.rate_limiter import limiter
 
@@ -102,8 +101,11 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Create tables on startup (dev only — use Alembic migrations in production)
-    Base.metadata.create_all(bind=engine)
+    # Schema ผูกกับ Alembic ทั้งหมด — ห้าม create_all() ที่นี่อีก (เคยทำให้
+    # schema drift เงียบๆ: create_all() สร้างตารางใหม่ได้ แต่ไม่เพิ่ม column
+    # ให้ตารางเดิม พอ deploy โค้ดใหม่ที่เพิ่ม column แล้วลืมรัน migration
+    # เจอ "column ... does not exist" ตอน production). รันก่อน start เสมอ:
+    #   docker compose exec hub-backend alembic upgrade head
 
     # fail-fast ถ้าไม่มี JWT keys — ดีกว่ารอจน request แรกแล้วค่อยพัง
     for path in (settings.jwt_private_key_path, settings.jwt_public_key_path):

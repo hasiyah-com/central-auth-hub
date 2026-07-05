@@ -17,7 +17,7 @@ import re
 
 from faker import Faker
 
-from app.database import SessionLocal, Base, engine
+from app.database import SessionLocal
 from app.models import (
     User,
     Subsystem,
@@ -141,7 +141,8 @@ def seed():
       - user ที่เพิ่มเอง (เช่น Gmail admin) จะ *ไม่ถูกลบ*
         แต่ subsystem ที่ทดสอบไว้จะถูกล้าง (สร้างใหม่ได้ง่าย)
     """
-    Base.metadata.create_all(bind=engine)
+    # Schema ผูกกับ Alembic แล้ว — รัน `alembic upgrade head` ก่อน seed เสมอ
+    # (เคย create_all() ตรงนี้ แต่มันไม่เพิ่ม column ให้ตารางเดิม → schema drift)
     db = SessionLocal()
 
     # นับ seed users เดิม (เฉพาะ @uni.ac.th และ @hub.local)
