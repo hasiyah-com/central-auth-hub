@@ -34,16 +34,17 @@ docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --force-rec
 docker compose --env-file .env.prod -f docker-compose.prod.yml exec hub-backend alembic upgrade head
 ```
 
-**Pending migrations รอ apply:** _(ยังไม่มี — ถ้าเพิ่ม column ใหม่ให้จดที่นี่)_
+**Pending migrations รอ apply:**
+- `5e31bcaf0cf4` add refresh_id to login_sessions (refresh token feature)
 
 ---
 
 ## 3. Code (มากับ git pull — build ใหม่)
 
-| commit / feature | build service ไหน |
+| commit | build service ไหน |
 |---|---|
-| `fix(passkey)` — dev จัดการ passkey ตัวเองได้ (require_developer) | hub-backend |
-| Passkey nudge banner (7 วัน) — `PasskeyNudgeBanner.tsx` + 2 layouts | hub-frontend |
+| `6cf07d2` feat(passkey): dev จัดการ passkey ตัวเองได้ + nudge banner 7 วัน | hub-backend + hub-frontend |
+| `18fff8f` feat(hub): refresh token + re-validate risk ทุกครั้งที่ renew — **แก้บั๊ก logout ค้าง "ออนไลน์"** (ปุ่ม logout เดิมไม่เคยเรียก `/auth/logout` เลย แค่ลบ cookie ฝั่ง client) | hub-backend + hub-frontend |
 
 **คำสั่ง apply (บน VM):**
 ```bash
