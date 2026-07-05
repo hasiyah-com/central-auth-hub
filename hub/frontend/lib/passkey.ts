@@ -234,12 +234,14 @@ export async function adminListUserPasskeys(
 }
 
 export async function adminResetUserPasskeys(
-  userId: string
+  userId: string,
+  onVerifying?: (active: boolean) => void
 ): Promise<{ revoked_count: number; message: string }> {
-  return clientFetch(`/admin/users/${userId}/reset-passkeys`, {
-    method: "POST",
-    body: JSON.stringify({}),
-  });
+  return mutateWithStepup(
+    `/admin/users/${userId}/reset-passkeys`,
+    { method: "POST", body: JSON.stringify({}) },
+    onVerifying
+  );
 }
 
 // ── Lifecycle (Phase 3) ───────────────────────────────────────

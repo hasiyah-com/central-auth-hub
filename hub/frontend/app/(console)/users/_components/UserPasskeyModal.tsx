@@ -31,6 +31,7 @@ export function UserPasskeyModal({ userId, userName, onClose }: Props) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [resetting, setResetting] = useState(false);
+  const [verifying, setVerifying] = useState(false);
 
   const load = () => {
     setLoading(true);
@@ -47,7 +48,7 @@ export function UserPasskeyModal({ userId, userName, onClose }: Props) {
       return;
     setResetting(true);
     try {
-      const r = await adminResetUserPasskeys(userId);
+      const r = await adminResetUserPasskeys(userId, setVerifying);
       alert(r.message);
       load();
     } catch (e) {
@@ -63,6 +64,14 @@ export function UserPasskeyModal({ userId, userName, onClose }: Props) {
 
   return (
     <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
+      {verifying && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-2xl px-6 py-5 shadow-xl flex items-center gap-3 text-sm text-ink-700">
+            <span className="animate-pulse text-lg">🔐</span>
+            กำลังยืนยันด้วย Passkey…
+          </div>
+        </div>
+      )}
       <div className="bg-white rounded-xl shadow-2xl max-w-lg w-full max-h-[90vh] overflow-y-auto">
         <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
           <div>
