@@ -16,7 +16,7 @@
 ```
 ┌──────────┐  redirect    ┌──────────┐   OAuth     ┌──────────┐
 │ Subsystem│─────────────▶│   Hub    │────────────▶│  Google  │
-│ (ของคุณ) │◀──Token(S2S)─│ (Central)│             │  / LINE  │
+│ (ของคุณ) │◀──Token(S2S)─│ (Central)│             │          │
 └────┬─────┘              └────┬─────┘              └──────────┘
      │ webhook (back-channel)  │ ML / RBA / Passkey
      ◀─────────────────────────┘

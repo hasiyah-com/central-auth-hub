@@ -64,6 +64,9 @@ SCORE_RULES = [
     ("is_new_user_agent_family", "==", 1, 0.20),
     ("failed_logins_24h", ">=", 3, 0.20),
     ("is_thailand", "==", 0, 0.10),
+    # Geo (เพิ่ม): เปลี่ยนประเทศเร็ว (graded) จาก feature impossible_travel_score (idx 22)
+    # 1.0 = เพิ่งเปลี่ยนประเทศเดี๋ยวนี้, 0.5 = ภายใน ~12 ชม. — เสริม hard-block ที่ใช้ DB
+    ("impossible_travel_score", ">=", 0.5, 0.30),
 ]
 
 # Multiple accounts from same IP
@@ -140,6 +143,13 @@ def evaluate_rules(
         if hit:
             score += weight
             reasons.append(f"{feat_name} (+{weight})")
+
+    # ── Geo (เพิ่ม): login จาก "ประเทศใหม่ที่เป็นต่างประเทศ" (ไม่ใช่แค่ domestic ใหม่) ──
+    # is_new_country(0.3)+is_thailand=0(0.1)+new_foreign(0.3) = 0.7 → ถึงเกณฑ์ challenge (step-up MFA)
+    # แก้ปัญหา single-column country-change ที่เดิม score แค่ 0.4 (จับไม่ถึงเกณฑ์)
+    if features[FEAT["is_new_country"]] == 1 and features[FEAT["is_thailand"]] == 0:
+        score += 0.30
+        reasons.append("new_foreign_country (+0.30)")
 
     # ── Cross-subsystem risk propagation ──
     # ระบบย่อยอื่นเพิ่งมี login เสี่ยงสูง (เช่น ระบบ 1 ได้ 0.7) → พอ user เข้าระบบนี้

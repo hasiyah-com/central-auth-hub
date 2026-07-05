@@ -349,6 +349,44 @@ kids.push(bullet("บนข้อมูลจริง + โปรโตคอ�
 kids.push(bullet("variance สูง (±0.166) เพราะ ATO จริงมีแค่ 141 เคส → ข้อมูล attack จริงไม่พอสำหรับข้อสรุปเด็ดขาด"));
 kids.push(p("สำหรับเล่ม: ใช้ proper protocol นี้เป็นตัวเลขหลักของ \"ผลบนข้อมูลจริง\" (ไม่ใช่ in-sample) และรายงาน ROC-AUC คู่ PR-AUC พร้อม std เสมอ", { bold: true }));
 
+// 10.5 Simulated dataset (anchor real users)
+kids.push(new Paragraph({ children: [new PageBreak()] }));
+kids.push(h1("10.5 ชุดที่ 3 — Simulated (Anchor ผู้ใช้จริงของระบบ)"));
+kids.push(p("ดึง \"ผู้ใช้จริง + สิทธิ์จริง\" จากฐานข้อมูลระบบ (ผู้ใช้ที่เคย login จริง 5 คน) เป็นต้นแบบ แล้ว clone เป็น persona รวม 150 คน จำลองพฤติกรรม login 1 เดือน เข้าได้เฉพาะ subsystem ที่มีสิทธิ์จริง + ฉีด anomaly แบบคุมระดับ (1/2/3) — เป็นชุดที่ anchor กับ identity graph ของระบบเราเอง (ไม่ใช่ข้อมูลต่างประเทศ)"));
+kids.push(table(["รายการ", "ค่า"], [
+  ["total rows", "9,673"],
+  ["attack (label 1)", "300 (3.1%)"],
+  ["users", "จริง 5 + clone persona 145"],
+  ["features", "23 (Experiment C) — history-based คำนวณจาก login จริงต่อ user; scope อิง subsystem จริง"],
+  ["ระดับ anomaly", "🟡 level1=35 · 🟠 level2=47 · 🔴 level3=253 + คอลัมน์ columns_changed"],
+], [2400, 6960]));
+kids.push(h2("10.5.1 ผล in-sample (flag @ 3.1%)"));
+kids.push(table(["Model", "Prec", "Recall", "F1", "ROC-AUC", "PR-AUC"], [
+  [{ v: "IsolationForest", bold: true }, "0.830", "0.830", "0.830", "0.984", { v: "0.881", fill: HL, bold: true }],
+  ["OneClassSVM", "0.494", "0.510", "0.502", "0.958", "0.486"],
+  ["LocalOutlierFactor", "0.073", "0.073", "0.073", "0.431", "0.032"],
+], [3060, 1100, 1100, 1100, 1500, 1500]));
+kids.push(h2("10.5.2 การจับ attack ตามระดับความเนียน (IForest) — จุดเด่น"));
+kids.push(table(["ระดับ", "ลักษณะ", "จับได้"], [
+  ["🟡 1 (IP เปลี่ยนเดี่ยว, label=0)", "ปกติที่ดูแปลก", "0/35 → false positive ต่ำ"],
+  [{ v: "🟠 2 (country/device เดี่ยว)", bold: true }, "เนียน", { v: "1/47 → จับยากมาก", fill: HL, bold: true }],
+  ["🔴 3 (ATO เต็มรูป)", "ชัดเจน", "248/253 → จับเกือบหมด"],
+], [3400, 2200, 3760]));
+kids.push(p("→ พิสูจน์ว่าโมเดลจับ ATO ชัดได้ แต่ attack เนียนที่เปลี่ยนคอลัมน์เดียวยังจับแทบไม่ได้ (ความท้าทายจริงของ RBA)", { bold: true }));
+kids.push(image("SIM/confusion_matrices.png", 640));
+kids.push(cap("รูป 10.5a — Confusion matrices (SIMULATED, anchor ผู้ใช้จริง)"));
+kids.push(sideBySide("SIM/roc_curves.png", "SIM/pr_curves.png", 330));
+kids.push(cap("รูป 10.5b — ROC และ Precision-Recall (SIMULATED)"));
+kids.push(h2("10.5.3 ผล proper split (one-class, group-by-user, 10 splits)"));
+kids.push(table(["Model", "ROC-AUC", "PR-AUC", "Recall@1%"], [
+  [{ v: "OneClassSVM", bold: true }, "0.984 ± 0.000", { v: "0.703 ± 0.011", fill: HL, bold: true }, "1.000"],
+  ["IsolationForest", "0.880 ± 0.013", "0.328 ± 0.037", "0.311"],
+  ["LocalOutlierFactor", "0.952 ± 0.002", "0.299 ± 0.016", "0.999"],
+], [2800, 2400, 2400, 1760]));
+kids.push(p("ต่างจาก real-only (IForest≈OCSVM) — บนชุดนี้ OCSVM/LOF เด่นกว่า เพราะ attack ที่ฉีดเป็น signal-rich (is_attack_ip=1, ต่างประเทศ) → เทรน one-class บน normal สะอาดแล้ว attack อยู่นอกขอบเขตชัด; level-2 เนียนยังยากทุกโมเดล", { italics: true }));
+kids.push(sideBySide("SIM/shap_feature_importance.png", "SIM/shap_summary_beeswarm.png", 330));
+kids.push(cap("รูป 10.5c — SHAP importance และ beeswarm (SIMULATED, IForest)"));
+
 // 11. Methodology detail + 40 synthetic rows
 kids.push(new Paragraph({ children: [new PageBreak()] }));
 kids.push(h1("11. ระเบียบวิธีโดยละเอียด + ข้อมูล Synthetic ทั้ง 40 แถว"));
