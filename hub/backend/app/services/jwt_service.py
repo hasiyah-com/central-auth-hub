@@ -183,9 +183,14 @@ def create_access_token(user, audience: str | None = None) -> tuple[str, str]:
 
 
 def create_subsystem_token(
-    user, client_id: str, scope: list[str], role_in_sub: str
+    user, client_id: str, scope: list[str], role_in_sub: str | None = None
 ) -> tuple[str, str]:
     """JWT สำหรับ subsystem — เฉพาะ field ใน scope.
+
+    บทบาทที่ส่งให้ subsystem = ``user_type`` (student/teacher/staff/admin).
+    role_in_sub (เฉพาะ subsystem) ถูกตัดออกแล้ว — param คงไว้เพื่อ backward-compat
+    ของ caller แต่ไม่ใช้. claim ``role_in_subsystem`` ตั้ง = user_type ด้วย
+    (transition: subsystem code เดิมที่อ่าน claim นี้ยังทำงานได้).
 
     Returns (token, jti)
     """
@@ -199,7 +204,9 @@ def create_subsystem_token(
         "iat": int(now.timestamp()),
         "exp": int(expire.timestamp()),
         "jti": jti,
-        "role_in_subsystem": role_in_sub,
+        # บทบาท = user_type (เลิกใช้ role_in_sub)
+        "user_type": user.user_type,
+        "role_in_subsystem": user.user_type,  # transition alias
     }
     # identifier + year_or_position ในตาราง users เก็บค่าเดียว — ใช้ user_type
     # ตัดสินว่าจะ map ไป field "student_*" หรือ "employee_*" / "year" หรือ "position"

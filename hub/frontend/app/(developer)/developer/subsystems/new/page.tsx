@@ -33,7 +33,17 @@ type RegisterResponse = {
   note?: string;
   webhook_endpoints?: { access_revoked: string; access_updated: string };
   webhook_note?: string;
+  api_key?: string;
+  api_key_note?: string;
 };
+
+const POLICY_OPTIONS: Array<{ key: string; label: string; desc: string; icon: string }> = [
+  { key: "explicit", label: "Whitelist", desc: "เฉพาะรายชื่อ CSV ", icon: "📋" },
+  { key: "all", label: "All Users", desc: "ผู้ใช้ทุกคนที่ active เข้าได้", icon: "🌐" },
+  { key: "role", label: "Role", desc: "เฉพาะ Role ที่เลือก", icon: "👥" },
+  { key: "attribute", label: "Attribute", desc: "เฉพาะคณะ/สาขา", icon: "🎯" },
+];
+const USER_TYPES = ["student", "teacher", "staff", "admin"];
 
 export default function NewSubsystemPage() {
   const router = useRouter();
@@ -41,7 +51,10 @@ export default function NewSubsystemPage() {
   const [description, setDescription] = useState("");
   const [redirectUris, setRedirectUris] = useState<string[]>([""]);
   const [scope, setScope] = useState<Set<string>>(new Set(["email", "name"]));
-  const [allowedRoles, setAllowedRoles] = useState("user");
+  const [accessPolicy, setAccessPolicy] = useState("explicit");
+  const [policyRoles, setPolicyRoles] = useState<Set<string>>(new Set());
+  const [policyFaculty, setPolicyFaculty] = useState("");
+  const [policyMajor, setPolicyMajor] = useState("");
   const [webhookUrl, setWebhookUrl] = useState("");
   const [busy, setBusy] = useState(false);
   const [verifying, setVerifying] = useState(false);
@@ -81,13 +94,26 @@ export default function NewSubsystemPage() {
       return;
     }
 
-    const rolesArr = allowedRoles
-      .split(/[\s,]+/)
-      .map((s) => s.trim())
-      .filter(Boolean);
-    if (rolesArr.length === 0) {
-      setError("ต้องระบุ allowed_roles อย่างน้อย 1 ตัว");
-      return;
+    // สร้าง access_policy_config ตาม policy ที่เลือก
+    const splitList = (s: string) =>
+      s.split(",").map((x) => x.trim()).filter(Boolean);
+    let policyConfig: Record<string, string[]> | null = null;
+    if (accessPolicy === "role") {
+      if (policyRoles.size === 0) {
+        setError("policy 'ตามบทบาท' ต้องเลือกบทบาทอย่างน้อย 1");
+        return;
+      }
+      policyConfig = { roles: Array.from(policyRoles) };
+    } else if (accessPolicy === "attribute") {
+      const fac = splitList(policyFaculty);
+      const maj = splitList(policyMajor);
+      if (fac.length === 0 && maj.length === 0) {
+        setError("policy 'ตามคุณสมบัติ' ต้องระบุคณะหรือสาขาอย่างน้อย 1 เงื่อนไข");
+        return;
+      }
+      policyConfig = {};
+      if (fac.length) policyConfig.faculty = fac;
+      if (maj.length) policyConfig.major = maj;
     }
 
     setBusy(true);
@@ -103,7 +129,8 @@ export default function NewSubsystemPage() {
             description: description.trim() || null,
             redirect_uris: cleanUris,
             scope: Array.from(scope),
-            allowed_roles: rolesArr,
+            access_policy: accessPolicy,
+            access_policy_config: policyConfig,
             access_revoke_webhook_url: webhookUrl.trim() || null,
           }),
         },
@@ -171,6 +198,20 @@ export default function NewSubsystemPage() {
                 </div>
               </div>
             </div>
+
+            {result.api_key && (
+              <div className="rounded-lg bg-emerald-50 border border-emerald-300 p-5 mb-6">
+                <div className="text-xl mb-1">🔑</div>
+                <h3 className="font-bold text-emerald-900 mb-1">Roster API Key</h3>
+                <p className="text-xs text-emerald-700 mb-2">
+                  {result.api_key_note || "ใช้ดึงรายชื่อผู้ใช้ผ่าน GET /api/v1/roster"} —
+                  <strong> แสดงครั้งเดียว</strong>
+                </p>
+                <div className="bg-white border border-emerald-200 rounded p-3 font-mono text-[11px] break-all text-emerald-900">
+                  {result.api_key}
+                </div>
+              </div>
+            )}
 
             {viaEmail ? (
               <div className="rounded-lg bg-brand-50 border border-brand-200 p-5 mb-6">
@@ -416,25 +457,90 @@ export default function NewSubsystemPage() {
             </div>
           </div>
 
-          {/* Allowed roles */}
+          {/* Access Policy */}
           <div>
             <label className="block text-xs font-bold uppercase tracking-wider text-ink-500 mb-2">
-              Allowed Roles ใน subsystem <span className="text-rose-500">*</span>
+              นโยบายการเข้าถึง (Access Policy) <span className="text-rose-500">*</span>
             </label>
             <p className="text-[11px] text-ink-500 mb-3">
-              บทบาทที่ระบบยอมรับ — ใช้ตรวจสอบเวลา admin เพิ่ม user เข้า whitelist
-              <br />
-              เช่น <code className="bg-ink-100 px-1 rounded">resident, teacher, staff</code>{" "}
-              หรือ <code className="bg-ink-100 px-1 rounded">member, librarian</code>
+              ใครเข้าใช้ระบบนี้ได้ — ตรวจตอน login + ใช้กับ Roster API
             </p>
-            <input
-              type="text"
-              required
-              placeholder="resident, teacher, staff"
-              value={allowedRoles}
-              onChange={(e) => setAllowedRoles(e.target.value)}
-              className="w-full px-3 py-2 rounded-lg border border-ink-200 focus:outline-none focus:border-brand-500 font-mono text-[12px]"
-            />
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-3">
+              {POLICY_OPTIONS.map((p) => (
+                <button
+                  key={p.key}
+                  type="button"
+                  onClick={() => setAccessPolicy(p.key)}
+                  className={
+                    "flex items-start gap-2.5 p-3 rounded-lg border-2 text-left transition " +
+                    (accessPolicy === p.key
+                      ? "bg-brand-50 border-brand-400"
+                      : "bg-white border-ink-200 hover:border-brand-200")
+                  }
+                >
+                  <span className="text-xl leading-none">{p.icon}</span>
+                  <div className="min-w-0">
+                    <div className="text-sm font-bold text-ink-900">{p.label}</div>
+                    <div className="text-[11px] text-ink-500 mt-0.5 leading-snug">{p.desc}</div>
+                  </div>
+                </button>
+              ))}
+            </div>
+
+            {accessPolicy === "role" && (
+              <div className="p-3 rounded-lg bg-ink-50 border border-ink-100">
+                <div className="text-[11px] font-bold text-ink-500 uppercase tracking-wider mb-2">เลือกบทบาทที่เข้าได้</div>
+                <div className="flex flex-wrap gap-2">
+                  {USER_TYPES.map((r) => (
+                    <button
+                      key={r}
+                      type="button"
+                      onClick={() =>
+                        setPolicyRoles((cur) => {
+                          const n = new Set(cur);
+                          n.has(r) ? n.delete(r) : n.add(r);
+                          return n;
+                        })
+                      }
+                      className={
+                        "px-3 py-1.5 rounded-full text-xs font-semibold border transition " +
+                        (policyRoles.has(r)
+                          ? "bg-emerald-100 border-emerald-300 text-emerald-800"
+                          : "bg-white border-ink-200 text-ink-500 hover:border-ink-300")
+                      }
+                    >
+                      {policyRoles.has(r) ? "✓ " : ""}{r}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {accessPolicy === "attribute" && (
+              <div className="p-3 rounded-lg bg-ink-50 border border-ink-100 space-y-2">
+                <input
+                  type="text"
+                  placeholder="คณะ (faculty) — คั่นด้วย , เช่น วิศวกรรมศาสตร์, แพทยศาสตร์"
+                  value={policyFaculty}
+                  onChange={(e) => setPolicyFaculty(e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg border border-ink-200 focus:outline-none focus:border-brand-500 text-sm"
+                />
+                <input
+                  type="text"
+                  placeholder="สาขา (major) — คั่นด้วย , เช่น คอมพิวเตอร์, จิตเวช"
+                  value={policyMajor}
+                  onChange={(e) => setPolicyMajor(e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg border border-ink-200 focus:outline-none focus:border-brand-500 text-sm"
+                />
+              </div>
+            )}
+
+            {accessPolicy === "explicit" && (
+              <p className="text-[11px] text-ink-500">เพิ่มรายชื่อทีหลังในหน้าจัดการ subsystem (เพิ่มทีละคน / CSV)</p>
+            )}
+            {accessPolicy === "all" && (
+              <p className="text-[11px] text-amber-700">⚠️ ผู้ใช้ทุกคนที่ active เข้าได้</p>
+            )}
           </div>
 
           {/* Webhook URL (optional) */}

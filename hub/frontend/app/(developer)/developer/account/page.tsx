@@ -2,6 +2,6 @@
 
 import { AccountView } from "@/components/AccountView";
 
-export default function AccountPage() {
+export default function DeveloperAccountPage() {
   return <AccountView />;
 }

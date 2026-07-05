@@ -94,6 +94,20 @@ class Subsystem(Base):
     status = Column(
         String(20), default="pending", index=True
     )  # pending/active/suspended
+
+    # ── Access Policy (Week 11) — ใครเข้า subsystem ได้ ──
+    # explicit = whitelist (access_list) | all = ทุก active user
+    # role = user_type ใน config.roles | attribute = match config.attributes
+    access_policy = Column(String(20), nullable=False, server_default="explicit")
+    # role:      {"roles": ["teacher","staff"]}        ← ค่าจาก user_type
+    # attribute: {"faculty": [...], "major": [...]}
+    # explicit/all: null
+    access_policy_config = Column(JSON, nullable=True)
+
+    # ── Roster Sync API key (Week 11) — read-only S2S สำหรับดึง roster ──
+    api_key_hash = Column(Text, nullable=True)  # Argon2 (เหมือน client_secret)
+    api_key_prefix = Column(String(12), nullable=True)  # โชว์ระบุ key ใน UI
+
     owner_user_id = Column(UUID(as_uuid=True), ForeignKey("users.id"))
     created_at = Column(DateTime, default=datetime.utcnow)
     approved_at = Column(DateTime, nullable=True)
@@ -112,7 +126,9 @@ class AccessList(Base):
     user_id = Column(
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True
     )
-    role_in_sub = Column(String(50))  # e.g., resident/staff/admin per subsystem
+    role_in_sub = Column(String(50))  # DEPRECATED — เลิกใช้ (role = user_type แล้ว)
+    # allow = whitelist entry (explicit) | deny = ban รายคน ทับ policy all/role/attribute
+    entry_type = Column(String(10), nullable=False, server_default="allow")
     granted_by = Column(UUID(as_uuid=True), ForeignKey("users.id"))
     granted_at = Column(DateTime, default=datetime.utcnow)
     revoked_at = Column(DateTime, nullable=True)

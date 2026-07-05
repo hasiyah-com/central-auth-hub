@@ -29,12 +29,13 @@ from app.config import settings
 from app.database import get_db
 from app.deps import get_client_ip
 from app.rate_limiter import limiter
-from app.models import AccessList, LoginSession, Subsystem, User
+from app.models import LoginSession, Subsystem, User
 from app.redis_client import redis_client
 from app.routers.auth import oauth  # ใช้ Authlib client ตัวเดียวกับ Week 2
 from app.services.alert_service import maybe_alert_ml_risk
 from app.services.audit_service import log_action
 from app.services.auth_policy import get_auth_policy
+from app.services.access_policy import evaluate_access_policy
 from app.services.identity_challenge import is_user_challenged
 from app.services.subsystem_health import get_status as get_health_status
 from app.services.feature_extraction import (
@@ -441,21 +442,17 @@ async def _finalize_subsystem_login(
     client_ip = get_client_ip(request)
     user_agent = request.headers.get("user-agent")
 
-    # *** เช็ค Access List — user มีสิทธิ์เข้า subsystem นี้ไหม ***
-    access = (
-        db.query(AccessList)
-        .filter(
-            AccessList.subsystem_id == authreq["subsystem_id"],
-            AccessList.user_id == user.id,
-            AccessList.revoked_at.is_(None),
-        )
-        .first()
+    # *** เช็ค Access Policy — user มีสิทธิ์เข้า subsystem นี้ไหม ***
+    # รองรับ explicit/all/role/attribute + deny-list (Week 11)
+    subsystem_obj = (
+        db.query(Subsystem).filter(Subsystem.id == authreq["subsystem_id"]).first()
     )
-    if not access:
+    allowed, policy_reason = evaluate_access_policy(db, user, subsystem_obj)
+    if not allowed:
         log_action(
             db,
             actor_id=user.id,
-            action="oauth_login_failed_not_in_whitelist",
+            action="oauth_login_failed_access_policy",
             target_type="subsystem",
             target_id=authreq["subsystem_id"],
             ip=client_ip,
@@ -464,6 +461,8 @@ async def _finalize_subsystem_login(
                 "user_id": str(user.id),
                 "client_id": authreq["client_id"],
                 "provider": provider,
+                "policy": subsystem_obj.access_policy if subsystem_obj else None,
+                "reason": policy_reason,
             },
         )
         db.commit()
@@ -472,13 +471,13 @@ async def _finalize_subsystem_login(
             {
                 "user_id": str(user.id),
                 "client_id": authreq["client_id"],
-                "reason": "not_in_whitelist",
+                "reason": f"access_policy:{policy_reason}",
                 "ip": client_ip,
             },
         )
         raise HTTPException(
             status_code=403,
-            detail="คุณไม่อยู่ใน whitelist ของระบบย่อยนี้ — ติดต่อ admin",
+            detail="คุณไม่มีสิทธิ์เข้าใช้งานระบบย่อยนี้ — ติดต่อ admin",
         )
 
     # *** เช็ค identity challenge — admin เคย Revoke Level 2 ไหม? ***
@@ -731,7 +730,6 @@ async def _finalize_subsystem_login(
         "subsystem_id": authreq["subsystem_id"],
         "code_challenge": authreq["code_challenge"],
         "scope": authreq["scope"],
-        "role_in_sub": access.role_in_sub,
     }
     if grace_banner_remaining_days is not None:
         # Risk-triggered grace period flag — subsystem แสดง banner
@@ -1117,7 +1115,6 @@ def token_exchange(
         user=user,
         client_id=client_id,
         scope=code_data["scope"],
-        role_in_sub=code_data["role_in_sub"],
     )
 
     # Track jti บน LoginSession ล่าสุดของ (user, subsystem) สำหรับ force-revoke
@@ -1149,7 +1146,8 @@ def token_exchange(
         "token_type": "bearer",
         "expires_in": settings.jwt_access_token_expire_minutes * 60,
         "scope": code_data["scope"],
-        "role_in_subsystem": code_data["role_in_sub"],
+        "user_type": user.user_type,
+        "role_in_subsystem": user.user_type,  # transition alias
     }
     # Risk-triggered grace period banner — subsystem แสดง banner ให้ user
     if "passkey_grace_remaining_days" in code_data:

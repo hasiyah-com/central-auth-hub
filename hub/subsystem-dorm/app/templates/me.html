@@ -17,13 +17,13 @@
   <!-- Hub Info Card -->
   <div class="card p-6">
     <div class="flex items-center gap-3 mb-5">
-      <div class="avatar avatar-lg {% if user.role_in_sub == 'staff' %}avatar-staff{% endif %}">
+      <div class="avatar avatar-lg {% if user.user_type == 'staff' %}avatar-staff{% endif %}">
         {{ (user.full_name or "?")[0]|upper }}
       </div>
       <div class="flex-1">
         <h2 class="display" style="font-size:20px;">{{ user.full_name }}</h2>
         <p class="text-sm mt-1 mono" style="color:#6B6B6B;">{{ user.email }}</p>
-        <span class="badge badge-{{ user.role_in_sub }} mt-2">{{ user.role_in_sub }}</span>
+        <span class="badge badge-{{ user.user_type }} mt-2">{{ user.user_type }}</span>
       </div>
     </div>
 
@@ -146,7 +146,7 @@
     </div>
     {% endif %}
 
-    {% if not current_room and user.role_in_sub != "staff" %}
+    {% if not current_room and user.user_type != "staff" %}
     <a href="/rooms" class="btn btn-primary w-full mt-4">
       <svg class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16"/></svg>
       ดูห้องว่างและจอง

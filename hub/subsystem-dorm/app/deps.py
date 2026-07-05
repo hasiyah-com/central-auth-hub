@@ -29,7 +29,8 @@ class CurrentUser:
         self.hub_user_id: str = data["hub_user_id"]
         self.email: str = data["email"]
         self.full_name: str = data["full_name"]
-        self.role_in_sub: str = data["role_in_sub"]
+        # บทบาท = user_type จาก Hub (student/teacher/staff/admin) — เลิกใช้ role_in_sub
+        self.user_type: str = data.get("user_type") or "student"
         # Optional ตาม scope
         self.student_id: str | None = data.get("student_id")
         self.employee_id: str | None = data.get("employee_id")
@@ -85,20 +86,19 @@ def get_current_user(
     return user
 
 
-def require_role(*allowed_roles: str):
-    """factory สำหรับสร้าง dependency ที่ตรวจ role.
+def require_role(*allowed_types: str):
+    """factory สำหรับสร้าง dependency ที่ตรวจ user_type.
 
     ใช้:
-        @router.get("/staff/...", dependencies=[Depends(require_role("staff"))])
-        # หรือ
-        def view(user: CurrentUser = Depends(require_role("staff"))):
+        @router.get("/staff/...", dependencies=[Depends(require_role("staff","admin"))])
+        def view(user: CurrentUser = Depends(require_role("staff","admin"))):
     """
 
     def _check(user: CurrentUser = Depends(get_current_user)) -> CurrentUser:
-        if user.role_in_sub not in allowed_roles:
+        if user.user_type not in allowed_types:
             raise HTTPException(
                 status_code=403,
-                detail=f"ต้องเป็น role: {' หรือ '.join(allowed_roles)}",
+                detail=f"ต้องเป็น: {' หรือ '.join(allowed_types)}",
             )
         return user
 
@@ -130,7 +130,7 @@ def get_or_create_resident(user: CurrentUser, db: Session) -> Resident:
             position=user.position,
             phone=user.phone,
             address=user.address,
-            role_in_sub=user.role_in_sub,
+            user_type=user.user_type,
             status="active",
         )
         db.add(resident)
@@ -155,7 +155,7 @@ def get_or_create_resident(user: CurrentUser, db: Session) -> Resident:
         # ค่าที่ scope ไม่ขอ = JWT คืน None → เราคงค่าเดิม (ไม่ลบ data)
         resident.email = user.email
         resident.full_name = user.full_name
-        resident.role_in_sub = user.role_in_sub
+        resident.user_type = user.user_type
         for attr in (
             "student_id",
             "employee_id",

@@ -97,7 +97,7 @@
     <div class="paper" style="padding:24px; position:sticky; top:24px;">
       <div class="orn-rule" style="margin-bottom:14px;"><span class="orn-fleur">การดำเนินการ</span></div>
 
-      {% if user.role_in_sub == "librarian" %}
+      {% if user.user_type != "student" %}
       <div class="alert alert-warning">
         <span class="alert-icon">⚜</span>
         <div>

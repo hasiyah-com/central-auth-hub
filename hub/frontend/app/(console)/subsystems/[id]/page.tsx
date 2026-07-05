@@ -8,6 +8,7 @@ import { Badge } from "@/components/Badge";
 import { SlidePanel } from "@/components/SlidePanel";
 import { clientFetch } from "@/lib/api";
 import { mutateWithStepup } from "@/lib/passkey";
+import { AccessPolicyCard } from "./_components/AccessPolicyCard";
 
 /** ดึงข้อความ error ที่อ่านได้ — รองรับ detail เป็น object (no_passkey) + ยกเลิก Passkey */
 function errText(e: unknown, fallback: string): string {
@@ -41,6 +42,13 @@ type Subsystem = {
   // scope ใน DB เป็น text[] → JSON เป็น array (ไม่ใช่ string!)
   scope?: string[] | string | null;
   allowed_roles?: string[];
+  access_policy?: string;
+  access_policy_config?: {
+    roles?: string[];
+    faculty?: string[];
+    major?: string[];
+  } | null;
+  api_key_prefix?: string | null;
   access_revoke_webhook_url?: string | null;
   whitelist_count: number;
   owner_email?: string;
@@ -1490,6 +1498,19 @@ export default function SubsystemDetailPage({
           </div>
         </section>
 
+        {/* ── Access Policy ───────────────────────── */}
+        <AccessPolicyCard
+          subId={id}
+          policy={sub.access_policy || "explicit"}
+          config={sub.access_policy_config}
+          apiKeyPrefix={sub.api_key_prefix}
+          onReload={() => {
+            loadSubsystem();
+            loadWhitelist();
+            loadActive();
+          }}
+        />
+
         {/* ── Section 2: Whitelist ───────────────────────── */}
         <section>
           <h3 className="text-xs font-bold text-ink-500 uppercase tracking-wider mb-3">
@@ -1551,7 +1572,7 @@ export default function SubsystemDetailPage({
           <div className="mb-3 bg-white rounded-xl border border-dashed border-ink-300 p-4 flex flex-wrap items-center gap-3">
             <div className="flex-1 min-w-[200px]">
               <div className="text-xs font-bold text-ink-700">
-                📄 อัปโหลด CSV (เพิ่มหลายคนพร้อมกัน)
+                📄 อัปโหลด CSV
               </div>
               <div className="text-[11px] text-ink-500 mt-0.5">
                 CSV header: <code className="font-mono">email,role,note</code> —

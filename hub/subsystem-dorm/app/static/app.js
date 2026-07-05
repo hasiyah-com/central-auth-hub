@@ -84,7 +84,7 @@ const StatCard = ({ icon, label, value, sub, accentColor, bgTint }) => (
 
 // ─── SideNav ─────────────────────────────────────────────────
 const SideNav = ({ user, page, setPage }) => {
-  const role = user?.role_in_sub || "student";
+  const role = user?.user_type || "student";
 
   const studentMenu = [
     { id: "home",  icon: I.home,  label: "ภาพรวม" },
@@ -163,8 +163,8 @@ const SideNav = ({ user, page, setPage }) => {
 const TopBar = ({ user }) => {
   const roleLabel = { staff: "STAFF", teacher: "TEACHER", student: "STUDENT", resident: "RESIDENT" };
   const subLabel = user?.student_id ? `รหัส ${user.student_id}` :
-                   user?.role_in_sub === "staff" ? "เจ้าหน้าที่หอพัก" :
-                   user?.role_in_sub === "teacher" ? "อาจารย์" : "";
+                   user?.user_type === "staff" ? "เจ้าหน้าที่หอพัก" :
+                   user?.user_type === "teacher" ? "อาจารย์" : "";
   return (
     <div className="topbar">
       <div className="topbar-search">
@@ -177,7 +177,7 @@ const TopBar = ({ user }) => {
         <span className="topbar-kbd mono">⏎</span>
       </div>
       <div className="topbar-right">
-        <div className="topbar-tag mono">DORM_OS · {(roleLabel[user?.role_in_sub] || "USER")}</div>
+        <div className="topbar-tag mono">DORM_OS · {(roleLabel[user?.user_type] || "USER")}</div>
         <button className="topbar-bell" title="การแจ้งเตือน">
           {I.bell}
           <span className="topbar-bell-dot" />
@@ -207,7 +207,7 @@ const HomePage = ({ user, setPage }) => {
 
   if (!data) return <Loading />;
 
-  const role = user?.role_in_sub || "student";
+  const role = user?.user_type || "student";
   const stats = data.stats || {};
 
   const studentCards = [
@@ -502,7 +502,7 @@ const RoomsPage = ({ user, setPage }) => {
   const [data, setData] = useState(null);
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState("all");  // all | available | full
-  const role = user?.role_in_sub || "student";
+  const role = user?.user_type || "student";
   const readOnly = role === "teacher" || role === "staff";
 
   useEffect(() => { api.get("/api/rooms").then(setData).catch(console.error); }, []);
@@ -852,7 +852,7 @@ const StaffMePage = ({ user, setPage }) => {
 
   if (!data) return <Loading />;
   const { work_stats: ws, recent_actions } = data;
-  const role = user.role_in_sub;
+  const role = user.user_type;
 
   const fmtDate = (iso) => iso ? new Date(iso).toLocaleDateString("th-TH", { year: "numeric", month: "short", day: "numeric" }) : "—";
   const fmtTime = (iso) => iso ? new Date(iso).toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" }) : "";
@@ -899,7 +899,7 @@ const StaffMePage = ({ user, setPage }) => {
             <div>
               <h2 className="display" style={{ fontSize: 20, margin: 0 }}>{user.full_name}</h2>
               <p style={{ fontSize: 13, margin: "4px 0 0", color: "var(--ink-mute)", fontFamily: "JetBrains Mono, monospace" }}>{user.email}</p>
-              <StatusBadge status={user.role_in_sub} />
+              <StatusBadge status={user.user_type} />
             </div>
           </div>
 
@@ -1109,7 +1109,7 @@ const MePage = ({ user, setPage }) => {
             <div>
               <h2 className="display" style={{ fontSize: 20, margin: 0 }}>{user.full_name}</h2>
               <p style={{ fontSize: 13, margin: "4px 0 0", color: "var(--ink-mute)", fontFamily: "JetBrains Mono, monospace" }}>{user.email}</p>
-              <StatusBadge status={user.role_in_sub} />
+              <StatusBadge status={user.user_type} />
             </div>
           </div>
 
@@ -1190,7 +1190,7 @@ const MePage = ({ user, setPage }) => {
             </div>
           )}
 
-          {!current_room && user.role_in_sub !== "staff" && user.role_in_sub !== "teacher" && (
+          {!current_room && user.user_type !== "staff" && user.user_type !== "teacher" && (
             <button className="btn btn-primary" style={{ width: "100%", justifyContent: "center", marginTop: 14 }}
                     onClick={() => setPage("rooms")}>
               {I.bed} ดูห้องว่างและจอง
@@ -1440,7 +1440,7 @@ const RejectPopover = ({ reservationId }) => {
 // ═══════════════════════════════════════════════════════════════
 const ResidentsPage = ({ user }) => {
   const [data, setData] = useState(null);
-  const role = user?.role_in_sub || "student";
+  const role = user?.user_type || "student";
   const isStaff = role === "staff";
 
   useEffect(() => {
@@ -1505,7 +1505,7 @@ const ResidentsPage = ({ user }) => {
                   <tr key={i} style={rm ? { background: "#F0FBF5" } : {}}>
                     <td>
                       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                        <div className="avatar" style={{ width: 32, height: 32, fontSize: 12, background: r.role_in_sub === "staff" ? "var(--pink)" : "var(--primary)" }}>
+                        <div className="avatar" style={{ width: 32, height: 32, fontSize: 12, background: r.user_type === "staff" ? "var(--pink)" : "var(--primary)" }}>
                           {(r.full_name || "?")[0].toUpperCase()}
                         </div>
                         <div>
@@ -1516,7 +1516,7 @@ const ResidentsPage = ({ user }) => {
                     </td>
                     <td><span className="mono" style={{ fontSize: 13, color: "var(--ink)" }}>{r.student_id || "—"}</span></td>
                     <td style={{ fontSize: 13, color: "var(--ink-soft)" }}>{r.faculty || "—"}</td>
-                    <td><StatusBadge status={r.role_in_sub} /></td>
+                    <td><StatusBadge status={r.user_type} /></td>
                     <td>
                       {rm ? (
                         <>
@@ -1594,7 +1594,7 @@ const App = () => {
     );
   }
 
-  const role = user?.role_in_sub || "student";
+  const role = user?.user_type || "student";
 
   // Render page content
   const renderPage = () => {

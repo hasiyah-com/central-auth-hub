@@ -53,8 +53,8 @@ class Room(Base):
 class Resident(Base):
     """ผู้ที่ login เข้า subsystem (สร้างอัตโนมัติตอน login ครั้งแรก).
 
-    role_in_sub มาจาก JWT claim role_in_subsystem ที่ Hub ออกให้
-    (resident หรือ staff — กำหนดใน access_list ของ Hub)
+    user_type มาจาก JWT claim user_type ที่ Hub ออกให้
+    (student=ผู้พัก, staff/teacher/admin=เจ้าหน้าที่)
     """
 
     __tablename__ = "residents"
@@ -75,7 +75,7 @@ class Resident(Base):
     phone = Column(String(50), nullable=True)  # scope: phone
     address = Column(Text, nullable=True)  # scope: address
 
-    role_in_sub = Column(String(50), nullable=False)  # resident / staff
+    user_type = Column(String(50), nullable=False)  # student / teacher / staff / admin
     room_id = Column(
         UUID(as_uuid=True), ForeignKey("rooms.id"), nullable=True, index=True
     )

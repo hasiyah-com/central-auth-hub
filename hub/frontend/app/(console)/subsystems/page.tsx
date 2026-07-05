@@ -14,6 +14,7 @@ type Subsystem = {
   client_id: string;
   status: string;
   scope?: string;
+  access_policy?: string;
   whitelist_count: number;
   owner_email?: string;
   created_at?: string;
@@ -73,7 +74,7 @@ export default function SubsystemsPage() {
           className="block hover:bg-ink-50 -mx-2 px-2 py-1 rounded transition group"
         >
           <div className="font-semibold text-ink-900 group-hover:underline">
-            {s.name} <span className="text-ink-400 text-xs">→</span>
+            {s.name} <span className="text-ink-400 text-xs"> </span>
           </div>
           <div className="text-xs text-ink-500 font-mono">{s.client_id}</div>
           {s.description && (
@@ -88,6 +89,25 @@ export default function SubsystemsPage() {
       render: (s) => (
         <Badge tone={STATUS_TONE[s.status] || "default"}>{s.status}</Badge>
       ),
+    },
+    {
+      key: "access_policy",
+      header: "นโยบาย",
+      render: (s) => {
+        const p = s.access_policy || "explicit";
+        const meta: Record<string, { label: string; cls: string }> = {
+          explicit: { label: "📋 รายชื่อ", cls: "bg-ink-100 text-ink-600" },
+          all: { label: "🌐 ทุกคน", cls: "bg-sky-100 text-sky-700" },
+          role: { label: "👥 บทบาท", cls: "bg-violet-100 text-violet-700" },
+          attribute: { label: "🎯 คุณสมบัติ", cls: "bg-amber-100 text-amber-800" },
+        };
+        const m = meta[p] || meta.explicit;
+        return (
+          <span className={`inline-block px-2 py-0.5 rounded-full text-[11px] font-semibold ${m.cls}`}>
+            {m.label}
+          </span>
+        );
+      },
     },
     {
       key: "whitelist_count",

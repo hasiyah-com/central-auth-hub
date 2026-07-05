@@ -24,7 +24,7 @@ templates = Jinja2Templates(directory="app/templates")
 @router.get("/members", response_class=HTMLResponse)
 def list_members(
     request: Request,
-    librarian: CurrentUser = Depends(require_role("librarian")),
+    librarian: CurrentUser = Depends(require_role("staff", "teacher", "admin")),
     db: Session = Depends(get_db),
 ):
     """list สมาชิกทั้งหมด + จำนวนยืม active."""
@@ -55,7 +55,7 @@ def list_members(
 def list_borrows(
     request: Request,
     status: str = "requested",
-    librarian: CurrentUser = Depends(require_role("librarian")),
+    librarian: CurrentUser = Depends(require_role("staff", "teacher", "admin")),
     db: Session = Depends(get_db),
 ):
     """list การยืมตาม status — รวม overdue (computed)."""
@@ -102,7 +102,7 @@ def list_borrows(
 def approve_borrow(
     borrowing_id: str,
     request: Request,
-    librarian: CurrentUser = Depends(require_role("librarian")),
+    librarian: CurrentUser = Depends(require_role("staff", "teacher", "admin")),
     db: Session = Depends(get_db),
 ):
     """อนุมัติ request → active.
@@ -167,7 +167,7 @@ def approve_borrow(
 def reject_borrow(
     borrowing_id: str,
     request: Request,
-    librarian: CurrentUser = Depends(require_role("librarian")),
+    librarian: CurrentUser = Depends(require_role("staff", "teacher", "admin")),
     db: Session = Depends(get_db),
 ):
     """ปฏิเสธ request — ใช้ cancelled_at + cancel_reason."""
@@ -201,7 +201,7 @@ def reject_borrow(
 def receive_return(
     borrowing_id: str,
     request: Request,
-    librarian: CurrentUser = Depends(require_role("librarian")),
+    librarian: CurrentUser = Depends(require_role("staff", "teacher", "admin")),
     db: Session = Depends(get_db),
 ):
     """รับคืนหนังสือ → returned + คืน copies_available."""

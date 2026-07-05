@@ -191,7 +191,8 @@ async def oauth_callback(
             "hub_user_id": claims["sub"],
             "email": claims.get("email", ""),
             "full_name": claims.get("name", ""),
-            "role_in_sub": claims.get("role_in_subsystem", "member"),
+            "user_type": claims.get("user_type")
+            or claims.get("role_in_subsystem", "student"),
             "student_id": claims.get("student_id"),
             "employee_id": claims.get("employee_id"),
             "faculty": claims.get("faculty"),
@@ -212,7 +213,7 @@ async def oauth_callback(
         target_type="member",
         target_id=member.id,
         ip=get_client_ip(request),
-        metadata={"role": user.role_in_sub, "email": user.email},
+        metadata={"user_type": user.user_type, "email": user.email},
     )
     db.commit()
 
@@ -221,7 +222,7 @@ async def oauth_callback(
             "hub_user_id": user.hub_user_id,
             "email": user.email,
             "full_name": user.full_name,
-            "role_in_sub": user.role_in_sub,
+            "user_type": user.user_type,
             "student_id": user.student_id,
             "employee_id": user.employee_id,
             "faculty": user.faculty,

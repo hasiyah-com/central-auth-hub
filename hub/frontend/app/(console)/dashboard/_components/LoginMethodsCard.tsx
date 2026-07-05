@@ -98,13 +98,13 @@ export function LoginMethodsCard() {
     {
       key: "passkey",
       label: "Passkey",
-      desc: "ยืนยันตัวตนด้วย biometric / security key (WebAuthn)",
+      desc: "ยืนยันตัวตนด้วย biometric / security key",
       icon: "🔑",
     },
     {
       key: "google",
       label: "Google",
-      desc: "เข้าสู่ระบบด้วยบัญชี Google (OAuth)",
+      desc: "เข้าสู่ระบบด้วยบัญชี Google",
       icon: "🔵",
     },
   ];
@@ -126,9 +126,9 @@ export function LoginMethodsCard() {
 
       <div className="bg-white rounded-xl border border-ink-200 p-5 shadow-sm">
         <p className="text-sm text-ink-500 mb-4">
-          เลือกว่าจะให้ผู้ใช้เข้าสู่ระบบผ่านวิธีไหนได้บ้าง — มีผลกับ
-          <strong className="text-ink-700"> ทุกระบบย่อย</strong> และ Admin Console
-          เมื่อบันทึก ทุก session ที่ใช้งานอยู่จะถูกตัด เพื่อให้ login ใหม่ตามที่เลือก
+          {/* เลือกว่าจะให้ผู้ใช้เข้าสู่ระบบผ่านวิธีไหนได้บ้าง — มีผลกับ */}
+          {/* <strong className="text-ink-700"> ทุกระบบย่อย</strong> และ Admin Console */}
+          {/* เมื่อบันทึก ทุก session ที่ใช้งานอยู่จะถูกตัด เพื่อให้ login ใหม่ตามที่เลือก */}
         </p>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">

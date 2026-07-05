@@ -19,8 +19,8 @@
         {% if user.faculty %}
         <span class="chip" style="background:transparent; color:#F4F1EA; border-color:#F4F1EA;">🏫 {{ user.faculty }}</span>
         {% endif %}
-        <span class="chip" style="background:{% if user.role_in_sub == 'staff' %}#FF5BA7{% else %}#FFD43B{% endif %}; color:#0A0A0A; border-color:#F4F1EA;">
-          {% if user.role_in_sub == "staff" %}👔 STAFF{% else %}🎓 RESIDENT{% endif %}
+        <span class="chip" style="background:{% if user.user_type == 'staff' %}#FF5BA7{% else %}#FFD43B{% endif %}; color:#0A0A0A; border-color:#F4F1EA;">
+          {% if user.user_type == "staff" %}👔 STAFF{% else %}🎓 RESIDENT{% endif %}
         </span>
       </div>
     </div>
@@ -63,11 +63,11 @@
     </div>
   </div>
 
-  <div class="stat-card stat-{% if user.role_in_sub == 'staff' %}pink{% else %}primary{% endif %}">
+  <div class="stat-card stat-{% if user.user_type == 'staff' %}pink{% else %}primary{% endif %}">
     <div class="stat-label">Role ในระบบ</div>
     <div class="stat-value" style="font-size:18px; padding-top:4px;">
-      <span class="badge badge-{{ user.role_in_sub }}">
-        {% if user.role_in_sub == "staff" %}👔 staff{% else %}🎓 resident{% endif %}
+      <span class="badge badge-{{ user.user_type }}">
+        {% if user.user_type == "staff" %}👔 staff{% else %}🎓 resident{% endif %}
       </span>
     </div>
     <div class="stat-sub">
@@ -109,7 +109,7 @@
   <span class="chip mono">QUICK_ACTIONS</span>
 </div>
 
-<div class="grid sm:grid-cols-2 {% if user.role_in_sub == 'staff' %}lg:grid-cols-4{% else %}lg:grid-cols-3{% endif %} gap-5 fade-up-3">
+<div class="grid sm:grid-cols-2 {% if user.user_type == 'staff' %}lg:grid-cols-4{% else %}lg:grid-cols-3{% endif %} gap-5 fade-up-3">
 
   <a href="/rooms" class="room-card group">
     <div class="text-4xl mb-3">🏠</div>
@@ -131,7 +131,7 @@
     </div>
   </a>
 
-  {% if not current_room and user.role_in_sub != "staff" %}
+  {% if not current_room and user.user_type != "staff" %}
   <a href="/rooms" class="room-card group" style="background:#FFD43B;">
     <div class="text-4xl mb-3">➕</div>
     <div class="font-extrabold mb-1" style="color:#0A0A0A; font-size:18px; letter-spacing:-0.01em;">ขอจองห้องใหม่</div>
@@ -143,7 +143,7 @@
   </a>
   {% endif %}
 
-  {% if user.role_in_sub == "staff" %}
+  {% if user.user_type == "staff" %}
   <a href="/staff/reservations" class="room-card group" style="background:#FF5BA7;">
     <div class="text-4xl mb-3">📋</div>
     <div class="font-extrabold mb-1" style="color:#0A0A0A; font-size:18px; letter-spacing:-0.01em;">คำขอจอง</div>

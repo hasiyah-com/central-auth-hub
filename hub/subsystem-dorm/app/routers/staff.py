@@ -21,7 +21,7 @@ templates = Jinja2Templates(directory="app/templates")
 @router.get("/api/reservations")
 def api_staff_reservations(
     status: str = "pending",
-    staff: CurrentUser = Depends(require_role("staff")),
+    staff: CurrentUser = Depends(require_role("staff", "teacher", "admin")),
     db: Session = Depends(get_db),
 ):
     q = (
@@ -61,7 +61,7 @@ def api_staff_reservations(
                         "email": res.email,
                         "student_id": res.student_id,
                         "faculty": res.faculty,
-                        "role_in_sub": res.role_in_sub,
+                        "user_type": res.user_type,
                     }
                     if res
                     else None,
@@ -74,7 +74,7 @@ def api_staff_reservations(
 
 @router.get("/api/residents")
 def api_staff_residents(
-    staff: CurrentUser = Depends(require_role("staff")),
+    staff: CurrentUser = Depends(require_role("staff", "teacher", "admin")),
     db: Session = Depends(get_db),
 ):
     rows = (
@@ -103,7 +103,7 @@ def api_staff_residents(
                         "email": r.email,
                         "student_id": r.student_id,
                         "faculty": r.faculty,
-                        "role_in_sub": r.role_in_sub,
+                        "user_type": r.user_type,
                         "status": r.status,
                         "hub_access_revoked_at": r.hub_access_revoked_at.isoformat()
                         if r.hub_access_revoked_at
@@ -136,7 +136,7 @@ def api_staff_residents(
 @router.get("/residents", response_class=HTMLResponse)
 def list_residents(
     request: Request,
-    staff: CurrentUser = Depends(require_role("staff")),
+    staff: CurrentUser = Depends(require_role("staff", "teacher", "admin")),
     db: Session = Depends(get_db),
 ):
     """list ทุกคนในระบบ + ห้องที่อยู่."""
@@ -163,7 +163,7 @@ def list_residents(
 def list_reservations(
     request: Request,
     status: str = "pending",
-    staff: CurrentUser = Depends(require_role("staff")),
+    staff: CurrentUser = Depends(require_role("staff", "teacher", "admin")),
     db: Session = Depends(get_db),
 ):
     """list reservation ตาม status (default = pending)."""
@@ -195,7 +195,7 @@ def list_reservations(
 def approve_reservation(
     reservation_id: str,
     request: Request,
-    staff: CurrentUser = Depends(require_role("staff")),
+    staff: CurrentUser = Depends(require_role("staff", "teacher", "admin")),
     db: Session = Depends(get_db),
 ):
     """อนุมัติ reservation — pending → approved."""
@@ -231,7 +231,7 @@ def reject_reservation(
     reservation_id: str,
     request: Request,
     reject_reason: str = Form(""),
-    staff: CurrentUser = Depends(require_role("staff")),
+    staff: CurrentUser = Depends(require_role("staff", "teacher", "admin")),
     db: Session = Depends(get_db),
 ):
     """ปฏิเสธ reservation — pending → rejected."""
@@ -266,7 +266,7 @@ def reject_reservation(
 def checkin_reservation(
     reservation_id: str,
     request: Request,
-    staff: CurrentUser = Depends(require_role("staff")),
+    staff: CurrentUser = Depends(require_role("staff", "teacher", "admin")),
     db: Session = Depends(get_db),
 ):
     """check-in — approved → checked_in.

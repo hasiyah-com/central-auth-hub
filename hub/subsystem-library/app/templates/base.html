@@ -74,7 +74,7 @@
     </div>
 
     {# ── Section: แอดมิน (librarian only) ── #}
-    {% if user.role_in_sub == 'librarian' %}
+    {% if user.user_type != 'student' %}
     <div class="nav-section">
       <div class="nav-label">แอดมิน</div>
       <a href="/librarian/borrows" class="nav-item {% if active_nav == 'lib-borrows' %}active{% endif %}">

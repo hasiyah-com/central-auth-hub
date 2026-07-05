@@ -158,7 +158,7 @@ export default function DashboardPage() {
                 href="/notifications"
                 className="ml-1 font-bold underline hover:no-underline"
               >
-                ดูรายงาน →
+                รายงาน →
               </Link>
             </div>
           )}
@@ -295,7 +295,7 @@ export default function DashboardPage() {
                   icon="🔑"
                 />
                 <StatsCard
-                  label="ถูก block"
+                  label="block"
                   value={data.logins.blocked}
                   sub="ML decision = block"
                   icon="🚫"
