@@ -12,12 +12,12 @@
   <div style="display:flex; align-items:center; gap:10px;">
     <a class="icon-btn" href="/books" title="ค้นหาหนังสือ">⌕</a>
     <a class="user-chip" href="/me">
-      <div class="avatar {% if user.role_in_sub == 'librarian' %}avatar-librarian{% endif %}" style="width:32px; height:32px; font-size:14px;">
+      <div class="avatar {% if user.user_type != 'student' %}avatar-librarian{% endif %}" style="width:32px; height:32px; font-size:14px;">
         {{ (user.full_name or '?')[0]|upper }}
       </div>
       <div class="who">
         <div class="name">{{ user.full_name or user.email }}</div>
-        <div class="id">{{ user.role_in_sub }}</div>
+        <div class="id">{{ user.user_type }}</div>
       </div>
     </a>
   </div>
@@ -29,7 +29,7 @@
   {# ── Hub Info ── #}
   <div class="paper" style="padding: 24px;">
     <div style="display:flex; align-items:center; gap:14px; margin-bottom:18px;">
-      <div class="avatar avatar-lg {% if user.role_in_sub == 'librarian' %}avatar-librarian{% endif %}">
+      <div class="avatar avatar-lg {% if user.user_type != 'student' %}avatar-librarian{% endif %}">
         {{ (user.full_name or '?')[0]|upper }}
       </div>
       <div>
@@ -37,8 +37,8 @@
           {{ user.full_name or '— ไม่ระบุชื่อ —' }}
         </div>
         <div style="font-family:var(--font-serif); font-style:italic; font-size:13px; color:var(--ink-3); margin-top:2px;">{{ user.email }}</div>
-        <span class="badge badge-{{ user.role_in_sub }}" style="margin-top:6px;">
-          {% if user.role_in_sub == 'librarian' %}⚜ บรรณารักษ์{% else %}❦ สมาชิก{% endif %}
+        <span class="badge badge-{{ user.user_type }}" style="margin-top:6px;">
+          {% if user.user_type != 'student' %}⚜ บรรณารักษ์{% else %}❦ สมาชิก{% endif %}
         </span>
       </div>
     </div>
@@ -51,7 +51,7 @@
       {% set kv_pairs = [
         ('email',       'อีเมล',           user.email),
         ('full_name',   'ชื่อ-นามสกุล',    user.full_name),
-        ('role_in_sub', 'บทบาท',           user.role_in_sub),
+        ('user_type', 'บทบาท',           user.user_type),
       ] %}
       {# Optional — เพิ่มเฉพาะถ้า scope ขอจริง #}
       {% set all_optional = [
@@ -133,7 +133,7 @@
     </div>
     {% endif %}
 
-    {% if user.role_in_sub == 'member' %}
+    {% if user.user_type == 'student' %}
     <a href="/books" class="btn btn-primary w-full" style="margin-top: 14px;">✦ ไปค้นหาหนังสือ</a>
     {% endif %}
   </div>

@@ -26,7 +26,8 @@ class CurrentUser:
         self.hub_user_id: str = data["hub_user_id"]
         self.email: str = data["email"]
         self.full_name: str = data["full_name"]
-        self.role_in_sub: str = data["role_in_sub"]
+        # บทบาท = user_type (student=สมาชิก, staff/teacher/admin=บรรณารักษ์)
+        self.user_type: str = data.get("user_type") or "student"
         self.student_id: str | None = data.get("student_id")
         self.employee_id: str | None = data.get("employee_id")
         self.faculty: str | None = data.get("faculty")
@@ -77,14 +78,14 @@ def get_current_user(
     return user
 
 
-def require_role(*allowed_roles: str):
-    """factory dependency ตรวจ role."""
+def require_role(*allowed_types: str):
+    """factory dependency ตรวจ user_type."""
 
     def _check(user: CurrentUser = Depends(get_current_user)) -> CurrentUser:
-        if user.role_in_sub not in allowed_roles:
+        if user.user_type not in allowed_types:
             raise HTTPException(
                 status_code=403,
-                detail=f"ต้องเป็น role: {' หรือ '.join(allowed_roles)}",
+                detail=f"ต้องเป็น: {' หรือ '.join(allowed_types)}",
             )
         return user
 
@@ -107,7 +108,7 @@ def get_or_create_member(user: CurrentUser, db: Session) -> Member:
             position=user.position,
             phone=user.phone,
             address=user.address,
-            role_in_sub=user.role_in_sub,
+            user_type=user.user_type,
             status="active",
         )
         db.add(member)
@@ -132,7 +133,7 @@ def get_or_create_member(user: CurrentUser, db: Session) -> Member:
         # field ที่ scope ไม่ขอ → คงค่าเดิม ไม่ลบ
         member.email = user.email
         member.full_name = user.full_name
-        member.role_in_sub = user.role_in_sub
+        member.user_type = user.user_type
         for attr in (
             "student_id",
             "employee_id",

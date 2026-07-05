@@ -21,7 +21,7 @@
 
 <!-- Summary Stats -->
 <div class="grid sm:grid-cols-3 gap-4 mb-6">
-  {% set active_members = members|selectattr('role_in_sub','equalto','member')|list|length %}
+  {% set active_members = members|selectattr('user_type','equalto','member')|list|length %}
   {% set total_borrowing = active_count.values()|sum %}
 
   <div class="stat-card stat-emerald">
@@ -36,7 +36,7 @@
   </div>
   <div class="stat-card stat-indigo">
     <div class="stat-label">Librarian</div>
-    <div class="stat-value">{{ members|selectattr('role_in_sub','equalto','librarian')|list|length }}</div>
+    <div class="stat-value">{{ members|selectattr('user_type','equalto','librarian')|list|length }}</div>
     <div class="stat-sub">ในระบบ</div>
   </div>
 </div>
@@ -65,7 +65,7 @@
           <!-- Name + Email -->
           <td>
             <div class="flex items-center gap-2.5">
-              <div class="avatar text-xs w-8 h-8 {% if m.role_in_sub == 'librarian' %}avatar-librarian{% endif %}">
+              <div class="avatar text-xs w-8 h-8 {% if m.user_type != 'student' %}avatar-librarian{% endif %}">
                 {{ (m.full_name or "?")[0]|upper }}
               </div>
               <div class="min-w-0">
@@ -77,7 +77,7 @@
 
           <td class="text-sm text-slate-600 font-mono whitespace-nowrap">{{ m.student_id or "—" }}</td>
           <td class="text-sm text-slate-600">{{ m.faculty or "—" }}</td>
-          <td><span class="badge badge-{{ m.role_in_sub }}">{{ m.role_in_sub }}</span></td>
+          <td><span class="badge badge-{{ m.user_type }}">{{ m.user_type }}</span></td>
 
           <!-- Active borrows -->
           <td>

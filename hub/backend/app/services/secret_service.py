@@ -41,6 +41,18 @@ def generate_client_credentials() -> tuple[str, str]:
     return client_id, client_secret
 
 
+def generate_api_key() -> tuple[str, str]:
+    """สร้าง roster API key (read-only S2S).
+
+    Returns (plaintext_key, prefix):
+      plaintext = "rsk_<43 url-safe chars>"  — แสดงครั้งเดียว
+      prefix    = 12 ตัวแรก ("rsk_xxxxxxxx") — เก็บ index ใน DB สำหรับ lookup
+                  (verify ด้วย Argon2 hash ของ key เต็ม)
+    """
+    key = "rsk_" + secrets.token_urlsafe(32)
+    return key, key[:12]
+
+
 def generate_retrieval_token() -> str:
     """สร้าง plaintext token สำหรับใส่ใน one-time retrieval URL.
 

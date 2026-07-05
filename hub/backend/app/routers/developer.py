@@ -24,11 +24,13 @@ from app.rate_limiter import limiter
 from app.services.audit_service import log_action
 from app.services.critical_action_policy import gate as _stepup_gate
 from app.services.change_request_service import create_request as create_change_request
+from app.services.change_request_service import close_subsystem_login_sessions
 from app.services.email_service import send_secret_retrieval_email
 from app.services.jwt_service import revoke_jti
-from app.services.webhook_dispatcher import send_access_revoked
+from app.services.webhook_dispatcher import send_access_revoked, send_access_updated
 from app.services.secret_service import (
     encrypt_secret,
+    generate_api_key,
     generate_client_credentials,
     generate_retrieval_token,
     hash_retrieval_token,
@@ -60,6 +62,61 @@ ALLOWED_SCOPES = {
     "address",
 }
 
+# Access Policy (Week 11)
+ALLOWED_POLICIES = {"explicit", "all", "role", "attribute"}
+VALID_USER_TYPES = {"student", "teacher", "staff", "admin"}
+
+
+def _validate_access_policy(
+    policy: str | None, config: dict | None
+) -> tuple[str, dict | None]:
+    """ตรวจ access_policy + config → คืน (policy, normalized_config).
+
+    - explicit/all : config = None
+    - role         : config={"roles":[...]} ⊆ user_types, ต้องไม่ว่าง
+    - attribute    : config={"faculty":[...]} / {"major":[...]} อย่างน้อย 1 เงื่อนไข
+    Raises HTTPException(400) ถ้าไม่ถูกต้อง.
+    """
+    p = (policy or "explicit").strip()
+    if p not in ALLOWED_POLICIES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"access_policy ไม่ถูกต้อง: {p} — ใช้ได้: {sorted(ALLOWED_POLICIES)}",
+        )
+    cfg = config or {}
+
+    if p in ("explicit", "all"):
+        return (p, None)
+
+    if p == "role":
+        roles = [r.strip() for r in (cfg.get("roles") or []) if r.strip()]
+        if not roles:
+            raise HTTPException(
+                status_code=400, detail="policy 'role' ต้องระบุ roles อย่างน้อย 1"
+            )
+        invalid = set(roles) - VALID_USER_TYPES
+        if invalid:
+            raise HTTPException(
+                status_code=400,
+                detail=f"roles ไม่ถูกต้อง: {sorted(invalid)} — ใช้ได้: {sorted(VALID_USER_TYPES)}",
+            )
+        return (p, {"roles": roles})
+
+    # attribute
+    fac = [f.strip() for f in (cfg.get("faculty") or []) if f.strip()]
+    maj = [m.strip() for m in (cfg.get("major") or []) if m.strip()]
+    if not fac and not maj:
+        raise HTTPException(
+            status_code=400,
+            detail="policy 'attribute' ต้องระบุ faculty หรือ major อย่างน้อย 1 เงื่อนไข",
+        )
+    out: dict = {}
+    if fac:
+        out["faculty"] = fac
+    if maj:
+        out["major"] = maj
+    return (p, out)
+
 
 # ============ Schemas ============
 
@@ -69,11 +126,12 @@ class SubsystemCreate(BaseModel):
     description: str | None = None
     redirect_uris: list[str]
     scope: list[str]
-    # role ที่ allowed สำหรับ access_list.role_in_sub
-    # เช่น หอพัก ["resident","teacher","staff"] / ห้องสมุด ["member","librarian"]
-    # ปล่อยว่าง = ["user"] (subsystem ทั่วไป)
+    # DEPRECATED — role เฉพาะ subsystem เลิกใช้ (role = user_type แล้ว) — คง field กัน client เก่าพัง
     allowed_roles: list[str] | None = None
     access_revoke_webhook_url: str | None = None
+    # Access Policy (Week 11) — explicit/all/role/attribute
+    access_policy: str = "explicit"
+    access_policy_config: dict | None = None
 
 
 class SubsystemResponse(BaseModel):
@@ -84,6 +142,8 @@ class SubsystemResponse(BaseModel):
     status: str
     scope: list[str]
     allowed_roles: list[str] = []
+    access_policy: str = "explicit"
+    access_policy_config: dict | None = None
     created_at: datetime
 
 
@@ -117,6 +177,8 @@ class SubsystemUpdate(BaseModel):
     scope: list[str] | None = None
     allowed_roles: list[str] | None = None
     access_revoke_webhook_url: str | None = None
+    access_policy: str | None = None
+    access_policy_config: dict | None = None
 
 
 def _suggest_webhook_endpoints(redirect_uris: list[str] | None) -> dict | None:
@@ -197,8 +259,15 @@ def register_subsystem(
             detail=f"scope ไม่ถูกต้อง: {invalid}. ใช้ได้: {ALLOWED_SCOPES}",
         )
 
+    # validate access policy + config
+    policy, policy_cfg = _validate_access_policy(
+        payload.access_policy, payload.access_policy_config
+    )
+
     # สร้าง credentials + แนะนำ webhook endpoints (derive จาก redirect origin)
     client_id, client_secret = generate_client_credentials()
+    # roster API key (read-only) — แสดง plaintext ครั้งเดียวใน response
+    api_key_plain, api_key_prefix = generate_api_key()
 
     # validate allowed_roles (ถ้าระบุมา) — กัน role ว่าง / space-only
     allowed_roles = [r.strip() for r in (payload.allowed_roles or []) if r.strip()] or [
@@ -216,6 +285,10 @@ def register_subsystem(
         allowed_roles=allowed_roles,
         access_revoke_webhook_url=(payload.access_revoke_webhook_url or "").strip()
         or None,
+        access_policy=policy,
+        access_policy_config=policy_cfg,
+        api_key_hash=hash_secret(api_key_plain),
+        api_key_prefix=api_key_prefix,
         status="pending",
         owner_user_id=user.id,
     )
@@ -264,6 +337,12 @@ def register_subsystem(
         "client_id": client_id,
         "status": "pending",
         "message": "ลงทะเบียนสำเร็จ — รอ admin อนุมัติ",
+        # roster API key — แสดงครั้งเดียว (DB เก็บ hash) — เก็บไว้ให้ดี
+        "api_key": api_key_plain,
+        "api_key_note": (
+            "ใช้กับ GET /api/v1/roster (header X-Api-Key) เพื่อดึงรายชื่อผู้ใช้ที่เข้าได้ "
+            "(user_id, email, user_type). แสดงครั้งเดียว — หายแล้ว rotate ใหม่"
+        ),
     }
 
     # แนะนำ webhook endpoints ที่ subsystem ควรสร้าง (derive จาก redirect origin)
@@ -298,6 +377,39 @@ def register_subsystem(
     return response
 
 
+# ============ Roster API key — rotate ============
+
+
+@router.post("/subsystems/{subsystem_id}/rotate-api-key")
+def rotate_api_key(
+    subsystem_id: str,
+    request: Request,
+    user: User = Depends(require_developer),
+    db: Session = Depends(get_db),
+):
+    """ออก roster API key ใหม่ — key เดิมใช้ไม่ได้ทันที. แสดง plaintext ครั้งเดียว."""
+    subsystem = _get_owned_subsystem(subsystem_id, user, db, request)
+    new_key, prefix = generate_api_key()
+    subsystem.api_key_hash = hash_secret(new_key)
+    subsystem.api_key_prefix = prefix
+    log_action(
+        db,
+        actor_id=user.id,
+        action="roster_api_key_rotated",
+        target_type="subsystem",
+        target_id=subsystem.id,
+        ip=get_client_ip(request),
+        metadata={"api_key_prefix": prefix},
+    )
+    db.commit()
+    return {
+        "subsystem_id": str(subsystem.id),
+        "api_key": new_key,
+        "api_key_prefix": prefix,
+        "message": "ออก API key ใหม่แล้ว — key เดิมใช้ไม่ได้ทันที (แสดงครั้งเดียว)",
+    }
+
+
 # ============ 2. ดู subsystem ของฉัน ============
 
 
@@ -317,6 +429,8 @@ def my_subsystems(
             status=s.status,
             scope=s.scope,
             allowed_roles=list(s.allowed_roles or []),
+            access_policy=s.access_policy or "explicit",
+            access_policy_config=s.access_policy_config,
             created_at=s.created_at,
         )
         for s in subs
@@ -962,6 +1076,8 @@ def update_subsystem(
         and payload.scope is None
         and payload.allowed_roles is None
         and payload.access_revoke_webhook_url is None
+        and payload.access_policy is None
+        and payload.access_policy_config is None
     ):
         _audit_fail(
             db,
@@ -992,6 +1108,32 @@ def update_subsystem(
                 "new": new_webhook,
             }
             subsystem.access_revoke_webhook_url = new_webhook
+
+    # Access Policy change — apply ทันที + kick ทุก session (policy เปลี่ยน
+    # อาจตัดสิทธิ์บางคน → บังคับ re-auth ผ่าน policy ใหม่)
+    if payload.access_policy is not None or payload.access_policy_config is not None:
+        new_policy = payload.access_policy or subsystem.access_policy or "explicit"
+        new_cfg_in = (
+            payload.access_policy_config
+            if payload.access_policy_config is not None
+            else subsystem.access_policy_config
+        )
+        norm_policy, norm_cfg = _validate_access_policy(new_policy, new_cfg_in)
+        if (subsystem.access_policy != norm_policy) or (
+            (subsystem.access_policy_config or None) != (norm_cfg or None)
+        ):
+            old = {
+                "access_policy": subsystem.access_policy,
+                "access_policy_config": subsystem.access_policy_config,
+            }
+            subsystem.access_policy = norm_policy
+            subsystem.access_policy_config = norm_cfg
+            closed = close_subsystem_login_sessions(db, subsystem.id)
+            immediate_changes["access_policy"] = {
+                "old": old,
+                "new": {"access_policy": norm_policy, "access_policy_config": norm_cfg},
+                "sessions_closed": closed["closed"],
+            }
 
     # ── Pending-approval group (dev) / instant apply (admin override) ──
     auto_applied: list[dict] = []
@@ -1109,6 +1251,17 @@ def update_subsystem(
         },
     )
     db.commit()
+
+    # Access Policy เปลี่ยน → ยิง webhook ให้ subsystem เคลียร์ cookie session ทุก user
+    # (hub_user_id=None = kick all) → นักศึกษาที่หลุดสิทธิ์เด้งออกทันที ไม่ใช่แค่ Hub-side
+    if "access_policy" in immediate_changes:
+        try:
+            send_access_updated(
+                subsystem,
+                {"hub_user_id": None, "reason": "access_policy_changed"},
+            )
+        except Exception:
+            pass  # fail-safe — webhook fail ไม่กระทบ flow
 
     # Telegram alert
     if pending_requests or auto_applied:

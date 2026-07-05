@@ -54,7 +54,7 @@ export default function MySubsystemsPage() {
         >
           <div className="font-semibold text-ink-900 group-hover:text-brand-700">
             {s.name}{" "}
-            <span className="text-ink-400 text-xs">→</span>
+            <span className="text-ink-400 text-xs"> </span>
           </div>
           <div className="text-xs text-ink-500 font-mono">{s.client_id}</div>
           {s.description && (
@@ -118,7 +118,7 @@ export default function MySubsystemsPage() {
               Developer Portal · ระบบที่คุณลงทะเบียน
             </h2>
             <p className="text-xs text-ink-400 mt-1">
-              ระบบย่อยที่คุณเป็นเจ้าของ — จัดการ whitelist + ดูสถานะการอนุมัติ
+              {/* ระบบย่อยที่คุณเป็นเจ้าของ — จัดการ whitelist + ดูสถานะการอนุมัติ */}
             </p>
           </div>
           <Link

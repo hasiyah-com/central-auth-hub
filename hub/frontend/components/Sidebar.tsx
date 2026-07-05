@@ -29,6 +29,7 @@ const ADMIN_NAV = [
 const DEV_NAV = [
   { href: "/developer/subsystems", label: "ระบบของฉัน", icon: "🛠️" },
   { href: "/developer/subsystems/new", label: "ลงทะเบียนใหม่", icon: "➕" },
+  { href: "/developer/account", label: "บัญชีของฉัน", icon: "👤" },
 ];
 
 type NotifCount = {

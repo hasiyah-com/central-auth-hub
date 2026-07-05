@@ -33,7 +33,7 @@ def _resident_dict(r: Resident) -> dict:
         "email": r.email,
         "student_id": r.student_id,
         "faculty": r.faculty,
-        "role_in_sub": r.role_in_sub,
+        "user_type": r.user_type,
         "status": r.status,
         "checked_in_at": r.checked_in_at.isoformat() if r.checked_in_at else None,
         "created_at": r.created_at.isoformat() if r.created_at else None,
@@ -82,7 +82,7 @@ def api_me(
     # ── Staff/teacher block: managed stats + their recent actions ──
     work_stats: dict | None = None
     recent_actions: list[dict] = []
-    if user.role_in_sub in ("staff", "teacher"):
+    if user.user_type in ("staff", "teacher", "admin"):
         from datetime import datetime
 
         now = datetime.utcnow()
@@ -162,7 +162,7 @@ def api_me(
                 "hub_user_id": user.hub_user_id,
                 "email": user.email,
                 "full_name": user.full_name,
-                "role_in_sub": user.role_in_sub,
+                "user_type": user.user_type,
                 # ทุก scope field ที่ Hub อาจส่งมา (10 fields)
                 "student_id": user.student_id,
                 "employee_id": user.employee_id,
@@ -230,7 +230,7 @@ def api_home(
                 "hub_user_id": user.hub_user_id,
                 "email": user.email,
                 "full_name": user.full_name,
-                "role_in_sub": user.role_in_sub,
+                "user_type": user.user_type,
                 "faculty": user.faculty,
                 "student_id": user.student_id,
                 "phone": user.phone,
@@ -323,7 +323,7 @@ def api_teacher_overview(
             "user": {
                 "full_name": user.full_name,
                 "email": user.email,
-                "role_in_sub": user.role_in_sub,
+                "user_type": user.user_type,
                 "faculty": user.faculty,
             },
             "stats": {

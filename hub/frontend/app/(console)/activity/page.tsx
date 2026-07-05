@@ -334,7 +334,7 @@ export default function ActivityPage() {
             <span className="px-2 py-0.5 rounded-full bg-emerald-600 text-white text-xs font-bold tabular-nums">
               {data?.active_count ?? 0}
             </span>
-            <span className="text-[11px] text-emerald-700/70 ml-1">ทุกระบบย่อยรวมกัน · ออกจากระบบแล้วจะย้ายไปประวัติด้านล่าง</span>
+            {/* <span className="text-[11px] text-emerald-700/70 ml-1">        ทุกระบบย่อยรวมกัน · ออกจากระบบแล้วจะย้ายไปประวัติด้านล่าง</span> */}
           </div>
           {!data ? (
             <div className="px-5 py-8 text-center text-ink-400 text-sm">กำลังโหลด…</div>
@@ -395,7 +395,7 @@ export default function ActivityPage() {
         <div className="flex items-center gap-2 mb-3 mt-2">
           <span className="text-base">📜</span>
           <h2 className="text-sm font-extrabold text-ink-800">ประวัติการเข้าใช้งาน</h2>
-          <span className="text-[11px] text-ink-400">(ออกจากระบบแล้ว / หมดอายุ)</span>
+          {/* <span className="text-[11px] text-ink-400">(ออกจากระบบแล้ว / หมดอายุ)</span> */}
         </div>
 
         {/* ── Hourly chart ── */}

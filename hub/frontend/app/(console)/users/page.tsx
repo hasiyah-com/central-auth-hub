@@ -40,7 +40,7 @@ export default function UsersPage() {
   const [deleting, setDeleting] = useState<string | null>(null);
 
   async function handleDelete(u: User) {
-    if (!confirm(`ลบผู้ใช้ "${u.full_name}" (${u.email})?\n\nบัญชีจะถูกตั้งเป็น deleted (soft delete) และต้องยืนยันด้วย Passkey`))
+    if (!confirm(`ลบผู้ใช้ "${u.full_name}" (${u.email})?\n\nบัญชีจะถูกตั้งเป็น deleted และต้องยืนยันด้วย Passkey`))
       return;
     setDeleting(u.id);
     setError(null);

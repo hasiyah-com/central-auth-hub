@@ -35,7 +35,6 @@ def test_subsystem_token_has_audience_filter(teacher_user):
         user=teacher_user,
         client_id="cli_test123",
         scope=["email", "name"],
-        role_in_sub="member",
     )
     # Verify ด้วย audience ผิด → fail
     with pytest.raises(JWTError):
@@ -46,7 +45,9 @@ def test_subsystem_token_has_audience_filter(teacher_user):
     assert payload["aud"] == "cli_test123"
     assert payload["email"] == teacher_user.email
     assert payload["name"] == teacher_user.full_name
-    assert payload["role_in_subsystem"] == "member"
+    # บทบาท = user_type (เลิกใช้ role_in_sub) — role_in_subsystem = alias ของ user_type
+    assert payload["user_type"] == teacher_user.user_type
+    assert payload["role_in_subsystem"] == teacher_user.user_type
     # field ที่ไม่ได้อยู่ใน scope → ต้องไม่มีใน token (data minimization)
     assert "student_id" not in payload
     assert "phone" not in payload

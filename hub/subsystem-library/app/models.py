@@ -54,8 +54,9 @@ class Book(Base):
 class Member(Base):
     """สมาชิกห้องสมุด — สร้างจาก JWT.sub ตอน login ครั้งแรก.
 
-    Scope จาก Hub (5 fields ที่จัดเก็บ): email, full_name, role_in_sub, faculty, student_id
+    Scope จาก Hub: email, full_name, user_type, faculty, student_id
     + hub_user_id จาก JWT.sub ใช้เป็น identifier เชื่อมกลับ Hub
+    (user_type: student=สมาชิก, staff/teacher/admin=บรรณารักษ์)
     """
 
     __tablename__ = "members"
@@ -75,7 +76,7 @@ class Member(Base):
     phone = Column(String(50), nullable=True)
     address = Column(Text, nullable=True)
 
-    role_in_sub = Column(String(50), nullable=False)  # member / librarian
+    user_type = Column(String(50), nullable=False)  # student / teacher / staff / admin
     status = Column(String(20), default="active", index=True)  # active/suspended
 
     # Hub revocation tracking — sync'd ผ่าน webhook จาก Hub

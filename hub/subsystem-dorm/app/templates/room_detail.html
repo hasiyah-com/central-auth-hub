@@ -111,7 +111,7 @@
       <div class="chip chip-yellow mb-3">ACTION_PANEL</div>
       <h2 class="display mb-4" style="font-size:20px;">การดำเนินการ</h2>
 
-      {% if user.role_in_sub == "staff" %}
+      {% if user.user_type == "staff" %}
       <div class="alert alert-warning">
         <span class="alert-icon">👔</span>
         <div>

@@ -63,7 +63,7 @@
           <!-- Name + Email -->
           <td>
             <div class="flex items-center gap-2.5">
-              <div class="avatar text-xs {% if resident.role_in_sub == 'staff' %}avatar-staff{% endif %}" style="width:34px; height:34px;">
+              <div class="avatar text-xs {% if resident.user_type == 'staff' %}avatar-staff{% endif %}" style="width:34px; height:34px;">
                 {{ (resident.full_name or "?")[0]|upper }}
               </div>
               <div class="min-w-0">
@@ -74,7 +74,7 @@
           </td>
           <td class="text-sm mono" style="color:#0A0A0A;">{{ resident.student_id or "—" }}</td>
           <td class="text-sm" style="color:#2F2F2F;">{{ resident.faculty or "—" }}</td>
-          <td><span class="badge badge-{{ resident.role_in_sub }}">{{ resident.role_in_sub }}</span></td>
+          <td><span class="badge badge-{{ resident.user_type }}">{{ resident.user_type }}</span></td>
           <td>
             {% if room %}
             <a href="/rooms/{{ room.id }}" class="font-extrabold hover:underline" style="color:#0A0A0A;">
