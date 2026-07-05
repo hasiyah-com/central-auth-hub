@@ -115,5 +115,7 @@ async def verify_hub_jwt(token: str) -> dict:
         algorithms=["RS256"],
         issuer=settings.jwt_issuer,
         audience=settings.library_client_id,
+        # leeway 60s — tolerate clock skew ระหว่าง Hub (VM) กับ subsystem (host)
+        leeway=60,
         options={"verify_aud": True, "verify_iss": True, "verify_exp": True},
     )

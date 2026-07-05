@@ -51,7 +51,16 @@ services:
         condition: service_healthy
     volumes:
       - ./hub/subsystem-dorm:/app
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+      # mkcert rootCA — httpx (hub_client.py) ใช้ certifi.where() โดยตรง
+      # ต้อง append CA เข้า bundle จริง (ตั้งแค่ SSL_CERT_FILE เฉยๆ ไม่ชัวร์ว่า httpx อ่าน)
+      - ./rootCA.pem:/rootCA.pem:ro
+    command:
+      - sh
+      - -c
+      - |
+        CACERT=$$(python -c 'import certifi; print(certifi.where())')
+        grep -q MKCERTCA "$$CACERT" || { printf '\n# MKCERTCA\n' >> "$$CACERT"; cat /rootCA.pem >> "$$CACERT"; printf '\n' >> "$$CACERT"; }
+        exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
 networks:
   default:
