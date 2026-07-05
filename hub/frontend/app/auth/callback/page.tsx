@@ -18,6 +18,7 @@ function CallbackInner() {
     ran.current = true;
 
     const token = params.get("token");
+    const refreshToken = params.get("refresh_token");
     if (!token) {
       setError("ไม่ได้รับ token จาก Hub — กรุณา login ใหม่");
       return;
@@ -36,7 +37,10 @@ function CallbackInner() {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           credentials: "include",
-          body: JSON.stringify({ token }),
+          body: JSON.stringify({
+            token,
+            refresh_token: refreshToken || undefined,
+          }),
         });
         if (!setRes.ok) {
           const body = await setRes.json().catch(() => ({}));

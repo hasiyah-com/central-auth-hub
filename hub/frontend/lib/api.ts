@@ -31,6 +31,21 @@ export function isStepupRequired(detail: unknown): boolean {
   );
 }
 
+// Risk-triggered step-up ระหว่าง token refresh (session-hijack) — ต่างจาก
+// critical-action step-up: proxy คืน {code:"risk_stepup_required", stepup_url}
+// พร้อม URL หน้า Passkey re-auth ที่ Hub เป็นคน serve
+export function riskStepupUrl(detail: unknown): string | null {
+  if (
+    typeof detail === "object" &&
+    detail !== null &&
+    (detail as { code?: string }).code === "risk_stepup_required"
+  ) {
+    const u = (detail as { stepup_url?: string }).stepup_url;
+    return typeof u === "string" ? u : null;
+  }
+  return null;
+}
+
 export async function clientFetch<T = unknown>(
   path: string,
   init: ClientFetchInit = {}
@@ -65,6 +80,18 @@ export async function clientFetch<T = unknown>(
         window.location.pathname + window.location.search
       );
       window.location.href = `/auth/passkey/stepup?return_to=${returnTo}`;
+    }
+
+    // Risk-triggered step-up (token refresh เจอ session-hijack): proxy คืน 401
+    // {code:"risk_stepup_required", stepup_url} → พาไปยืนยัน Passkey ที่ Hub
+    // (finalize จะ set token คู่ใหม่แล้ว redirect กลับ /auth/callback เอง)
+    const riskUrl = riskStepupUrl(detail);
+    if (
+      res.status === 401 &&
+      riskUrl &&
+      typeof window !== "undefined"
+    ) {
+      window.location.href = riskUrl;
     }
     const err: ApiError = { status: res.status, detail: detail as string };
     throw err;

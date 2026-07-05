@@ -181,7 +181,12 @@ class LoginSession(Base):
     logout_at = Column(DateTime, nullable=True, index=True)
     # JWT identifier (jti claim) ของ token ที่ออกให้ session นี้
     # ใช้สำหรับ force-revoke ผ่าน jwt_service.revoke_jti()
+    # อัปเดตทุกครั้งที่ refresh (access token ใหม่ = jti ใหม่)
     jti = Column(String(64), nullable=True, index=True)
+    # refresh token ปัจจุบันของ session นี้ (Hub-direct เท่านั้น — subsystem ไม่ใช้)
+    # เก็บแค่ refresh_id (ไม่ใช่ secret) — ใช้ revoke ตอน logout/force-revoke
+    # ดู app/services/refresh_token_service.py
+    refresh_id = Column(String(64), nullable=True, index=True)
 
 
 class AuditLog(Base):

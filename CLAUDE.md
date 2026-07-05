@@ -728,7 +728,7 @@ docker compose exec hub-backend pytest . -v -s
 | 7 | Subsystem B — ระบบห้องสมุด (FastAPI + Jinja2 + postgres-library) | ✅ |
 | 8 | Admin Dashboard frontend (Next.js) + audit log viewer + pending triage | ✅ |
 | 8.5 | Migration B — split docker-compose (Hub/Dorm/Library stacks) + SHAP TreeExplainer + LINE Login alternate IdP + Subsystem A React SPA + ML eval split/GeoIP + RBA 4-Layer scoring + secret rotation | ✅ |
-| 9-10 | Passkey 8 phase ✅ + **Risk-Triggered MFA via Passkey risk-stepup ✅** (B44-B48; legacy OTP-only flow ลบแล้ว) + ML 23-feature expansion ✅ + cross-subsystem risk ✅ · Token Revocation ✅ · Session Downgrade ⏳ | 🔄 |
+| 9-10 | Passkey 8 phase ✅ + **Risk-Triggered MFA via Passkey risk-stepup ✅** (B44-B48; legacy OTP-only flow ลบแล้ว) + ML 23-feature expansion ✅ + cross-subsystem risk ✅ · Token Revocation ✅ · Refresh Token ✅ | 🔄 |
 | 11-12 | Security hardening (rate limit, CSRF, CSP, prod fail-fast) + threat-model doc + pentest checklist | ⏳ |
 | 13-14 | Test suite (pytest scaffold ✅) + Jest/RTL frontend tests + GitHub Actions CI + full documentation | ⏳ |
 | 15-16 | Buffer + thesis writing + defense | ⏳ |
@@ -742,7 +742,7 @@ docker compose exec hub-backend pytest . -v -s
 - ✅ **Migration B** — 3 stacks (`cah-hub`, `cah-dorm`, `cah-library`) connected ผ่าน `cah-net` external network
 - ✅ **DB backup workflow** — `scripts/backup.sh` → `pg_dump` 3 DBs + OneDrive sync
 - ✅ **Dev infrastructure** — daily routine scripts (morning.sh, eod.sh), domain skills, pre-commit hooks
-- ✅ **Documentation** — `docs/ml-12-features-risk-matrix.pdf` (8 หน้า), MFA options analysis, P2 Session Downgrade plan
+- ✅ **Documentation** — `docs/ml-12-features-risk-matrix.pdf` (8 หน้า), MFA options analysis
 
 **Risk-triggered MFA — wire เสร็จแล้ว (ผ่าน Passkey ไม่ใช่ OTP-only flow):**
 - ✅ 4-Layer RBA ตัดสิน mfa → `risk_challenge.mint()` (Redis one-time token, B9) → redirect
@@ -758,8 +758,27 @@ docker compose exec hub-backend pytest . -v -s
   subsystem back-channel (`/oauth/logout`), **user self-logout (`/auth/logout`)** + mark `logout_at`
 - ✅ test: `tests/test_token_revocation.py` (5 tests)
 
-**สิ่งที่ยังไม่ทำ (Week 9–10 ที่เหลือ):**
-- ⚠️ Session Downgrade — restrict JWT claim + `require_write_access()` dependency ใน subsystems — design พร้อม (`docs/p2-session-downgrade-plan.md`) แต่ยัง implement ไม่เสร็จ
+**Refresh Token — เสร็จแล้ว (2026-07-05):**
+- ✅ Access token อายุสั้น `60 → 15 นาที` (`jwt_access_token_expire_minutes`) —
+  ลด window ถ้า token หลุด
+- ✅ Rotating refresh token (opaque `{refresh_id}.{secret}`, 30 วัน) —
+  `app/services/refresh_token_service.py`: secret hash ด้วย HMAC-SHA256 (ไม่เก็บ
+  plaintext), compare ด้วย `hmac.compare_digest` (B3), single-use rotation
+  (GET→compare→DELETE, กัน replay + กัน DoS จาก tampered-secret guess)
+- ✅ `POST /auth/refresh` — rotate คู่ใหม่ผูกกลับ `LoginSession.jti`/`refresh_id`
+  เดิมเสมอ (force-revoke ยังตามทันแม้ refresh มาแล้วหลายรอบ)
+- ✅ `POST /auth/logout` รับ `refresh_token` ใน body → revoke ทั้ง access (jti
+  blacklist) + refresh พร้อมกัน (ปิดช่อง "logout" แล้ว refresh token เดิมยังมิ้นท์
+  access token ใหม่ได้)
+- ✅ Frontend: `/api/proxy/*` เจอ 401 → refresh อัตโนมัติ 1 ครั้งแล้ว retry
+  (transparent ต่อ `clientFetch`), `middleware.ts` refresh ก่อน redirect ไป login
+  ถ้า access token หมดอายุแต่ refresh token ยังไหว (กัน re-login ทุก 15 นาที)
+- ✅ ออกใน 5 จุด login (Google callback, LINE callback (legacy), passkey
+  login/discoverable/risk-stepup) — ดู `tests/reports/refresh_token_2026-07-05.md`
+
+**Session Downgrade — ตัดออกจากแผน (2026-07-05):** เดิมออกแบบไว้ (`docs/p2-session-downgrade-plan.md`,
+ลบแล้ว) แต่ Hub มองไม่เห็นกิจกรรมภายใน subsystem จึงลด scope session ได้ไม่แม่นยำ + เพิ่มความซับซ้อนโดยไม่จำเป็น
+เทียบกับ Risk-Triggered Step-up ที่มีอยู่แล้วซึ่งครอบคลุมเคสนี้ดีกว่า
 
 **Strategy A (Single-stack Docker policy, 2026-05-21):**
 ใช้ main stack เท่านั้นเป็นปกติ — worktree stacks (cah-hub, cah-dorm worktrees) ใช้เฉพาะ experimental code isolation

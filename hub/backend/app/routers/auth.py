@@ -11,6 +11,7 @@ import httpx
 from authlib.integrations.starlette_client import OAuth, OAuthError
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -35,6 +36,7 @@ from app.services.hooks import (
     emit,
 )
 from app.services.jwt_service import create_access_token
+from app.services import refresh_token_service
 from app.services.auth_policy import get_auth_policy
 from app.services.ip_blacklist import is_blacklisted
 from app.services.alert_service import maybe_alert_ml_risk
@@ -533,6 +535,11 @@ async def google_callback(request: Request, db: Session = Depends(get_db)):
     # ออก JWT + เก็บ jti กลับไป LoginSession (สำหรับ force-revoke ภายหลัง)
     access_token, token_jti = create_access_token(user)
     login_session.jti = token_jti
+    # ออก refresh token คู่กัน (short-lived access + rotating refresh — ดู B-refresh)
+    refresh_token, refresh_id = refresh_token_service.issue(
+        user_id=str(user.id), session_id=str(login_session.id)
+    )
+    login_session.refresh_id = refresh_id
     db.commit()
 
     await emit(
@@ -553,15 +560,18 @@ async def google_callback(request: Request, db: Session = Depends(get_db)):
     wants_json = request.query_params.get("api") == "1"
     if settings.admin_frontend_url and not wants_json:
         return RedirectResponse(
-            f"{settings.admin_frontend_url}/auth/callback?token={access_token}",
+            f"{settings.admin_frontend_url}/auth/callback"
+            f"?token={access_token}&refresh_token={refresh_token}",
             status_code=302,
         )
 
     return JSONResponse(
         {
             "access_token": access_token,
+            "refresh_token": refresh_token,
             "token_type": "bearer",
             "expires_in": settings.jwt_access_token_expire_minutes * 60,
+            "refresh_expires_in": settings.jwt_refresh_token_expire_days * 86400,
             "user": {
                 "id": str(user.id),
                 "email": user.email,
@@ -1026,6 +1036,11 @@ async def line_callback(request: Request, db: Session = Depends(get_db)):
     # ออก JWT + เก็บ jti กลับไป LoginSession (สำหรับ force-revoke ภายหลัง)
     access_token, token_jti = create_access_token(user)
     login_session.jti = token_jti
+    # ออก refresh token คู่กัน (short-lived access + rotating refresh — ดู B-refresh)
+    refresh_token, refresh_id = refresh_token_service.issue(
+        user_id=str(user.id), session_id=str(login_session.id)
+    )
+    login_session.refresh_id = refresh_id
     db.commit()
 
     await emit(
@@ -1046,15 +1061,18 @@ async def line_callback(request: Request, db: Session = Depends(get_db)):
     wants_json = request.query_params.get("api") == "1"
     if settings.admin_frontend_url and not wants_json:
         return RedirectResponse(
-            f"{settings.admin_frontend_url}/auth/callback?token={access_token}",
+            f"{settings.admin_frontend_url}/auth/callback"
+            f"?token={access_token}&refresh_token={refresh_token}",
             status_code=302,
         )
 
     return JSONResponse(
         {
             "access_token": access_token,
+            "refresh_token": refresh_token,
             "token_type": "bearer",
             "expires_in": settings.jwt_access_token_expire_minutes * 60,
+            "refresh_expires_in": settings.jwt_refresh_token_expire_days * 86400,
             "user": {
                 "id": str(user.id),
                 "email": user.email,
@@ -1164,20 +1182,257 @@ def _confirm_html(ok: bool, title: str, msg: str) -> str:
 </body></html>"""
 
 
+class RefreshBody(BaseModel):
+    refresh_token: str = Field(..., min_length=10, max_length=200)
+
+
+async def _refresh_risk_gate(
+    request: Request,
+    user: User,
+    rotate_result: dict,
+    db: Session,
+) -> JSONResponse | None:
+    """รัน 4-Layer RBA ซ้ำตอน refresh — จับ session-hijack (refresh token ถูกขโมย
+    ไปใช้จาก IP/ประเทศ/device อื่น) ที่ตอน login ปกติมองไม่เห็น เพราะ RBA รันแค่
+    ครั้งแรกตอน login. อัปเดต risk snapshot ของ session เดิมให้เห็นใน admin ด้วย.
+
+    Return:
+      None                 → risk ปกติ (refresh จากที่เดิม) → caller ออก token ต่อ
+      JSONResponse(stepup) → risk สูง + มี passkey → บังคับ Passkey re-auth ก่อน
+      raise HTTPException   → hard block หรือ risk สูงแต่ไม่มี passkey → 401 login ใหม่
+
+    Shadow mode (default) — รันเช็ค + อัปเดต risk snapshot ของ session แต่ไม่
+    enforce (ออก token ต่อปกติ) — log `risk_refresh_would_stepup` ใน audit_logs
+    ไว้เป็นหลักฐาน (audit_logs = append-only ทุกเหตุการณ์ความปลอดภัย, ต่างจาก
+    LoginSession ที่เป็นแค่ current-state เขียนทับได้).
+    """
+    from datetime import datetime as _dt, timedelta as _td
+
+    from app.services.jwt_service import revoke_jti as _revoke_jti
+
+    client_ip = get_client_ip(request)
+    user_agent = request.headers.get("user-agent")
+    geo_country = lookup_country(client_ip)
+
+    features = extract_session_features(
+        db,
+        user_id=user.id,
+        ip=client_ip,
+        user_agent=user_agent,
+        geo_country=geo_country,
+    )
+    risk = await evaluate_login_risk(
+        features=features,
+        user_id=str(user.id),
+        ip=client_ip,
+        geo_country=geo_country,
+        db=db,
+        shadow_mode=settings.ml_shadow_mode,
+    )
+    risk_score = risk["score"]
+    decision = risk["decision"]
+    reasons = risk["reasons"]
+    breakdown = risk["breakdown"]
+
+    # อัปเดต risk snapshot ล่าสุดของ session (admin เห็นใน Activity/detail)
+    sess = (
+        db.query(LoginSession)
+        .filter(LoginSession.id == rotate_result["session_id"])
+        .first()
+    )
+    if sess:
+        sess.risk_score = risk_score
+        sess.risk_breakdown = breakdown
+        sess.risk_reasons = reasons
+
+    enforcing = not settings.ml_shadow_mode
+
+    # Shadow mode — log เข้า audit_logs ถ้า risk elevated (append-only, เก็บ
+    # ประวัติไว้เทียบตอนพิจารณาเปิด enforce จริง) แต่ไม่ block (ออก token ต่อปกติ)
+    if not enforcing:
+        if decision in ("block", "challenge", "would_block", "would_mfa"):
+            log_action(
+                db,
+                actor_id=user.id,
+                action="risk_refresh_would_stepup",
+                target_type="user",
+                target_id=user.id,
+                ip=client_ip,
+                metadata={
+                    "risk_score": risk_score,
+                    "decision": decision,
+                    "reasons": reasons,
+                    "shadow": True,
+                },
+            )
+            db.commit()
+        return None
+
+    is_hard_block = risk_score >= settings.risk_block_hard_threshold
+    is_mfa = (not is_hard_block) and decision in ("block", "challenge")
+    if not is_hard_block and not is_mfa:
+        return None  # risk ปกติ
+
+    has_passkey = webauthn_service.count_active(user.id, db) > 0
+
+    # refresh token คู่ใหม่ที่ rotate() เพิ่งออก จะไม่ถูกส่งกลับใน 2 เคสนี้ → revoke ทิ้ง
+    refresh_token_service.revoke(rotate_result["refresh_id"])
+
+    if is_mfa and has_passkey:
+        challenge_id = risk_challenge.mint(
+            user_id=str(user.id),
+            hub_state="",
+            authreq=None,
+            risk_score=risk_score,
+            risk_breakdown=breakdown,
+            risk_reasons=reasons,
+            provider="refresh",
+            kind="reauth",
+            flow="hub_direct",
+        )
+        if sess:
+            sess.decision = "challenge"
+        log_action(
+            db,
+            actor_id=user.id,
+            action="risk_refresh_stepup_required",
+            target_type="user",
+            target_id=user.id,
+            ip=client_ip,
+            metadata={
+                "challenge_id": challenge_id,
+                "risk_score": risk_score,
+                "reasons": reasons,
+            },
+        )
+        db.commit()
+        return JSONResponse(
+            status_code=200,
+            content={
+                "stepup_required": True,
+                "challenge_id": challenge_id,
+                "stepup_url": (
+                    f"{settings.hub_base_url}/auth/passkey/risk-stepup"
+                    f"?challenge={challenge_id}"
+                ),
+            },
+        )
+
+    # hard block หรือ (risk สูง + ไม่มี passkey) → ตัด session, บังคับ login ใหม่เต็ม
+    # (login flow จัดการ grace period / force-enroll ให้เอง ที่ refresh ทำไม่ได้)
+    if sess:
+        sess.decision = "block" if is_hard_block else "challenge"
+        sess.logout_at = _dt.utcnow()
+        if sess.jti:
+            exp_unix = int(
+                (
+                    sess.created_at
+                    + _td(minutes=settings.jwt_access_token_expire_minutes)
+                ).timestamp()
+            )
+            _revoke_jti(sess.jti, exp_unix)
+    log_action(
+        db,
+        actor_id=user.id,
+        action="risk_refresh_blocked",
+        target_type="user",
+        target_id=user.id,
+        ip=client_ip,
+        metadata={
+            "risk_score": risk_score,
+            "decision": decision,
+            "reasons": reasons,
+            "hard_block": is_hard_block,
+            "has_passkey": has_passkey,
+        },
+    )
+    db.commit()
+    raise HTTPException(
+        status_code=401,
+        detail="ตรวจพบความเสี่ยงสูงระหว่างต่ออายุ session — กรุณา login ใหม่",
+    )
+
+
+@router.post("/refresh")
+async def refresh_access_token(
+    body: RefreshBody, request: Request, db: Session = Depends(get_db)
+):
+    """ต่ออายุ session ด้วย refresh token — ออก access+refresh token คู่ใหม่ (rotation).
+
+    refresh token เดิมถูก consume ทันที (single-use, atomic ผ่าน
+    refresh_token_service.rotate) — ใช้ซ้ำ (replay) ไม่ได้อีก แม้ request จะ
+    concurrent กัน. jti/refresh_id ใหม่เขียนกลับ LoginSession เดิม เพื่อให้
+    force-revoke (เช่น logout จาก tab อื่น) ยังตามทัน session ล่าสุดเสมอ.
+
+    Re-run RBA (session-hijack detection) — ดู `_refresh_risk_gate`:
+      risk สูง + passkey → 200 {stepup_required} · hard block/no-passkey → 401.
+    """
+    result = refresh_token_service.rotate(body.refresh_token)
+    if result is None:
+        raise HTTPException(status_code=401, detail="refresh token ไม่ถูกต้องหรือหมดอายุ")
+
+    user = (
+        db.query(User)
+        .filter(User.id == result["user_id"], User.status == "active")
+        .first()
+    )
+    if not user:
+        # user ถูกลบ/ระงับไปแล้ว — refresh token ถูก consume แล้วด้วย (ปลอดภัย)
+        raise HTTPException(status_code=401, detail="refresh token ไม่ถูกต้องหรือหมดอายุ")
+
+    # 4-Layer RBA ซ้ำ — stepup/block ถ้า risk สูง (raise หรือ return JSONResponse)
+    gate = await _refresh_risk_gate(request, user, result, db)
+    if gate is not None:
+        return gate
+
+    access_token, token_jti = create_access_token(user)
+
+    sess = (
+        db.query(LoginSession).filter(LoginSession.id == result["session_id"]).first()
+    )
+    if sess:
+        sess.jti = token_jti
+        sess.refresh_id = result["refresh_id"]
+        db.commit()
+
+    return {
+        "access_token": access_token,
+        "refresh_token": result["raw_token"],
+        "token_type": "bearer",
+        "expires_in": settings.jwt_access_token_expire_minutes * 60,
+        "refresh_expires_in": settings.jwt_refresh_token_expire_days * 86400,
+    }
+
+
+class LogoutBody(BaseModel):
+    # optional — frontend ส่ง refresh token มาด้วยเพื่อ revoke พร้อมกัน (กัน
+    # attacker ที่ขโมย refresh cookie ไปมิ้นท์ access token ใหม่ได้หลัง "logout")
+    refresh_token: str | None = Field(None, max_length=200)
+
+
 @router.post("/logout")
 def logout(
     request: Request,
     credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
+    body: LogoutBody | None = None,
     db: Session = Depends(get_db),
 ):
-    """User logout ตัวเอง — revoke JWT ปัจจุบัน (Token Revocation).
+    """User logout ตัวเอง — revoke JWT + refresh token ปัจจุบัน (Token Revocation).
 
     decode token → revoke jti (Redis blacklist จนถึง exp) + mark LoginSession.logout_at
     → token ใช้ต่อไม่ได้ทันที (verify_token เช็ค is_revoked). idempotent.
+
+    ถ้าส่ง refresh_token มาด้วย → revoke ทันที (ไม่ต้องรอ 30 วัน TTL หมดเอง)
+    — ไม่งั้น "logout" จะเหลือแค่ลบ cookie ฝั่ง client, server ยังมิ้นท์ access
+    token ใหม่ให้ผ่าน /auth/refresh ได้อยู่ ถ้า refresh token หลุดไปก่อนหน้า
     """
     from datetime import datetime as _dt
 
+    from app.services import refresh_token_service
     from app.services.jwt_service import revoke_jti, verify_token
+
+    if body and body.refresh_token:
+        refresh_token_service.revoke_raw(body.refresh_token)
 
     try:
         payload = verify_token(credentials.credentials)
@@ -1188,7 +1443,8 @@ def logout(
     jti = payload.get("jti")
     revoked = revoke_jti(jti, int(payload["exp"])) if jti else False
 
-    # mark active hub-direct session ของ user นี้
+    # mark active hub-direct session ของ user นี้ + revoke refresh_id ที่ผูกไว้
+    # (เผื่อ client ไม่ได้ส่ง refresh_token มาใน body แต่ session รู้จักมันอยู่)
     user_id = payload.get("sub")
     if user_id:
         sess = (
@@ -1203,6 +1459,8 @@ def logout(
         )
         if sess:
             sess.logout_at = _dt.utcnow()
+            if sess.refresh_id:
+                refresh_token_service.revoke(sess.refresh_id)
         log_action(
             db,
             actor_id=user_id,
