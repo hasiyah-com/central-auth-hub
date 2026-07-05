@@ -33,7 +33,9 @@ class Settings(BaseSettings):
 
     # JWT
     jwt_algorithm: str = "RS256"
-    jwt_access_token_expire_minutes: int = 60
+    # Short-lived — ลด window ถ้า access token หลุด (ต่ออายุผ่าน refresh token แทน
+    # การให้ user login ใหม่ทุกครั้ง). ดู POST /auth/refresh + refresh_token_service.py
+    jwt_access_token_expire_minutes: int = 15
     jwt_refresh_token_expire_days: int = 30
     # Active key (Hub ใช้ sign token ใหม่)
     jwt_private_key_path: str = "/app/keys/jwt_private.pem"

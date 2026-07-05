@@ -45,6 +45,9 @@ export function isExpired(payload: JwtPayload | null): boolean {
 }
 
 export const TOKEN_COOKIE = "hub_token";
+// httpOnly, ไม่มี payload ให้ parse (opaque "{refresh_id}.{secret}") — เก็บไว้
+// ยาวกว่า access token มาก (30 วัน default) ใช้คู่กับ POST /auth/refresh
+export const REFRESH_TOKEN_COOKIE = "hub_refresh_token";
 
 // ── Role helpers (used by middleware + Sidebar) ─────────────
 // hub_admin (DB column) ตัดสินใจสิทธิ์ Admin Console
