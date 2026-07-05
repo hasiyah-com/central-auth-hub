@@ -7,9 +7,11 @@ Phase 1 endpoints (registration + mandatory backup codes):
     POST /account/passkeys/backup-codes/acknowledge
     GET  /account/passkeys/backup-codes/status
 
-**Admin only** — ทุก endpoint ใช้ ``Depends(require_hub_admin)``.
-Hub console security page สำหรับ admin จัดการ passkey ของตัวเอง.
-teacher/staff/นักศึกษา ลง passkey ผ่าน subsystem enroll interstitial
+**Developer Portal + Admin** — ทุก endpoint ใช้ ``Depends(require_developer)``
+(teacher/staff/admin — กัน student). Hub console security page สำหรับผู้ใช้
+จัดการ passkey ของตัวเอง — developer ต้องมี passkey ก่อนถึงจะผ่าน step-up
+gate ของ ``subsystem_register`` (critical_action_policy) ได้.
+นักศึกษา ลง passkey ผ่าน subsystem enroll interstitial
 (``/oauth/passkey/enroll/*``) แทน — เข้า console ไม่ได้.
 
 The first Passkey registration auto-generates 10 backup codes (Improvement #3)
@@ -33,7 +35,7 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.database import get_db
-from app.deps import get_client_ip, get_current_user, require_hub_admin
+from app.deps import get_client_ip, get_current_user, require_developer
 from app.models import AccessList, LoginSession, User
 from app.rate_limiter import limiter
 from app.redis_client import redis_client
@@ -214,7 +216,7 @@ BACKUP_CODE_USED = "backup_code_used"
 )
 async def register_start(
     request: Request,
-    user: User = Depends(require_hub_admin),
+    user: User = Depends(require_developer),
     db: Session = Depends(get_db),
 ) -> dict:
     """Return PublicKeyCredentialCreationOptionsJSON for navigator.credentials.create().
@@ -255,7 +257,7 @@ async def register_start(
 async def register_finish(
     request: Request,
     body: RegisterFinishRequest,
-    user: User = Depends(require_hub_admin),
+    user: User = Depends(require_developer),
     db: Session = Depends(get_db),
 ) -> dict:
     """Verify attestation, save credential, optionally generate backup codes.
@@ -340,7 +342,7 @@ async def register_finish(
 )
 async def acknowledge_backup_codes(
     request: Request,
-    user: User = Depends(require_hub_admin),
+    user: User = Depends(require_developer),
     db: Session = Depends(get_db),
 ) -> dict:
     updated = passkey_recovery.acknowledge_backup_codes(user.id, db)
@@ -362,7 +364,7 @@ async def acknowledge_backup_codes(
     summary="แสดงสถานะ backup codes (ไม่แสดง plaintext)",
 )
 async def backup_codes_status(
-    user: User = Depends(require_hub_admin),
+    user: User = Depends(require_developer),
     db: Session = Depends(get_db),
 ) -> dict:
     return passkey_recovery.get_status(user.id, db)
@@ -375,7 +377,7 @@ async def backup_codes_status(
 )
 async def regenerate_backup_codes(
     request: Request,
-    user: User = Depends(require_hub_admin),
+    user: User = Depends(require_developer),
     db: Session = Depends(get_db),
 ) -> dict:
     """Rotate backup codes — ชุดเก่าทั้งหมด invalid, ออกชุดใหม่ 10 ตัว (show once).
@@ -422,7 +424,7 @@ def _serialize_passkey(row) -> dict:
     summary="รายการ Passkey ของ admin (active เท่านั้น)",
 )
 async def list_passkeys(
-    user: User = Depends(require_hub_admin),
+    user: User = Depends(require_developer),
     db: Session = Depends(get_db),
 ) -> dict:
     rows = webauthn_service.list_for_user(user.id, db)
@@ -441,7 +443,7 @@ async def rename_passkey(
     passkey_id: str,
     body: RenamePasskeyRequest,
     request: Request,
-    user: User = Depends(require_hub_admin),
+    user: User = Depends(require_developer),
     db: Session = Depends(get_db),
 ) -> dict:
     row = webauthn_service.rename_passkey(user.id, passkey_id, body.device_name, db)
@@ -466,7 +468,7 @@ async def rename_passkey(
 async def delete_passkey(
     passkey_id: str,
     request: Request,
-    user: User = Depends(require_hub_admin),
+    user: User = Depends(require_developer),
     db: Session = Depends(get_db),
 ) -> dict:
     # last-Passkey guard (Decision #15) — block + audit ก่อน raise (B6)
