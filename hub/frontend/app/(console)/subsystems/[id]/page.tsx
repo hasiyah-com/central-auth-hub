@@ -7,7 +7,7 @@ import { DataTable, type Column } from "@/components/DataTable";
 import { Badge } from "@/components/Badge";
 import { SlidePanel } from "@/components/SlidePanel";
 import { clientFetch } from "@/lib/api";
-import { mutateWithStepup } from "@/lib/passkey";
+import { mutateWithStepup, runWithStepup } from "@/lib/passkey";
 import { AccessPolicyCard } from "./_components/AccessPolicyCard";
 
 /** ดึงข้อความ error ที่อ่านได้ — รองรับ detail เป็น object (no_passkey) + ยกเลิก Passkey */
@@ -403,16 +403,23 @@ export default function SubsystemDetailPage({
       form.append("file", file);
       // FormData → ยิง /api/proxy ตรง (clientFetch บังคับ JSON header)
       // backend admin override → admin อัปโหลด whitelist ของ subsystem ใดก็ได้
-      const res = await fetch(`/api/proxy/developer/subsystems/${id}/whitelist`, {
-        method: "POST",
-        credentials: "include",
-        body: form,
-      });
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body.detail || `Upload failed: ${res.status}`);
-      }
-      const data = (await res.json()) as CsvUploadResponse;
+      // ยังต้องผ่าน step-up gate เหมือน mutation อื่น — wrap ด้วย runWithStepup
+      // เพื่อให้ 403 stepup_required เปิด popup ยืนยัน Passkey แทนที่จะโชว์ error ดิบ
+      const data = await runWithStepup<CsvUploadResponse>(async () => {
+        const res = await fetch(
+          `/api/proxy/developer/subsystems/${id}/whitelist`,
+          {
+            method: "POST",
+            credentials: "include",
+            body: form,
+          }
+        );
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          throw { status: res.status, detail: body.detail ?? `Upload failed: ${res.status}` };
+        }
+        return (await res.json()) as CsvUploadResponse;
+      }, setVerifying);
       setCsvResult(data);
       setMsg({
         kind: "ok",

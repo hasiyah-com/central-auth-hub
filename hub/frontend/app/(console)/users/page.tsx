@@ -38,6 +38,7 @@ export default function UsersPage() {
   const [pkUser, setPkUser] = useState<{ id: string; name: string } | null>(null);
   const [formModal, setFormModal] = useState<{ mode: "create" | "edit"; user?: UserRow } | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
+  const [verifying, setVerifying] = useState(false);
 
   async function handleDelete(u: User) {
     if (!confirm(`ลบผู้ใช้ "${u.full_name}" (${u.email})?\n\nบัญชีจะถูกตั้งเป็น deleted และต้องยืนยันด้วย Passkey`))
@@ -46,11 +47,13 @@ export default function UsersPage() {
     setError(null);
     try {
       // Option C — inline step-up: ถ้า 403 → verify Passkey ในหน้า แล้ว retry (ไม่ redirect)
-      await runWithStepup(() =>
-        clientFetch(`/admin/users/${u.id}`, {
-          method: "DELETE",
-          stepupMode: "throw",
-        })
+      await runWithStepup(
+        () =>
+          clientFetch(`/admin/users/${u.id}`, {
+            method: "DELETE",
+            stepupMode: "throw",
+          }),
+        setVerifying
       );
       load();
     } catch (e) {
@@ -182,6 +185,14 @@ export default function UsersPage() {
   return (
     <>
       <Topbar title="ผู้ใช้งาน" />
+      {verifying && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-2xl px-6 py-5 shadow-xl flex items-center gap-3 text-sm text-ink-700">
+            <span className="animate-pulse text-lg">🔐</span>
+            กำลังยืนยันด้วย Passkey…
+          </div>
+        </div>
+      )}
       <main className="p-8 max-w-7xl mx-auto w-full">
         <div className="mb-5 flex flex-wrap items-center gap-3">
           <select
