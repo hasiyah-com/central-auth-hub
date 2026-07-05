@@ -382,6 +382,13 @@ async def oauth_callback(
             metadata={"field": "full_name", "old": old_name, "new": google_name},
         )
 
+    # *** เช็คสิทธิ์เข้าระบบย่อยนี้ก่อน — กันเสียเวลาตั้ง passkey ทั้งที่เข้าไม่ได้อยู่ดี ***
+    # (เดิมเช็ค passkey ก่อน access_policy → user ที่ไม่มีสิทธิ์ถูกพาไปตั้ง passkey
+    # เต็มขั้นตอนก่อน ถึงจะมาเจอ 403 ตอน finalize — สลับลำดับให้เช็คสิทธิ์ก่อนเสมอ)
+    await _check_access_policy_or_raise(
+        user=user, authreq=authreq, request=request, db=db, provider="google"
+    )
+
     # ===== Passkey enrollment interstitial (subsystem users รวมนักศึกษา) =====
     # ถ้า user ยังไม่มี passkey → เสนอตั้งค่าก่อน redirect กลับ subsystem
     # (นักศึกษาเข้า Hub console ไม่ได้ — นี่คือทางเดียวที่จะลง passkey)
@@ -424,6 +431,61 @@ async def oauth_callback(
 # ============ Shared finalizer (Google + Passkey ใช้ร่วมกัน) ============
 
 
+async def _check_access_policy_or_raise(
+    *,
+    user: User,
+    authreq: dict,
+    request: Request,
+    db: Session,
+    provider: str,
+) -> None:
+    """เช็ค Access Policy — user มีสิทธิ์เข้า subsystem นี้ไหม (explicit/all/role/
+    attribute + deny-list, Week 11). Raises HTTPException(403) ถ้าไม่มีสิทธิ์.
+
+    เรียกก่อนเสมอ — ทั้งก่อนโชว์ passkey enrollment interstitial (กันเสีย
+    เวลาตั้ง passkey ทั้งที่เข้าระบบย่อยนี้ไม่ได้อยู่ดี) และใน
+    ``_finalize_subsystem_login`` (กัน race — สิทธิ์อาจถูกถอนระหว่างที่ user
+    ตั้ง passkey อยู่).
+    """
+    client_ip = get_client_ip(request)
+    subsystem_obj = (
+        db.query(Subsystem).filter(Subsystem.id == authreq["subsystem_id"]).first()
+    )
+    allowed, policy_reason = evaluate_access_policy(db, user, subsystem_obj)
+    if allowed:
+        return
+    log_action(
+        db,
+        actor_id=user.id,
+        action="oauth_login_failed_access_policy",
+        target_type="subsystem",
+        target_id=authreq["subsystem_id"],
+        ip=client_ip,
+        metadata={
+            "email": user.email,
+            "user_id": str(user.id),
+            "client_id": authreq["client_id"],
+            "provider": provider,
+            "policy": subsystem_obj.access_policy if subsystem_obj else None,
+            "reason": policy_reason,
+        },
+    )
+    db.commit()
+    await emit(
+        EVT_OAUTH_FAILURE,
+        {
+            "user_id": str(user.id),
+            "client_id": authreq["client_id"],
+            "reason": f"access_policy:{policy_reason}",
+            "ip": client_ip,
+        },
+    )
+    raise HTTPException(
+        status_code=403,
+        detail="คุณไม่มีสิทธิ์เข้าใช้งานระบบย่อยนี้ — ติดต่อ admin",
+    )
+
+
 async def _finalize_subsystem_login(
     *,
     user: User,
@@ -449,43 +511,9 @@ async def _finalize_subsystem_login(
     client_ip = get_client_ip(request)
     user_agent = request.headers.get("user-agent")
 
-    # *** เช็ค Access Policy — user มีสิทธิ์เข้า subsystem นี้ไหม ***
-    # รองรับ explicit/all/role/attribute + deny-list (Week 11)
-    subsystem_obj = (
-        db.query(Subsystem).filter(Subsystem.id == authreq["subsystem_id"]).first()
+    await _check_access_policy_or_raise(
+        user=user, authreq=authreq, request=request, db=db, provider=provider
     )
-    allowed, policy_reason = evaluate_access_policy(db, user, subsystem_obj)
-    if not allowed:
-        log_action(
-            db,
-            actor_id=user.id,
-            action="oauth_login_failed_access_policy",
-            target_type="subsystem",
-            target_id=authreq["subsystem_id"],
-            ip=client_ip,
-            metadata={
-                "email": user.email,
-                "user_id": str(user.id),
-                "client_id": authreq["client_id"],
-                "provider": provider,
-                "policy": subsystem_obj.access_policy if subsystem_obj else None,
-                "reason": policy_reason,
-            },
-        )
-        db.commit()
-        await emit(
-            EVT_OAUTH_FAILURE,
-            {
-                "user_id": str(user.id),
-                "client_id": authreq["client_id"],
-                "reason": f"access_policy:{policy_reason}",
-                "ip": client_ip,
-            },
-        )
-        raise HTTPException(
-            status_code=403,
-            detail="คุณไม่มีสิทธิ์เข้าใช้งานระบบย่อยนี้ — ติดต่อ admin",
-        )
 
     # *** เช็ค identity challenge — admin เคย Revoke Level 2 ไหม? ***
     if is_user_challenged(str(user.id)):
