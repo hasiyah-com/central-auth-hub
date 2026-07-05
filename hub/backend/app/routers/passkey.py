@@ -8,11 +8,12 @@ Phase 1 endpoints (registration + mandatory backup codes):
     GET  /account/passkeys/backup-codes/status
 
 **Developer Portal + Admin** — ทุก endpoint ใช้ ``Depends(require_developer)``
-(teacher/staff/admin — กัน student). Hub console security page สำหรับผู้ใช้
-จัดการ passkey ของตัวเอง — developer ต้องมี passkey ก่อนถึงจะผ่าน step-up
-gate ของ ``subsystem_register`` (critical_action_policy) ได้.
-นักศึกษา ลง passkey ผ่าน subsystem enroll interstitial
-(``/oauth/passkey/enroll/*``) แทน — เข้า console ไม่ได้.
+(teacher/staff/admin — กัน student เท่านั้น). ทั้ง admin และ teacher/staff
+login ผ่าน Hub-direct OAuth เส้นทางเดียวกัน (``/auth/google/*``) จึงควรมีสิทธิ์
+จัดการ passkey ของตัวเองเหมือนกัน — จำเป็นสำหรับผ่าน step-up gate ของ
+``subsystem_register`` (critical_action_policy) ด้วย.
+นักศึกษา (เข้า Hub console ไม่ได้เลย) ลง passkey ผ่าน subsystem enroll
+interstitial (``/oauth/passkey/enroll/*``) แทน.
 
 The first Passkey registration auto-generates 10 backup codes (Improvement #3)
 and returns them in the ``register/finish`` response. Subsequent registrations
@@ -58,6 +59,7 @@ from app.services.feature_extraction import (
 from app.services.geoip import lookup_country
 from app.services.ip_blacklist import is_blacklisted
 from app.services.jwt_service import create_access_token
+from app.services import refresh_token_service
 from app.security.risk_engine import evaluate_login_risk
 
 log = logging.getLogger(__name__)
@@ -849,6 +851,10 @@ async def login_finish(
 
     # LoginSession + 4-Layer RBA/ML จริง (ไม่ hardcode 0.0 แล้ว)
     session_row = await _build_login_session(result, request, jti, db, method="passkey")
+    refresh_token, refresh_id = refresh_token_service.issue(
+        user_id=str(result.user.id), session_id=str(session_row.id)
+    )
+    session_row.refresh_id = refresh_id
     db.add(session_row)
 
     log_action(
@@ -869,6 +875,7 @@ async def login_finish(
 
     response = {
         "access_token": token,
+        "refresh_token": refresh_token,
         "token_type": "bearer",
         "user": {
             "id": str(result.user.id),
@@ -950,6 +957,10 @@ async def login_discoverable_finish(
     session_row = await _build_login_session(
         result, request, jti, db, method="discoverable"
     )
+    refresh_token, refresh_id = refresh_token_service.issue(
+        user_id=str(result.user.id), session_id=str(session_row.id)
+    )
+    session_row.refresh_id = refresh_id
     db.add(session_row)
     log_action(
         db,
@@ -967,6 +978,7 @@ async def login_discoverable_finish(
     db.commit()
     return {
         "access_token": token,
+        "refresh_token": refresh_token,
         "token_type": "bearer",
         "user": {
             "id": str(result.user.id),
@@ -1279,9 +1291,14 @@ def _finalize_after_reauth(
         .order_by(LoginSession.created_at.desc())
         .first()
     )
+    refresh_token = None
     if latest:
         latest.jti = token_jti
         latest.decision = "mfa_passed"
+        refresh_token, refresh_id = refresh_token_service.issue(
+            user_id=str(user.id), session_id=str(latest.id)
+        )
+        latest.refresh_id = refresh_id
     log_action(
         db,
         actor_id=user.id,
@@ -1301,9 +1318,10 @@ def _finalize_after_reauth(
         method="passkey",
         ip=client_ip,
     )
+    refresh_qs = f"&refresh_token={refresh_token}" if refresh_token else ""
     if settings.admin_frontend_url:
-        return f"{settings.admin_frontend_url}/auth/callback?token={access_token}"
-    return f"/auth/me?token={access_token}"
+        return f"{settings.admin_frontend_url}/auth/callback?token={access_token}{refresh_qs}"
+    return f"/auth/me?token={access_token}{refresh_qs}"
 
 
 class RiskStepupStartBody(BaseModel):
