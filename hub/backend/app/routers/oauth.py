@@ -182,7 +182,14 @@ async def authorize(
             nonce=nonce,
             allow_google=policy["google"],
             allow_passkey=policy["passkey"],
-        )
+        ),
+        # หน้านี้ผูกกับ hub_state ที่ใช้ได้ครั้งเดียว (ลบจาก Redis หลัง consume) —
+        # ถ้า browser/proxy cache ไว้แล้วเปิดซ้ำ (back button ฯลฯ) จะได้ state ตาย
+        # ที่ error "หมดอายุ" เสมอไม่ว่าจะรีเฟรชเร็วแค่ไหน
+        headers={
+            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+            "Pragma": "no-cache",
+        },
     )
 
 
