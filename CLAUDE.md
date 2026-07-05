@@ -14,9 +14,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **ML Verifier** (port 9000) — Isolation Forest + SHAP TreeExplainer (Shadow Mode + tunable thresholds)
 
 **IdP support:**
-- ✅ Google OAuth (primary)
-- ✅ LINE Login (alternate, since Week 9 — free, no Azure dependency)
-- Both via OIDC discovery + Authlib — same code shape, swappable
+- ✅ Google OAuth (only IdP ที่เปิดใช้งานจริง) — เชื่อมต่อผ่าน OIDC discovery + Authlib
+- LINE Login เคยเพิ่มเป็น IdP ทางเลือกใน Week 9 แต่ปุ่ม frontend ถูก comment out ตั้งแต่ 2026-06-10 (บั๊ก email scope ที่ LINE ไม่ส่งกลับมาแน่นอน ยังไม่ได้แก้) — โค้ด backend (`/auth/line/*`, `User.line_sub`) ยังอยู่ในระบบเฉยๆ ไม่ได้ลบ แต่ไม่ถือเป็น IdP ที่ใช้งานจริงอีกต่อไป
 
 **สถาปัตยกรรมไม่ใช่ SSO** — แต่ละ subsystem มี session แยกของตัวเอง Hub ทำหน้าที่ authenticate + authorize เท่านั้น
 
@@ -37,7 +36,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 | Backend (ML) | Python 3.11 + FastAPI + scikit-learn + SHAP (TreeExplainer) |
 | Database | PostgreSQL 15 |
 | Cache / Session | Redis 7 |
-| Auth IdPs | Google OAuth (OIDC) + LINE Login (OIDC) — both via Authlib |
+| Auth IdPs | Google OAuth (OIDC) via Authlib — IdP เดียวที่เปิดใช้งานจริง |
 | Auth Protocol | OAuth 2.0 + PKCE + JWT (RS256) + JWKS discovery |
 | Containers | Docker Compose (3 stacks: cah-hub / cah-dorm / cah-library) |
 | Frontend | Next.js 14 (App Router) + TypeScript + Tailwind CSS |
@@ -739,11 +738,11 @@ docker compose exec hub-backend pytest . -v -s
 **สิ่งที่ทำเสร็จเพิ่มเติมจาก roadmap เดิม:**
 - ✅ **4-Layer RBA risk scoring** (Rule Engine + Behavior Profiling + IForest + Aggregation) แทน ML score เดี่ยว
 - ✅ **SHAP TreeExplainer** บน IsolationForest — per-feature contribution + UI bars
-- ✅ **LINE Login** — alternate OAuth IdP (free, no credit card) — มีในระบบคู่กับ Google
+- 🗑️ **LINE Login** — เพิ่มเป็น alternate OAuth IdP ใน Week 9 แต่ปุ่ม frontend ถูก comment out ตั้งแต่ 2026-06-10 (บั๊ก email scope ที่ยังแก้ไม่ตก) — โค้ด backend ยังอยู่แต่ไม่ถือเป็น IdP ที่ใช้งานจริง ปัจจุบัน Google OAuth เป็น IdP เดียว
 - ✅ **Migration B** — 3 stacks (`cah-hub`, `cah-dorm`, `cah-library`) connected ผ่าน `cah-net` external network
 - ✅ **DB backup workflow** — `scripts/backup.sh` → `pg_dump` 3 DBs + OneDrive sync
 - ✅ **Dev infrastructure** — daily routine scripts (morning.sh, eod.sh), domain skills, pre-commit hooks
-- ✅ **Documentation** — `docs/ml-12-features-risk-matrix.pdf` (8 หน้า), `docs/guides/add-line-login.md` (604 บรรทัด), MFA options analysis, P2 Session Downgrade plan
+- ✅ **Documentation** — `docs/ml-12-features-risk-matrix.pdf` (8 หน้า), MFA options analysis, P2 Session Downgrade plan
 
 **Risk-triggered MFA — wire เสร็จแล้ว (ผ่าน Passkey ไม่ใช่ OTP-only flow):**
 - ✅ 4-Layer RBA ตัดสิน mfa → `risk_challenge.mint()` (Redis one-time token, B9) → redirect

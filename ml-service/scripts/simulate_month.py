@@ -1,12 +1,14 @@
-"""จำลอง login 1 เดือน — anchor ผู้ใช้จริง 5 คน + clone เป็น persona ~150 คน.
+"""จำลอง login 1 เดือน — normal 10,000 + attack ~4% จาก "2 บัญชีจริงที่โดนโจมตี".
 
-ผู้ใช้จริง 5 คน (จาก DB) = "ต้นแบบ" ของแต่ละกลุ่ม; clone เพิ่มให้ครบ ~155 users
-เพื่อให้ได้ ~10,000 login (attack ~5%) โดยพฤติกรรม+สิทธิ์ยึดตามกลุ่มจริง
+ตามสั่ง:
+  - normal ~10,000 (label 0) — รวม "เสี่ยงๆ แต่ไม่โดน" (เครื่องใหม่/เวลาเพี้ยน/IP เปลี่ยน) เป็น hard negative
+  - attack ~4% (label 1) — มาจาก **2 บัญชีจริงเท่านั้น** ที่โดน ATO ตาม kill-chain จริง
+    (โดนช่วงกลางเดือน: credential stuffing → takeover ตปท. + เครื่องใหม่ → lateral movement)
+  - ผู้ใช้ที่เหลือ (5 จริง + clone) = ปกติ + เสี่ยงเล็กน้อย "ไม่ได้โดน"
+
+10,000 แถวต้องมีหลาย user → 5 จริง + clone persona; แต่ "โดนโจมตีจริง" เฉพาะ 2 บัญชีจริง
 
 อ่าน: real_users.csv, real_access.csv  ·  Output: simulated_month.csv
-columns: created_at,email,user_type,subsystem,role,ip,geo_country,device_type,os_name,
-         browser,user_agent,login_successful,is_attack_ip,label,anomaly_level,scenario,columns_changed
-
 Run: py ml-service/scripts/simulate_month.py
 """
 
@@ -21,9 +23,11 @@ DATA = Path(__file__).resolve().parents[1] / "data"
 OUT = DATA / "simulated_month.csv"
 START = datetime(2026, 5, 18)
 DAYS = 30
-ATTACK_FRAC = 0.05  # attack ~5% ของทั้งหมด
-# จำนวน users ต่อกลุ่ม (สัดส่วนแบบมหา'ลัย) — รวมผู้ใช้จริงด้วย
-CLONES = {"student": 108, "teacher": 22, "staff": 14, "admin": 6}
+CLONES = {"student": 115, "teacher": 24, "staff": 16, "admin": 7}
+# 2 บัญชีจริงที่โดนโจมตีจริง (admin สิทธิ์สูง + นศ. active สุด)
+ATTACKED = {"hasiyahdama5@gmail.com", "6660506018@pnu.ac.th"}
+COMPROMISE_DAY = 12  # โดน takeover ตั้งแต่วันที่ 12
+ATTACK_PER_DAY = (10, 17)  # login มุ่งร้ายต่อวัน (ช่วงโดน) — ให้ได้ ~4%
 
 UA = {
     "mobile_ios": (
@@ -64,14 +68,8 @@ UA = {
     ),
 }
 TH_IP = ["1.46", "171.6", "183.88", "49.228", "27.55", "180.183", "118.173"]
-FOREIGN = [
-    ("RU", "5.45"),
-    ("CN", "39.96"),
-    ("US", "45.83"),
-    ("NL", "185.2"),
-    ("SG", "103.6"),
-    ("DE", "91.7"),
-]
+NEIGHBOR = [("SG", "103.6"), ("MY", "175.1"), ("VN", "113.1"), ("LA", "115.8")]
+ATTACKER_GEO = [("RU", "5.45"), ("CN", "39.96"), ("NL", "185.2"), ("US", "45.83")]
 
 PROFILES = {
     "student": {
@@ -102,7 +100,7 @@ PROFILES = {
         "hub": True,
     },
     "admin": {
-        "per_day": (1, 4),
+        "per_day": (2, 5),
         "hours": list(range(7, 23)),
         "weekend_p": 0.6,
         "device": "desktop_win",
@@ -124,16 +122,16 @@ GROUP_ACCESS = {
 }
 
 
-def th_ip(prefix, volatile=False):
-    third = random.randint(0, 255) if volatile else random.randint(0, 9)
+def th_ip(prefix, vol=False):
+    third = random.randint(0, 255) if vol else random.randint(0, 9)
     return f"{prefix}.{third}.{random.randint(1, 254)}"
 
 
-def foreign_ip(pfx):
+def fip(pfx):
     return f"{pfx}.{random.randint(0, 255)}.{random.randint(1, 254)}"
 
 
-def mk_row(
+def mk(
     dt,
     email,
     utype,
@@ -172,21 +170,19 @@ def mk_row(
 
 
 def build_users():
-    """ผู้ใช้จริง (real_users.csv) + clone persona ให้ครบ CLONES."""
     reals = list(csv.DictReader(open(DATA / "real_users.csv", encoding="utf-8")))
     racc = {}
     for a in csv.DictReader(open(DATA / "real_access.csv", encoding="utf-8")):
         racc.setdefault(a["email"], []).append((a["subsystem"], a["role"]))
-    users = []
-    for r in reals:
-        users.append(
-            {
-                "email": r["email"],
-                "type": r["user_type"],
-                "access": racc.get(r["email"], []),
-                "real": True,
-            }
-        )
+    users = [
+        {
+            "email": r["email"],
+            "type": r["user_type"],
+            "access": racc.get(r["email"], []),
+            "real": True,
+        }
+        for r in reals
+    ]
     have = Counter(u["type"] for u in users)
     seq = 1
     for g, n in CLONES.items():
@@ -203,269 +199,172 @@ def build_users():
     return users
 
 
-def gen_normal(u):
+def gen_normal(u, day_range):
     prof = PROFILES[u["type"]]
     home = random.choice(TH_IP)
     targets = list(u["access"]) + ([(HUB, u["type"])] if prof["hub"] else [])
     if not targets:
         targets = [(HUB, u["type"])]
     rows = []
-    for d in range(DAYS):
+    for d in day_range:
         day = START + timedelta(days=d)
         if day.weekday() >= 5 and random.random() > prof["weekend_p"]:
             continue
         for _ in range(random.randint(*prof["per_day"])):
-            hour = random.choice(prof["hours"])
-            dt = day.replace(
-                hour=hour, minute=random.randint(0, 59), second=random.randint(0, 59)
-            )
             sub, role = random.choice(targets)
-            vol = random.random() < prof["ipvol"]
-            dev = prof["device"] if random.random() > 0.12 else prof["alt"]
-            rows.append(
-                mk_row(
-                    dt,
-                    u["email"],
-                    u["type"],
-                    sub,
-                    role,
-                    th_ip(home, vol),
-                    "TH",
-                    dev,
-                    level=0,
-                    changed="ip(mobile)" if vol else "",
+            r = random.random()
+            if r < 0.03:  # เสี่ยง: เครื่องใหม่ (label 0)
+                dt = day.replace(
+                    hour=random.choice(prof["hours"]), minute=random.randint(0, 59)
                 )
-            )
-    return rows, home, targets
-
-
-def inject_attacks(users, home_of, target_n):
-    """ฉีด attack แบบคุมระดับจนได้ ~target_n แถว."""
-    rows = []
-    victims = [
-        u for u in users if u["access"] or u["type"] in ("admin", "teacher", "staff")
-    ]
-    random.shuffle(victims)
-    vi = 0
-    scenarios = [
-        "ato_full",
-        "impossible_travel",
-        "credential_stuffing",
-        "lateral_movement",
-        "country_change_only",
-        "ip_change_only",
-        "new_device_night",
-    ]
-    while sum(r["label"] == 1 for r in rows) < target_n and victims:
-        u = victims[vi % len(victims)]
-        vi += 1
-        home, targets = home_of[u["email"]]
-        sub, role = targets[0]
-        prof = PROFILES[u["type"]]
-        sc = random.choice(scenarios)
-        d = random.randint(20, 29)
-        if sc == "ato_full":  # 🔴3 country+device+night
-            cc, pfx = random.choice(FOREIGN[:2])
-            dt = (START + timedelta(days=d)).replace(
-                hour=random.choice([2, 3, 4]), minute=random.randint(0, 59)
-            )
-            rows.append(
-                mk_row(
-                    dt,
-                    u["email"],
-                    u["type"],
-                    sub,
-                    role,
-                    foreign_ip(pfx),
-                    cc,
-                    "attacker_linux",
-                    aip=1,
-                    label=1,
-                    level=3,
-                    scenario=sc,
-                    changed="country,ip,device,time",
-                )
-            )
-        elif sc == "impossible_travel":  # 🔴3 TH -> ตปท. ภายในไม่กี่นาที
-            base = (START + timedelta(days=d)).replace(
-                hour=random.choice(prof["hours"]), minute=random.randint(0, 50)
-            )
-            rows.append(
-                mk_row(
-                    base,
-                    u["email"],
-                    u["type"],
-                    sub,
-                    role,
-                    th_ip(home),
-                    "TH",
-                    prof["device"],
-                    label=0,
-                    level=0,
-                    scenario="normal_before_travel",
-                )
-            )
-            cc, pfx = random.choice(FOREIGN)
-            rows.append(
-                mk_row(
-                    base + timedelta(minutes=random.randint(5, 12)),
-                    u["email"],
-                    u["type"],
-                    sub,
-                    role,
-                    foreign_ip(pfx),
-                    cc,
-                    "attacker_linux",
-                    aip=1,
-                    label=1,
-                    level=3,
-                    scenario=sc,
-                    changed="country,ip,device",
-                )
-            )
-        elif sc == "credential_stuffing":  # 🔴3 failed รัว ดึก แล้วสำเร็จ
-            cc, pfx = random.choice(FOREIGN[:3])
-            night = (START + timedelta(days=d)).replace(
-                hour=3, minute=random.randint(0, 50)
-            )
-            for i in range(random.randint(4, 8)):
                 rows.append(
-                    mk_row(
-                        night + timedelta(minutes=i),
+                    mk(
+                        dt,
                         u["email"],
                         u["type"],
                         sub,
                         role,
-                        foreign_ip(pfx),
-                        cc,
-                        "attacker_linux",
-                        ok=False,
-                        aip=1,
-                        label=1,
-                        level=3,
-                        scenario=sc,
-                        changed="failed,country,device,time",
+                        th_ip(home),
+                        "TH",
+                        prof["alt"],
+                        level=1,
+                        scenario="risky_new_device",
+                        changed="device",
                     )
                 )
-            rows.append(
-                mk_row(
-                    night + timedelta(minutes=9),
-                    u["email"],
-                    u["type"],
-                    sub,
-                    role,
-                    foreign_ip(pfx),
-                    cc,
-                    "attacker_linux",
-                    ok=True,
-                    aip=1,
-                    label=1,
-                    level=3,
-                    scenario="credential_stuffing_success",
-                    changed="failed,country,device,time",
+            elif r < 0.06:  # เสี่ยง: เวลาเพี้ยน (label 0)
+                dt = day.replace(
+                    hour=random.choice([6, 7, 23]), minute=random.randint(0, 59)
                 )
-            )
-        elif sc == "lateral_movement" and len(targets) >= 2:  # 🔴3 หลาย subsystem รัว
-            cc, pfx = random.choice(FOREIGN)
-            t0 = (START + timedelta(days=d)).replace(
-                hour=23, minute=random.randint(0, 50)
-            )
-            for j, (s2, r2) in enumerate(targets):
                 rows.append(
-                    mk_row(
-                        t0 + timedelta(minutes=2 * j),
+                    mk(
+                        dt,
                         u["email"],
                         u["type"],
-                        s2,
-                        r2,
-                        foreign_ip(pfx),
+                        sub,
+                        role,
+                        th_ip(home),
+                        "TH",
+                        prof["device"],
+                        level=1,
+                        scenario="risky_offhour",
+                        changed="time",
+                    )
+                )
+            elif (
+                r < 0.075 and prof["device"].startswith("desktop") is False
+            ):  # เสี่ยง: เพื่อนบ้าน (เดินทาง) label 0
+                cc, pfx = random.choice(NEIGHBOR)
+                dt = day.replace(
+                    hour=random.choice(prof["hours"]), minute=random.randint(0, 59)
+                )
+                rows.append(
+                    mk(
+                        dt,
+                        u["email"],
+                        u["type"],
+                        sub,
+                        role,
+                        fip(pfx),
+                        cc,
+                        prof["device"],
+                        level=1,
+                        scenario="risky_travel",
+                        changed="country",
+                    )
+                )
+            else:  # ปกติ
+                dt = day.replace(
+                    hour=random.choice(prof["hours"]), minute=random.randint(0, 59)
+                )
+                vol = random.random() < prof["ipvol"]
+                rows.append(
+                    mk(
+                        dt,
+                        u["email"],
+                        u["type"],
+                        sub,
+                        role,
+                        th_ip(home, vol),
+                        "TH",
+                        prof["device"],
+                        level=0,
+                        scenario="normal",
+                        changed="ip(mobile)" if vol else "",
+                    )
+                )
+    return rows, home, targets
+
+
+def gen_ato_campaign(u, targets):
+    """ATO จริงตาม kill-chain: credential stuffing -> takeover ตปท. -> lateral. label 1."""
+    rows = []
+    cc, pfx = random.choice(ATTACKER_GEO)
+    # Stage 0: credential stuffing คืนก่อนโดน (วัน COMPROMISE_DAY-1 ดึก) — failed รัว
+    pre = (START + timedelta(days=COMPROMISE_DAY - 1)).replace(hour=3, minute=0)
+    for i in range(random.randint(6, 10)):
+        rows.append(
+            mk(
+                pre + timedelta(minutes=i),
+                u["email"],
+                u["type"],
+                targets[0][0],
+                targets[0][1],
+                fip(pfx),
+                cc,
+                "attacker_linux",
+                ok=False,
+                aip=1,
+                label=1,
+                level=3,
+                scenario="credential_stuffing",
+                changed="failed,country,device,time",
+            )
+        )
+    # Stage 1+: โดน takeover ตั้งแต่ COMPROMISE_DAY -> ปลายเดือน (login มุ่งร้ายรายวัน)
+    for d in range(COMPROMISE_DAY, DAYS):
+        if random.random() < 0.85:  # บางวันเงียบ
+            cc, pfx = random.choice(ATTACKER_GEO)
+            for _ in range(random.randint(*ATTACK_PER_DAY)):
+                sub, role = random.choice(targets)  # lateral: เข้าหลายระบบ
+                hour = random.choice([0, 1, 2, 3, 4, 22, 23] + list(range(9, 18)))
+                dt = (START + timedelta(days=d)).replace(
+                    hour=hour, minute=random.randint(0, 59)
+                )
+                ok = random.random() > 0.1
+                rows.append(
+                    mk(
+                        dt,
+                        u["email"],
+                        u["type"],
+                        sub,
+                        role,
+                        fip(pfx),
                         cc,
                         "attacker_linux",
+                        ok=ok,
                         aip=1,
                         label=1,
                         level=3,
-                        scenario=sc,
-                        changed="country,ip,device,multi_subsystem",
+                        scenario="ato_takeover",
+                        changed="country,ip,device,time,lateral",
                     )
                 )
-        elif (
-            sc == "country_change_only"
-        ):  # 🟠2 ประเทศเปลี่ยนเดี่ยว (เครื่อง/เวลาเดิม) -> label 1
-            cc, pfx = random.choice(FOREIGN[2:])
-            dt = (START + timedelta(days=d)).replace(
-                hour=random.choice(prof["hours"]), minute=random.randint(0, 59)
-            )
-            rows.append(
-                mk_row(
-                    dt,
-                    u["email"],
-                    u["type"],
-                    sub,
-                    role,
-                    foreign_ip(pfx),
-                    cc,
-                    prof["device"],
-                    label=1,
-                    level=2,
-                    scenario=sc,
-                    changed="country,ip",
-                )
-            )
-        elif sc == "new_device_night":  # 🟠2 เครื่องใหม่ + ดึก (ยัง TH) -> label 1
-            dt = (START + timedelta(days=d)).replace(
-                hour=random.choice([1, 2, 3, 23]), minute=random.randint(0, 59)
-            )
-            rows.append(
-                mk_row(
-                    dt,
-                    u["email"],
-                    u["type"],
-                    sub,
-                    role,
-                    th_ip(home, True),
-                    "TH",
-                    "attacker_linux",
-                    label=1,
-                    level=2,
-                    scenario=sc,
-                    changed="device,time",
-                )
-            )
-        else:  # ip_change_only 🟡1 -> label 0 (ปกติที่ดูแปลก, กัน FP)
-            dt = (START + timedelta(days=d)).replace(
-                hour=random.choice(prof["hours"]), minute=random.randint(0, 59)
-            )
-            rows.append(
-                mk_row(
-                    dt,
-                    u["email"],
-                    u["type"],
-                    sub,
-                    role,
-                    th_ip(random.choice(TH_IP), True),
-                    "TH",
-                    prof["device"],
-                    label=0,
-                    level=1,
-                    scenario=sc,
-                    changed="ip",
-                )
-            )
     return rows
 
 
 def main():
     users = build_users()
     all_rows = []
-    home_of = {}
     for u in users:
-        rows, home, targets = gen_normal(u)
-        all_rows += rows
-        home_of[u["email"]] = (home, targets)
-
-    n_normal = len(all_rows)
-    target_attack = round(n_normal * ATTACK_FRAC / (1 - ATTACK_FRAC))
-    all_rows += inject_attacks(users, home_of, target_attack)
+        if u["email"] in ATTACKED:
+            # ปกติช่วงแรก (ก่อนโดน) + campaign โจมตี
+            rows, home, targets = gen_normal(u, range(0, COMPROMISE_DAY))
+            all_rows += rows
+            all_rows += gen_ato_campaign(u, targets)
+        else:
+            rows, home, targets = gen_normal(u, range(0, DAYS))
+            all_rows += rows
     all_rows.sort(key=lambda r: r["created_at"])
 
     cols = [
@@ -493,20 +392,21 @@ def main():
         w.writerows(all_rows)
 
     n_atk = sum(1 for r in all_rows if r["label"] == 1)
-    reals = sum(1 for u in users if u["real"])
-    print("✅ จำลอง login 1 เดือน (anchor ผู้ใช้จริง + clone persona)")
-    print(f"   users      : {len(users)} (จริง {reals} + clone {len(users) - reals})")
-    print(f"   total rows : {len(all_rows)}")
+    n_norm = len(all_rows) - n_atk
+    risky0 = sum(1 for r in all_rows if r["anomaly_level"] == 1 and r["label"] == 0)
+    print("✅ จำลอง 1 เดือน — normal ~10k + attack 2 บัญชีจริง")
+    print(f"   total      : {len(all_rows)}")
+    print(f"   normal (0) : {n_norm}  (ในนั้น 'เสี่ยงแต่ไม่โดน' = {risky0})")
     print(
-        f"   normal     : {len(all_rows) - n_atk}  | attack(=1): {n_atk} ({n_atk / len(all_rows) * 100:.1f}%)"
+        f"   attack (1) : {n_atk} ({n_atk / len(all_rows) * 100:.1f}%) — จาก {len(ATTACKED)} บัญชี"
+    )
+    print(f"   attacked   : {sorted(ATTACKED)}")
+    print(
+        f"   risky scn (label0): {dict(Counter(r['scenario'] for r in all_rows if r['anomaly_level'] == 1 and r['label'] == 0))}"
     )
     print(
-        f"   by level   : {dict(sorted(Counter(r['anomaly_level'] for r in all_rows).items()))}"
+        f"   attack scn (label1): {dict(Counter(r['scenario'] for r in all_rows if r['label'] == 1))}"
     )
-    print(
-        f"   attack scn : {dict(Counter(r['scenario'] for r in all_rows if r['label'] == 1))}"
-    )
-    print(f"   output     : {OUT}")
 
 
 if __name__ == "__main__":

@@ -52,10 +52,10 @@ export default function MLPage() {
         <div className="mb-6 flex items-end justify-between gap-4 flex-wrap">
           <div>
             <h2 className="text-sm font-bold text-ink-500 uppercase tracking-wider">
-              Isolation Forest · Anomaly Detection
+              HYBRID 4 Layer · Anomaly Detection
             </h2>
             <p className="text-xs text-ink-400 mt-1">
-              ทุก login session ผ่าน ML scoring (12 features, Shadow Mode)
+              {/* ทุก login session ผ่าน ML scoring (12 features, Shadow Mode) */}
               {ov && (
                 <>
                   {" "}· window {ov.data.range.from.slice(0, 10)} →{" "}
@@ -98,7 +98,7 @@ export default function MLPage() {
             {/* KPI cards */}
             <section className="mb-8">
               <h3 className="text-xs font-bold text-ink-500 uppercase tracking-wider mb-3">
-                ภาพรวม Census
+                ภาพรวม
               </h3>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
                 <StatsCard
@@ -199,8 +199,8 @@ export default function MLPage() {
               </div>
               <p className="text-[11px] text-ink-400 mb-2">
                 {sortMode === "score"
-                  ? "เรียงตาม anomaly score สูง→ต่ำ (เห็นเฉพาะที่ ML กังวลที่สุด)"
-                  : "เรียงตามเวลาล่าสุด (เห็น session ใหม่ทุก score)"}
+                  ? "เรียงตาม anomaly score สูง→ต่ำ"
+                  : "เรียงตามเวลาล่าสุด"}
               </p>
               <AnomalyTable
                 rows={ov.data.top_anomalies}
