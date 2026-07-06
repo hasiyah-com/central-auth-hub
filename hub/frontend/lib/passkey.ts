@@ -244,6 +244,71 @@ export async function adminResetUserPasskeys(
   );
 }
 
+// ── Admin: User 360-degree view (access list + revoke + login history) ──
+
+export interface UserAccessEntry {
+  subsystem_id: string;
+  subsystem_name: string;
+  entry_type: string; // "allow" | "deny"
+  granted_at: string | null;
+  revoked_at: string | null;
+  active: boolean;
+}
+
+export interface UserAccessList {
+  user: { id: string; email: string; full_name: string | null; user_type: string | null };
+  total: number;
+  active_count: number;
+  subsystems: UserAccessEntry[];
+}
+
+export interface UserLoginSession {
+  id: string;
+  subsystem_name: string | null;
+  ip: string | null;
+  geo_country: string | null;
+  os_name: string | null;
+  browser: string | null;
+  device_type: string | null;
+  login_method: string | null;
+  risk_score: number | null;
+  decision: string | null;
+  created_at: string | null;
+  logout_at: string | null;
+  online: boolean;
+}
+
+export interface UserLoginSessions {
+  user_id: string;
+  email: string;
+  total: number;
+  sessions: UserLoginSession[];
+}
+
+export async function adminGetUserAccessList(
+  userId: string
+): Promise<UserAccessList> {
+  return clientFetch<UserAccessList>(`/admin/users/${userId}/access-list`);
+}
+
+export async function adminGetUserLoginSessions(
+  userId: string
+): Promise<UserLoginSessions> {
+  return clientFetch<UserLoginSessions>(`/admin/users/${userId}/login-sessions`);
+}
+
+export async function adminRevokeUserAccess(
+  userId: string,
+  subsystemId: string,
+  onVerifying?: (active: boolean) => void
+): Promise<{ result: string; closed_sessions: number }> {
+  return mutateWithStepup(
+    `/admin/users/${userId}/access/${subsystemId}`,
+    { method: "DELETE" },
+    onVerifying
+  );
+}
+
 // ── Lifecycle (Phase 3) ───────────────────────────────────────
 
 export interface PasskeyInfo {

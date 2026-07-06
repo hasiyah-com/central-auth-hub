@@ -7,6 +7,7 @@ import { Badge } from "@/components/Badge";
 import { clientFetch } from "@/lib/api";
 import { runWithStepup } from "@/lib/passkey";
 import { UserPasskeyModal } from "./_components/UserPasskeyModal";
+import { UserDetailModal } from "./_components/UserDetailModal";
 import { UserFormModal, type UserRow } from "./_components/UserFormModal";
 
 type User = {
@@ -29,6 +30,14 @@ const TYPE_TONE: Record<string, "brand" | "good" | "warn" | "danger" | "default"
   admin: "danger",
 };
 
+const STATUS_TONE: Record<string, "brand" | "good" | "warn" | "danger" | "default"> = {
+  active: "good",
+  suspended: "warn",
+  graduated: "brand",
+  resigned: "default",
+  deleted: "danger",
+};
+
 export default function UsersPage() {
   const [users, setUsers] = useState<User[]>([]);
   const [type, setType] = useState<string>("");
@@ -36,6 +45,7 @@ export default function UsersPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [pkUser, setPkUser] = useState<{ id: string; name: string } | null>(null);
+  const [detailUser, setDetailUser] = useState<{ id: string; name: string } | null>(null);
   const [formModal, setFormModal] = useState<{ mode: "create" | "edit"; user?: UserRow } | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
   const [verifying, setVerifying] = useState(false);
@@ -92,10 +102,19 @@ export default function UsersPage() {
       key: "full_name",
       header: "ชื่อ",
       render: (u) => (
-        <div>
-          <div className="font-semibold text-ink-900">{u.full_name}</div>
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            setDetailUser({ id: u.id, name: u.email });
+          }}
+          className="text-left group"
+          title="ดูข้อมูลผู้ใช้ (สิทธิ์ระบบย่อย + ประวัติ)"
+        >
+          <div className="font-semibold text-ink-900 group-hover:text-brand-600 group-hover:underline">
+            {u.full_name}
+          </div>
           <div className="text-xs text-ink-500 font-mono">{u.email}</div>
-        </div>
+        </button>
       ),
     },
     {
@@ -130,9 +149,7 @@ export default function UsersPage() {
       key: "status",
       header: "สถานะ",
       render: (u) => (
-        <Badge tone={u.status === "active" ? "good" : "danger"}>
-          {u.status}
-        </Badge>
+        <Badge tone={STATUS_TONE[u.status] || "danger"}>{u.status}</Badge>
       ),
     },
     {
@@ -238,6 +255,14 @@ export default function UsersPage() {
           userId={pkUser.id}
           userName={pkUser.name}
           onClose={() => setPkUser(null)}
+        />
+      )}
+
+      {detailUser && (
+        <UserDetailModal
+          userId={detailUser.id}
+          userName={detailUser.name}
+          onClose={() => setDetailUser(null)}
         />
       )}
 
