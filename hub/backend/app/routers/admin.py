@@ -331,6 +331,168 @@ def reset_user_passkeys(
     }
 
 
+# ============ User 360-degree view (access list + revoke + login history) ============
+
+
+@router.get("/users/{user_id}/access-list")
+def user_access_list(
+    user_id: str,
+    admin: User = Depends(require_hub_admin),
+    db: Session = Depends(get_db),
+):
+    """สิทธิ์เข้าถึงระบบย่อยของ user คนนี้ (สำหรับ User Detail 360 view).
+
+    คืนทุก entry (active + revoked, allow + deny) พร้อมชื่อ subsystem —
+    frontend badge สถานะเอง. เรียง: active ก่อน แล้ว granted_at ล่าสุด.
+    """
+    target = db.query(User).filter(User.id == user_id).first()
+    if not target:
+        raise HTTPException(status_code=404, detail="ไม่พบผู้ใช้")
+
+    rows = (
+        db.query(AccessList, Subsystem.name)
+        .join(Subsystem, Subsystem.id == AccessList.subsystem_id)
+        .filter(AccessList.user_id == user_id)
+        .order_by(AccessList.revoked_at.isnot(None), AccessList.granted_at.desc())
+        .all()
+    )
+    subsystems = [
+        {
+            "subsystem_id": str(a.subsystem_id),
+            "subsystem_name": name,
+            "entry_type": a.entry_type,  # allow / deny
+            "granted_at": a.granted_at.isoformat() if a.granted_at else None,
+            "revoked_at": a.revoked_at.isoformat() if a.revoked_at else None,
+            "active": a.revoked_at is None,
+        }
+        for a, name in rows
+    ]
+    return {
+        "user": {
+            "id": str(target.id),
+            "email": target.email,
+            "full_name": target.full_name,
+            "user_type": target.user_type,
+        },
+        "total": len(subsystems),
+        "active_count": sum(1 for s in subsystems if s["active"]),
+        "subsystems": subsystems,
+    }
+
+
+@router.delete(
+    "/users/{user_id}/access/{subsystem_id}",
+    dependencies=[Depends(_stepup_gate("whitelist_remove"))],
+)
+def revoke_user_access(
+    user_id: str,
+    subsystem_id: str,
+    request: Request,
+    admin: User = Depends(require_hub_admin),
+    db: Session = Depends(get_db),
+):
+    """Admin ถอนสิทธิ์ user จาก subsystem หนึ่ง (soft delete + kick sessions).
+
+    - set access_list.revoked_at = NOW() (soft delete — เก็บ history)
+    - ปิด active login_sessions ของ user+subsystem นี้ (logout_at = NOW) → เตะออก
+    """
+    target = db.query(User).filter(User.id == user_id).first()
+    if not target:
+        raise HTTPException(status_code=404, detail="ไม่พบผู้ใช้")
+
+    entry = (
+        db.query(AccessList)
+        .filter(
+            AccessList.user_id == user_id,
+            AccessList.subsystem_id == subsystem_id,
+            AccessList.revoked_at.is_(None),
+        )
+        .first()
+    )
+    if not entry:
+        raise HTTPException(status_code=404, detail="ไม่พบสิทธิ์ที่ยัง active อยู่")
+
+    now = datetime.utcnow()
+    entry.revoked_at = now
+    # เตะ active sessions ของ user นี้ในระบบย่อยนั้นออก
+    closed = (
+        db.query(LoginSession)
+        .filter(
+            LoginSession.user_id == user_id,
+            LoginSession.subsystem_id == subsystem_id,
+            LoginSession.logout_at.is_(None),
+        )
+        .update({LoginSession.logout_at: now}, synchronize_session=False)
+    )
+    log_action(
+        db,
+        actor_id=admin.id,
+        action="admin_revoke_user_access",
+        target_type="user",
+        target_id=target.id,
+        ip=get_client_ip(request),
+        metadata={
+            "email": target.email,
+            "subsystem_id": subsystem_id,
+            "closed_sessions": closed,
+        },
+    )
+    db.commit()
+    return {"result": "revoked", "closed_sessions": closed}
+
+
+@router.get("/users/{user_id}/login-sessions")
+def user_login_sessions(
+    user_id: str,
+    limit: int = Query(20, ge=1, le=100),
+    admin: User = Depends(require_hub_admin),
+    db: Session = Depends(get_db),
+):
+    """ประวัติ login เข้าระบบย่อยล่าสุดของ user (สำหรับ User Detail 360 view).
+
+    เฉพาะ subsystem login (subsystem_id IS NOT NULL) — ไม่รวม Hub-direct.
+    """
+    target = db.query(User).filter(User.id == user_id).first()
+    if not target:
+        raise HTTPException(status_code=404, detail="ไม่พบผู้ใช้")
+
+    rows = (
+        db.query(LoginSession, Subsystem.name)
+        .outerjoin(Subsystem, Subsystem.id == LoginSession.subsystem_id)
+        .filter(
+            LoginSession.user_id == user_id,
+            LoginSession.subsystem_id.isnot(None),
+        )
+        .order_by(LoginSession.created_at.desc())
+        .limit(limit)
+        .all()
+    )
+    sessions = [
+        {
+            "id": str(s.id),
+            "subsystem_name": name,
+            "ip": str(s.ip) if s.ip else None,
+            "geo_country": s.geo_country,
+            "os_name": s.os_name,
+            "browser": s.browser,
+            "device_type": s.device_type,
+            "login_method": s.login_method,
+            "risk_score": float(s.risk_score) if s.risk_score is not None else None,
+            "decision": s.decision,
+            "created_at": s.created_at.isoformat() if s.created_at else None,
+            "logout_at": s.logout_at.isoformat() if s.logout_at else None,
+            "online": s.logout_at is None,
+        }
+        for s, name in rows
+    ]
+    return {
+        "user_id": str(target.id),
+        "email": target.email,
+        "total": len(sessions),
+        "sessions": sessions,
+    }
+
+
 @router.post(
     "/subsystems/{subsystem_id}/reject",
     dependencies=[Depends(_stepup_gate("subsystem_reject"))],
