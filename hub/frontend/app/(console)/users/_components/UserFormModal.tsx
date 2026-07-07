@@ -39,6 +39,20 @@ const USER_TYPES = [
   { v: "admin", label: "Admin" },
 ];
 
+// สถานะ deleted/graduated/resigned = ออกจากระบบถาวร — backend เพิกถอนสิทธิ์
+// ทุก subsystem ทันที (revoke AccessList + kick session) ตอนเปลี่ยนมา, และ
+// restore คืนให้ถ้าเปลี่ยนกลับเป็น active (ดู _cascade_revoke_access ใน users.py)
+// ต้องตรงกับ _CASCADE_STATUSES ใน hub/backend/app/routers/users.py
+const CASCADE_STATUSES = new Set(["deleted", "graduated", "resigned"]);
+
+const USER_STATUSES = [
+  { v: "active", label: "Active — ใช้งานได้" },
+  { v: "suspended", label: "Suspended — ถูกระงับ" },
+  { v: "graduated", label: "Graduated — จบการศึกษา" },
+  { v: "resigned", label: "Resigned — ลาออก" },
+  { v: "deleted", label: "Deleted — ลบออกจากระบบ" },
+];
+
 export function UserFormModal({ mode, user, onClose, onSaved }: Props) {
   const [form, setForm] = useState({
     email: user?.email ?? "",
@@ -190,10 +204,23 @@ export function UserFormModal({ mode, user, onClose, onSaved }: Props) {
           {mode === "edit" && (
             <Field label="สถานะ">
               <select value={form.status} onChange={set("status")} className={inputCls}>
-                <option value="active">active</option>
-                <option value="suspended">suspended</option>
-                <option value="deleted">deleted</option>
+                {USER_STATUSES.map((s) => (
+                  <option key={s.v} value={s.v}>{s.label}</option>
+                ))}
               </select>
+              {CASCADE_STATUSES.has(form.status) &&
+                form.status !== (user?.status ?? "active") && (
+                  <p className="text-[11px] text-amber-600 mt-1">
+                    ⚠ เปลี่ยนเป็นสถานะนี้จะเพิกถอนสิทธิ์เข้า subsystem ทั้งหมดทันที
+                    (kick session ที่ค้างอยู่ด้วย)
+                  </p>
+                )}
+              {CASCADE_STATUSES.has(user?.status ?? "active") &&
+                form.status === "active" && (
+                  <p className="text-[11px] text-emerald-600 mt-1">
+                    ✓ เปลี่ยนกลับ active จะคืนสิทธิ์ subsystem ที่เคยถูกเพิกถอนไป
+                  </p>
+                )}
             </Field>
           )}
 
