@@ -67,6 +67,8 @@ CRITICAL_ACTIONS: frozenset[str] = frozenset(
         "session_revoke",
         # Global auth-policy (Week 10) — เปลี่ยนวิธี login ที่ระบบยอมรับ
         "auth_policy_update",
+        # Incident remediation (Week 11) — revoke/block IP/reset passkey/notify
+        "incident_action",
     }
 )
 

@@ -33,6 +33,7 @@ from app.models import (
     User,
 )
 from app.services.audit_service import log_action
+from app.services import incident_service
 from app.services.critical_action_policy import gate as _stepup_gate
 from app.services import passkey_recovery
 from app.services.change_request_service import apply_approved
@@ -334,6 +335,22 @@ def reset_user_passkeys(
 # ============ User 360-degree view (access list + revoke + login history) ============
 
 
+def _access_reason(policy_reason: str, user_type: str | None) -> tuple[str, str]:
+    """map reason จาก evaluate_access_policy → (source, ป้ายภาษาไทย).
+
+    source: 'explicit' (whitelist รายคน — ถอนได้) | 'policy' (นโยบาย — ถอนรายคนไม่ได้)
+    """
+    if policy_reason == "explicit":
+        return ("explicit", "ให้สิทธิ์รายคน (whitelist)")
+    if policy_reason == "all_users":
+        return ("policy", "ตามนโยบาย: ทุกคน (active)")
+    if policy_reason.startswith("role:"):
+        return ("policy", f"ตามนโยบาย: บทบาท {policy_reason.split(':', 1)[1]}")
+    if policy_reason == "attribute":
+        return ("policy", "ตามนโยบาย: คณะ/สาขา")
+    return ("policy", f"ตามนโยบาย ({policy_reason})")
+
+
 @router.get("/users/{user_id}/access-list")
 def user_access_list(
     user_id: str,
@@ -342,42 +359,142 @@ def user_access_list(
 ):
     """สิทธิ์เข้าถึงระบบย่อยของ user คนนี้ (สำหรับ User Detail 360 view).
 
-    คืนทุก entry (active + revoked, allow + deny) พร้อมชื่อ subsystem —
-    frontend badge สถานะเอง. เรียง: active ก่อน แล้ว granted_at ล่าสุด.
+    ประเมินสิทธิ์จริงต่อ subsystem = explicit whitelist + policy (all/role/attribute).
+    - source='explicit' → ถอนได้ (มี access_list allow entry)
+    - source='policy'   → เข้าได้เพราะนโยบาย → ถอนรายคนไม่ได้ (โชว์เหตุผลแทน)
+    subsystems ที่ user เข้าไม่ได้ → อยู่ใน grantable (สำหรับปุ่มเพิ่มสิทธิ์)
     """
+    from app.services.access_policy import evaluate_access_policy
+
     target = db.query(User).filter(User.id == user_id).first()
     if not target:
         raise HTTPException(status_code=404, detail="ไม่พบผู้ใช้")
 
-    rows = (
-        db.query(AccessList, Subsystem.name)
-        .join(Subsystem, Subsystem.id == AccessList.subsystem_id)
-        .filter(AccessList.user_id == user_id)
-        .order_by(AccessList.revoked_at.isnot(None), AccessList.granted_at.desc())
+    subs = (
+        db.query(Subsystem)
+        .filter(Subsystem.status == "active")
+        .order_by(Subsystem.name)
         .all()
     )
-    subsystems = [
-        {
-            "subsystem_id": str(a.subsystem_id),
-            "subsystem_name": name,
-            "entry_type": a.entry_type,  # allow / deny
-            "granted_at": a.granted_at.isoformat() if a.granted_at else None,
-            "revoked_at": a.revoked_at.isoformat() if a.revoked_at else None,
-            "active": a.revoked_at is None,
-        }
-        for a, name in rows
-    ]
+    # explicit allow entries ที่ active (สำหรับ can_revoke + granted_at)
+    allow_entries = {
+        e.subsystem_id: e
+        for e in db.query(AccessList)
+        .filter(
+            AccessList.user_id == user_id,
+            AccessList.entry_type == "allow",
+            AccessList.revoked_at.is_(None),
+        )
+        .all()
+    }
+
+    subsystems, grantable = [], []
+    for s in subs:
+        allowed, reason = evaluate_access_policy(db, target, s)
+        if not allowed:
+            grantable.append({"subsystem_id": str(s.id), "subsystem_name": s.name})
+            continue
+        source, label = _access_reason(reason, target.user_type)
+        entry = allow_entries.get(s.id)
+        subsystems.append(
+            {
+                "subsystem_id": str(s.id),
+                "subsystem_name": s.name,
+                "policy": s.access_policy or "explicit",
+                "source": source,  # explicit | policy
+                "reason": label,
+                "role": (entry.role_in_sub if entry and entry.role_in_sub else None)
+                or target.user_type,
+                "scopes": list(s.scope or []),
+                "can_revoke": source == "explicit" and entry is not None,
+                "granted_at": entry.granted_at.isoformat()
+                if entry and entry.granted_at
+                else None,
+                "granted_by": str(entry.granted_by)
+                if entry and entry.granted_by
+                else None,
+            }
+        )
+
     return {
         "user": {
             "id": str(target.id),
             "email": target.email,
             "full_name": target.full_name,
             "user_type": target.user_type,
+            "status": target.status,
+            "is_hub_admin": target.is_hub_admin,
+            "identifier": target.identifier,
+            "faculty": target.faculty,
+            "major": target.major,
+            "year_or_position": target.year_or_position,
+            "phone": target.phone,
+            "address": target.address,
+            "created_at": target.created_at.isoformat() if target.created_at else None,
         },
         "total": len(subsystems),
-        "active_count": sum(1 for s in subsystems if s["active"]),
+        "active_count": len(subsystems),
         "subsystems": subsystems,
+        "grantable": grantable,
     }
+
+
+@router.post(
+    "/users/{user_id}/access/{subsystem_id}",
+    dependencies=[Depends(_stepup_gate("whitelist_add"))],
+)
+def grant_user_access(
+    user_id: str,
+    subsystem_id: str,
+    request: Request,
+    admin: User = Depends(require_hub_admin),
+    db: Session = Depends(get_db),
+):
+    """Admin เพิ่มสิทธิ์ user เข้า subsystem (explicit whitelist allow).
+
+    upsert access_list (UniqueConstraint subsystem_id+user_id): ถ้ามี entry เดิม
+    (revoked/deny) → set allow + revoked_at=NULL; ถ้าไม่มี → สร้างใหม่.
+    """
+    target = db.query(User).filter(User.id == user_id).first()
+    if not target:
+        raise HTTPException(status_code=404, detail="ไม่พบผู้ใช้")
+    sub = db.query(Subsystem).filter(Subsystem.id == subsystem_id).first()
+    if not sub:
+        raise HTTPException(status_code=404, detail="ไม่พบระบบย่อย")
+
+    entry = (
+        db.query(AccessList)
+        .filter(
+            AccessList.user_id == user_id,
+            AccessList.subsystem_id == subsystem_id,
+        )
+        .first()
+    )
+    if entry:
+        entry.entry_type = "allow"
+        entry.revoked_at = None
+        entry.granted_by = admin.id
+        entry.granted_at = datetime.utcnow()
+    else:
+        entry = AccessList(
+            user_id=user_id,
+            subsystem_id=subsystem_id,
+            entry_type="allow",
+            granted_by=admin.id,
+        )
+        db.add(entry)
+
+    log_action(
+        db,
+        actor_id=admin.id,
+        action="admin_grant_user_access",
+        target_type="user",
+        target_id=target.id,
+        ip=get_client_ip(request),
+        metadata={"email": target.email, "subsystem_id": subsystem_id},
+    )
+    db.commit()
+    return {"result": "granted", "subsystem_name": sub.name}
 
 
 @router.delete(
@@ -448,9 +565,9 @@ def user_login_sessions(
     admin: User = Depends(require_hub_admin),
     db: Session = Depends(get_db),
 ):
-    """ประวัติ login เข้าระบบย่อยล่าสุดของ user (สำหรับ User Detail 360 view).
+    """ประวัติ login ล่าสุดของ user (subsystem + Hub-direct) — สำหรับ 360 view.
 
-    เฉพาะ subsystem login (subsystem_id IS NOT NULL) — ไม่รวม Hub-direct.
+    รวม risk_reasons + geo/device → feed Recent Events, Active Sessions, Risk Factors.
     """
     target = db.query(User).filter(User.id == user_id).first()
     if not target:
@@ -459,10 +576,7 @@ def user_login_sessions(
     rows = (
         db.query(LoginSession, Subsystem.name)
         .outerjoin(Subsystem, Subsystem.id == LoginSession.subsystem_id)
-        .filter(
-            LoginSession.user_id == user_id,
-            LoginSession.subsystem_id.isnot(None),
-        )
+        .filter(LoginSession.user_id == user_id)
         .order_by(LoginSession.created_at.desc())
         .limit(limit)
         .all()
@@ -470,7 +584,8 @@ def user_login_sessions(
     sessions = [
         {
             "id": str(s.id),
-            "subsystem_name": name,
+            "subsystem_name": name if s.subsystem_id else "เข้าระบบกลาง (Hub)",
+            "is_hub_direct": s.subsystem_id is None,
             "ip": str(s.ip) if s.ip else None,
             "geo_country": s.geo_country,
             "os_name": s.os_name,
@@ -478,6 +593,7 @@ def user_login_sessions(
             "device_type": s.device_type,
             "login_method": s.login_method,
             "risk_score": float(s.risk_score) if s.risk_score is not None else None,
+            "risk_reasons": s.risk_reasons or [],
             "decision": s.decision,
             "created_at": s.created_at.isoformat() if s.created_at else None,
             "logout_at": s.logout_at.isoformat() if s.logout_at else None,
@@ -490,6 +606,120 @@ def user_login_sessions(
         "email": target.email,
         "total": len(sessions),
         "sessions": sessions,
+    }
+
+
+@router.get("/users/{user_id}/summary")
+def user_summary(
+    user_id: str,
+    admin: User = Depends(require_hub_admin),
+    db: Session = Depends(get_db),
+):
+    """ตัวเลขสรุปสำหรับ stat cards (360 view) — เลขที่ derive จาก frontend ไม่ได้."""
+    target = db.query(User).filter(User.id == user_id).first()
+    if not target:
+        raise HTTPException(status_code=404, detail="ไม่พบผู้ใช้")
+
+    since = datetime.utcnow() - timedelta(days=7)
+    # failed logins 7 วัน — จาก audit (hub_login_failed* / oauth_login_failed*)
+    failed_7d = (
+        db.query(func.count(AuditLog.id))
+        .filter(
+            AuditLog.target_id == target.id,
+            AuditLog.action.like("%login_failed%"),
+            AuditLog.created_at >= since,
+        )
+        .scalar()
+        or 0
+    )
+    # login เข้าระบบกลางล่าสุด
+    last_login = (
+        db.query(LoginSession.created_at)
+        .filter(LoginSession.user_id == user_id)
+        .order_by(LoginSession.created_at.desc())
+        .first()
+    )
+    # risk event ล่าสุดที่คะแนนสูง (>= 0.40)
+    last_risk = (
+        db.query(LoginSession.created_at, LoginSession.risk_score)
+        .filter(
+            LoginSession.user_id == user_id,
+            LoginSession.risk_score >= 0.40,
+        )
+        .order_by(LoginSession.created_at.desc())
+        .first()
+    )
+    return {
+        "failed_logins_7d": int(failed_7d),
+        "last_login_at": last_login[0].isoformat() if last_login else None,
+        "last_risk_event": {
+            "created_at": last_risk[0].isoformat(),
+            "risk_score": float(last_risk[1]) if last_risk[1] is not None else None,
+        }
+        if last_risk
+        else None,
+    }
+
+
+@router.post(
+    "/users/{user_id}/force-logout",
+    dependencies=[Depends(_stepup_gate("session_revoke"))],
+)
+def force_logout_user(
+    user_id: str,
+    request: Request,
+    admin: User = Depends(require_hub_admin),
+    db: Session = Depends(get_db),
+):
+    """เตะทุก active session ของ user ออกทันที (Force Logout All).
+
+    ทุก session: logout_at = NOW + revoke jti (JWT ใช้ต่อไม่ได้). ครอบทั้ง
+    Hub-direct + ทุก subsystem. step-up passkey (session_revoke gate).
+    """
+    target = db.query(User).filter(User.id == user_id).first()
+    if not target:
+        raise HTTPException(status_code=404, detail="ไม่พบผู้ใช้")
+
+    now = datetime.utcnow()
+    sessions = (
+        db.query(LoginSession)
+        .filter(
+            LoginSession.user_id == user_id,
+            LoginSession.logout_at.is_(None),
+        )
+        .all()
+    )
+    revoked_jwt = 0
+    for s in sessions:
+        s.logout_at = now
+        if s.jti:
+            exp_unix = int(
+                (
+                    s.created_at
+                    + timedelta(minutes=settings.jwt_access_token_expire_minutes)
+                ).timestamp()
+            )
+            if revoke_jti(s.jti, exp_unix):
+                revoked_jwt += 1
+
+    log_action(
+        db,
+        actor_id=admin.id,
+        action="admin_force_logout_user",
+        target_type="user",
+        target_id=target.id,
+        ip=get_client_ip(request),
+        metadata={
+            "email": target.email,
+            "closed_sessions": len(sessions),
+            "revoked_jwt": revoked_jwt,
+        },
+    )
+    db.commit()
+    return {
+        "result": "logged_out",
+        "closed_sessions": len(sessions),
+        "revoked_jwt": revoked_jwt,
     }
 
 
@@ -2017,6 +2247,9 @@ def list_audit_logs(
     target_type: str | None = Query(
         None, description="filter by target_type (user/subsystem/etc.)"
     ),
+    target_id: str | None = Query(
+        None, description="filter by target_id (เช่น ดู log ของ user คนเดียว)"
+    ),
     skip: int = 0,
     limit: int = Query(50, ge=1, le=500),
     admin: User = Depends(require_hub_admin),
@@ -2038,6 +2271,8 @@ def list_audit_logs(
         q = q.filter(AuditLog.actor_id == actor_id)
     if target_type:
         q = q.filter(AuditLog.target_type == target_type)
+    if target_id:
+        q = q.filter(AuditLog.target_id == target_id)
 
     total = q.count()
     rows = q.offset(skip).limit(limit).all()
@@ -2246,6 +2481,79 @@ def _activity_item(ls, email, full_name, user_type, sub_name, now=None) -> dict:
     if now is not None and ls.created_at is not None:
         d["online_seconds"] = int((now - ls.created_at).total_seconds())
     return d
+
+
+@router.get("/incidents")
+def list_incidents(
+    q: str | None = Query(None, description="ค้นหา email / ชื่อ"),
+    decision: str | None = Query(None, description="filter decision"),
+    subsystem_id: str | None = Query(
+        None, description="filter subsystem (uuid) หรือ 'hub' = Hub-direct"
+    ),
+    hours: int = Query(168, ge=1, le=2160, description="ช่วงเวลาย้อนหลัง (ชม.)"),
+    skip: int = 0,
+    limit: int = Query(50, ge=1, le=200),
+    admin: User = Depends(require_hub_admin),
+    db: Session = Depends(get_db),
+):
+    """Incident Summary — list login ที่ RBA flag ว่าเสี่ยง (triage view).
+
+    เฉพาะ session ที่ decision ∈ block/challenge/would_* หรือ is_attack_ip
+    (ไม่ใช่ทุก login) — admin เห็นแต่ที่ต้องจัดการ. ดู `incident_service`.
+    """
+    return incident_service.list_incidents(
+        db,
+        hours=hours,
+        decision=decision,
+        subsystem_id=subsystem_id,
+        q=q,
+        skip=skip,
+        limit=limit,
+    )
+
+
+@router.get("/incidents/{session_id}")
+def incident_detail(
+    session_id: str,
+    admin: User = Depends(require_hub_admin),
+    db: Session = Depends(get_db),
+):
+    """รายละเอียด incident เดียว — Entry (เข้าทางไหน) → Detected (เจออะไร) →
+    Impact (ทำอะไร/session ถูกตัดไหม + timeline) → Actions (แนะนำต้องปิดช่องโหว่ตรงไหน).
+    """
+    detail = incident_service.get_incident_detail(db, session_id)
+    if detail is None:
+        raise HTTPException(status_code=404, detail="ไม่พบ incident")
+    return detail
+
+
+class IncidentActionBody(BaseModel):
+    action: str
+
+
+@router.post(
+    "/incidents/{session_id}/action",
+    dependencies=[Depends(_stepup_gate("incident_action"))],
+)
+def incident_action(
+    session_id: str,
+    body: IncidentActionBody,
+    request: Request,
+    admin: User = Depends(require_hub_admin),
+    db: Session = Depends(get_db),
+):
+    """ทำ remediation action จากหน้า incident (critical → step-up gated).
+
+    action ∈ {revoke_session, block_ip, reset_passkey, notify_user}.
+    """
+    if body.action not in incident_service.INCIDENT_ACTIONS:
+        raise HTTPException(status_code=422, detail="action ไม่ถูกต้อง")
+    try:
+        return incident_service.execute_incident_action(
+            db, session_id, body.action, admin, get_client_ip(request)
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.get("/activity")
