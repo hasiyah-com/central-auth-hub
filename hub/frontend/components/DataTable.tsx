@@ -12,12 +12,14 @@ type Props<T> = {
   columns: Column<T>[];
   rows: T[];
   emptyMessage?: string;
+  onRowClick?: (row: T) => void;
 };
 
 export function DataTable<T extends Record<string, unknown>>({
   columns,
   rows,
   emptyMessage = "ไม่มีข้อมูล",
+  onRowClick,
 }: Props<T>) {
   return (
     <div className="bg-white rounded-xl border border-ink-200 overflow-hidden shadow-sm">
@@ -54,7 +56,13 @@ export function DataTable<T extends Record<string, unknown>>({
               </tr>
             ) : (
               rows.map((row, i) => (
-                <tr key={i} className="hover:bg-ink-50/50 transition">
+                <tr
+                  key={i}
+                  onClick={onRowClick ? () => onRowClick(row) : undefined}
+                  className={`hover:bg-ink-50/50 transition ${
+                    onRowClick ? "cursor-pointer" : ""
+                  }`}
+                >
                   {columns.map((col) => (
                     <td
                       key={col.key}
