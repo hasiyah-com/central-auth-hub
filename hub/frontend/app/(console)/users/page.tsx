@@ -1,13 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Topbar } from "@/components/Topbar";
 import { DataTable, type Column } from "@/components/DataTable";
 import { Badge } from "@/components/Badge";
 import { clientFetch } from "@/lib/api";
-import { runWithStepup } from "@/lib/passkey";
-import { UserPasskeyModal } from "./_components/UserPasskeyModal";
-import { UserDetailModal } from "./_components/UserDetailModal";
 import { UserFormModal, type UserRow } from "./_components/UserFormModal";
 
 type User = {
@@ -39,47 +37,13 @@ const STATUS_TONE: Record<string, "brand" | "good" | "warn" | "danger" | "defaul
 };
 
 export default function UsersPage() {
+  const router = useRouter();
   const [users, setUsers] = useState<User[]>([]);
   const [type, setType] = useState<string>("");
   const [faculty, setFaculty] = useState<string>("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [pkUser, setPkUser] = useState<{ id: string; name: string } | null>(null);
-  const [detailUser, setDetailUser] = useState<{ id: string; name: string } | null>(null);
   const [formModal, setFormModal] = useState<{ mode: "create" | "edit"; user?: UserRow } | null>(null);
-  const [deleting, setDeleting] = useState<string | null>(null);
-  const [verifying, setVerifying] = useState(false);
-
-  async function handleDelete(u: User) {
-    if (!confirm(`ลบผู้ใช้ "${u.full_name}" (${u.email})?\n\nบัญชีจะถูกตั้งเป็น deleted และต้องยืนยันด้วย Passkey`))
-      return;
-    setDeleting(u.id);
-    setError(null);
-    try {
-      // Option C — inline step-up: ถ้า 403 → verify Passkey ในหน้า แล้ว retry (ไม่ redirect)
-      await runWithStepup(
-        () =>
-          clientFetch(`/admin/users/${u.id}`, {
-            method: "DELETE",
-            stepupMode: "throw",
-          }),
-        setVerifying
-      );
-      load();
-    } catch (e) {
-      const d = (e as { detail?: unknown })?.detail;
-      const code = typeof d === "object" && d ? (d as { code?: string }).code : undefined;
-      if (code === "no_passkey") {
-        setError("ต้องมี Passkey เพื่อยืนยันการลบ — ตั้งค่าที่หน้าความปลอดภัย หรือใช้ Account Recovery");
-      } else if (e instanceof DOMException && e.name === "NotAllowedError") {
-        setError("ยกเลิกการยืนยัน Passkey");
-      } else {
-        setError(typeof d === "string" ? d : "ลบไม่สำเร็จ");
-      }
-    } finally {
-      setDeleting(null);
-    }
-  }
 
   function load() {
     setLoading(true);
@@ -102,19 +66,10 @@ export default function UsersPage() {
       key: "full_name",
       header: "ชื่อ",
       render: (u) => (
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            setDetailUser({ id: u.id, name: u.email });
-          }}
-          className="text-left group"
-          title="ดูข้อมูลผู้ใช้ (สิทธิ์ระบบย่อย + ประวัติ)"
-        >
-          <div className="font-semibold text-ink-900 group-hover:text-brand-600 group-hover:underline">
-            {u.full_name}
-          </div>
+        <div>
+          <div className="font-semibold text-ink-900">{u.full_name}</div>
           <div className="text-xs text-ink-500 font-mono">{u.email}</div>
-        </button>
+        </div>
       ),
     },
     {
@@ -153,63 +108,16 @@ export default function UsersPage() {
       ),
     },
     {
-      key: "passkey",
-      header: "Passkey",
-      render: (u) => (
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            setPkUser({ id: u.id, name: u.email });
-          }}
-          className="text-xs px-2.5 py-1 rounded-md border border-ink-200 hover:border-brand-400 hover:bg-brand-50 text-ink-600"
-          title="ดู/จัดการ Passkey"
-        >
-          🔑 ดู
-        </button>
-      ),
-    },
-    {
-      key: "actions",
-      header: "จัดการ",
-      render: (u) => (
-        <div className="flex items-center gap-1.5">
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              setFormModal({ mode: "edit", user: u as UserRow });
-            }}
-            className="text-xs px-2 py-1 rounded-md border border-ink-200 hover:border-brand-400 hover:bg-brand-50 text-ink-600"
-            title="แก้ไข"
-          >
-            ✏️
-          </button>
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              handleDelete(u);
-            }}
-            disabled={deleting === u.id || u.status === "deleted"}
-            className="text-xs px-2 py-1 rounded-md border border-ink-200 hover:border-rose-400 hover:bg-rose-50 text-ink-600 disabled:opacity-40"
-            title="ลบ (soft delete)"
-          >
-            {deleting === u.id ? "…" : "🗑️"}
-          </button>
-        </div>
-      ),
+      key: "_go",
+      header: "",
+      align: "right",
+      render: () => <span className="text-ink-300 text-sm">›</span>,
     },
   ];
 
   return (
     <>
       <Topbar title="ผู้ใช้งาน" />
-      {verifying && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40">
-          <div className="bg-white rounded-2xl px-6 py-5 shadow-xl flex items-center gap-3 text-sm text-ink-700">
-            <span className="animate-pulse text-lg">🔐</span>
-            กำลังยืนยันด้วย Passkey…
-          </div>
-        </div>
-      )}
       <main className="p-8 max-w-7xl mx-auto w-full">
         <div className="mb-5 flex flex-wrap items-center gap-3">
           <select
@@ -247,24 +155,13 @@ export default function UsersPage() {
           </div>
         )}
 
-        <DataTable columns={columns} rows={users} emptyMessage="ไม่พบผู้ใช้" />
+        <DataTable
+          columns={columns}
+          rows={users}
+          emptyMessage="ไม่พบผู้ใช้"
+          onRowClick={(u) => router.push(`/users/${u.id}`)}
+        />
       </main>
-
-      {pkUser && (
-        <UserPasskeyModal
-          userId={pkUser.id}
-          userName={pkUser.name}
-          onClose={() => setPkUser(null)}
-        />
-      )}
-
-      {detailUser && (
-        <UserDetailModal
-          userId={detailUser.id}
-          userName={detailUser.name}
-          onClose={() => setDetailUser(null)}
-        />
-      )}
 
       {formModal && (
         <UserFormModal

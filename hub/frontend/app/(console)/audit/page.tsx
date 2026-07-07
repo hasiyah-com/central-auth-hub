@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
+import { useSearchParams, useRouter } from "next/navigation";
 import { Topbar } from "@/components/Topbar";
 import { DataTable, type Column } from "@/components/DataTable";
 import { Badge } from "@/components/Badge";
@@ -109,10 +110,23 @@ function DetailCell({ row }: { row: AuditLog }) {
   );
 }
 
-export default function AuditPage() {
+function AuditPageInner() {
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  // มาจาก User 360 view ("ดู Audit Log") — ล็อก scope ไว้ที่ user คนเดียว
+  // target_id = สิ่งที่ถูกกระทำต่อ user นี้ (admin แก้/revoke ให้)
+  // actor_id  = สิ่งที่ user นี้ทำเอง (login, กระทำต่อคนอื่น)
+  const targetId = searchParams.get("target_id");
+  const targetEmail = searchParams.get("target_email");
+  const actorId = searchParams.get("actor_id");
+  const actorEmail = searchParams.get("actor_email");
+  const scopeId = targetId || actorId;
+  const scopeEmail = targetEmail || actorEmail;
+  const scopeLabel = targetId ? "เป็นเป้าหมาย" : "กระทำเอง";
+
   const [data, setData] = useState<AuditResponse | null>(null);
   const [action, setAction] = useState<string>("");
-  const [targetType, setTargetType] = useState<string>("");
+  const [targetType, setTargetType] = useState<string>(targetId ? "user" : "");
   const [skip, setSkip] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -123,6 +137,8 @@ export default function AuditPage() {
     const qs = new URLSearchParams();
     if (action) qs.set("action", action);
     if (targetType) qs.set("target_type", targetType);
+    if (targetId) qs.set("target_id", targetId);
+    if (actorId) qs.set("actor_id", actorId);
     qs.set("skip", String(skip));
     qs.set("limit", String(PAGE_SIZE));
     clientFetch<AuditResponse>(`/admin/audit?${qs.toString()}`)
@@ -132,12 +148,12 @@ export default function AuditPage() {
   }
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(load, [action, targetType, skip]);
+  useEffect(load, [action, targetType, targetId, actorId, skip]);
 
   // Reset to page 1 whenever a filter changes — avoid stuck-on-page-3 surprise.
   useEffect(() => {
     setSkip(0);
-  }, [action, targetType]);
+  }, [action, targetType, targetId, actorId]);
 
   const columns: Column<AuditLog>[] = [
     {
@@ -212,6 +228,19 @@ export default function AuditPage() {
     <>
       <Topbar title="Audit Log" />
       <main className="p-8 max-w-7xl mx-auto w-full">
+        {scopeId && (
+          <div className="mb-5 flex items-center gap-2 px-4 py-2.5 rounded-lg bg-brand-50 border border-brand-200 text-sm text-brand-800">
+            <span>
+              กำลังดู log ที่ <strong>{scopeEmail || scopeId}</strong> {scopeLabel} เท่านั้น
+            </span>
+            <button
+              onClick={() => router.push("/audit")}
+              className="ml-auto text-xs px-2.5 py-1 rounded-md border border-brand-300 hover:bg-brand-100"
+            >
+              ดูทั้งหมด ✕
+            </button>
+          </div>
+        )}
         <div className="mb-5 flex flex-wrap items-center gap-3">
           <input
             type="text"
@@ -276,5 +305,13 @@ export default function AuditPage() {
         )}
       </main>
     </>
+  );
+}
+
+export default function AuditPage() {
+  return (
+    <Suspense fallback={null}>
+      <AuditPageInner />
+    </Suspense>
   );
 }

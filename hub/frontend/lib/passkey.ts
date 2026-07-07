@@ -249,22 +249,49 @@ export async function adminResetUserPasskeys(
 export interface UserAccessEntry {
   subsystem_id: string;
   subsystem_name: string;
-  entry_type: string; // "allow" | "deny"
+  policy: string; // explicit | all | role | attribute
+  source: "explicit" | "policy";
+  reason: string; // ป้ายภาษาไทยว่าทำไมถึงมีสิทธิ์
+  role: string | null;
+  scopes: string[];
+  can_revoke: boolean; // true เฉพาะ explicit whitelist entry
   granted_at: string | null;
-  revoked_at: string | null;
-  active: boolean;
+  granted_by: string | null;
+}
+
+export interface GrantableSubsystem {
+  subsystem_id: string;
+  subsystem_name: string;
+}
+
+export interface UserDetailInfo {
+  id: string;
+  email: string;
+  full_name: string | null;
+  user_type: string | null;
+  status: string | null;
+  is_hub_admin: boolean;
+  identifier: string | null;
+  faculty: string | null;
+  major: string | null;
+  year_or_position: string | null;
+  phone: string | null;
+  address: string | null;
+  created_at: string | null;
 }
 
 export interface UserAccessList {
-  user: { id: string; email: string; full_name: string | null; user_type: string | null };
+  user: UserDetailInfo;
   total: number;
   active_count: number;
   subsystems: UserAccessEntry[];
+  grantable: GrantableSubsystem[];
 }
 
 export interface UserLoginSession {
   id: string;
   subsystem_name: string | null;
+  is_hub_direct: boolean;
   ip: string | null;
   geo_country: string | null;
   os_name: string | null;
@@ -272,10 +299,17 @@ export interface UserLoginSession {
   device_type: string | null;
   login_method: string | null;
   risk_score: number | null;
+  risk_reasons: string[];
   decision: string | null;
   created_at: string | null;
   logout_at: string | null;
   online: boolean;
+}
+
+export interface UserSummary {
+  failed_logins_7d: number;
+  last_login_at: string | null;
+  last_risk_event: { created_at: string; risk_score: number | null } | null;
 }
 
 export interface UserLoginSessions {
@@ -297,6 +331,10 @@ export async function adminGetUserLoginSessions(
   return clientFetch<UserLoginSessions>(`/admin/users/${userId}/login-sessions`);
 }
 
+export async function adminGetUserSummary(userId: string): Promise<UserSummary> {
+  return clientFetch<UserSummary>(`/admin/users/${userId}/summary`);
+}
+
 export async function adminRevokeUserAccess(
   userId: string,
   subsystemId: string,
@@ -304,6 +342,40 @@ export async function adminRevokeUserAccess(
 ): Promise<{ result: string; closed_sessions: number }> {
   return mutateWithStepup(
     `/admin/users/${userId}/access/${subsystemId}`,
+    { method: "DELETE" },
+    onVerifying
+  );
+}
+
+export async function adminForceLogoutUser(
+  userId: string,
+  onVerifying?: (active: boolean) => void
+): Promise<{ result: string; closed_sessions: number; revoked_jwt: number }> {
+  return mutateWithStepup(
+    `/admin/users/${userId}/force-logout`,
+    { method: "POST", body: JSON.stringify({}) },
+    onVerifying
+  );
+}
+
+export async function adminGrantUserAccess(
+  userId: string,
+  subsystemId: string,
+  onVerifying?: (active: boolean) => void
+): Promise<{ result: string; subsystem_name: string }> {
+  return mutateWithStepup(
+    `/admin/users/${userId}/access/${subsystemId}`,
+    { method: "POST", body: JSON.stringify({}) },
+    onVerifying
+  );
+}
+
+export async function adminDeleteUser(
+  userId: string,
+  onVerifying?: (active: boolean) => void
+): Promise<unknown> {
+  return mutateWithStepup(
+    `/admin/users/${userId}`,
     { method: "DELETE" },
     onVerifying
   );
