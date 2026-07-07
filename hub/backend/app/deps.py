@@ -81,8 +81,23 @@ def get_current_user(
     if not user:
         raise HTTPException(status_code=404, detail="ไม่พบผู้ใช้")
     if user.status != "active":
-        raise HTTPException(status_code=403, detail=f"บัญชีถูก {user.status}")
+        raise HTTPException(status_code=403, detail=_status_block_message(user.status))
     return user
+
+
+# ข้อความบล็อกตาม status — บาง status เป็น passive (ถูกกระทำ: suspended/deleted)
+# บาง status เป็น active voice (จบ/ลาออกเอง: graduated/resigned) ข้อความเลย
+# ต้องต่างกันให้อ่านเป็นธรรมชาติ
+_STATUS_BLOCK_MESSAGES = {
+    "suspended": "บัญชีถูกระงับการใช้งาน",
+    "deleted": "บัญชีถูกลบออกจากระบบ",
+    "graduated": "บัญชีนี้จบการศึกษาแล้ว ไม่สามารถ login ได้",
+    "resigned": "บัญชีนี้ลาออกจากระบบแล้ว ไม่สามารถ login ได้",
+}
+
+
+def _status_block_message(status_value: str) -> str:
+    return _STATUS_BLOCK_MESSAGES.get(status_value, f"บัญชีถูก {status_value}")
 
 
 def require_hub_admin(user: User = Depends(get_current_user)) -> User:
