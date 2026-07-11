@@ -46,7 +46,11 @@ from app.services.change_request_service import close_subsystem_login_sessions
 from app.services.auth_policy import get_auth_policy, set_auth_policy
 from app.services.identity_challenge import create_challenge
 from app.services.jwt_service import revoke_jti
-from app.services.webhook_dispatcher import send_access_revoked, send_access_updated
+from app.services.webhook_dispatcher import (
+    send_access_restored,
+    send_access_revoked,
+    send_access_updated,
+)
 from app.services.subsystem_health import (
     get_status as get_health_status,
     clear_status as clear_health_status,
@@ -406,7 +410,10 @@ def user_access_list(
                 "role": (entry.role_in_sub if entry and entry.role_in_sub else None)
                 or target.user_type,
                 "scopes": list(s.scope or []),
-                "can_revoke": source == "explicit" and entry is not None,
+                # ถอนได้ทุกนโยบาย — explicit ถอน allow entry, policy ใช้ deny-list
+                # (revoke_user_access upsert deny ทับ policy). โชว์ปุ่มถอนได้เสมอ
+                "can_revoke": True,
+                "revoke_method": "allow_entry" if source == "explicit" else "deny_list",
                 "granted_at": entry.granted_at.isoformat()
                 if entry and entry.granted_at
                 else None,
@@ -450,10 +457,12 @@ def grant_user_access(
     admin: User = Depends(require_hub_admin),
     db: Session = Depends(get_db),
 ):
-    """Admin เพิ่มสิทธิ์ user เข้า subsystem (explicit whitelist allow).
+    """Admin เพิ่ม/คืนสิทธิ์ user เข้า subsystem (explicit allow / ล้าง deny).
 
     upsert access_list (UniqueConstraint subsystem_id+user_id): ถ้ามี entry เดิม
-    (revoked/deny) → set allow + revoked_at=NULL; ถ้าไม่มี → สร้างใหม่.
+    (revoked/deny) → set allow + revoked_at=NULL; ถ้าไม่มี → สร้างใหม่. เป็น
+    inverse ของ revoke: ถ้าเดิมเป็น deny (จากการถอนสิทธิ์ policy) → flip กลับเป็น
+    allow = คืนสิทธิ์ + ยิง access_restored ให้ subsystem ยกเลิก re-auth marker.
     """
     target = db.query(User).filter(User.id == user_id).first()
     if not target:
@@ -470,6 +479,7 @@ def grant_user_access(
         )
         .first()
     )
+    was_deny = bool(entry and entry.entry_type == "deny" and entry.revoked_at is None)
     if entry:
         entry.entry_type = "allow"
         entry.revoked_at = None
@@ -491,9 +501,22 @@ def grant_user_access(
         target_type="user",
         target_id=target.id,
         ip=get_client_ip(request),
-        metadata={"email": target.email, "subsystem_id": subsystem_id},
+        metadata={
+            "email": target.email,
+            "subsystem_id": subsystem_id,
+            "restored_from_deny": was_deny,
+        },
     )
     db.commit()
+
+    # เดิมเป็น deny (ถอนสิทธิ์ policy ไว้) → คืนสิทธิ์: ยกเลิก re-auth marker ฝั่ง
+    # subsystem เพื่อให้ session เดิมกลับมาใช้ได้ (fail-safe: ยิงไม่ได้ = ข้าม)
+    if was_deny:
+        try:
+            send_access_restored(sub, {"hub_user_id": str(target.id)})
+        except Exception as e:
+            log.warning("webhook send_access_restored failed: %r", e)
+
     return {"result": "granted", "subsystem_name": sub.name}
 
 
@@ -508,29 +531,49 @@ def revoke_user_access(
     admin: User = Depends(require_hub_admin),
     db: Session = Depends(get_db),
 ):
-    """Admin ถอนสิทธิ์ user จาก subsystem หนึ่ง (soft delete + kick sessions).
+    """Admin ถอนสิทธิ์ user จาก subsystem หนึ่ง — ได้ทุกนโยบาย (deny-list).
 
-    - set access_list.revoked_at = NOW() (soft delete — เก็บ history)
+    ใช้ **deny entry** (entry_type='deny') ที่ evaluate_access_policy เช็คก่อน
+    ทุก policy → ถอนสิทธิ์รายคนได้แม้ subsystem จะเป็น policy all/role/attribute
+    (ไม่ใช่แค่ explicit whitelist). deny ยัง cut ออกจาก roster sync ด้วย
+    (list_allowed_users). ต่างจาก grant ที่ flip กลับเป็น allow = คืนสิทธิ์.
+
+    - upsert access_list row → entry_type='deny', revoked_at=NULL (deny active)
     - ปิด active login_sessions ของ user+subsystem นี้ (logout_at = NOW) → เตะออก
+    - ยิง webhook access_revoked → subsystem ตัด local session ทันที (ถาวร)
     """
     target = db.query(User).filter(User.id == user_id).first()
     if not target:
         raise HTTPException(status_code=404, detail="ไม่พบผู้ใช้")
+    sub = db.query(Subsystem).filter(Subsystem.id == subsystem_id).first()
+    if not sub:
+        raise HTTPException(status_code=404, detail="ไม่พบระบบย่อย")
 
+    now = datetime.utcnow()
+    # upsert deny entry (UniqueConstraint subsystem_id+user_id → 1 row ต่อคู่):
+    # flip allow→deny หรือสร้าง deny ใหม่สำหรับ policy-based (ไม่มี allow row เดิม)
     entry = (
         db.query(AccessList)
         .filter(
             AccessList.user_id == user_id,
             AccessList.subsystem_id == subsystem_id,
-            AccessList.revoked_at.is_(None),
         )
         .first()
     )
-    if not entry:
-        raise HTTPException(status_code=404, detail="ไม่พบสิทธิ์ที่ยัง active อยู่")
+    if entry:
+        entry.entry_type = "deny"
+        entry.revoked_at = None  # deny ต้อง active
+        entry.granted_by = admin.id
+        entry.granted_at = now
+    else:
+        entry = AccessList(
+            user_id=user_id,
+            subsystem_id=subsystem_id,
+            entry_type="deny",
+            granted_by=admin.id,
+        )
+        db.add(entry)
 
-    now = datetime.utcnow()
-    entry.revoked_at = now
     # เตะ active sessions ของ user นี้ในระบบย่อยนั้นออก
     closed = (
         db.query(LoginSession)
@@ -551,11 +594,34 @@ def revoke_user_access(
         metadata={
             "email": target.email,
             "subsystem_id": subsystem_id,
+            "policy": sub.access_policy or "explicit",
+            "method": "deny_list",
             "closed_sessions": closed,
         },
     )
     db.commit()
-    return {"result": "revoked", "closed_sessions": closed}
+
+    # ยิง webhook access_revoked (ถาวร) → subsystem ตัด local cookie ทันที
+    # (fail-safe: ยิงไม่สำเร็จ = log ไม่ raise; Hub block ตอน login ใหม่อยู่แล้ว)
+    webhook_delivered = False
+    try:
+        webhook_delivered = bool(
+            send_access_revoked(
+                sub,
+                {
+                    "hub_user_id": str(target.id),
+                    "revoked_by": str(admin.id),
+                    "reason": "admin_revoke_user_access",
+                },
+            )
+        )
+    except Exception as e:
+        log.warning("webhook send_access_revoked failed: %r", e)
+    return {
+        "result": "revoked",
+        "closed_sessions": closed,
+        "webhook_delivered": webhook_delivered,
+    }
 
 
 @router.get("/users/{user_id}/login-sessions")
@@ -690,8 +756,12 @@ def force_logout_user(
         .all()
     )
     revoked_jwt = 0
+    # subsystem ที่ user มี session ค้างอยู่ — ต้องยิง webhook ให้ตัด local session ด้วย
+    sub_ids = set()
     for s in sessions:
         s.logout_at = now
+        if s.subsystem_id is not None:
+            sub_ids.add(s.subsystem_id)
         if s.jti:
             exp_unix = int(
                 (
@@ -713,13 +783,57 @@ def force_logout_user(
             "email": target.email,
             "closed_sessions": len(sessions),
             "revoked_jwt": revoked_jwt,
+            "subsystems": [str(sid) for sid in sub_ids],
         },
     )
     db.commit()
+
+    # ── ยิง webhook access_updated ให้ทุก subsystem ที่ user login ค้างอยู่ ──
+    #    (fail-safe: ยิงไม่สำเร็จ = log ไม่ raise). ใช้ access_updated = "บังคับ
+    #    re-auth" (ไม่ใช่ access_revoked ที่แปลว่าถอนสิทธิ์ถาวร) — force-logout
+    #    คือเตะออกตอนนี้แต่ login ใหม่ได้. ถ้าไม่ยิง → subsystem cookie ยัง valid
+    #    จน JWT หมดอายุเอง (นี่คือบั๊กที่เจอ: Hub เห็น logout แต่ subsystem ใช้ต่อได้)
+    webhook_delivered = 0
+    for sid in sub_ids:
+        sub = db.query(Subsystem).filter(Subsystem.id == sid).first()
+        if not sub:
+            continue
+        ok = False
+        try:
+            ok = send_access_updated(
+                sub,
+                {
+                    "hub_user_id": str(target.id),
+                    "reason": "admin_force_logout",
+                    "revoked_by": str(admin.id),
+                },
+            )
+            if ok:
+                webhook_delivered += 1
+        except Exception:
+            pass  # webhook dispatcher logs already
+        log_action(
+            db,
+            actor_id=admin.id,
+            action="force_logout_webhook_sent",
+            target_type="subsystem",
+            target_id=sub.id,
+            ip=get_client_ip(request),
+            metadata={
+                "kicked_user_id": str(target.id),
+                "kicked_user_email": target.email,
+                "delivered": ok,
+                "reason": "admin_force_logout",
+            },
+        )
+    db.commit()
+
     return {
         "result": "logged_out",
         "closed_sessions": len(sessions),
         "revoked_jwt": revoked_jwt,
+        "subsystems_notified": len(sub_ids),
+        "webhook_delivered": webhook_delivered,
     }
 
 

@@ -54,9 +54,20 @@ function scopeCat(scope: string): string {
   return "other";
 }
 
+/**
+ * Backend ส่ง timestamp เป็น naive UTC (`datetime.isoformat()` ไม่มี `Z`/offset).
+ * `new Date("2026-07-11T03:30:00")` ถูกตีความเป็น "local time" → ที่ไทย (UTC+7)
+ * login ที่พึ่งเกิดจะเพี้ยนเป็น "7 ชม.ก่อน". เติม `Z` ถ้ายังไม่มี tz designator
+ * เพื่อบังคับให้ parse เป็น UTC ก่อนแปลงเป็นเวลาท้องถิ่นตอนแสดงผล.
+ */
+function parseUTC(iso: string): Date {
+  const hasTz = /[zZ]$|[+-]\d{2}:?\d{2}$/.test(iso);
+  return new Date(hasTz ? iso : iso + "Z");
+}
+
 function relTime(iso: string | null): string {
   if (!iso) return "—";
-  const d = new Date(iso);
+  const d = parseUTC(iso);
   const m = Math.floor((Date.now() - d.getTime()) / 60000);
   if (m < 1) return "เมื่อครู่";
   if (m < 60) return `${m} นาทีก่อน`;
@@ -197,7 +208,10 @@ export default function UserDetailPage({ params }: { params: { id: string } }) {
   };
 
   const revoke = (subId: string, name: string) =>
-    confirm(`ถอนสิทธิ์ "${name}"? session ที่เปิดอยู่จะถูกปิด`) &&
+    confirm(
+      `ถอนสิทธิ์ "${name}"?\nผู้ใช้จะเข้าระบบนี้ไม่ได้ (แม้เข้าได้ตามนโยบาย) ` +
+        `และ session ที่เปิดอยู่จะถูกปิด — คืนสิทธิ์ได้ภายหลังด้วยปุ่ม "เพิ่มสิทธิ์"`,
+    ) &&
     run("revoke:" + subId, async () => {
       const r = await adminRevokeUserAccess(id, subId, setVerifying);
       alert(`ถอนสิทธิ์แล้ว · ปิด ${r.closed_sessions} session`);
@@ -432,9 +446,12 @@ export default function UserDetailPage({ params }: { params: { id: string } }) {
                 {/* Subsystems & Access */}
                 <section className="bg-white rounded-xl border border-ink-200 shadow-sm">
                   <div className="px-5 py-4 border-b border-ink-100 flex items-center justify-between gap-3 flex-wrap">
-                    <h3 className="text-sm font-bold text-ink-700">
+                    <h3 className="text-sm font-bold text-ink-700 flex items-center gap-2">
                       สิทธิ์เข้าถึงระบบย่อย
-                      <span className="ml-2 text-ink-400 font-normal">({access?.active_count} ระบบ)</span>
+                      <span className="text-ink-400 font-normal">({access?.active_count} ระบบ)</span>
+                      <span className="text-ink-300 font-normal">·</span>
+                      <span className="text-ink-400 font-normal">สถานะบัญชี</span>
+                      <Badge tone={STATUS_TONE[u.status || ""] || "default"}>{u.status}</Badge>
                     </h3>
                     {access && access.grantable.length > 0 && (
                       <div className="flex items-center gap-2">
@@ -460,6 +477,12 @@ export default function UserDetailPage({ params }: { params: { id: string } }) {
                       </div>
                     )}
                   </div>
+                  {u.status !== "active" && (
+                    <div className="mx-5 mt-3 px-3 py-2 rounded-lg bg-amber-50 border border-amber-200 text-[12px] text-amber-800">
+                      บัญชีสถานะ <b>{u.status}</b> — ถูกบล็อกจากทุกระบบย่อยโดยอัตโนมัติ
+                      (นโยบายทุกแบบต้องการสถานะ <code>active</code>) จนกว่าจะเปลี่ยนกลับเป็น active
+                    </div>
+                  )}
                   <div className="divide-y divide-ink-100">
                     {subsystems.length === 0 ? (
                       <div className="text-sm text-ink-500 text-center py-8">ยังไม่มีสิทธิ์เข้าระบบย่อยใด</div>
