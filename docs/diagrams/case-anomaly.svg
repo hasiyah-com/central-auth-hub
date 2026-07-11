@@ -1,0 +1,63 @@
+<svg width="680" height="360" viewBox="0 0 680 360" role="img" xmlns="http://www.w3.org/2000/svg" font-family="system-ui, 'Segoe UI', 'Sarabun', sans-serif">
+<title>ตัวอย่างเคสผิดปกติ: ล็อกอินเสี่ยงสูง ระบบขอยืนยันเพิ่มหรือบล็อก</title>
+<desc>นักศึกษาล็อกอินตอนตี 3 จากต่างประเทศด้วยเครื่องใหม่ ได้คะแนนเสี่ยงสูง ระบบจึงไม่ออก JWT ทันที ขอยืนยันตัวตนเพิ่ม (Passkey/OTP) ถ้าผ่านจึงจองได้ ถ้าไม่ผ่านถูกบล็อก</desc>
+<defs>
+<marker id="a3" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto" markerUnits="strokeWidth">
+<path d="M0,0 L7,3 L0,6 Z" fill="#6b6b6b"/>
+</marker>
+</defs>
+<rect x="0" y="0" width="680" height="360" fill="#ffffff"/>
+<text x="340" y="26" text-anchor="middle" font-size="17" font-weight="700" fill="#1a1a1a">ตัวอย่างเคส “ผิดปกติ”: ล็อกอินเสี่ยงสูง</text>
+
+<g stroke="#6b6b6b" stroke-width="1.6">
+<line x1="94" y1="92" x2="145" y2="92" marker-end="url(#a3)"/>
+<line x1="205" y1="92" x2="256" y2="92" marker-end="url(#a3)"/>
+<line x1="316" y1="92" x2="367" y2="92" marker-end="url(#a3)"/>
+<line x1="427" y1="92" x2="478" y2="92" marker-end="url(#a3)"/>
+<line x1="538" y1="92" x2="589" y2="92" marker-end="url(#a3)"/>
+</g>
+
+<circle cx="64" cy="92" r="27" fill="#E6F1FB" stroke="#2f6feb" stroke-width="1.5"/>
+<text x="64" y="101" text-anchor="middle" font-size="26">🎓</text>
+<text x="64" y="132" text-anchor="middle" font-size="11.5" font-weight="600" fill="#1a1a1a">นักศึกษา</text>
+<text x="64" y="147" text-anchor="middle" font-size="10" fill="#555555">ตี 3 · ต่างประเทศ</text>
+
+<circle cx="175" cy="92" r="27" fill="#E6F1FB" stroke="#2f6feb" stroke-width="1.5"/>
+<text x="175" y="101" text-anchor="middle" font-size="24">🏠</text>
+<text x="175" y="132" text-anchor="middle" font-size="11.5" font-weight="600" fill="#1a1a1a">ระบบหอพัก</text>
+<text x="175" y="147" text-anchor="middle" font-size="10" fill="#555555">ส่งต่อไป Hub</text>
+
+<circle cx="286" cy="92" r="27" fill="#E6F1FB" stroke="#2f6feb" stroke-width="1.5"/>
+<text x="286" y="101" text-anchor="middle" font-size="24">🔑</text>
+<text x="286" y="132" text-anchor="middle" font-size="11.5" font-weight="600" fill="#1a1a1a">Hub + Google</text>
+<text x="286" y="147" text-anchor="middle" font-size="10" fill="#555555">ล็อกอิน (เครื่องใหม่)</text>
+
+<circle cx="397" cy="92" r="27" fill="#E6F1FB" stroke="#2f6feb" stroke-width="1.5"/>
+<text x="397" y="101" text-anchor="middle" font-size="24">🧠</text>
+<text x="397" y="132" text-anchor="middle" font-size="11.5" font-weight="600" fill="#1a1a1a">ประเมินเสี่ยง</text>
+<text x="397" y="147" text-anchor="middle" font-size="10" fill="#555555">คะแนนสูง (ผิดปกติ)</text>
+
+<circle cx="508" cy="92" r="27" fill="#FBF0DA" stroke="#C77F12" stroke-width="1.5"/>
+<text x="508" y="101" text-anchor="middle" font-size="24">⚠️</text>
+<text x="508" y="132" text-anchor="middle" font-size="11.5" font-weight="600" fill="#1a1a1a">เสี่ยงสูง</text>
+<text x="508" y="147" text-anchor="middle" font-size="10" fill="#555555">ขอ MFA (Passkey/OTP)</text>
+
+<circle cx="619" cy="92" r="27" fill="#EEF0F2" stroke="#8a8f98" stroke-width="1.5"/>
+<text x="619" y="101" text-anchor="middle" font-size="24">🔐</text>
+<text x="619" y="132" text-anchor="middle" font-size="11.5" font-weight="600" fill="#1a1a1a">ยืนยันตัวตน</text>
+<text x="619" y="147" text-anchor="middle" font-size="10" fill="#555555">ผ่าน=จอง · ไม่ผ่าน=บล็อก</text>
+
+<path d="M397,119 L397,205 L295,205 L295,232" fill="none" stroke="#6b6b6b" stroke-width="1.6" stroke-dasharray="4 3" marker-end="url(#a3)"/>
+<text x="408" y="180" font-size="10" fill="#555555">ถ้าสุดขีด</text>
+<rect x="120" y="234" width="350" height="58" rx="9" fill="#FBE9E7" stroke="#d14b3d" stroke-width="1.5"/>
+<text x="295" y="258" text-anchor="middle" font-size="12" font-weight="600" fill="#7a241b">⛔ ถ้าเสี่ยงสุดขีด → บล็อกทันที</text>
+<text x="295" y="277" text-anchor="middle" font-size="10.5" fill="#555555">ไม่เปิดให้ยืนยัน (เกิน hard threshold)</text>
+
+<path d="M508,119 L508,205 L560,205 L560,232" fill="none" stroke="#6b6b6b" stroke-width="1.6" stroke-dasharray="4 3" marker-end="url(#a3)"/>
+<text x="518" y="180" font-size="10" fill="#555555">ทุกครั้ง</text>
+<rect x="490" y="234" width="180" height="58" rx="9" fill="#EEF0F2" stroke="#8a8f98" stroke-width="1.5"/>
+<text x="580" y="258" text-anchor="middle" font-size="12" font-weight="600" fill="#1a1a1a">📊 บันทึก + แสดงผล</text>
+<text x="580" y="277" text-anchor="middle" font-size="10.5" fill="#555555">Audit log · Dashboard</text>
+
+<text x="340" y="324" text-anchor="middle" font-size="11" fill="#555555">เคสนี้ = login ผิดปกติ (ตี 3 · ต่างประเทศ · เครื่องใหม่) → คะแนนสูง → ต้องยืนยันเพิ่ม หรือถูกบล็อก</text>
+</svg>

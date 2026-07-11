@@ -1,0 +1,86 @@
+%%{init: {'theme':'base', 'themeVariables': {'primaryColor':'#eef2ff','primaryTextColor':'#1e293b','primaryBorderColor':'#6366f1','lineColor':'#475569','fontSize':'14px'}}}%%
+flowchart LR
+    %% ============ External Identity Providers ============
+    subgraph IDP["🔐 ผู้ให้บริการยืนยันตัวตน (IdP)"]
+        GOOGLE[("Google<br/>OAuth 2.0 / OIDC")]
+        LINE[("LINE Login<br/>OIDC")]
+        PASSKEY(["Passkey<br/>WebAuthn / FIDO2"])
+    end
+
+    %% ============ Clients ============
+    subgraph CLIENT["💻 ผู้ใช้งาน"]
+        STUDENT["นักศึกษา<br/>(student)"]
+        STAFF["อาจารย์ / เจ้าหน้าที่<br/>(teacher / staff)"]
+        ADMIN["ผู้ดูแลระบบ<br/>(admin)"]
+    end
+
+    %% ============ Central Auth Hub ============
+    subgraph HUB["🏛️ Central Auth Hub (port 8000)"]
+        direction TB
+        API["FastAPI Backend<br/>OAuth + JWT + Audit"]
+        FE["Admin Frontend<br/>Next.js 14 (port 3000)"]
+        RBA["4-Layer RBA<br/>Rule + Behavior + IForest + Aggregator"]
+        JWKS["JWKS Endpoint<br/>/.well-known/jwks.json"]
+    end
+
+    %% ============ ML Service ============
+    subgraph MLBOX["🤖 ML Verifier (port 9000)"]
+        ML["Isolation Forest<br/>+ SHAP TreeExplainer"]
+    end
+
+    %% ============ Subsystems ============
+    subgraph SUBA["🏠 ระบบหอพัก (port 8001)"]
+        DORM["FastAPI Client<br/>OAuth + Session"]
+        DORMDB[("postgres-dorm<br/>rooms/reservations")]
+    end
+
+    subgraph SUBB["📚 ระบบห้องสมุด (port 8002)"]
+        LIB["FastAPI Client<br/>OAuth + Session"]
+        LIBDB[("postgres-library<br/>books/borrowings")]
+    end
+
+    %% ============ Data Layer ============
+    subgraph DATA["💾 ชั้นจัดเก็บข้อมูล (Hub)"]
+        PG[("PostgreSQL 15<br/>7 ตาราง: users / subsystems /<br/>access_list / login_sessions /<br/>audit_logs / request_logs /<br/>secret_retrieval_tokens")]
+        REDIS[("Redis 7<br/>session / auth code /<br/>jti blacklist")]
+    end
+
+    %% ============ Connections ============
+    STUDENT --> SUBA
+    STUDENT --> SUBB
+    STAFF --> FE
+    ADMIN --> FE
+
+    SUBA -.->|OAuth Redirect| API
+    SUBB -.->|OAuth Redirect| API
+    FE -->|REST + JWT| API
+
+    API -->|OIDC| GOOGLE
+    API -->|OIDC| LINE
+    API -->|WebAuthn| PASSKEY
+
+    API --> RBA
+    RBA -->|POST /v1/score| ML
+    RBA -.->|fail-safe| ML
+
+    API <--> PG
+    API <--> REDIS
+
+    DORM <--> DORMDB
+    LIB <--> LIBDB
+
+    SUBA -->|JWT verify| JWKS
+    SUBB -->|JWT verify| JWKS
+
+    %% Style
+    classDef hub fill:#eef2ff,stroke:#6366f1,stroke-width:2px
+    classDef sub fill:#ecfdf5,stroke:#10b981,stroke-width:2px
+    classDef ml fill:#fef3c7,stroke:#f59e0b,stroke-width:2px
+    classDef db fill:#fee2e2,stroke:#ef4444,stroke-width:2px
+    classDef idp fill:#f3e8ff,stroke:#a855f7,stroke-width:2px
+
+    class API,FE,RBA,JWKS hub
+    class DORM,LIB sub
+    class ML ml
+    class PG,REDIS,DORMDB,LIBDB db
+    class GOOGLE,LINE,PASSKEY idp

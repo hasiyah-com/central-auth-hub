@@ -1,0 +1,486 @@
+เดือนที่ 1 (Week 1–4) : วางโครง 2 เซิร์ฟเวอร์ + Login flow ให้ “วิ่งจริง”
+Week 1
+
+Day 1: สรุปขอบเขตระบบ/กำหนดโดเมน IAM + SubA + ผังพอร์ต
+
+Day 2: ตั้งค่า VM 2 เครื่อง + SSH + update OS
+
+Day 3: เปิด firewall (22/80/443) + ติดตั้ง Nginx ทั้ง 2 เครื่อง
+
+Day 4: ตั้ง reverse proxy (http) ให้ IAM/SubA เข้าจากภายนอกได้
+
+Day 5: สร้าง repo/โฟลเดอร์โปรเจค + โครง FastAPI IAM/SubA ขั้นต่ำ
+
+Day 6: ทดสอบ health endpoints ผ่านเว็บภายนอก + แก้ปัญหา network
+
+Day 7: สรุปผล Week1 + จดบันทึก config/ปัญหาที่เจอ
+
+Week 2
+
+Day 8: ติดตั้ง PostgreSQL + Redis บน IAM server
+
+Day 9: สร้าง schema ขั้นต่ำใน IAM (users/linked_identities/subsystems)
+
+Day 10: ทำหน้า/endpoint IAM “เริ่ม login” (พาผู้ใช้ไป Google)
+
+Day 11: ทำ callback กลับจาก Google (รับข้อมูล email)
+
+Day 12: ทำ mapping email → internal_user_id (แบบมีในทะเบียนก่อน)
+
+Day 13: ทดสอบ flow: SubA → IAM → Google → IAM → กลับ SubA (ยังไม่ออก token)
+
+Day 14: สรุป + เขียน diagram การไหลข้อมูลเวอร์ชันแรก
+
+Week 3
+
+Day 15: ทำ “สิทธิ์ต่อระบบย่อย” ใน IAM (subsystem_permissions)
+
+Day 16: ทำ policy “ระบบย่อยเห็นข้อมูลอะไรได้” (attribute_policy)
+
+Day 17: ทำ one-time code (สร้าง/หมดอายุ/ใช้ครั้งเดียว)
+
+Day 18: ทำ endpoint exchange code → token (ยังไม่ต้อง RS256)
+
+Day 19: ทำ SubA callback: รับ code → แลกกับ IAM → ได้ข้อมูลกลับมา
+
+Day 20: ทดสอบเคส: มีสิทธิ์เข้า A / ไม่มีสิทธิ์เข้า A
+
+Day 21: สรุป + ปรับ flow ให้เป็นทางเดียว (ไม่หลง)
+
+Week 4
+
+Day 22: สร้าง RSA keypair และวางแนว RS256
+
+Day 23: ทำออก token RS256 ใน IAM
+
+Day 24: ทำ JWKS endpoint (ให้ระบบย่อยดึง public key)
+
+Day 25: ทำ SubA verify token (เช็คว่ามาจาก IAM จริง)
+
+Day 26: ทำ session ของ SubA (cookie/session store)
+
+Day 27: ทดสอบ end-to-end: login แล้วเข้า /home ได้
+
+Day 28: สรุปเดือน 1 + checklist ความพร้อมเดือน 2
+
+เดือนที่ 2 (Week 5–8) : “จัดการคนและสิทธิ์” เป็นแกนหลัก + แนวทาง 2 (สร้าง user ขั้นต่ำในระบบย่อย)
+Week 5
+
+Day 29: ออกแบบตาราง local_users ของ SubA (ขั้นต่ำ)
+
+Day 30: ทำ logic SubA: ถ้าไม่มี local_user → สร้างอัตโนมัติ
+
+Day 31: เพิ่ม last_login_at + ทดสอบคนใหม่เข้าครั้งแรก
+
+Day 32: ทำ admin endpoint ใน IAM: เพิ่ม user/ผูก email
+
+Day 33: ทำ admin endpoint: ให้สิทธิ์เข้า SubA (role)
+
+Day 34: เขียนเคสตัวอย่างมหาลัย (นักศึกษา/อาจารย์/จนท.)
+
+Day 35: สรุป + ปรับเอกสาร “ระบบไม่ใช่ login แต่เป็นสิทธิ์องค์กร”
+
+Week 6
+
+Day 36: ออกแบบ roles/permissions สำหรับ SubA (เช่น student/staff/admin)
+
+Day 37: ทำ permission check ใน SubA ตาม role จาก token
+
+Day 38: เพิ่ม audit log ฝั่ง IAM: login/exchange/deny
+
+Day 39: เพิ่ม audit log ฝั่ง SubA: create session/create local_user
+
+Day 40: ทำหน้าจอ/endpoint ดู log ขั้นต่ำ (filter ตามวัน)
+
+Day 41: ทดสอบเคส: นักศึกษากับเจ้าหน้าที่เห็นสิทธิ์ต่างกัน
+
+Day 42: สรุป + เก็บหลักฐานภาพหน้าจอไว้ใส่รายงาน
+
+Week 7
+
+Day 43: ทำ attribute release policy จริง (A เห็นเฉพาะ name/id)
+
+Day 44: เพิ่ม Subsystem B mock (ห้องสมุด) ให้เห็น policy ต่างกัน
+
+Day 45: ทำ B callback + session แบบเดียวกับ A
+
+Day 46: ทดสอบว่า B ได้ข้อมูลมากกว่า/ต่างจาก A ตามนโยบาย
+
+Day 47: เพิ่ม Subsystem C mock (เกรด) อ่อนไหวสุด
+
+Day 48: ทดสอบ C ได้ข้อมูลน้อยสุดแต่สิทธิ์เข้มสุด
+
+Day 49: สรุป + วางตาราง “ระบบไหนเห็นอะไร” ใส่เล่มได้ทันที
+
+Week 8
+
+Day 50: ทำระบบจัดการ subsystem registry (เพิ่มระบบย่อยใหม่ได้)
+
+Day 51: ทำหน้า/endpoint admin: ตั้งค่า redirect_uri ต่อระบบย่อย
+
+Day 52: เพิ่มการป้องกัน redirect มั่ว (allowlist)
+
+Day 53: ทำ deny page/ข้อความ error มาตรฐาน
+
+Day 54: ทำเอกสาร API สำหรับระบบย่อย (สั้นๆ)
+
+Day 55: ทดสอบ regression ทั้ง A/B/C
+
+Day 56: สรุปเดือน 2 + เตรียม hardening เดือน 3
+
+เดือนที่ 3 (Week 9–12) : ทำให้ token/exchange “แน่น” + ความปลอดภัยระดับระบบจริง
+Week 9
+
+Day 57: เพิ่ม subsystem secret ฝั่ง IAM (เก็บแบบปลอดภัย)
+
+Day 58: ทำลายเซ็นคำขอแลก code (กันปลอมระบบย่อย)
+
+Day 59: เพิ่ม timestamp + กัน replay (ถ้าช้าเกินให้ปฏิเสธ)
+
+Day 60: เพิ่ม rate limit ที่ exchange
+
+Day 61: ทดสอบโจมตีง่ายๆ: ส่ง code ซ้ำ/หมดอายุ/เปลี่ยน subsystem
+
+Day 62: สรุปผลทดสอบ + เก็บ log หลักฐาน
+
+Day 63: ทำ checklist security baseline
+
+Week 10
+
+Day 64: ทำ key rotation แบบง่าย (kid + เก็บ key หลายชุด)
+
+Day 65: ปรับ JWKS ให้ส่งหลาย key ได้
+
+Day 66: ปรับ SubA/B/C ให้เลือก key ตาม kid
+
+Day 67: ทดสอบหมุน key แล้วระบบย่อยยัง verify ผ่าน
+
+Day 68: ปรับ token อายุสั้น + ตั้งค่า clock skew
+
+Day 69: สรุป + อธิบายแนวคิดในบทวิจัย
+
+Day 70: วัน buffer/แก้บั๊ก
+
+Week 11
+
+Day 71: เพิ่ม event logs: policy change (admin action)
+
+Day 72: ทำ role/permission change history
+
+Day 73: ทำ export log เป็นไฟล์ (csv) ขั้นต่ำ
+
+Day 74: เพิ่มการแยกข้อมูล audit กับข้อมูลผู้ใช้
+
+Day 75: ทดสอบกรณี “ถอนสิทธิ์แล้ว” ต้องเข้าไม่ได้
+
+Day 76: ทำสคริปต์ทดสอบอัตโนมัติ (ขั้นต่ำ)
+
+Day 77: สรุปสัปดาห์
+
+Week 12
+
+Day 78: ปรับ UX flow ให้ลื่น (login→กลับไปหน้าเดิม)
+
+Day 79: เพิ่ม timeout/session expiry ฝั่งระบบย่อย
+
+Day 80: เพิ่ม logout ทุกระบบ
+
+Day 81: ปรับ error handling มาตรฐาน
+
+Day 82: เก็บภาพ/หลักฐานการทดสอบไว้ทำรายงาน
+
+Day 83: สรุปเดือน 3
+
+Day 84: วัน buffer
+
+เดือนที่ 4 (Week 13–16) : ทำ “ระบบจัดการ” ให้เป็นขององค์กร (admin + policy management)
+Week 13
+
+Day 85: ออกแบบหน้าจอ/ฟีเจอร์ admin ที่ต้องมี
+
+Day 86: ทำ admin login (ใช้สิทธิ์เฉพาะ)
+
+Day 87: ทำหน้าเพิ่ม/แก้ไขผู้ใช้ในทะเบียนกลาง
+
+Day 88: ทำหน้าให้สิทธิ์เข้า A/B/C
+
+Day 89: ทำหน้าแก้ policy ข้อมูล (ระบบไหนเห็นอะไร)
+
+Day 90: ทดสอบ admin flow
+
+Day 91: สรุป
+
+Week 14
+
+Day 92: ทำหน้าดู audit logs (ค้นหา/กรอง)
+
+Day 93: เพิ่ม dashboard ตัวเลขง่ายๆ (จำนวน login/deny)
+
+Day 94: เพิ่มดูเหตุผล deny (ไม่มีสิทธิ์/หมดอายุ ฯลฯ)
+
+Day 95: ทำรายงานรายวัน/รายสัปดาห์ export
+
+Day 96: ทดสอบใช้งานจริงด้วยบัญชีตัวอย่าง 5 คน
+
+Day 97: เก็บ feedback และปรับ
+
+Day 98: สรุป
+
+Week 15
+
+Day 99: ทำโมดูล “ระบบย่อยใหม่” เพิ่มได้เร็ว (template)
+
+Day 100: ทดลองเพิ่ม Subsystem D mock (เช่น จองห้อง)
+
+Day 101: ตั้ง policy ของ D + ทดสอบ login
+
+Day 102: ทำคู่มือ “เพิ่มระบบย่อย” 1 หน้า
+
+Day 103: ทำคู่มือ “เพิ่มคนใหม่” 1 หน้า
+
+Day 104: สรุป + clean up code
+
+Day 105: วัน buffer
+
+Week 16
+
+Day 106: เพิ่มการแบ่งประเภทผู้ใช้ (student/teacher/staff)
+
+Day 107: เพิ่มเงื่อนไขสิทธิ์พื้นฐานตามประเภท
+
+Day 108: ทดสอบเคสมหาลัยแบบเต็ม
+
+Day 109: สรุป “ต่างจากแค่ใช้ Google login ยังไง”
+
+Day 110: เตรียม section บทที่ 2–3
+
+Day 111: วันเอกสาร/ภาพประกอบ
+
+Day 112: สรุปเดือน 4
+
+เดือนที่ 5 (Week 17–20) : ประเมินผล/ทดสอบสถานการณ์ + ความเสถียร
+Week 17
+
+Day 113: กำหนด scenario test 5–8 เคส
+
+Day 114: ทำสคริปต์ทดสอบเคสปกติ
+
+Day 115: ทำเคสไม่มีสิทธิ์
+
+Day 116: ทำเคส code หมดอายุ/ใช้ซ้ำ
+
+Day 117: ทำเคสระบบย่อยปลอมตัวแลก token
+
+Day 118: สรุปผลทดสอบ
+
+Day 119: วัน buffer
+
+Week 18
+
+Day 120: วัด response time ของ IAM/SubA
+
+Day 121: ปรับปรุง performance จุดคอขวด
+
+Day 122: วัดเวลา login end-to-end
+
+Day 123: ทำตารางสรุปผลทดสอบ
+
+Day 124: ทำกราฟ/รูปประกอบ
+
+Day 125: เก็บผลซ้ำ 2 รอบเพื่อความน่าเชื่อถือ
+
+Day 126: สรุป
+
+Week 19
+
+Day 127: ทำการทดสอบโหลดเบาๆ (เช่น 20–50 req)
+
+Day 128: ปรับ config Nginx/uvicorn ตามผล
+
+Day 129: ทดสอบความทนต่อ error (restart service)
+
+Day 130: ทำ backup/restore DB ขั้นต่ำ
+
+Day 131: สรุป security checklist final
+
+Day 132: วันเอกสาร
+
+Day 133: สรุป
+
+Week 20
+
+Day 134: สรุปผลประเมินทั้งหมด (เป็นภาษางานวิจัย)
+
+Day 135: เขียน “ข้อจำกัด” ของต้นแบบ
+
+Day 136: เขียน “งานต่อยอด” (future work)
+
+Day 137: เก็บภาพหน้าจอระบบ admin/log
+
+Day 138: เตรียม demo script
+
+Day 139: ซ้อมเดโมรอบแรก
+
+Day 140: สรุปเดือน 5
+
+เดือนที่ 6 (Week 21–24) : (ตัวเลือก) ทำ ML ไปอยู่ฝั่ง “การกำกับดูแล” ไม่ใช่ล็อกอิน
+Week 21
+
+Day 141: เลือกโจทย์ ML: ตรวจพฤติกรรมผิดปกติจาก log
+
+Day 142: ออกแบบข้อมูล log ที่ใช้วิเคราะห์
+
+Day 143: ทำ export log เป็น dataset
+
+Day 144: ทำ baseline rule ก่อน (ไม่ใช้ ML)
+
+Day 145: เทียบ baseline กับ ML (แนวคิด)
+
+Day 146: สรุปผลเบื้องต้น
+
+Day 147: วัน buffer
+
+Week 22
+
+Day 148: ทำโมเดลตรวจ outlier แบบง่าย (unsupervised)
+
+Day 149: ทำคะแนนความผิดปกติ + เกณฑ์แจ้งเตือน
+
+Day 150: ทำหน้าแสดง “เหตุการณ์ผิดปกติ”
+
+Day 151: ทดสอบเคสผิดปกติจำลอง
+
+Day 152: สรุปผล + ทำกราฟ
+
+Day 153: เขียนอธิบายว่า ML คือ governance analytics
+
+Day 154: สรุป
+
+Week 23
+
+Day 155: ทำเคส “แนะนำการลดสิทธิ์” จากข้อมูล (แนวคิด)
+
+Day 156: ทำรายงานสิทธิ์กว้างเกิน (policy suggestion)
+
+Day 157: ทดสอบกับบัญชีตัวอย่างหลายบทบาท
+
+Day 158: ทำสรุปผลเชิงตัวเลขง่ายๆ
+
+Day 159: เก็บรูป/ตาราง
+
+Day 160: วันเอกสาร
+
+Day 161: สรุป
+
+Week 24
+
+Day 162: รวมผล ML เข้าเล่ม (ถ้าทำ)
+
+Day 163: ถ้าไม่ทำ ML ให้ใช้สัปดาห์นี้เพิ่มความแข็งแรงด้าน governance
+
+Day 164: ปรับปรุง UI/admin + logs
+
+Day 165: ปรับปรุงเอกสาร API
+
+Day 166: ซ้อมเดโมรอบสอง
+
+Day 167: สรุปเดือน 6
+
+Day 168: วัน buffer
+
+เดือนที่ 7 (Week 25–30) : รวมงานเป็น “พร้อมส่ง/พร้อมสอบ”
+Week 25
+
+Day 169: ตรวจ checklist ฟีเจอร์ทั้งหมด
+
+Day 170: เก็บ bug list และจัดลำดับแก้
+
+Day 171: แก้บั๊กกลุ่ม login/exchange/session
+
+Day 172: แก้บั๊กกลุ่ม admin/policy
+
+Day 173: แก้บั๊กกลุ่ม logs/export
+
+Day 174: ทดสอบรวม end-to-end
+
+Day 175: สรุป
+
+Week 26
+
+Day 176: จัดทำ diagram สถาปัตยกรรม (ภาพเดียวจบ)
+
+Day 177: จัดทำ data flow diagram (การไหลข้อมูล)
+
+Day 178: จัดทำ sequence diagram เคสหลัก 2–3 เคส
+
+Day 179: เขียน methodology (บทที่ 3) ให้ครบ
+
+Day 180: เขียน evaluation (บทที่ 4/ผลทดลอง)
+
+Day 181: วันเอกสาร
+
+Day 182: สรุป
+
+Week 27
+
+Day 183: เขียนบทนำ + problem statement + objective
+
+Day 184: เขียน related work (RBAC/ABAC/ZTA) เชื่อมกับงาน
+
+Day 185: เขียน contribution “เน้น governance ไม่ใช่ login”
+
+Day 186: ตรวจความสอดคล้องทั้งเล่ม
+
+Day 187: ตรวจรูป/ตาราง/การอ้างอิง
+
+Day 188: วันแก้คำผิด/จัดรูปแบบ
+
+Day 189: สรุป
+
+Week 28
+
+Day 190: เตรียมสไลด์นำเสนอ (โครงเรื่อง)
+
+Day 191: ทำสไลด์สถาปัตย์ + flow + demo
+
+Day 192: ทำสไลด์ผลทดลอง + ตารางเปรียบเทียบระบบเดิม
+
+Day 193: ทำสไลด์สรุป + future work
+
+Day 194: ซ้อมพูดรอบ 1
+
+Day 195: ซ้อมพูดรอบ 2
+
+Day 196: สรุป
+
+Week 29
+
+Day 197: เดโมแบบจำลองเต็ม (นักศึกษา/อาจารย์/จนท.)
+
+Day 198: ทดสอบเคสผิดพลาด (deny, expired, no permission)
+
+Day 199: ตรวจ log ว่าตามที่อธิบายในเล่มไหม
+
+Day 200: ปรับเดโมให้ลื่น
+
+Day 201: ล็อกเวอร์ชันโค้ด (tag/release)
+
+Day 202: สำรองข้อมูล/เอกสาร
+
+Day 203: สรุป
+
+Week 30
+
+Day 204: ตรวจเล่มรอบสุดท้าย
+
+Day 205: ตรวจอ้างอิง/บรรณานุกรม
+
+Day 206: ตรวจรูป/เลขหน้า/สารบัญ
+
+Day 207: ซ้อมนำเสนอรอบสุดท้าย
+
+Day 208: เตรียมไฟล์ส่งทั้งหมด (pdf + code + คู่มือ)
+
+Day 209: ส่ง/ซ้อมตอบคำถาม
+
+Day 210: ปิดโปรเจค + สรุปบทเรียน

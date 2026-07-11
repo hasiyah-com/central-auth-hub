@@ -656,7 +656,7 @@ docker compose exec ml-service python -m scripts.train_model
 
 3. **`request.client.host` ใน Docker = `172.18.0.1`** — แก้แล้วผ่าน `get_client_ip()` helper ใน `deps.py` (อ่าน X-Forwarded-For ก่อน) + request_logger middleware ก็ใช้แล้ว
 
-4. **`geo_country` is currently NULL** — GeoIP lookup not implemented yet. Plans: MaxMind GeoIP2 in Week 7+.
+4. **`geo_country` มักเห็น NULL ใน dev/demo — เป็นเรื่องปกติ ไม่ใช่บั๊ก** — GeoIP (`services/geoip.py`, MaxMind GeoLite2) implement เสร็จแล้วและต่อกับทุก login flow (`auth.py`/`oauth.py`/`passkey.py`) แต่ `lookup_country()` คืน `None` เสมอสำหรับ private/loopback IP (RFC1918, `127.0.0.1`, Docker internal `172.18.x`, LAN `192.168.x`) เพราะ IP พวกนี้ไม่มี "ประเทศ" ทางภูมิศาสตร์ให้ resolve — ต้องเป็น public IP จริง (ผ่าน nginx ที่ตั้ง X-Forwarded-For ถูก) ถึงจะเห็นค่าประเทศจริง ต้องมีไฟล์ `hub/backend/data/GeoLite2-Country.mmdb` ด้วย (gitignored — โหลดเองจาก MaxMind free signup)
 
 5. **ML in Shadow Mode** — anomaly_score is logged but doesn't block. Decision will be `would_block` / `would_mfa` instead of `block` / `mfa`. To enforce, set `ML_SHADOW_MODE=false` in `.env`.
 

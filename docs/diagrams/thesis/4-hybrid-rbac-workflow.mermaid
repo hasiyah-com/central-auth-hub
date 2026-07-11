@@ -1,0 +1,73 @@
+%%{init: {'theme':'base', 'themeVariables': {'fontSize':'13px'}}}%%
+flowchart TB
+    START([👤 Authenticated User<br/>เพิ่งผ่าน OAuth/Passkey]) --> CTX
+
+    CTX["📦 Request Context<br/>user_id, client_id, IP, UA,<br/>timestamp, geo, history"]
+
+    CTX --> L1
+
+    %% ============ Layer 1: Static RBAC ============
+    subgraph LAYER1["🟦 Layer 1 — Static RBAC (Authorization)"]
+        direction TB
+        L1["ดึง user.user_type<br/>(student/teacher/staff/admin)"]
+        L1 --> R1{role อนุญาตให้<br/>เข้า resource นี้?}
+        R1 -->|❌ No| DENY1["403 Forbidden<br/>+ audit log"]
+        R1 -->|✅ Yes| L1B
+        L1B["ตรวจ access_list<br/>(whitelist ของ subsystem)"]
+        L1B --> R2{user อยู่ใน<br/>whitelist?}
+        R2 -->|❌ No| DENY2["403 Not whitelisted<br/>+ audit log"]
+        R2 -->|✅ Yes| PASS1[✅ ผ่าน RBAC]
+    end
+
+    PASS1 --> L2
+
+    %% ============ Layer 2: ML 4-Layer RBA ============
+    subgraph LAYER2["🟨 Layer 2 — Adaptive Risk-Based Access (4-Layer RBA)"]
+        direction TB
+        L2["รวบรวม 12 features<br/>จาก context + DB history"]
+        L2 --> RBA1 & RBA2 & RBA3
+
+        subgraph SUBRBA[" "]
+            direction LR
+            RBA1["① Rule Engine<br/>impossible travel, blacklist IP,<br/>brute force, off-hours"]
+            RBA2["② Behavior Profiling<br/>เปรียบเทียบกับ baseline<br/>ของผู้ใช้รายคน"]
+            RBA3["③ Isolation Forest<br/>(unsupervised anomaly)<br/>+ SHAP TreeExplainer"]
+        end
+
+        RBA1 --> AGG
+        RBA2 --> AGG
+        RBA3 --> AGG
+        AGG["④ Weighted Aggregator<br/>score = Σ wᵢ · scoreᵢ<br/>+ explain (top SHAP features)"]
+    end
+
+    AGG --> DEC{decision?}
+
+    %% ============ Decision ============
+    DEC -->|pass<br/>score < 0.3| ALLOW
+    DEC -->|mfa<br/>0.3 ≤ score < 0.7| MFA
+    DEC -->|block<br/>score ≥ 0.7| BLOCK
+
+    ALLOW["✅ ออก JWT<br/>+ log decision=pass<br/>+ บันทึก SHAP top-3"]
+    MFA["⚠️ Risk-Triggered MFA<br/>Passkey step-up หรือ<br/>Email OTP fallback"]
+    BLOCK["🚫 ปฏิเสธ<br/>+ log decision=block<br/>+ alert admin"]
+
+    MFA -->|สำเร็จ| ALLOW
+    MFA -->|ล้มเหลว| BLOCK
+
+    ALLOW --> DONE([🎉 Authorized<br/>เข้าใช้งาน Subsystem])
+    BLOCK --> END([⛔ Blocked])
+    DENY1 --> END
+    DENY2 --> END
+
+    %% Style
+    classDef rbac fill:#dbeafe,stroke:#3b82f6,stroke-width:2px
+    classDef ml fill:#fef3c7,stroke:#f59e0b,stroke-width:2px
+    classDef pass fill:#dcfce7,stroke:#16a34a,stroke-width:2px
+    classDef deny fill:#fee2e2,stroke:#dc2626,stroke-width:2px
+    classDef mfa fill:#fed7aa,stroke:#ea580c,stroke-width:2px
+
+    class L1,L1B,R1,R2 rbac
+    class L2,RBA1,RBA2,RBA3,AGG ml
+    class ALLOW,DONE pass
+    class DENY1,DENY2,BLOCK,END deny
+    class MFA mfa

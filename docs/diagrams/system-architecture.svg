@@ -1,0 +1,108 @@
+<svg width="700" height="440" viewBox="0 0 700 440" role="img" xmlns="http://www.w3.org/2000/svg" font-family="system-ui,'Segoe UI','Sarabun',sans-serif">
+<title>System Architecture แบบ N-Tier — Central Auth Hub</title>
+<desc>สถาปัตยกรรม 3 ชั้น: Presentation Tier (เว็บ/มือถือ), Application Tier (Hub Auth Server + ML, เชื่อม Google OAuth), Data Tier (PostgreSQL + Redis)</desc>
+<defs>
+<marker id="ar" markerWidth="9" markerHeight="9" refX="7" refY="3.2" orient="auto"><path d="M0,0 L8,3.2 L0,6.4 Z" fill="#3a4250"/></marker>
+</defs>
+<rect width="700" height="440" fill="#ffffff"/>
+
+<rect x="12" y="12" width="216" height="392" rx="12" fill="#FCF3DC"/>
+<rect x="236" y="12" width="216" height="392" rx="12" fill="#E7F0FB"/>
+<rect x="460" y="12" width="228" height="392" rx="12" fill="#F1E9F6"/>
+<text x="120" y="40" text-anchor="middle" font-size="15" font-weight="700" fill="#7a5a12">Presentation Tier</text>
+<text x="344" y="40" text-anchor="middle" font-size="15" font-weight="700" fill="#1f5bb5">Application Tier</text>
+<text x="574" y="40" text-anchor="middle" font-size="15" font-weight="700" fill="#6b3f8f">Data Tier</text>
+
+<g stroke="#3a4250" stroke-width="2.4" fill="none">
+<line x1="182" y1="128" x2="316" y2="184" marker-end="url(#ar)"/>
+<line x1="168" y1="290" x2="316" y2="206" marker-end="url(#ar)"/>
+<line x1="382" y1="172" x2="540" y2="135" marker-end="url(#ar)"/>
+<line x1="386" y1="212" x2="540" y2="284" marker-end="url(#ar)"/>
+<line x1="346" y1="236" x2="345" y2="296" marker-end="url(#ar)"/>
+<line x1="344" y1="110" x2="345" y2="146" marker-end="url(#ar)"/>
+</g>
+
+<g transform="translate(62,66)">
+<circle cx="16" cy="22" r="12" fill="#E8B98C" stroke="#c89a6c" stroke-width="1.5"/>
+<path d="M-1,66 Q-1,40 16,40 Q33,40 33,66 Z" fill="#3f6fb5"/>
+<rect x="38" y="6" width="82" height="56" rx="5" fill="#ffffff" stroke="#46566a" stroke-width="2.5"/>
+<rect x="44" y="12" width="70" height="11" rx="2" fill="#4d8bf0"/>
+<circle cx="50" cy="17.5" r="1.7" fill="#fff"/><circle cx="56" cy="17.5" r="1.7" fill="#fff"/><circle cx="62" cy="17.5" r="1.7" fill="#fff"/>
+<rect x="44" y="29" width="44" height="5" rx="2" fill="#bcd0ec"/>
+<rect x="44" y="39" width="62" height="5" rx="2" fill="#d7e3f4"/>
+<rect x="44" y="49" width="34" height="5" rx="2" fill="#d7e3f4"/>
+<rect x="72" y="62" width="14" height="8" fill="#46566a"/>
+<rect x="60" y="70" width="38" height="5" rx="2.5" fill="#46566a"/>
+</g>
+<text x="120" y="166" text-anchor="middle" font-size="12" font-weight="700" fill="#5a4a2a">WEBPAGE</text>
+<text x="120" y="182" text-anchor="middle" font-size="9.5" fill="#7a6a4a">Admin Console (Next.js)</text>
+
+<g transform="translate(74,238)">
+<circle cx="15" cy="22" r="12" fill="#E8B98C" stroke="#c89a6c" stroke-width="1.5"/>
+<path d="M-1,66 Q-1,40 15,40 Q31,40 31,66 Z" fill="#d98b3f"/>
+<rect x="44" y="2" width="40" height="70" rx="8" fill="#ffffff" stroke="#46566a" stroke-width="2.5"/>
+<rect x="49" y="10" width="30" height="50" rx="2" fill="#4d8bf0"/>
+<rect x="53" y="14" width="10" height="10" rx="2" fill="#fff" opacity="0.85"/>
+<rect x="66" y="14" width="10" height="10" rx="2" fill="#fff" opacity="0.6"/>
+<rect x="53" y="27" width="10" height="10" rx="2" fill="#fff" opacity="0.6"/>
+<rect x="66" y="27" width="10" height="10" rx="2" fill="#fff" opacity="0.85"/>
+<circle cx="64" cy="65" r="2.6" fill="#46566a"/>
+</g>
+<text x="120" y="324" text-anchor="middle" font-size="12" font-weight="700" fill="#5a4a2a">MOBILE / BROWSER</text>
+<text x="120" y="340" text-anchor="middle" font-size="9.5" fill="#7a6a4a">หอพัก · ห้องสมุด (เว็บ)</text>
+
+<rect x="266" y="64" width="156" height="42" rx="9" fill="#ffffff" stroke="#C77F12" stroke-width="2"/>
+<circle cx="286" cy="85" r="9" fill="none" stroke="#4285F4" stroke-width="3"/>
+<path d="M286,85 L295,85" stroke="#4285F4" stroke-width="3"/>
+<text x="305" y="81" font-size="10.5" font-weight="700" fill="#7a4d06">Google OAuth</text>
+<text x="305" y="95" font-size="8.5" fill="#888">External IdP (OIDC)</text>
+
+<g transform="translate(320,148)">
+<rect x="14" y="4" width="46" height="72" rx="6" fill="#c2c9d2" stroke="#868f9b" stroke-width="2"/>
+<rect x="2" y="12" width="46" height="72" rx="6" fill="#dde2e9" stroke="#868f9b" stroke-width="2"/>
+<rect x="8" y="20" width="34" height="3" rx="1.5" fill="#aab2bd"/>
+<rect x="8" y="33" width="34" height="3" rx="1.5" fill="#aab2bd"/>
+<rect x="8" y="46" width="34" height="3" rx="1.5" fill="#aab2bd"/>
+<circle cx="12" cy="21.5" r="2" fill="#3ad07a"/>
+<circle cx="12" cy="34.5" r="2" fill="#3ad07a"/>
+<circle cx="12" cy="47.5" r="2" fill="#f0b53a"/>
+<circle cx="46" cy="78" r="14" fill="#3aa0e0" stroke="#2a80c0" stroke-width="1.5"/>
+<ellipse cx="46" cy="78" rx="6" ry="14" fill="none" stroke="#cfeafb" stroke-width="1.3"/>
+<line x1="32" y1="78" x2="60" y2="78" stroke="#cfeafb" stroke-width="1.3"/>
+<path d="M35,70 Q46,74 57,70" fill="none" stroke="#cfeafb" stroke-width="1.1"/>
+<path d="M35,86 Q46,82 57,86" fill="none" stroke="#cfeafb" stroke-width="1.1"/>
+</g>
+<text x="350" y="256" text-anchor="middle" font-size="12" font-weight="700" fill="#1f5bb5">Hub — Auth Server</text>
+<text x="350" y="271" text-anchor="middle" font-size="9.5" fill="#4a6a9a">Auth · RBAC · OAuth/JWT · Audit</text>
+
+<g transform="translate(322,300)">
+<rect x="0" y="0" width="44" height="60" rx="6" fill="#EFEAFB" stroke="#6b5bd1" stroke-width="2"/>
+<rect x="7" y="10" width="30" height="3" rx="1.5" fill="#b9aee6"/>
+<rect x="7" y="22" width="30" height="3" rx="1.5" fill="#b9aee6"/>
+<circle cx="11" cy="11.5" r="1.8" fill="#6b5bd1"/>
+<circle cx="11" cy="23.5" r="1.8" fill="#6b5bd1"/>
+<text x="22" y="50" text-anchor="middle" font-size="13" font-weight="800" fill="#6b5bd1">ML</text>
+</g>
+<text x="344" y="378" text-anchor="middle" font-size="12" font-weight="700" fill="#5a4a8f">ML Verifier</text>
+<text x="344" y="392" text-anchor="middle" font-size="9.5" fill="#7a6aaf">Isolation Forest + SHAP</text>
+
+<g transform="translate(538,86)">
+<path d="M0,12 L0,64 a36,12 0 0,0 72,0 L72,12 Z" fill="#6b8fb5" stroke="#4d6f96" stroke-width="2"/>
+<ellipse cx="36" cy="12" rx="36" ry="12" fill="#8aa9c8" stroke="#4d6f96" stroke-width="2"/>
+<path d="M0,30 a36,12 0 0,0 72,0" fill="none" stroke="#4d6f96" stroke-width="1.5"/>
+<path d="M0,47 a36,12 0 0,0 72,0" fill="none" stroke="#4d6f96" stroke-width="1.5"/>
+</g>
+<text x="574" y="182" text-anchor="middle" font-size="12" font-weight="700" fill="#6b3f8f">PostgreSQL</text>
+<text x="574" y="197" text-anchor="middle" font-size="9.5" fill="#8a6aa5">Hub · Dorm · Library DB</text>
+
+<g transform="translate(538,238)">
+<path d="M0,12 L0,58 a36,11 0 0,0 72,0 L72,12 Z" fill="#c07d72" stroke="#97554a" stroke-width="2"/>
+<ellipse cx="36" cy="12" rx="36" ry="11" fill="#d49a90" stroke="#97554a" stroke-width="2"/>
+<path d="M0,29 a36,11 0 0,0 72,0" fill="none" stroke="#97554a" stroke-width="1.5"/>
+<path d="M0,44 a36,11 0 0,0 72,0" fill="none" stroke="#97554a" stroke-width="1.5"/>
+</g>
+<text x="574" y="332" text-anchor="middle" font-size="12" font-weight="700" fill="#6b3f8f">Redis</text>
+<text x="574" y="347" text-anchor="middle" font-size="9.5" fill="#8a6aa5">cache · session · jti</text>
+
+<text x="350" y="426" text-anchor="middle" font-size="9.5" fill="#888">สถาปัตยกรรมระบบแบบ N-Tier — ระบบจัดการสิทธิ์แบบรวมศูนย์ (Central Auth Hub)</text>
+</svg>

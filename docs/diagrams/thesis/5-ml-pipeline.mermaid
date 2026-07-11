@@ -1,0 +1,91 @@
+%%{init: {'theme':'base', 'themeVariables': {'fontSize':'13px'}}}%%
+flowchart LR
+    %% ============ Stage 1: Raw Data ============
+    subgraph S1["1️⃣ Raw Logs"]
+        direction TB
+        LOG1[("login_sessions<br/>(ip, ua, ts, geo)")]
+        LOG2[("request_logs<br/>(HTTP traffic)")]
+        LOG3[("audit_logs<br/>(state changes)")]
+    end
+
+    %% ============ Stage 2: Preprocessing ============
+    subgraph S2["2️⃣ Preprocessing"]
+        direction TB
+        P1["• Parse User-Agent<br/>  → browser / OS / device"]
+        P2["• GeoIP lookup IP<br/>  → country / city"]
+        P3["• Time normalization<br/>  → UTC + bucket รายชั่วโมง"]
+        P4["• Aggregate window<br/>  → 24h / 30d rolling"]
+        P5["• Clean + dedupe"]
+    end
+
+    %% ============ Stage 3: Feature Extraction ============
+    subgraph S3["3️⃣ Feature Extraction (12 features)"]
+        direction TB
+        F1["⏰ Temporal<br/>• hour_of_day<br/>• day_of_week<br/>• is_weekend<br/>• hours_from_typical"]
+        F2["🌍 Geographic<br/>• is_thailand<br/>• is_new_country<br/>• country_change_30d"]
+        F3["📱 Device<br/>• is_new_device<br/>• is_new_ua_family"]
+        F4["⚡ Velocity<br/>• log_min_since_last<br/>• login_count_24h"]
+        F5["🛡️ Brute Force<br/>• failed_logins_24h"]
+    end
+
+    %% ============ Stage 4: Models ============
+    subgraph S4["4️⃣ Anomaly Detection (Ensemble)"]
+        direction TB
+        M1["🌲 Isolation Forest<br/>n_estimators=100<br/>contamination=0.05<br/>(Liu 2008)"]
+        M2["🟣 One-Class SVM<br/>kernel=RBF<br/>nu=0.05<br/>(optional ensemble)"]
+        SIG["σ(·) Sigmoid<br/>→ normalize 0..1"]
+    end
+
+    %% ============ Stage 5: Explainability ============
+    subgraph S5["5️⃣ Explainability"]
+        direction TB
+        SHAP["SHAP TreeExplainer<br/>(Lundberg & Lee 2017)<br/>→ per-feature contribution"]
+        TOP3["Top-3 reasons<br/>(เช่น is_new_country=+0.4)"]
+        SHAP --> TOP3
+    end
+
+    %% ============ Stage 6: Decision + Output ============
+    subgraph S6["6️⃣ Decision + Output"]
+        direction TB
+        DEC{anomaly_score?}
+        DEC -->|score lt 0.3| PASS["✅ pass"]
+        DEC -->|0.3 to 0.7| MFA["⚠️ mfa / would_mfa"]
+        DEC -->|score ge 0.7| BLK["🚫 block / would_block"]
+        PERSIST[("📥 บันทึก<br/>login_sessions<br/>anomaly_score + decision")]
+    end
+
+    %% ============ Flow ============
+    LOG1 --> P1
+    LOG2 --> P1
+    LOG3 --> P1
+    P1 --> P2 --> P3 --> P4 --> P5
+    P5 --> F1 & F2 & F3 & F4 & F5
+    F1 & F2 & F3 & F4 & F5 --> M1
+    F1 & F2 & F3 & F4 & F5 -.->|optional| M2
+    M1 --> SIG
+    M2 -.-> SIG
+    SIG --> DEC
+    M1 --> SHAP
+    PASS --> PERSIST
+    MFA --> PERSIST
+    BLK --> PERSIST
+
+    %% ============ Offline Retrain Loop ============
+    PERSIST -.->|nightly batch retrain| RT
+    RT["🔁 Offline Retraining<br/>generate_data.py<br/>+ train_model.py"]
+    RT -.-> M1
+
+    %% Style
+    classDef raw fill:#fee2e2,stroke:#ef4444
+    classDef pre fill:#fef3c7,stroke:#f59e0b
+    classDef feat fill:#ddd6fe,stroke:#7c3aed
+    classDef model fill:#dbeafe,stroke:#3b82f6
+    classDef exp fill:#fce7f3,stroke:#ec4899
+    classDef out fill:#dcfce7,stroke:#16a34a
+
+    class LOG1,LOG2,LOG3 raw
+    class P1,P2,P3,P4,P5 pre
+    class F1,F2,F3,F4,F5 feat
+    class M1,M2,SIG model
+    class SHAP,TOP3 exp
+    class PASS,MFA,BLK,PERSIST,RT out

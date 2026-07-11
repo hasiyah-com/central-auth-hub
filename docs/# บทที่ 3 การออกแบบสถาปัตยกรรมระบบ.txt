@@ -1,0 +1,709 @@
+# บทที่ 3 การออกแบบสถาปัตยกรรมระบบ (System Architecture Design)
+
+เอกสารนี้ใช้เป็นแนวทางสำหรับออกแบบสถาปัตยกรรมของระบบทั้งหมด โดยจัดลำดับจากภาพรวมของระบบไปจนถึงการติดตั้งจริง เพื่อให้ผู้อ่านสามารถเข้าใจการทำงานของระบบได้อย่างเป็นขั้นตอน และสอดคล้องกับการพัฒนาระบบจริง
+
+---
+
+# 3.1 ภาพรวมสถาปัตยกรรมระบบ (Overall System Architecture)
+
+## วัตถุประสงค์
+
+อธิบายองค์ประกอบทั้งหมดของระบบ และความสัมพันธ์ระหว่าง
+
+- ผู้ใช้งาน
+- ระบบย่อย
+- ระบบศูนย์กลาง (Hub)
+- ระบบ Machine Learning
+- ฐานข้อมูล
+- Identity Provider
+
+## องค์ประกอบ
+
+### ผู้ใช้งาน (Users)
+
+ประกอบด้วย
+
+- นักศึกษา
+- อาจารย์
+- เจ้าหน้าที่
+- ผู้ดูแลระบบ
+
+---
+
+### ระบบย่อย (Subsystem)
+
+ตัวอย่าง
+
+- ระบบจองห้อง
+- ระบบห้องสมุด
+
+Subsystem ไม่มีระบบ Login ของตนเอง
+
+ใช้ Authentication จาก Hub ทั้งหมด
+
+แต่ละระบบจะได้รับ
+
+- client_id
+- client_secret
+- redirect_uri
+- allowed scopes
+
+จาก Hub
+
+---
+
+### Central Authentication Hub
+
+เป็นศูนย์กลางของระบบทั้งหมด
+
+ประกอบด้วย
+
+#### Authentication
+
+- Google OAuth2/OIDC
+- Passkey (WebAuthn)
+
+#### Authorization
+
+- RBAC
+- Access List
+
+#### Hybrid Risk-Based Access
+
+ประกอบด้วย
+
+- Feature Extraction
+- Behavior Analysis
+- Isolation Forest
+- Passkey Trust Layer
+- Score Aggregator
+
+#### Token Service
+
+ออก JWT (RS256)
+
+#### Audit Service
+
+บันทึกเหตุการณ์ทั้งหมด
+
+---
+
+### ML Verifier
+
+ให้บริการ Machine Learning แยกออกจาก Hub
+
+หน้าที่
+
+- รับ Feature Vector
+- คำนวณ anomaly score
+- ส่งคะแนนกลับ
+
+พร้อม SHAP explanation
+
+---
+
+### Database
+
+PostgreSQL
+
+เก็บข้อมูล
+
+- users
+- access_list
+- login_sessions
+- audit_logs
+- passkey_credentials
+- subsystems
+
+---
+
+### Redis
+
+เก็บข้อมูลชั่วคราว
+
+- session
+- authorization code
+- MFA cache
+- Step-up cache
+- blacklist JWT
+
+---
+
+### Identity Provider
+
+รองรับ
+
+- Google
+- Passkey
+
+---
+
+# รูปที่ควรสร้าง
+
+Overall System Architecture
+
+---
+
+# 3.2 การลงทะเบียนระบบย่อย (Subsystem Registration)
+
+## วัตถุประสงค์
+
+อธิบายวิธีที่ระบบย่อยสามารถเชื่อมต่อกับ Hub
+
+## ขั้นตอน
+
+Developer
+
+↓
+
+สมัครระบบย่อย
+
+↓
+
+Hub ตรวจสอบ
+
+↓
+
+สร้าง
+
+- client_id
+- client_secret
+
+↓
+
+กำหนด
+
+- redirect_uri
+- scopes
+
+↓
+
+บันทึกลงฐานข้อมูล
+
+↓
+
+ส่งข้อมูลกลับระบบย่อย
+
+---
+
+ข้อมูลที่จัดเก็บ
+
+Subsystem
+
+- Name
+- Description
+- Redirect URI
+- Allowed Scope
+- Client ID
+- Client Secret
+
+---
+
+รูปที่ควรสร้าง
+
+Client Registration Flow
+
+---
+
+# 3.3 การจัดการสิทธิ์และการซิงโครไนซ์ผู้ใช้ (Access Synchronization)
+
+## วัตถุประสงค์
+
+อธิบายการกำหนดสิทธิ์ของผู้ใช้งาน
+
+ระบบรองรับ 2 รูปแบบ
+
+---
+
+## รูปแบบที่ 1
+
+Open Access
+
+ผู้ใช้ทุกคนเข้าได้
+
+เช่น
+
+ระบบห้องสมุด
+
+---
+
+Hub Synchronize
+
+user_id
+
+role
+
+ไปยังระบบย่อย
+
+---
+
+## รูปแบบที่ 2
+
+Restricted Access
+
+Admin Upload
+
+Access List
+
+เช่น
+
+- นักศึกษาคณะวิทยาศาสตร์
+- นักศึกษาปริญญาโท
+- Developer
+
+Hub จะ Synchronize
+
+เฉพาะผู้ที่มีสิทธิ์
+
+เท่านั้น
+
+---
+
+เมื่อ
+
+- เพิ่มผู้ใช้
+- ลบผู้ใช้
+- เปลี่ยนบทบาท
+
+Hub จะ Synchronize ใหม่
+
+อัตโนมัติ
+
+---
+
+รูปที่ควรสร้าง
+
+Access Synchronization Diagram
+
+---
+
+# 3.4 Authentication Flow
+
+## วัตถุประสงค์
+
+อธิบายขั้นตอนการ Login
+
+---
+
+ขั้นตอน
+
+ผู้ใช้
+
+↓
+
+เข้าสู่ระบบย่อย
+
+↓
+
+Subsystem Redirect
+
+↓
+
+Hub
+
+↓
+
+เลือก
+
+Google
+
+Passkey
+
+↓
+
+Identity Verified
+
+↓
+
+RBAC
+
+↓
+
+Access List
+
+↓
+
+Hybrid RBA
+
+↓
+
+Decision
+
+PASS
+
+MFA
+
+BLOCK
+
+↓
+
+JWT
+
+↓
+
+Subsystem
+
+↓
+
+สร้าง Session
+
+---
+
+รูปที่ควรสร้าง
+
+Authentication Sequence Diagram
+
+---
+
+# 3.5 Hybrid Risk-Based Access (Hybrid RBA)
+
+## วัตถุประสงค์
+
+อธิบายการประเมินความเสี่ยง
+
+---
+
+ประกอบด้วย
+
+## Layer 1
+
+Static Authorization
+
+ตรวจสอบ
+
+- Role
+- Access List
+
+หากไม่ผ่าน
+
+ปฏิเสธทันที
+
+---
+
+## Layer 2
+
+Feature Extraction
+
+สร้าง Feature
+
+23 ตัว
+
+จาก
+
+- Login Session
+- Audit Log
+- Passkey
+- Context
+
+---
+
+## Layer 3
+
+Hybrid Risk Analysis
+
+ประกอบด้วย
+
+### Behavior Analysis
+
+วิเคราะห์พฤติกรรมผู้ใช้
+
+เช่น
+
+- Login Time
+- Device
+- Country
+
+---
+
+### Isolation Forest
+
+ตรวจจับ
+
+Anomaly
+
+---
+
+### Passkey Trust Layer
+
+ลดความเสี่ยง
+
+หาก
+
+- Passkey
+- Trusted Device
+
+---
+
+### Score Aggregator
+
+รวมคะแนนทั้งหมด
+
+Risk Score
+
+0-1
+
+---
+
+## Layer 4
+
+Decision Engine
+
+PASS
+
+หาก
+
+Risk < 0.30
+
+---
+
+MFA
+
+0.30-0.70
+
+---
+
+BLOCK
+
+Risk ≥ 0.70
+
+---
+
+รูปที่ควรสร้าง
+
+Hybrid RBA Architecture
+
+---
+
+# 3.6 Machine Learning Pipeline
+
+## วัตถุประสงค์
+
+อธิบายการทำงานของ Machine Learning
+
+---
+
+Raw Logs
+
+↓
+
+Preprocessing
+
+↓
+
+Feature Engineering
+
+↓
+
+23 Features
+
+↓
+
+StandardScaler
+
+↓
+
+Isolation Forest
+
+↓
+
+SHAP TreeExplainer
+
+↓
+
+Risk Score
+
+↓
+
+Decision
+
+↓
+
+Store Results
+
+↓
+
+Offline Retraining
+
+---
+
+รูปที่ควรสร้าง
+
+Machine Learning Pipeline
+
+---
+
+# 3.7 Feature Engineering
+
+แบ่ง Feature
+
+7 หมวด
+
+---
+
+## Temporal
+
+- hour_of_day
+- day_of_week
+- hours_from_typical_login_time
+
+---
+
+## Geographic
+
+- is_thailand
+- is_new_country
+- country_change_count_30d
+
+---
+
+## Device
+
+- is_new_device
+- is_new_user_agent_family
+
+---
+
+## Velocity
+
+- login_count_24h
+- log_minutes_since_last_login
+
+---
+
+## Brute Force
+
+- failed_logins_24h
+
+---
+
+## Passkey
+
+- passkey_count
+- passkey_age_days
+- new_passkey_recently_added
+- passkey_last_used_days
+
+---
+
+## Tier-1 Features
+
+- concurrent_session_count
+- active_subsystem_count
+- weekday_usage_score
+- scope_sensitivity_score
+- permission_change_age
+- confirmed_incident_count
+
+---
+
+รวม
+
+23 Features
+
+---
+
+รูปที่ควรสร้าง
+
+Feature Extraction Diagram
+
+---
+
+# 3.8 การออก JWT
+
+JWT
+
+ประกอบด้วย
+
+- sub
+- aud
+- scope
+- role
+- exp
+- jti
+
+ลงลายมือชื่อ
+
+RS256
+
+ระบบย่อยตรวจสอบ
+
+JWKS
+
+ก่อนสร้าง Session
+
+---
+
+รูปที่ควรสร้าง
+
+JWT Verification Flow
+
+---
+
+# 3.9 การติดตั้งระบบ (Deployment Architecture)
+
+ระบบติดตั้งแบบแยกบริการ
+
+VM 1
+
+Central Hub
+
+Docker
+
+- Backend
+- Frontend
+- PostgreSQL
+- Redis
+- ML Verifier
+- Nginx
+
+---
+
+VM 2
+
+Subsystem A
+
+Docker
+
+- FastAPI
+- PostgreSQL
+
+---
+
+VM 3
+
+Subsystem B
+
+Docker
+
+- FastAPI
+- PostgreSQL
+
+---
+
+ทุกระบบเชื่อมต่อ
+
+HTTPS
+
+ผ่าน Nginx Reverse Proxy
+
+---
+
+รูปที่ควรสร้าง
+
+Deployment Diagram
+
+---
+
+# สรุปภาพทั้งหมดที่ควรมีในบทที่ 3
+
+| รูป | ชื่อภาพ |
+|------|----------|
+| รูปที่ 3.1 | Overall System Architecture |
+| รูปที่ 3.2 | Client Registration Flow |
+| รูปที่ 3.3 | Access Synchronization |
+| รูปที่ 3.4 | Authentication Sequence Diagram |
+| รูปที่ 3.5 | Hybrid Risk-Based Access Architecture |
+| รูปที่ 3.6 | Machine Learning Pipeline |
+| รูปที่ 3.7 | Feature Engineering |
+| รูปที่ 3.8 | JWT Verification Flow |
+| รูปที่ 3.9 | Deployment Architecture |

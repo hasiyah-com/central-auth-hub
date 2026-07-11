@@ -1,0 +1,97 @@
+%%{init: {'theme':'base', 'themeVariables': {'fontSize':'13px'}}}%%
+flowchart TB
+    %% ============ Internet ============
+    USER([🌐 Internet<br/>HTTPS / TLS 1.3])
+
+    %% ============ Reverse Proxy ============
+    USER --> NGINX
+
+    subgraph EDGE["🛡️ Edge Layer"]
+        NGINX["Nginx Reverse Proxy<br/>TLS termination<br/>+ rate limit + WAF<br/>+ X-Forwarded-For"]
+    end
+
+    NGINX --> HUBSTACK
+    NGINX --> DORMSTACK
+    NGINX --> LIBSTACK
+
+    %% ============ Stack 1: cah-hub ============
+    subgraph HUBSTACK["🏛️ Stack: cah-hub (docker-compose.yml)"]
+        direction TB
+        FE["Next.js Admin<br/>:3000"]
+        HUB["FastAPI Hub<br/>:8000"]
+        ML["ML Verifier<br/>FastAPI :9000"]
+        PGHUB[("PostgreSQL 15<br/>hub_db :5432")]
+        REDIS[("Redis 7<br/>:6379")]
+
+        FE -->|REST + JWT| HUB
+        HUB -->|httpx async| ML
+        HUB <--> PGHUB
+        HUB <--> REDIS
+        ML --> MODEL[/"iforest_v1.pkl<br/>(volume mount)"/]
+    end
+
+    %% ============ Stack 2: cah-dorm ============
+    subgraph DORMSTACK["🏠 Stack: cah-dorm (docker-compose.dorm.yml)"]
+        direction TB
+        DORM["Subsystem A<br/>FastAPI หอพัก :8001"]
+        PGDORM[("PostgreSQL<br/>dorm_db :5433")]
+        DORM <--> PGDORM
+    end
+
+    %% ============ Stack 3: cah-library ============
+    subgraph LIBSTACK["📚 Stack: cah-library (docker-compose.library.yml)"]
+        direction TB
+        LIB["Subsystem B<br/>FastAPI ห้องสมุด :8002"]
+        PGLIB[("PostgreSQL<br/>library_db :5434")]
+        LIB <--> PGLIB
+    end
+
+    %% ============ Shared Network ============
+    HUB -.->|cah-net<br/>external| DORM
+    HUB -.->|cah-net<br/>external| LIB
+    DORM -.->|JWKS fetch<br/>10min cache| HUB
+    LIB -.->|JWKS fetch<br/>10min cache| HUB
+
+    %% ============ External ============
+    HUB -.->|OAuth 2.0| GOOGLE([🔵 Google OAuth])
+    HUB -.->|OIDC| LINE([🟢 LINE Login])
+
+    %% ============ Volumes / Secrets ============
+    subgraph VOLS["💾 Persistent Volumes (gitignored)"]
+        direction LR
+        V1[/"postgres_data/<br/>hub / dorm / library"/]
+        V2[/"keys/<br/>jwt_private.pem"/]
+        V3[/"models/<br/>iforest_v1.pkl"/]
+        V4[/".env<br/>SECRET_KEY, OAuth creds"/]
+    end
+
+    PGHUB -.-> V1
+    PGDORM -.-> V1
+    PGLIB -.-> V1
+    HUB -.-> V2
+    HUB -.-> V4
+    ML -.-> V3
+
+    %% ============ Backup ============
+    subgraph BACKUP["☁️ Backup"]
+        BK["scripts/backup.sh<br/>pg_dump 3 DBs<br/>→ OneDrive sync"]
+    end
+
+    PGHUB -.->|nightly| BK
+    PGDORM -.->|nightly| BK
+    PGLIB -.->|nightly| BK
+
+    %% Style
+    classDef edge fill:#fce7f3,stroke:#db2777,stroke-width:2px
+    classDef hub fill:#eef2ff,stroke:#6366f1,stroke-width:2px
+    classDef sub fill:#ecfdf5,stroke:#10b981,stroke-width:2px
+    classDef db fill:#fee2e2,stroke:#ef4444,stroke-width:2px
+    classDef vol fill:#fef3c7,stroke:#f59e0b,stroke-width:2px
+    classDef ext fill:#f3e8ff,stroke:#a855f7,stroke-width:2px
+
+    class NGINX edge
+    class FE,HUB,ML hub
+    class DORM,LIB sub
+    class PGHUB,REDIS,PGDORM,PGLIB db
+    class V1,V2,V3,V4,MODEL,BK vol
+    class GOOGLE,LINE ext

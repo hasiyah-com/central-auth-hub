@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 560" width="900" height="560" font-family="'Sarabun','TH Sarabun New','Tahoma','Segoe UI','Noto Sans Thai',sans-serif">
+<rect x="0" y="0" width="900" height="560" fill="#FFFFFF"/>
+<defs><marker id="arw" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 Z" fill="#475569"/></marker><marker id="arwl" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L8,3 L0,6 Z" fill="#94A3B8"/></marker></defs>
+<text x="450.0" y="30" font-size="18" fill="#1E293B" text-anchor="middle" font-weight="700">รูปที่ 3.10  ลำดับการทำงาน OAuth 2.0 / OIDC + PKCE (OAuth/OIDC Flow)</text>
+<rect x="40" y="55" width="140" height="34" rx="10" fill="#FFFFFF" stroke="#64748B" stroke-width="1.6"/>
+<text x="110" y="77" font-size="13" fill="#1E293B" text-anchor="middle" font-weight="700">ผู้ใช้</text>
+<line x1="110" y1="89" x2="110" y2="520" stroke="#94A3B8" stroke-width="1.2" stroke-dasharray="4 4"/><rect x="260" y="55" width="140" height="34" rx="10" fill="#FFFFFF" stroke="#6366F1" stroke-width="1.6"/>
+<text x="330" y="77" font-size="13" fill="#1E293B" text-anchor="middle" font-weight="700">ระบบย่อย</text>
+<line x1="330" y1="89" x2="330" y2="520" stroke="#94A3B8" stroke-width="1.2" stroke-dasharray="4 4"/><rect x="490" y="55" width="140" height="34" rx="10" fill="#FFFFFF" stroke="#4F46E5" stroke-width="1.6"/>
+<text x="560" y="77" font-size="13" fill="#1E293B" text-anchor="middle" font-weight="700">Hub</text>
+<line x1="560" y1="89" x2="560" y2="520" stroke="#94A3B8" stroke-width="1.2" stroke-dasharray="4 4"/><rect x="730" y="55" width="140" height="34" rx="10" fill="#FFFFFF" stroke="#EA4335" stroke-width="1.6"/>
+<text x="800" y="77" font-size="13" fill="#1E293B" text-anchor="middle" font-weight="700">Google</text>
+<line x1="800" y1="89" x2="800" y2="520" stroke="#94A3B8" stroke-width="1.2" stroke-dasharray="4 4"/><line x1="110" y1="115" x2="330" y2="115" stroke="#475569" stroke-width="1.8" marker-end="url(#arw)"/>
+<text x="220.0" y="109" font-size="10.5" fill="#1E293B" text-anchor="middle">1. คลิกเข้าสู่ระบบ</text>
+<rect x="324" y="137" width="12" height="12" rx="2" fill="#4F46E5"/><text x="344" y="147" font-size="11" fill="#1E293B" text-anchor="start">2. สร้าง PKCE (verifier/challenge)</text>
+<line x1="330" y1="181" x2="560" y2="181" stroke="#475569" stroke-width="1.8" marker-end="url(#arw)"/>
+<text x="445.0" y="175" font-size="10.5" fill="#1E293B" text-anchor="middle">3. redirect /oauth/authorize (client_id, challenge, state)</text>
+<rect x="554" y="203" width="12" height="12" rx="2" fill="#4F46E5"/><text x="574" y="213" font-size="11" fill="#1E293B" text-anchor="start">4. ตรวจ client_id / redirect_uri / challenge</text>
+<line x1="560" y1="247" x2="800" y2="247" stroke="#475569" stroke-width="1.8" marker-end="url(#arw)"/>
+<text x="680.0" y="241" font-size="10.5" fill="#1E293B" text-anchor="middle">5. redirect → Google (hub_state)</text>
+<line x1="800" y1="280" x2="560" y2="280" stroke="#475569" stroke-width="1.8" marker-end="url(#arw)"/>
+<text x="680.0" y="274" font-size="10.5" fill="#1E293B" text-anchor="middle">6. callback: แลก code → id_token</text>
+<rect x="554" y="302" width="12" height="12" rx="2" fill="#4F46E5"/><text x="574" y="312" font-size="11" fill="#1E293B" text-anchor="start">7. ตรวจ access_list (whitelist) — รูปที่ 3.6</text>
+<rect x="554" y="335" width="12" height="12" rx="2" fill="#4F46E5"/><text x="574" y="345" font-size="11" fill="#1E293B" text-anchor="start">8. สกัด feature 23 → Risk Engine — รูปที่ 3.14</text>
+<line x1="560" y1="379" x2="330" y2="379" stroke="#475569" stroke-width="1.8" marker-end="url(#arw)"/>
+<text x="445.0" y="373" font-size="10.5" fill="#1E293B" text-anchor="middle">9. ออก auth_code (Redis getdel, 5 นาที) → redirect</text>
+<line x1="330" y1="412" x2="560" y2="412" stroke="#475569" stroke-width="1.8" marker-end="url(#arw)"/>
+<text x="445.0" y="406" font-size="10.5" fill="#1E293B" text-anchor="middle">10. POST /oauth/token (verifier + client_secret)</text>
+<line x1="560" y1="445" x2="330" y2="445" stroke="#475569" stroke-width="1.8" marker-end="url(#arw)"/>
+<text x="445.0" y="439" font-size="10.5" fill="#1E293B" text-anchor="middle">11. ตรวจ PKCE + secret (Argon2id) → ออก JWT (RS256, aud)</text>
+<rect x="324" y="467" width="12" height="12" rx="2" fill="#4F46E5"/><text x="344" y="477" font-size="11" fill="#1E293B" text-anchor="start">12. ตรวจ JWT ผ่าน JWKS → สร้าง session cookie</text>
+</svg>
