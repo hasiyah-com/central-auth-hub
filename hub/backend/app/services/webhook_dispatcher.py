@@ -37,6 +37,8 @@ _DEV_LOCALHOST_MAP = {
     ("127.0.0.1", "8001"): "subsystem-dorm:8000",
     ("localhost", "8002"): "subsystem-library:8000",
     ("127.0.0.1", "8002"): "subsystem-library:8000",
+    ("localhost", "8003"): "subsystem-grade:8000",
+    ("127.0.0.1", "8003"): "subsystem-grade:8000",
 }
 
 # port อะไรก็ตามที่ไม่อยู่ใน MAP ข้างบน + host เป็น localhost/127.0.0.1

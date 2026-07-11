@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}นักศึกษาทั้งหมด — ระบบเกรด{% endblock %}
+{% block content %}
+
+<div class="flex items-center justify-between mb-4 gap-4 flex-wrap">
+  <div>
+    <h1 class="text-2xl font-extrabold text-slate-900">นักศึกษาทั้งหมด</h1>
+    <p class="text-xs text-slate-500 mt-0.5">
+      {{ stats.students }} คน / {{ stats.total_grades }} รายการเกรด —
+      ระบุตัวตนด้วยอีเมล (Roster ส่งมาแค่ user_id/email/user_type)
+    </p>
+  </div>
+  <form method="get" action="/teacher" class="flex gap-2">
+    <input type="text" name="q" value="{{ q }}" placeholder="ค้นหาอีเมล…"
+           class="px-3 py-2 rounded-lg border border-slate-300 text-sm w-52" />
+    <button class="px-4 py-2 rounded-lg bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700">ค้นหา</button>
+  </form>
+</div>
+
+{% if students %}
+<div class="space-y-2.5">
+  {% for s in students %}
+  <details class="bg-white rounded-xl border border-slate-200 overflow-hidden">
+    <summary class="cursor-pointer px-4 py-3 flex items-center justify-between hover:bg-slate-50">
+      <div class="flex items-center gap-3">
+        <span class="w-8 h-8 rounded-full bg-indigo-100 text-indigo-700 grid place-items-center text-xs font-bold">
+          {{ s.email[0]|upper if s.email else "?" }}
+        </span>
+        <span class="font-mono text-sm text-slate-800">{{ s.email }}</span>
+      </div>
+      <span class="px-2.5 py-1 rounded-lg bg-slate-100 text-slate-700 text-xs font-bold">
+        GPA {{ s.gpa if s.gpa is not none else "—" }}
+      </span>
+    </summary>
+    <table class="w-full text-sm border-t border-slate-100">
+      <thead class="bg-slate-50 text-slate-500 text-[11px] uppercase">
+        <tr>
+          <th class="px-4 py-1.5 text-left">รหัสวิชา</th>
+          <th class="px-4 py-1.5 text-left">ชื่อวิชา</th>
+          <th class="px-4 py-1.5 text-center">หน่วยกิต</th>
+          <th class="px-4 py-1.5 text-center">เกรด</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for g in s.grades %}
+        <tr class="border-t border-slate-50">
+          <td class="px-4 py-2 font-mono">{{ g.subject_code }}</td>
+          <td class="px-4 py-2">{{ g.subject_name }}</td>
+          <td class="px-4 py-2 text-center">{{ g.credits }}</td>
+          <td class="px-4 py-2 text-center font-bold {{ 'text-rose-600' if g.grade == 'F' else 'text-indigo-700' }}">{{ g.grade }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </details>
+  {% endfor %}
+</div>
+{% else %}
+<div class="p-8 text-center text-slate-400 bg-white rounded-xl border border-dashed border-slate-300 text-sm">
+  {% if q %}ไม่พบนักศึกษาที่ค้นหา "{{ q }}"{% else %}ยังไม่มีข้อมูล — ไปที่ "Sync ข้อมูล" เพื่อดึงรายชื่อก่อน{% endif %}
+</div>
+{% endif %}
+
+{% endblock %}

@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="th" class="h-full">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{% block title %}ระบบเกรด{% endblock %}</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="min-h-screen bg-slate-100 flex flex-col">
+
+{% if user %}
+<!-- ══════ NAVBAR (เมื่อ login แล้ว) ══════ -->
+<header class="sticky top-0 z-40 bg-white border-b border-slate-200">
+  <div class="max-w-5xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-4">
+    <div class="flex items-center gap-6">
+      <a href="/" class="flex items-center gap-2.5">
+        <div class="w-10 h-10 rounded-lg bg-indigo-600 grid place-items-center text-white text-xl">🎓</div>
+        <div class="hidden sm:block">
+          <div class="text-base font-extrabold leading-none text-slate-900">ระบบเกรด</div>
+          <div class="text-[10px] mt-1 text-slate-400 font-mono">CENTRAL_AUTH · SUB_C</div>
+        </div>
+      </a>
+      <nav class="hidden md:flex items-center gap-1">
+        {% set base = "px-3 py-1.5 rounded-lg text-sm font-medium " %}
+        {% set on = "bg-indigo-600 text-white" %}
+        {% set off = "text-slate-600 hover:bg-slate-100" %}
+        {% if user.user_type in ("teacher", "staff") %}
+          <a href="/teacher" class="{{ base }}{{ on if active == 'teacher' else off }}">นักศึกษาทั้งหมด</a>
+          <a href="/manage" class="{{ base }}{{ on if active == 'manage' else off }}">Sync ข้อมูล</a>
+        {% else %}
+          <a href="/grades" class="{{ base }}{{ on if active == 'grades' else off }}">เกรดของฉัน</a>
+        {% endif %}
+        <a href="/profile" class="{{ base }}{{ on if active == 'profile' else off }}">โปรไฟล์</a>
+      </nav>
+    </div>
+    <form method="post" action="/logout" class="flex items-center gap-3">
+      <div class="text-right hidden sm:block">
+        <div class="text-sm font-semibold text-slate-800 leading-tight">{{ user.name or user.email }}</div>
+        <div class="text-[11px] text-slate-400">
+          {{ user.email }}
+          <span class="ml-1 px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-700 text-[10px] font-bold">{{ user.user_type }}</span>
+        </div>
+      </div>
+      <button class="px-3 py-1.5 rounded-lg text-sm font-medium text-slate-600 hover:bg-slate-100">ออกจากระบบ</button>
+    </form>
+  </div>
+</header>
+{% endif %}
+
+<main class="flex-1 w-full max-w-5xl mx-auto px-4 sm:px-6 py-8">
+  {% if request.query_params.get("error") %}
+  <div class="mb-4 p-3 rounded-lg bg-rose-100 border border-rose-300 text-rose-800 text-sm">⚠ {{ request.query_params.get("error") }}</div>
+  {% endif %}
+  {% if request.query_params.get("msg") %}
+  <div class="mb-4 p-3 rounded-lg bg-emerald-100 border border-emerald-300 text-emerald-800 text-sm">✓ {{ request.query_params.get("msg") }}</div>
+  {% endif %}
+  {% block content %}{% endblock %}
+</main>
+
+<footer class="py-4 text-center text-[11px] text-slate-400">
+  ระบบเกรด · Subsystem C · OAuth 2.0 + PKCE · Roster Sync (API key)
+</footer>
+</body>
+</html>

@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}Sync ข้อมูล — ระบบเกรด{% endblock %}
+{% block content %}
+
+<h1 class="text-2xl font-extrabold text-slate-900 mb-1">Sync ข้อมูล (สำนักทะเบียน)</h1>
+<p class="text-sm text-slate-500 mb-6">
+  ดึงรายชื่อนักศึกษาจาก Central Auth Hub ผ่าน <span class="font-mono">API key</span> →
+  เตรียมตารางเกรดล่วงหน้า (เฉพาะ user_type = student)
+</p>
+
+<div class="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-2xl mb-6">
+  <div class="p-4 rounded-xl bg-white border border-slate-200">
+    <div class="text-[11px] font-bold text-slate-400 uppercase">นักศึกษาในระบบ</div>
+    <div class="text-3xl font-extrabold text-slate-900 tabular-nums mt-1">{{ stats.students }}</div>
+  </div>
+  <div class="p-4 rounded-xl bg-white border border-slate-200">
+    <div class="text-[11px] font-bold text-slate-400 uppercase">รายการเกรด</div>
+    <div class="text-3xl font-extrabold text-slate-900 tabular-nums mt-1">{{ stats.total_grades }}</div>
+  </div>
+</div>
+
+<div class="p-5 rounded-xl bg-white border border-slate-200 max-w-2xl">
+  <form method="post" action="/manage/sync">
+    <button class="px-5 py-2.5 rounded-lg bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700">
+      🔄 Sync Roster จาก Hub
+    </button>
+  </form>
+  <div class="mt-4 pt-4 border-t border-slate-100 text-xs text-slate-500 leading-relaxed">
+    <div class="font-bold text-slate-700 mb-1">หลักการทำงาน:</div>
+    <ol class="list-decimal list-inside space-y-0.5">
+      <li>เรียก <span class="font-mono">GET /api/v1/roster</span> ที่ Hub พร้อม header <span class="font-mono">X-Api-Key</span></li>
+      <li>Hub กรองด้วย Access Policy ของระบบเกรด แล้วคืน <span class="font-mono">user_id, email, user_type</span></li>
+      <li>ระบบเกรดกรองเฉพาะ <span class="font-mono">student</span> → สร้าง/อัปเดตตารางเกรด ผูกด้วย hub_user_id</li>
+      <li>ตอนนักศึกษา login → เอา JWT.sub มา match → เห็นเกรดของตัวเอง</li>
+    </ol>
+  </div>
+</div>
+
+{% endblock %}
