@@ -1,0 +1,66 @@
+%%{init: {'theme':'base', 'themeVariables': {'fontSize':'13px'}}}%%
+flowchart TB
+    START([👤 ผู้ใช้กดปุ่ม Login]) --> CHOOSE{เลือกวิธี<br/>ยืนยันตัวตน?}
+
+    %% ============ Google OAuth Path ============
+    CHOOSE -->|Google OAuth| G1
+    subgraph GOOGLE_PATH["🔵 Google OAuth 2.0 + PKCE Flow"]
+        direction TB
+        G1["Subsystem สร้าง<br/>code_verifier + code_challenge<br/>(PKCE — RFC 7636)"]
+        G2["Redirect → Hub<br/>/oauth/authorize<br/>+ client_id + state + challenge"]
+        G3["Hub redirect → Google<br/>/o/oauth2/auth"]
+        G4["Google แสดง consent screen<br/>ผู้ใช้กรอก email + password"]
+        G5["Google callback → Hub<br/>/auth/google/callback + auth_code"]
+        G6["Hub แลก ID token<br/>+ ดึง email (sub)"]
+        G7["ตรวจ access_list<br/>(user อยู่ใน whitelist?)"]
+        G1 --> G2 --> G3 --> G4 --> G5 --> G6 --> G7
+    end
+
+    %% ============ Passkey Path ============
+    CHOOSE -->|Passkey / FIDO2| P1
+    subgraph PASSKEY_PATH["🟢 Passkey (WebAuthn) Flow"]
+        direction TB
+        P1["ผู้ใช้กรอก email<br/>(หรือใช้ resident key)"]
+        P2["Hub สร้าง challenge<br/>+ allowCredentials<br/>(B43: dummy ถ้าไม่มี → กัน enumeration)"]
+        P3["Browser เรียก<br/>navigator.credentials.get()"]
+        P4["Authenticator ปลดล็อก<br/>(Touch ID / Windows Hello / YubiKey)"]
+        P5["Browser ส่ง<br/>assertion + clientDataJSON<br/>+ authenticatorData + signature"]
+        P6["Hub verify signature<br/>ด้วย public key ที่ register ไว้"]
+        P7["ตรวจ counter + RP ID<br/>+ origin"]
+        P1 --> P2 --> P3 --> P4 --> P5 --> P6 --> P7
+    end
+
+    %% ============ Risk Scoring (ใช้ร่วม) ============
+    G7 --> RBA
+    P7 --> RBA
+
+    subgraph RISK["🛡️ 4-Layer RBA Risk Scoring (ใช้ร่วมทุก path)"]
+        direction LR
+        RBA["รวบรวม 12 features:<br/>เวลา/สถานที่/อุปกรณ์/<br/>ความเร็ว/brute force"]
+        RBA --> SCORE["ML Verifier<br/>คำนวณ anomaly_score"]
+        SCORE --> DEC{decision?}
+    end
+
+    DEC -->|pass<br/>score < 0.3| ISSUE
+    DEC -->|mfa<br/>0.3 ≤ score < 0.7| STEPUP["⚠️ Risk-Triggered MFA<br/>→ /auth/passkey/risk-stepup<br/>หรือ Email OTP fallback"]
+    DEC -->|block<br/>score ≥ 0.7| BLOCKED["🚫 ปฏิเสธการเข้าระบบ<br/>+ บันทึก audit log"]
+
+    STEPUP -->|ยืนยันสำเร็จ| ISSUE
+    STEPUP -->|ล้มเหลว| BLOCKED
+
+    ISSUE["✅ ออก JWT (RS256)<br/>aud=client_id, exp=60min<br/>+ บันทึก login_session"]
+    ISSUE --> DONE([🎉 Subsystem ได้รับ JWT<br/>สร้าง session ของตัวเอง])
+    BLOCKED --> END([⛔ End])
+
+    %% Style
+    classDef google fill:#dbeafe,stroke:#3b82f6,stroke-width:2px
+    classDef passkey fill:#d1fae5,stroke:#10b981,stroke-width:2px
+    classDef risk fill:#fef3c7,stroke:#f59e0b,stroke-width:2px
+    classDef block fill:#fee2e2,stroke:#dc2626,stroke-width:2px
+    classDef pass fill:#dcfce7,stroke:#16a34a,stroke-width:2px
+
+    class G1,G2,G3,G4,G5,G6,G7 google
+    class P1,P2,P3,P4,P5,P6,P7 passkey
+    class RBA,SCORE,STEPUP risk
+    class BLOCKED block
+    class ISSUE,DONE pass

@@ -1,0 +1,72 @@
+<svg width="680" height="660" viewBox="0 0 680 660" role="img" xmlns="http://www.w3.org/2000/svg" font-family="system-ui, 'Segoe UI', 'Sarabun', sans-serif">
+<title>ภาพรวมระบบ Central Auth Hub แบบ Risk-Based Authentication</title>
+<desc>ผู้ใช้ล็อกอินที่ Hub ด้วย Google หรือ Passkey, Hub สกัด 23 features แล้วประเมินความเสี่ยง 4 ชั้น จากนั้นตัดสินใจ อนุญาต/ขอ MFA/ปฏิเสธ และบันทึก audit log กับ dashboard</desc>
+<defs>
+<marker id="ah" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto" markerUnits="strokeWidth">
+<path d="M0,0 L7,3 L0,6 Z" fill="#6b6b6b"/>
+</marker>
+</defs>
+<rect x="0" y="0" width="680" height="660" fill="#ffffff"/>
+<text x="340" y="26" text-anchor="middle" font-size="18" font-weight="700" fill="#1a1a1a">ภาพรวมระบบ Central Auth Hub (Risk-Based Authentication)</text>
+<text x="340" y="46" text-anchor="middle" font-size="12" fill="#555555">เขียว = อนุญาต · เหลือง = ยืนยันเพิ่ม · แดง = ปฏิเสธ</text>
+
+<rect x="250" y="62" width="180" height="40" rx="8" fill="#EEF0F2" stroke="#8a8f98" stroke-width="1.5"/>
+<text x="340" y="80" text-anchor="middle" font-size="13" font-weight="600" fill="#1a1a1a">ผู้ใช้</text>
+<text x="340" y="95" text-anchor="middle" font-size="11" fill="#555555">นักศึกษา · อาจารย์ · เจ้าหน้าที่</text>
+<line x1="340" y1="102" x2="340" y2="120" stroke="#6b6b6b" stroke-width="1.5" marker-end="url(#ah)"/>
+
+<rect x="190" y="122" width="300" height="56" rx="8" fill="#E6F1FB" stroke="#2f6feb" stroke-width="1.5"/>
+<text x="340" y="146" text-anchor="middle" font-size="13" font-weight="600" fill="#0C447C">Hub — ยืนยันตัวตน (Authentication)</text>
+<text x="340" y="165" text-anchor="middle" font-size="11" fill="#555555">Google OAuth · Passkey (WebAuthn)</text>
+<line x1="340" y1="178" x2="340" y2="196" stroke="#6b6b6b" stroke-width="1.5" marker-end="url(#ah)"/>
+
+<rect x="190" y="198" width="300" height="50" rx="8" fill="#E6F1FB" stroke="#2f6feb" stroke-width="1.5"/>
+<text x="340" y="219" text-anchor="middle" font-size="13" font-weight="600" fill="#0C447C">สกัด 23 Features</text>
+<text x="340" y="236" text-anchor="middle" font-size="11" fill="#555555">เวลา · ที่ตั้ง · อุปกรณ์ · ความเร็ว · ประวัติ</text>
+<line x1="340" y1="248" x2="340" y2="266" stroke="#6b6b6b" stroke-width="1.5" marker-end="url(#ah)"/>
+
+<rect x="120" y="268" width="440" height="100" rx="8" fill="#E6F1FB" stroke="#2f6feb" stroke-width="1.5"/>
+<text x="340" y="290" text-anchor="middle" font-size="13" font-weight="700" fill="#0C447C">ประเมินความเสี่ยง 4 ชั้น (Hybrid RBA)</text>
+<rect x="132" y="304" width="100" height="48" rx="6" fill="#f4f6f8" stroke="#cccccc"/>
+<text x="182" y="324" text-anchor="middle" font-size="11" font-weight="600" fill="#1a1a1a">1. Rule</text>
+<text x="182" y="340" text-anchor="middle" font-size="10" fill="#555555">กฎ/IP เสี่ยง</text>
+<rect x="240" y="304" width="100" height="48" rx="6" fill="#f4f6f8" stroke="#cccccc"/>
+<text x="290" y="324" text-anchor="middle" font-size="11" font-weight="600" fill="#1a1a1a">2. Behavior</text>
+<text x="290" y="340" text-anchor="middle" font-size="10" fill="#555555">พฤติกรรมเดิม</text>
+<rect x="348" y="304" width="100" height="48" rx="6" fill="#f4f6f8" stroke="#cccccc"/>
+<text x="398" y="324" text-anchor="middle" font-size="11" font-weight="600" fill="#1a1a1a">3. IForest</text>
+<text x="398" y="340" text-anchor="middle" font-size="10" fill="#555555">+ SHAP</text>
+<rect x="456" y="304" width="92" height="48" rx="6" fill="#f4f6f8" stroke="#cccccc"/>
+<text x="502" y="324" text-anchor="middle" font-size="11" font-weight="600" fill="#1a1a1a">4. รวมคะแนน</text>
+<text x="502" y="340" text-anchor="middle" font-size="10" fill="#555555">risk score</text>
+<line x1="340" y1="368" x2="340" y2="386" stroke="#6b6b6b" stroke-width="1.5" marker-end="url(#ah)"/>
+
+<rect x="250" y="388" width="180" height="46" rx="8" fill="#EEF0F2" stroke="#8a8f98" stroke-width="1.5"/>
+<text x="340" y="409" text-anchor="middle" font-size="13" font-weight="700" fill="#1a1a1a">ตัดสินใจ</text>
+<text x="340" y="425" text-anchor="middle" font-size="10" fill="#555555">ตามคะแนนความเสี่ยง</text>
+
+<path d="M300,434 L150,460 L150,476" fill="none" stroke="#6b6b6b" stroke-width="1.5" marker-end="url(#ah)"/>
+<line x1="340" y1="434" x2="340" y2="476" stroke="#6b6b6b" stroke-width="1.5" marker-end="url(#ah)"/>
+<path d="M380,434 L535,460 L535,476" fill="none" stroke="#6b6b6b" stroke-width="1.5" marker-end="url(#ah)"/>
+
+<rect x="65" y="478" width="170" height="50" rx="8" fill="#E4F5EA" stroke="#1a9d4f" stroke-width="1.5"/>
+<text x="150" y="499" text-anchor="middle" font-size="12" font-weight="600" fill="#0b5128">✓ อนุญาต → ออก JWT</text>
+<text x="150" y="516" text-anchor="middle" font-size="10" fill="#555555">คะแนนต่ำ</text>
+<rect x="255" y="478" width="170" height="50" rx="8" fill="#FBF0DA" stroke="#C77F12" stroke-width="1.5"/>
+<text x="340" y="499" text-anchor="middle" font-size="12" font-weight="600" fill="#7a4d06">⚠ MFA step-up</text>
+<text x="340" y="516" text-anchor="middle" font-size="10" fill="#555555">Passkey / OTP — คะแนนกลาง</text>
+<rect x="450" y="478" width="170" height="50" rx="8" fill="#FBE9E7" stroke="#d14b3d" stroke-width="1.5"/>
+<text x="535" y="499" text-anchor="middle" font-size="12" font-weight="600" fill="#7a241b">✗ ปฏิเสธ (block)</text>
+<text x="535" y="516" text-anchor="middle" font-size="10" fill="#555555">คะแนนสูง</text>
+
+<line x1="150" y1="528" x2="150" y2="560" stroke="#6b6b6b" stroke-width="1.5" marker-end="url(#ah)"/>
+
+<rect x="65" y="562" width="170" height="50" rx="8" fill="#EEF0F2" stroke="#8a8f98" stroke-width="1.5"/>
+<text x="150" y="583" text-anchor="middle" font-size="12" font-weight="600" fill="#1a1a1a">ระบบย่อย</text>
+<text x="150" y="600" text-anchor="middle" font-size="10" fill="#555555">หอพัก · ห้องสมุด</text>
+
+<path d="M340,528 L340,545 L450,545 L450,562" fill="none" stroke="#6b6b6b" stroke-width="1.5" stroke-dasharray="4 3" marker-end="url(#ah)"/>
+<rect x="255" y="562" width="365" height="50" rx="8" fill="#EEF0F2" stroke="#8a8f98" stroke-width="1.5"/>
+<text x="437" y="583" text-anchor="middle" font-size="12" font-weight="600" fill="#1a1a1a">ทุก login → Audit log + Dashboard</text>
+<text x="437" y="600" text-anchor="middle" font-size="10" fill="#555555">login_sessions · สถิติความเสี่ยง · SHAP · IP blacklist</text>
+</svg>

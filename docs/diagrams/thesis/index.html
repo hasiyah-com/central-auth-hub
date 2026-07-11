@@ -1,0 +1,591 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<title>Central Auth Hub — Thesis Diagrams</title>
+<style>
+  body { font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans Thai", sans-serif; background: #f8fafc; color: #0f172a; margin: 0; padding: 24px; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  .sub { color: #64748b; margin-bottom: 24px; }
+  .card { background: #fff; border: 1px solid #e2e8f0; border-radius: 12px; padding: 20px; margin-bottom: 20px; box-shadow: 0 1px 3px rgba(0,0,0,.04); }
+  .card header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 16px; padding-bottom: 12px; border-bottom: 1px solid #f1f5f9; }
+  .card h2 { font-size: 16px; margin: 0; color: #1e293b; }
+  .actions { display: flex; gap: 8px; align-items: center; }
+  .actions button, .actions a { background: #6366f1; color: #fff; border: none; padding: 6px 12px; border-radius: 6px; font-size: 12px; cursor: pointer; text-decoration: none; font-family: inherit; }
+  .actions button:hover, .actions a:hover { background: #4f46e5; }
+  .diagram { overflow-x: auto; text-align: center; padding: 8px; }
+  .diagram svg { max-width: 100%; height: auto; }
+  .loading { color: #94a3b8; padding: 40px; }
+  .err { color: #dc2626; background: #fef2f2; padding: 12px; border-radius: 6px; text-align: left; white-space: pre-wrap; font-family: monospace; font-size: 12px; }
+</style>
+</head>
+<body>
+  <h1>Central Auth Hub — Thesis Architecture Diagrams</h1>
+  <p class="sub">6 แผนภาพระบบ — Mermaid source ฝังในไฟล์นี้ (ดับเบิลคลิกเปิดได้เลย ไม่ต้องใช้ web server) · ปุ่ม ⬇ PNG/SVG ใช้ใส่ในเล่ม</p>
+<section class="card" data-idx="1">
+  <header>
+    <h2>1. System Architecture — องค์ประกอบทั้งหมด</h2>
+    <div class="actions">
+      <button data-act="png">⬇ PNG</button>
+      <button data-act="svg">⬇ SVG</button>
+      <a href="1-system-architecture.mermaid" download>⬇ .mermaid</a>
+    </div>
+  </header>
+  <div class="diagram"><div class="loading">กำลังโหลด…</div></div>
+  <script type="text/plain" class="src">%%{init: {'theme':'base', 'themeVariables': {'primaryColor':'#eef2ff','primaryTextColor':'#1e293b','primaryBorderColor':'#6366f1','lineColor':'#475569','fontSize':'14px'}}}%%
+flowchart LR
+    %% ============ External Identity Providers ============
+    subgraph IDP["🔐 ผู้ให้บริการยืนยันตัวตน (IdP)"]
+        GOOGLE[("Google<br/>OAuth 2.0 / OIDC")]
+        LINE[("LINE Login<br/>OIDC")]
+        PASSKEY(["Passkey<br/>WebAuthn / FIDO2"])
+    end
+
+    %% ============ Clients ============
+    subgraph CLIENT["💻 ผู้ใช้งาน"]
+        STUDENT["นักศึกษา<br/>(student)"]
+        STAFF["อาจารย์ / เจ้าหน้าที่<br/>(teacher / staff)"]
+        ADMIN["ผู้ดูแลระบบ<br/>(admin)"]
+    end
+
+    %% ============ Central Auth Hub ============
+    subgraph HUB["🏛️ Central Auth Hub (port 8000)"]
+        direction TB
+        API["FastAPI Backend<br/>OAuth + JWT + Audit"]
+        FE["Admin Frontend<br/>Next.js 14 (port 3000)"]
+        RBA["4-Layer RBA<br/>Rule + Behavior + IForest + Aggregator"]
+        JWKS["JWKS Endpoint<br/>/.well-known/jwks.json"]
+    end
+
+    %% ============ ML Service ============
+    subgraph MLBOX["🤖 ML Verifier (port 9000)"]
+        ML["Isolation Forest<br/>+ SHAP TreeExplainer"]
+    end
+
+    %% ============ Subsystems ============
+    subgraph SUBA["🏠 ระบบหอพัก (port 8001)"]
+        DORM["FastAPI Client<br/>OAuth + Session"]
+        DORMDB[("postgres-dorm<br/>rooms/reservations")]
+    end
+
+    subgraph SUBB["📚 ระบบห้องสมุด (port 8002)"]
+        LIB["FastAPI Client<br/>OAuth + Session"]
+        LIBDB[("postgres-library<br/>books/borrowings")]
+    end
+
+    %% ============ Data Layer ============
+    subgraph DATA["💾 ชั้นจัดเก็บข้อมูล (Hub)"]
+        PG[("PostgreSQL 15<br/>7 ตาราง: users / subsystems /<br/>access_list / login_sessions /<br/>audit_logs / request_logs /<br/>secret_retrieval_tokens")]
+        REDIS[("Redis 7<br/>session / auth code /<br/>jti blacklist")]
+    end
+
+    %% ============ Connections ============
+    STUDENT --> SUBA
+    STUDENT --> SUBB
+    STAFF --> FE
+    ADMIN --> FE
+
+    SUBA -.->|OAuth Redirect| API
+    SUBB -.->|OAuth Redirect| API
+    FE -->|REST + JWT| API
+
+    API -->|OIDC| GOOGLE
+    API -->|OIDC| LINE
+    API -->|WebAuthn| PASSKEY
+
+    API --> RBA
+    RBA -->|POST /v1/score| ML
+    RBA -.->|fail-safe| ML
+
+    API <--> PG
+    API <--> REDIS
+
+    DORM <--> DORMDB
+    LIB <--> LIBDB
+
+    SUBA -->|JWT verify| JWKS
+    SUBB -->|JWT verify| JWKS
+
+    %% Style
+    classDef hub fill:#eef2ff,stroke:#6366f1,stroke-width:2px
+    classDef sub fill:#ecfdf5,stroke:#10b981,stroke-width:2px
+    classDef ml fill:#fef3c7,stroke:#f59e0b,stroke-width:2px
+    classDef db fill:#fee2e2,stroke:#ef4444,stroke-width:2px
+    classDef idp fill:#f3e8ff,stroke:#a855f7,stroke-width:2px
+
+    class API,FE,RBA,JWKS hub
+    class DORM,LIB sub
+    class ML ml
+    class PG,REDIS,DORMDB,LIBDB db
+    class GOOGLE,LINE,PASSKEY idp</script>
+</section>
+<section class="card" data-idx="2">
+  <header>
+    <h2>2. System Workflow — Login → แสดงผล</h2>
+    <div class="actions">
+      <button data-act="png">⬇ PNG</button>
+      <button data-act="svg">⬇ SVG</button>
+      <a href="2-system-workflow.mermaid" download>⬇ .mermaid</a>
+    </div>
+  </header>
+  <div class="diagram"><div class="loading">กำลังโหลด…</div></div>
+  <script type="text/plain" class="src">%%{init: {'theme':'base', 'themeVariables': {'fontSize':'14px'}}}%%
+sequenceDiagram
+    autonumber
+    actor U as 👤 ผู้ใช้
+    participant S as 🏠 Subsystem<br/>(หอพัก / ห้องสมุด)
+    participant H as 🏛️ Hub Backend
+    participant G as 🔐 Google / LINE / Passkey
+    participant ML as 🤖 ML Verifier
+    participant DB as 💾 Postgres / Redis
+
+    U->>S: 1. เข้าหน้าเว็บ Subsystem
+    S->>S: 2. ตรวจ session cookie<br/>(itsdangerous signed)
+    alt ไม่มี session
+        S->>U: 3. แสดงปุ่ม "Login ผ่าน Hub"
+        U->>S: 4. กด Login
+        S->>H: 5. Redirect /oauth/authorize<br/>+ client_id + PKCE challenge + state
+        H->>G: 6. Redirect ไป IdP (เลือก Google/LINE/Passkey)
+        G->>U: 7. ขอ consent + verify ตัวตน
+        U->>G: 8. ยืนยัน
+        G->>H: 9. Callback + auth code
+        H->>H: 10. แลก ID token + ดึง email
+        H->>DB: 11. ดึง user + ตรวจ access_list (whitelist)
+        H->>ML: 12. POST /v1/score (12 features)
+        ML-->>H: 13. {anomaly_score, decision, SHAP}
+        H->>DB: 14. บันทึก login_session + audit_log
+        alt decision = block / mfa
+            H->>U: 15a. บังคับ MFA หรือ Passkey step-up
+            U->>H: 15b. ยืนยันสำเร็จ
+        end
+        H->>S: 16. Redirect callback + auth code
+        S->>H: 17. POST /oauth/token<br/>(code + secret + PKCE verifier)
+        H-->>S: 18. JWT (RS256, aud=client_id, 60 นาที)
+        S->>H: 19. GET JWKS เพื่อ verify signature
+        S->>S: 20. สร้าง session cookie ของ Subsystem
+    end
+    S-->>U: 21. แสดงผลหน้า dashboard / ทำงานต่อ</script>
+</section>
+<section class="card" data-idx="3">
+  <header>
+    <h2>3. Authentication Flow — Google OAuth + Passkey</h2>
+    <div class="actions">
+      <button data-act="png">⬇ PNG</button>
+      <button data-act="svg">⬇ SVG</button>
+      <a href="3-authentication-flow.mermaid" download>⬇ .mermaid</a>
+    </div>
+  </header>
+  <div class="diagram"><div class="loading">กำลังโหลด…</div></div>
+  <script type="text/plain" class="src">%%{init: {'theme':'base', 'themeVariables': {'fontSize':'13px'}}}%%
+flowchart TB
+    START([👤 ผู้ใช้กดปุ่ม Login]) --> CHOOSE{เลือกวิธี<br/>ยืนยันตัวตน?}
+
+    %% ============ Google OAuth Path ============
+    CHOOSE -->|Google OAuth| G1
+    subgraph GOOGLE_PATH["🔵 Google OAuth 2.0 + PKCE Flow"]
+        direction TB
+        G1["Subsystem สร้าง<br/>code_verifier + code_challenge<br/>(PKCE — RFC 7636)"]
+        G2["Redirect → Hub<br/>/oauth/authorize<br/>+ client_id + state + challenge"]
+        G3["Hub redirect → Google<br/>/o/oauth2/auth"]
+        G4["Google แสดง consent screen<br/>ผู้ใช้กรอก email + password"]
+        G5["Google callback → Hub<br/>/auth/google/callback + auth_code"]
+        G6["Hub แลก ID token<br/>+ ดึง email (sub)"]
+        G7["ตรวจ access_list<br/>(user อยู่ใน whitelist?)"]
+        G1 --> G2 --> G3 --> G4 --> G5 --> G6 --> G7
+    end
+
+    %% ============ Passkey Path ============
+    CHOOSE -->|Passkey / FIDO2| P1
+    subgraph PASSKEY_PATH["🟢 Passkey (WebAuthn) Flow"]
+        direction TB
+        P1["ผู้ใช้กรอก email<br/>(หรือใช้ resident key)"]
+        P2["Hub สร้าง challenge<br/>+ allowCredentials<br/>(B43: dummy ถ้าไม่มี → กัน enumeration)"]
+        P3["Browser เรียก<br/>navigator.credentials.get()"]
+        P4["Authenticator ปลดล็อก<br/>(Touch ID / Windows Hello / YubiKey)"]
+        P5["Browser ส่ง<br/>assertion + clientDataJSON<br/>+ authenticatorData + signature"]
+        P6["Hub verify signature<br/>ด้วย public key ที่ register ไว้"]
+        P7["ตรวจ counter + RP ID<br/>+ origin"]
+        P1 --> P2 --> P3 --> P4 --> P5 --> P6 --> P7
+    end
+
+    %% ============ Risk Scoring (ใช้ร่วม) ============
+    G7 --> RBA
+    P7 --> RBA
+
+    subgraph RISK["🛡️ 4-Layer RBA Risk Scoring (ใช้ร่วมทุก path)"]
+        direction LR
+        RBA["รวบรวม 12 features:<br/>เวลา/สถานที่/อุปกรณ์/<br/>ความเร็ว/brute force"]
+        RBA --> SCORE["ML Verifier<br/>คำนวณ anomaly_score"]
+        SCORE --> DEC{decision?}
+    end
+
+    DEC -->|pass<br/>score < 0.3| ISSUE
+    DEC -->|mfa<br/>0.3 ≤ score < 0.7| STEPUP["⚠️ Risk-Triggered MFA<br/>→ /auth/passkey/risk-stepup<br/>หรือ Email OTP fallback"]
+    DEC -->|block<br/>score ≥ 0.7| BLOCKED["🚫 ปฏิเสธการเข้าระบบ<br/>+ บันทึก audit log"]
+
+    STEPUP -->|ยืนยันสำเร็จ| ISSUE
+    STEPUP -->|ล้มเหลว| BLOCKED
+
+    ISSUE["✅ ออก JWT (RS256)<br/>aud=client_id, exp=60min<br/>+ บันทึก login_session"]
+    ISSUE --> DONE([🎉 Subsystem ได้รับ JWT<br/>สร้าง session ของตัวเอง])
+    BLOCKED --> END([⛔ End])
+
+    %% Style
+    classDef google fill:#dbeafe,stroke:#3b82f6,stroke-width:2px
+    classDef passkey fill:#d1fae5,stroke:#10b981,stroke-width:2px
+    classDef risk fill:#fef3c7,stroke:#f59e0b,stroke-width:2px
+    classDef block fill:#fee2e2,stroke:#dc2626,stroke-width:2px
+    classDef pass fill:#dcfce7,stroke:#16a34a,stroke-width:2px
+
+    class G1,G2,G3,G4,G5,G6,G7 google
+    class P1,P2,P3,P4,P5,P6,P7 passkey
+    class RBA,SCORE,STEPUP risk
+    class BLOCKED block
+    class ISSUE,DONE pass</script>
+</section>
+<section class="card" data-idx="4">
+  <header>
+    <h2>4. Hybrid RBAC + ML Workflow</h2>
+    <div class="actions">
+      <button data-act="png">⬇ PNG</button>
+      <button data-act="svg">⬇ SVG</button>
+      <a href="4-hybrid-rbac-workflow.mermaid" download>⬇ .mermaid</a>
+    </div>
+  </header>
+  <div class="diagram"><div class="loading">กำลังโหลด…</div></div>
+  <script type="text/plain" class="src">%%{init: {'theme':'base', 'themeVariables': {'fontSize':'13px'}}}%%
+flowchart TB
+    START([👤 Authenticated User<br/>เพิ่งผ่าน OAuth/Passkey]) --> CTX
+
+    CTX["📦 Request Context<br/>user_id, client_id, IP, UA,<br/>timestamp, geo, history"]
+
+    CTX --> L1
+
+    %% ============ Layer 1: Static RBAC ============
+    subgraph LAYER1["🟦 Layer 1 — Static RBAC (Authorization)"]
+        direction TB
+        L1["ดึง user.user_type<br/>(student/teacher/staff/admin)"]
+        L1 --> R1{role อนุญาตให้<br/>เข้า resource นี้?}
+        R1 -->|❌ No| DENY1["403 Forbidden<br/>+ audit log"]
+        R1 -->|✅ Yes| L1B
+        L1B["ตรวจ access_list<br/>(whitelist ของ subsystem)"]
+        L1B --> R2{user อยู่ใน<br/>whitelist?}
+        R2 -->|❌ No| DENY2["403 Not whitelisted<br/>+ audit log"]
+        R2 -->|✅ Yes| PASS1[✅ ผ่าน RBAC]
+    end
+
+    PASS1 --> L2
+
+    %% ============ Layer 2: ML 4-Layer RBA ============
+    subgraph LAYER2["🟨 Layer 2 — Adaptive Risk-Based Access (4-Layer RBA)"]
+        direction TB
+        L2["รวบรวม 12 features<br/>จาก context + DB history"]
+        L2 --> RBA1 & RBA2 & RBA3
+
+        subgraph SUBRBA[" "]
+            direction LR
+            RBA1["① Rule Engine<br/>impossible travel, blacklist IP,<br/>brute force, off-hours"]
+            RBA2["② Behavior Profiling<br/>เปรียบเทียบกับ baseline<br/>ของผู้ใช้รายคน"]
+            RBA3["③ Isolation Forest<br/>(unsupervised anomaly)<br/>+ SHAP TreeExplainer"]
+        end
+
+        RBA1 --> AGG
+        RBA2 --> AGG
+        RBA3 --> AGG
+        AGG["④ Weighted Aggregator<br/>score = Σ wᵢ · scoreᵢ<br/>+ explain (top SHAP features)"]
+    end
+
+    AGG --> DEC{decision?}
+
+    %% ============ Decision ============
+    DEC -->|pass<br/>score < 0.3| ALLOW
+    DEC -->|mfa<br/>0.3 ≤ score < 0.7| MFA
+    DEC -->|block<br/>score ≥ 0.7| BLOCK
+
+    ALLOW["✅ ออก JWT<br/>+ log decision=pass<br/>+ บันทึก SHAP top-3"]
+    MFA["⚠️ Risk-Triggered MFA<br/>Passkey step-up หรือ<br/>Email OTP fallback"]
+    BLOCK["🚫 ปฏิเสธ<br/>+ log decision=block<br/>+ alert admin"]
+
+    MFA -->|สำเร็จ| ALLOW
+    MFA -->|ล้มเหลว| BLOCK
+
+    ALLOW --> DONE([🎉 Authorized<br/>เข้าใช้งาน Subsystem])
+    BLOCK --> END([⛔ Blocked])
+    DENY1 --> END
+    DENY2 --> END
+
+    %% Style
+    classDef rbac fill:#dbeafe,stroke:#3b82f6,stroke-width:2px
+    classDef ml fill:#fef3c7,stroke:#f59e0b,stroke-width:2px
+    classDef pass fill:#dcfce7,stroke:#16a34a,stroke-width:2px
+    classDef deny fill:#fee2e2,stroke:#dc2626,stroke-width:2px
+    classDef mfa fill:#fed7aa,stroke:#ea580c,stroke-width:2px
+
+    class L1,L1B,R1,R2 rbac
+    class L2,RBA1,RBA2,RBA3,AGG ml
+    class ALLOW,DONE pass
+    class DENY1,DENY2,BLOCK,END deny
+    class MFA mfa</script>
+</section>
+<section class="card" data-idx="5">
+  <header>
+    <h2>5. Machine Learning Pipeline</h2>
+    <div class="actions">
+      <button data-act="png">⬇ PNG</button>
+      <button data-act="svg">⬇ SVG</button>
+      <a href="5-ml-pipeline.mermaid" download>⬇ .mermaid</a>
+    </div>
+  </header>
+  <div class="diagram"><div class="loading">กำลังโหลด…</div></div>
+  <script type="text/plain" class="src">%%{init: {'theme':'base', 'themeVariables': {'fontSize':'13px'}}}%%
+flowchart LR
+    %% ============ Stage 1: Raw Data ============
+    subgraph S1["1️⃣ Raw Logs"]
+        direction TB
+        LOG1[("login_sessions<br/>(ip, ua, ts, geo)")]
+        LOG2[("request_logs<br/>(HTTP traffic)")]
+        LOG3[("audit_logs<br/>(state changes)")]
+    end
+
+    %% ============ Stage 2: Preprocessing ============
+    subgraph S2["2️⃣ Preprocessing"]
+        direction TB
+        P1["• Parse User-Agent<br/>  → browser / OS / device"]
+        P2["• GeoIP lookup IP<br/>  → country / city"]
+        P3["• Time normalization<br/>  → UTC + bucket รายชั่วโมง"]
+        P4["• Aggregate window<br/>  → 24h / 30d rolling"]
+        P5["• Clean + dedupe"]
+    end
+
+    %% ============ Stage 3: Feature Extraction ============
+    subgraph S3["3️⃣ Feature Extraction (12 features)"]
+        direction TB
+        F1["⏰ Temporal<br/>• hour_of_day<br/>• day_of_week<br/>• is_weekend<br/>• hours_from_typical"]
+        F2["🌍 Geographic<br/>• is_thailand<br/>• is_new_country<br/>• country_change_30d"]
+        F3["📱 Device<br/>• is_new_device<br/>• is_new_ua_family"]
+        F4["⚡ Velocity<br/>• log_min_since_last<br/>• login_count_24h"]
+        F5["🛡️ Brute Force<br/>• failed_logins_24h"]
+    end
+
+    %% ============ Stage 4: Models ============
+    subgraph S4["4️⃣ Anomaly Detection (Ensemble)"]
+        direction TB
+        M1["🌲 Isolation Forest<br/>n_estimators=100<br/>contamination=0.05<br/>(Liu 2008)"]
+        M2["🟣 One-Class SVM<br/>kernel=RBF<br/>nu=0.05<br/>(optional ensemble)"]
+        SIG["σ(·) Sigmoid<br/>→ normalize 0..1"]
+    end
+
+    %% ============ Stage 5: Explainability ============
+    subgraph S5["5️⃣ Explainability"]
+        direction TB
+        SHAP["SHAP TreeExplainer<br/>(Lundberg & Lee 2017)<br/>→ per-feature contribution"]
+        TOP3["Top-3 reasons<br/>(เช่น is_new_country=+0.4)"]
+        SHAP --> TOP3
+    end
+
+    %% ============ Stage 6: Decision + Output ============
+    subgraph S6["6️⃣ Decision + Output"]
+        direction TB
+        DEC{anomaly_score?}
+        DEC -->|score lt 0.3| PASS["✅ pass"]
+        DEC -->|0.3 to 0.7| MFA["⚠️ mfa / would_mfa"]
+        DEC -->|score ge 0.7| BLK["🚫 block / would_block"]
+        PERSIST[("📥 บันทึก<br/>login_sessions<br/>anomaly_score + decision")]
+    end
+
+    %% ============ Flow ============
+    LOG1 --> P1
+    LOG2 --> P1
+    LOG3 --> P1
+    P1 --> P2 --> P3 --> P4 --> P5
+    P5 --> F1 & F2 & F3 & F4 & F5
+    F1 & F2 & F3 & F4 & F5 --> M1
+    F1 & F2 & F3 & F4 & F5 -.->|optional| M2
+    M1 --> SIG
+    M2 -.-> SIG
+    SIG --> DEC
+    M1 --> SHAP
+    PASS --> PERSIST
+    MFA --> PERSIST
+    BLK --> PERSIST
+
+    %% ============ Offline Retrain Loop ============
+    PERSIST -.->|nightly batch retrain| RT
+    RT["🔁 Offline Retraining<br/>generate_data.py<br/>+ train_model.py"]
+    RT -.-> M1
+
+    %% Style
+    classDef raw fill:#fee2e2,stroke:#ef4444
+    classDef pre fill:#fef3c7,stroke:#f59e0b
+    classDef feat fill:#ddd6fe,stroke:#7c3aed
+    classDef model fill:#dbeafe,stroke:#3b82f6
+    classDef exp fill:#fce7f3,stroke:#ec4899
+    classDef out fill:#dcfce7,stroke:#16a34a
+
+    class LOG1,LOG2,LOG3 raw
+    class P1,P2,P3,P4,P5 pre
+    class F1,F2,F3,F4,F5 feat
+    class M1,M2,SIG model
+    class SHAP,TOP3 exp
+    class PASS,MFA,BLK,PERSIST,RT out</script>
+</section>
+<section class="card" data-idx="6">
+  <header>
+    <h2>6. Deployment Architecture</h2>
+    <div class="actions">
+      <button data-act="png">⬇ PNG</button>
+      <button data-act="svg">⬇ SVG</button>
+      <a href="6-deployment-architecture.mermaid" download>⬇ .mermaid</a>
+    </div>
+  </header>
+  <div class="diagram"><div class="loading">กำลังโหลด…</div></div>
+  <script type="text/plain" class="src">%%{init: {'theme':'base', 'themeVariables': {'fontSize':'13px'}}}%%
+flowchart TB
+    %% ============ Internet ============
+    USER([🌐 Internet<br/>HTTPS / TLS 1.3])
+
+    %% ============ Reverse Proxy ============
+    USER --> NGINX
+
+    subgraph EDGE["🛡️ Edge Layer"]
+        NGINX["Nginx Reverse Proxy<br/>TLS termination<br/>+ rate limit + WAF<br/>+ X-Forwarded-For"]
+    end
+
+    NGINX --> HUBSTACK
+    NGINX --> DORMSTACK
+    NGINX --> LIBSTACK
+
+    %% ============ Stack 1: cah-hub ============
+    subgraph HUBSTACK["🏛️ Stack: cah-hub (docker-compose.yml)"]
+        direction TB
+        FE["Next.js Admin<br/>:3000"]
+        HUB["FastAPI Hub<br/>:8000"]
+        ML["ML Verifier<br/>FastAPI :9000"]
+        PGHUB[("PostgreSQL 15<br/>hub_db :5432")]
+        REDIS[("Redis 7<br/>:6379")]
+
+        FE -->|REST + JWT| HUB
+        HUB -->|httpx async| ML
+        HUB <--> PGHUB
+        HUB <--> REDIS
+        ML --> MODEL[/"iforest_v1.pkl<br/>(volume mount)"/]
+    end
+
+    %% ============ Stack 2: cah-dorm ============
+    subgraph DORMSTACK["🏠 Stack: cah-dorm (docker-compose.dorm.yml)"]
+        direction TB
+        DORM["Subsystem A<br/>FastAPI หอพัก :8001"]
+        PGDORM[("PostgreSQL<br/>dorm_db :5433")]
+        DORM <--> PGDORM
+    end
+
+    %% ============ Stack 3: cah-library ============
+    subgraph LIBSTACK["📚 Stack: cah-library (docker-compose.library.yml)"]
+        direction TB
+        LIB["Subsystem B<br/>FastAPI ห้องสมุด :8002"]
+        PGLIB[("PostgreSQL<br/>library_db :5434")]
+        LIB <--> PGLIB
+    end
+
+    %% ============ Shared Network ============
+    HUB -.->|cah-net<br/>external| DORM
+    HUB -.->|cah-net<br/>external| LIB
+    DORM -.->|JWKS fetch<br/>10min cache| HUB
+    LIB -.->|JWKS fetch<br/>10min cache| HUB
+
+    %% ============ External ============
+    HUB -.->|OAuth 2.0| GOOGLE([🔵 Google OAuth])
+    HUB -.->|OIDC| LINE([🟢 LINE Login])
+
+    %% ============ Volumes / Secrets ============
+    subgraph VOLS["💾 Persistent Volumes (gitignored)"]
+        direction LR
+        V1[/"postgres_data/<br/>hub / dorm / library"/]
+        V2[/"keys/<br/>jwt_private.pem"/]
+        V3[/"models/<br/>iforest_v1.pkl"/]
+        V4[/".env<br/>SECRET_KEY, OAuth creds"/]
+    end
+
+    PGHUB -.-> V1
+    PGDORM -.-> V1
+    PGLIB -.-> V1
+    HUB -.-> V2
+    HUB -.-> V4
+    ML -.-> V3
+
+    %% ============ Backup ============
+    subgraph BACKUP["☁️ Backup"]
+        BK["scripts/backup.sh<br/>pg_dump 3 DBs<br/>→ OneDrive sync"]
+    end
+
+    PGHUB -.->|nightly| BK
+    PGDORM -.->|nightly| BK
+    PGLIB -.->|nightly| BK
+
+    %% Style
+    classDef edge fill:#fce7f3,stroke:#db2777,stroke-width:2px
+    classDef hub fill:#eef2ff,stroke:#6366f1,stroke-width:2px
+    classDef sub fill:#ecfdf5,stroke:#10b981,stroke-width:2px
+    classDef db fill:#fee2e2,stroke:#ef4444,stroke-width:2px
+    classDef vol fill:#fef3c7,stroke:#f59e0b,stroke-width:2px
+    classDef ext fill:#f3e8ff,stroke:#a855f7,stroke-width:2px
+
+    class NGINX edge
+    class FE,HUB,ML hub
+    class DORM,LIB sub
+    class PGHUB,REDIS,PGDORM,PGLIB db
+    class V1,V2,V3,V4,MODEL,BK vol
+    class GOOGLE,LINE ext</script>
+</section>
+<script type="module">
+import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+mermaid.initialize({ startOnLoad: false, theme: "base", securityLevel: "loose", flowchart: { useMaxWidth: false }, sequence: { useMaxWidth: false } });
+
+const cards = document.querySelectorAll(".card");
+for (const card of cards) {
+  const idx = card.dataset.idx;
+  const src = card.querySelector("script.src").textContent;
+  const slot = card.querySelector(".diagram");
+  try {
+    const { svg } = await mermaid.render("m" + idx, src);
+    slot.innerHTML = svg;
+    const svgEl = slot.querySelector("svg");
+    card.querySelector('[data-act="svg"]').onclick = () => downloadSvg(svgEl, `diagram-${idx}.svg`);
+    card.querySelector('[data-act="png"]').onclick = () => downloadPng(svgEl, `diagram-${idx}.png`);
+  } catch (e) {
+    slot.innerHTML = `<pre class="err">${e.message}</pre>`;
+  }
+}
+
+function downloadSvg(svgEl, name) {
+  const data = new XMLSerializer().serializeToString(svgEl);
+  const blob = new Blob([data], { type: "image/svg+xml" });
+  trigger(URL.createObjectURL(blob), name);
+}
+
+function downloadPng(svgEl, name, scale = 2) {
+  const data = new XMLSerializer().serializeToString(svgEl);
+  const img = new Image();
+  const url = "data:image/svg+xml;base64," + btoa(unescape(encodeURIComponent(data)));
+  img.onload = () => {
+    const vb = svgEl.viewBox && svgEl.viewBox.baseVal;
+    const w = (vb && vb.width)  || svgEl.clientWidth  || 1600;
+    const hh = (vb && vb.height) || svgEl.clientHeight || 900;
+    const c = document.createElement("canvas");
+    c.width = w * scale; c.height = hh * scale;
+    const ctx = c.getContext("2d");
+    ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, c.width, c.height);
+    ctx.drawImage(img, 0, 0, c.width, c.height);
+    c.toBlob(b => trigger(URL.createObjectURL(b), name), "image/png");
+  };
+  img.src = url;
+}
+
+function trigger(url, name) {
+  const a = document.createElement("a");
+  a.href = url; a.download = name; a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,131 @@
+<svg width="720" height="540" viewBox="0 0 720 540" role="img" xmlns="http://www.w3.org/2000/svg" font-family="system-ui,'Segoe UI','Sarabun',sans-serif">
+<title>ER Diagram — ตารางหลักของ Central Auth Hub</title>
+<desc>แสดงความสัมพันธ์ระหว่างตาราง users, subsystems, access_list, login_sessions, audit_logs, passkey_credentials, passkey_backup_codes, ml_feedback, ip_blacklist</desc>
+<defs>
+<marker id="one" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto"><path d="M3,2 L3,8 M6,2 L6,8" stroke="#3a4250" stroke-width="1.4" fill="none"/></marker>
+<marker id="many" markerWidth="12" markerHeight="10" refX="11" refY="5" orient="auto"><path d="M2,2 L10,5 L2,8 M10,2 L10,8" stroke="#3a4250" stroke-width="1.3" fill="none"/></marker>
+</defs>
+<rect width="720" height="540" fill="#ffffff"/>
+<text x="360" y="22" text-anchor="middle" font-size="15" font-weight="700" fill="#1a1a1a">ER Diagram — ตารางหลักของระบบ (Central Auth Hub)</text>
+
+<g>
+<rect x="280" y="40" width="170" height="120" rx="6" fill="#FFF5E1" stroke="#C77F12" stroke-width="2"/>
+<rect x="280" y="40" width="170" height="22" rx="6" fill="#C77F12"/>
+<text x="365" y="56" text-anchor="middle" font-size="12" font-weight="700" fill="#fff">users</text>
+<text x="290" y="76" font-size="10" font-weight="700" fill="#7a4d06">PK id (UUID)</text>
+<text x="290" y="90" font-size="10" fill="#555">email · full_name</text>
+<text x="290" y="103" font-size="10" fill="#555">user_type</text>
+<text x="290" y="116" font-size="10" fill="#555">identifier · faculty</text>
+<text x="290" y="129" font-size="10" fill="#555">phone · address</text>
+<text x="290" y="142" font-size="10" fill="#555">status · is_hub_admin</text>
+<text x="290" y="155" font-size="10" fill="#555">google_sub · email_verified</text>
+</g>
+
+<g>
+<rect x="510" y="40" width="190" height="120" rx="6" fill="#E6F1FB" stroke="#2f6feb" stroke-width="2"/>
+<rect x="510" y="40" width="190" height="22" rx="6" fill="#2f6feb"/>
+<text x="605" y="56" text-anchor="middle" font-size="12" font-weight="700" fill="#fff">subsystems</text>
+<text x="520" y="76" font-size="10" font-weight="700" fill="#0C447C">PK id (UUID)</text>
+<text x="520" y="90" font-size="10" fill="#555">name · description</text>
+<text x="520" y="103" font-size="10" fill="#555">client_id (unique)</text>
+<text x="520" y="116" font-size="10" fill="#555">client_secret_hash</text>
+<text x="520" y="129" font-size="10" fill="#555">redirect_uris[] · scope[]</text>
+<text x="520" y="142" font-size="10" fill="#555">allowed_roles[]</text>
+<text x="520" y="155" font-size="10" fill="#555">status · owner_user_id (FK)</text>
+</g>
+
+<g>
+<rect x="345" y="200" width="180" height="92" rx="6" fill="#E4F5EA" stroke="#1a9d4f" stroke-width="2"/>
+<rect x="345" y="200" width="180" height="22" rx="6" fill="#1a9d4f"/>
+<text x="435" y="216" text-anchor="middle" font-size="12" font-weight="700" fill="#fff">access_list (RBAC)</text>
+<text x="355" y="236" font-size="10" font-weight="700" fill="#0b5128">PK id</text>
+<text x="355" y="250" font-size="10" fill="#555">FK user_id</text>
+<text x="355" y="263" font-size="10" fill="#555">FK subsystem_id</text>
+<text x="355" y="276" font-size="10" fill="#555">role_in_sub</text>
+<text x="355" y="289" font-size="10" fill="#555">granted_at · revoked_at</text>
+</g>
+
+<g>
+<rect x="20" y="330" width="220" height="170" rx="6" fill="#EFEAFB" stroke="#6b5bd1" stroke-width="2"/>
+<rect x="20" y="330" width="220" height="22" rx="6" fill="#6b5bd1"/>
+<text x="130" y="346" text-anchor="middle" font-size="12" font-weight="700" fill="#fff">login_sessions (risk data)</text>
+<text x="30" y="366" font-size="10" font-weight="700" fill="#3a2d8a">PK id</text>
+<text x="30" y="379" font-size="10" fill="#555">FK user_id · FK subsystem_id</text>
+<text x="30" y="392" font-size="10" fill="#555">ip · user_agent · geo_country</text>
+<text x="30" y="405" font-size="10" fill="#555">os_name · browser · device_type</text>
+<text x="30" y="418" font-size="10" fill="#555">anomaly_score (IForest)</text>
+<text x="30" y="431" font-size="10" fill="#555">risk_score (4-layer aggregate)</text>
+<text x="30" y="444" font-size="10" fill="#555">risk_breakdown · risk_reasons</text>
+<text x="30" y="457" font-size="10" fill="#555">decision (allow/warn/mfa/block)</text>
+<text x="30" y="470" font-size="10" fill="#555">is_attack_ip · is_account_takeover</text>
+<text x="30" y="483" font-size="10" fill="#555">jti · created_at · logout_at</text>
+</g>
+
+<g>
+<rect x="500" y="330" width="200" height="118" rx="6" fill="#EEF0F2" stroke="#6b7280" stroke-width="2"/>
+<rect x="500" y="330" width="200" height="22" rx="6" fill="#6b7280"/>
+<text x="600" y="346" text-anchor="middle" font-size="12" font-weight="700" fill="#fff">audit_logs</text>
+<text x="510" y="366" font-size="10" font-weight="700" fill="#333">PK id</text>
+<text x="510" y="380" font-size="10" fill="#555">actor_id (= user.id)</text>
+<text x="510" y="393" font-size="10" fill="#555">action (login/grant/revoke...)</text>
+<text x="510" y="406" font-size="10" fill="#555">target_type · target_id</text>
+<text x="510" y="419" font-size="10" fill="#555">ip · metadata (JSONB)</text>
+<text x="510" y="432" font-size="10" fill="#555">created_at</text>
+</g>
+
+<g>
+<rect x="20" y="40" width="220" height="120" rx="6" fill="#FBE9E7" stroke="#d14b3d" stroke-width="2"/>
+<rect x="20" y="40" width="220" height="22" rx="6" fill="#d14b3d"/>
+<text x="130" y="56" text-anchor="middle" font-size="12" font-weight="700" fill="#fff">passkey_credentials</text>
+<text x="30" y="76" font-size="10" font-weight="700" fill="#7a241b">PK id</text>
+<text x="30" y="90" font-size="10" fill="#555">FK user_id (CASCADE)</text>
+<text x="30" y="103" font-size="10" fill="#555">credential_id (unique)</text>
+<text x="30" y="116" font-size="10" fill="#555">public_key · sign_count</text>
+<text x="30" y="129" font-size="10" fill="#555">device_name · transports[]</text>
+<text x="30" y="142" font-size="10" fill="#555">last_used_at · revoked_at</text>
+<text x="30" y="155" font-size="10" fill="#555">backup_eligible · backup_state</text>
+</g>
+
+<g>
+<rect x="20" y="200" width="220" height="92" rx="6" fill="#FBE9E7" stroke="#d14b3d" stroke-width="2"/>
+<rect x="20" y="200" width="220" height="22" rx="6" fill="#d14b3d"/>
+<text x="130" y="216" text-anchor="middle" font-size="12" font-weight="700" fill="#fff">passkey_backup_codes</text>
+<text x="30" y="236" font-size="10" font-weight="700" fill="#7a241b">PK id · FK user_id</text>
+<text x="30" y="250" font-size="10" fill="#555">code_hash (Argon2id)</text>
+<text x="30" y="263" font-size="10" fill="#555">used_at · used_ip</text>
+<text x="30" y="276" font-size="10" fill="#555">generation</text>
+<text x="30" y="289" font-size="10" fill="#555">acknowledged_at</text>
+</g>
+
+<g>
+<rect x="500" y="200" width="200" height="92" rx="6" fill="#F0E8FB" stroke="#8b5cf6" stroke-width="2"/>
+<rect x="500" y="200" width="200" height="22" rx="6" fill="#8b5cf6"/>
+<text x="600" y="216" text-anchor="middle" font-size="12" font-weight="700" fill="#fff">ml_feedback</text>
+<text x="510" y="236" font-size="10" font-weight="700" fill="#5a30c0">PK id</text>
+<text x="510" y="250" font-size="10" fill="#555">FK session_id (unique)</text>
+<text x="510" y="263" font-size="10" fill="#555">label (FP / TP / normal)</text>
+<text x="510" y="276" font-size="10" fill="#555">FK marked_by (= user)</text>
+<text x="510" y="289" font-size="10" fill="#555">note · created_at</text>
+</g>
+
+<g>
+<rect x="280" y="465" width="200" height="60" rx="6" fill="#FBE0DC" stroke="#a13b30" stroke-width="2"/>
+<rect x="280" y="465" width="200" height="22" rx="6" fill="#a13b30"/>
+<text x="380" y="481" text-anchor="middle" font-size="12" font-weight="700" fill="#fff">ip_blacklist</text>
+<text x="290" y="500" font-size="10" font-weight="700" fill="#62211a">PK id · ip_address (unique)</text>
+<text x="290" y="514" font-size="10" fill="#555">reason · added_by (FK)</text>
+</g>
+
+<g stroke="#3a4250" stroke-width="1.6" fill="none">
+<line x1="365" y1="160" x2="400" y2="200" marker-start="url(#one)" marker-end="url(#many)"/>
+<line x1="605" y1="160" x2="480" y2="210" marker-start="url(#one)" marker-end="url(#many)"/>
+<line x1="280" y1="100" x2="240" y2="100" marker-start="url(#one)" marker-end="url(#many)"/>
+<line x1="280" y1="130" x2="240" y2="230" marker-start="url(#one)" marker-end="url(#many)"/>
+<line x1="285" y1="155" x2="170" y2="330" marker-start="url(#one)" marker-end="url(#many)"/>
+<line x1="510" y1="158" x2="220" y2="330" marker-start="url(#one)" marker-end="url(#many)"/>
+<line x1="450" y1="155" x2="540" y2="330" marker-start="url(#one)" marker-end="url(#many)"/>
+<line x1="240" y1="370" x2="500" y2="240" marker-start="url(#one)" marker-end="url(#one)"/>
+</g>
+
+<text x="360" y="535" text-anchor="middle" font-size="9.5" fill="#888">ตารางหลัก 9 ตาราง (ระบบมีทั้งหมด 15) — สัญลักษณ์ ‖ = หนึ่ง, ⫛ = หลาย</text>
+</svg>

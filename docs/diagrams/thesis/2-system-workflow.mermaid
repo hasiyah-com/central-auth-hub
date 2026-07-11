@@ -1,0 +1,36 @@
+%%{init: {'theme':'base', 'themeVariables': {'fontSize':'14px'}}}%%
+sequenceDiagram
+    autonumber
+    actor U as 👤 ผู้ใช้
+    participant S as 🏠 Subsystem<br/>(หอพัก / ห้องสมุด)
+    participant H as 🏛️ Hub Backend
+    participant G as 🔐 Google / LINE / Passkey
+    participant ML as 🤖 ML Verifier
+    participant DB as 💾 Postgres / Redis
+
+    U->>S: 1. เข้าหน้าเว็บ Subsystem
+    S->>S: 2. ตรวจ session cookie<br/>(itsdangerous signed)
+    alt ไม่มี session
+        S->>U: 3. แสดงปุ่ม "Login ผ่าน Hub"
+        U->>S: 4. กด Login
+        S->>H: 5. Redirect /oauth/authorize<br/>+ client_id + PKCE challenge + state
+        H->>G: 6. Redirect ไป IdP (เลือก Google/LINE/Passkey)
+        G->>U: 7. ขอ consent + verify ตัวตน
+        U->>G: 8. ยืนยัน
+        G->>H: 9. Callback + auth code
+        H->>H: 10. แลก ID token + ดึง email
+        H->>DB: 11. ดึง user + ตรวจ access_list (whitelist)
+        H->>ML: 12. POST /v1/score (12 features)
+        ML-->>H: 13. {anomaly_score, decision, SHAP}
+        H->>DB: 14. บันทึก login_session + audit_log
+        alt decision = block / mfa
+            H->>U: 15a. บังคับ MFA หรือ Passkey step-up
+            U->>H: 15b. ยืนยันสำเร็จ
+        end
+        H->>S: 16. Redirect callback + auth code
+        S->>H: 17. POST /oauth/token<br/>(code + secret + PKCE verifier)
+        H-->>S: 18. JWT (RS256, aud=client_id, 60 นาที)
+        S->>H: 19. GET JWKS เพื่อ verify signature
+        S->>S: 20. สร้าง session cookie ของ Subsystem
+    end
+    S-->>U: 21. แสดงผลหน้า dashboard / ทำงานต่อ

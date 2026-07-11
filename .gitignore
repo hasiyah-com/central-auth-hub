@@ -115,3 +115,11 @@ real_labeled.csv
 # Phase 3.2 — offline ipsum blocklist (optional, ไม่ commit)
 ipsum_l5.txt
 **/ipsum_l5.txt
+
+# mkcert binary tool — downloadable, ไม่ commit binary blob (4.7MB)
+mkcert.exe
+mkcert
+
+# Thesis diagram PNG renders >500KB — เกิน pre-commit large-file limit.
+# แหล่งที่มา (mermaid + SVG) commit อยู่แล้ว render ใหม่ได้
+docs/diagrams/thesis/diagram-*.png

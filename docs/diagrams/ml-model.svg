@@ -1,0 +1,61 @@
+<svg width="680" height="480" viewBox="0 0 680 480" role="img" xmlns="http://www.w3.org/2000/svg" font-family="system-ui,'Segoe UI','Sarabun',sans-serif">
+<title>โมเดล ML: Hybrid RBA 4 ชั้น + Isolation Forest + SHAP</title>
+<defs><marker id="a" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto"><path d="M0,0 L6,3 L0,6 Z" fill="#6b6b6b"/></marker></defs>
+<rect width="680" height="480" fill="#fff"/>
+<text x="340" y="22" text-anchor="middle" font-size="15" font-weight="700" fill="#1a1a1a">โมเดลการประเมินความเสี่ยง (Hybrid RBA 4 ชั้น)</text>
+<rect x="230" y="38" width="220" height="44" rx="8" fill="#EEF0F2" stroke="#8a8f98" stroke-width="1.5"/>
+<text x="340" y="57" text-anchor="middle" font-size="12" font-weight="600" fill="#1a1a1a">Input: 23 Features</text>
+<text x="340" y="73" text-anchor="middle" font-size="10" fill="#555">เวลา · ที่ตั้ง · อุปกรณ์ · ความเร็ว · Passkey · สิทธิ์</text>
+<line x1="340" y1="82" x2="340" y2="100" stroke="#6b6b6b" stroke-width="1.5" marker-end="url(#a)"/>
+<rect x="60" y="102" width="132" height="56" rx="8" fill="#E6F1FB" stroke="#2f6feb" stroke-width="1.5"/>
+<text x="126" y="122" text-anchor="middle" font-size="11" font-weight="700" fill="#0C447C">ชั้น 1: Rule Engine</text>
+<text x="126" y="137" text-anchor="middle" font-size="9.5" fill="#555">IP blacklist · failed login</text>
+<text x="126" y="150" text-anchor="middle" font-size="9.5" fill="#555">impossible travel</text>
+<rect x="210" y="102" width="132" height="56" rx="8" fill="#E6F1FB" stroke="#2f6feb" stroke-width="1.5"/>
+<text x="276" y="122" text-anchor="middle" font-size="11" font-weight="700" fill="#0C447C">ชั้น 2: Behavior</text>
+<text x="276" y="137" text-anchor="middle" font-size="9.5" fill="#555">เวลาปกติของ user</text>
+<text x="276" y="150" text-anchor="middle" font-size="9.5" fill="#555">วันที่ใช้งานปกติ</text>
+<rect x="360" y="102" width="132" height="56" rx="8" fill="#E6F1FB" stroke="#2f6feb" stroke-width="1.5"/>
+<text x="426" y="118" text-anchor="middle" font-size="11" font-weight="700" fill="#0C447C">ชั้น 3: Isolation</text>
+<text x="426" y="131" text-anchor="middle" font-size="11" font-weight="700" fill="#0C447C">Forest</text>
+<text x="426" y="146" text-anchor="middle" font-size="9.5" fill="#555">Unsupervised ML</text>
+<text x="426" y="159" text-anchor="middle" font-size="9" fill="#555">+ SHAP explainability</text>
+<rect x="510" y="102" width="120" height="56" rx="8" fill="#E6F1FB" stroke="#2f6feb" stroke-width="1.5"/>
+<text x="570" y="122" text-anchor="middle" font-size="11" font-weight="700" fill="#0C447C">ชั้น 4: รวม</text>
+<text x="570" y="137" text-anchor="middle" font-size="9.5" fill="#555">weighted aggregate</text>
+<text x="570" y="150" text-anchor="middle" font-size="9.5" fill="#555">→ risk_score 0–1</text>
+<path d="M290,100 L160,102" fill="none" stroke="#6b6b6b" stroke-width="1.3" marker-end="url(#a)"/>
+<path d="M320,100 L276,102" fill="none" stroke="#6b6b6b" stroke-width="1.3" marker-end="url(#a)"/>
+<path d="M360,100 L400,102" fill="none" stroke="#6b6b6b" stroke-width="1.3" marker-end="url(#a)"/>
+<path d="M192,130 L330,130 L330,145 L510,145" fill="none" stroke="#6b6b6b" stroke-width="1.3" marker-end="url(#a)"/>
+<path d="M342,130 L400,130 L400,150 L510,150" fill="none" stroke="#6b6b6b" stroke-width="1.3" marker-end="url(#a)"/>
+<path d="M390,130 L510,130" fill="none" stroke="#6b6b6b" stroke-width="1.3" stroke-dasharray="3 2" marker-end="url(#a)"/>
+<line x1="570" y1="158" x2="570" y2="198" stroke="#6b6b6b" stroke-width="1.5" marker-end="url(#a)"/>
+<rect x="60" y="220" width="148" height="44" rx="8" fill="#E4F5EA" stroke="#1a9d4f" stroke-width="1.5"/>
+<text x="134" y="239" text-anchor="middle" font-size="11" font-weight="600" fill="#0b5128">✓ allow</text>
+<text x="134" y="255" text-anchor="middle" font-size="9.5" fill="#555">score &lt; 0.40</text>
+<rect x="226" y="220" width="148" height="44" rx="8" fill="#FBF4DA" stroke="#b08a00" stroke-width="1.5"/>
+<text x="300" y="239" text-anchor="middle" font-size="11" font-weight="600" fill="#7a5800">⚡ warn</text>
+<text x="300" y="255" text-anchor="middle" font-size="9.5" fill="#555">0.40–0.49</text>
+<rect x="392" y="220" width="148" height="44" rx="8" fill="#FBF0DA" stroke="#C77F12" stroke-width="1.5"/>
+<text x="466" y="239" text-anchor="middle" font-size="11" font-weight="600" fill="#7a4d06">⚠ MFA required</text>
+<text x="466" y="255" text-anchor="middle" font-size="9.5" fill="#555">0.50–0.84</text>
+<rect x="558" y="220" width="110" height="44" rx="8" fill="#FBE9E7" stroke="#d14b3d" stroke-width="1.5"/>
+<text x="613" y="239" text-anchor="middle" font-size="11" font-weight="600" fill="#7a241b">⛔ block</text>
+<text x="613" y="255" text-anchor="middle" font-size="9.5" fill="#555">≥ 0.85</text>
+<path d="M570,198 L134,220" fill="none" stroke="#6b6b6b" stroke-width="1.2" marker-end="url(#a)"/>
+<path d="M570,198 L300,220" fill="none" stroke="#6b6b6b" stroke-width="1.2" marker-end="url(#a)"/>
+<path d="M570,200 L466,220" fill="none" stroke="#6b6b6b" stroke-width="1.2" marker-end="url(#a)"/>
+<line x1="570" y1="158" x2="613" y2="218" stroke="#6b6b6b" stroke-width="1.3" marker-end="url(#a)"/>
+<rect x="100" y="290" width="230" height="64" rx="8" fill="#f4f6f8" stroke="#8a8f98" stroke-width="1.3"/>
+<text x="215" y="310" text-anchor="middle" font-size="11" font-weight="700" fill="#1a1a1a">SHAP TreeExplainer</text>
+<text x="215" y="326" text-anchor="middle" font-size="9.5" fill="#555">อธิบายว่า feature ไหนดันคะแนน</text>
+<text x="215" y="341" text-anchor="middle" font-size="9" fill="#555">เช่น is_new_country +0.18 (anomaly)</text>
+<line x1="426" y1="158" x2="215" y2="290" stroke="#6b6b6b" stroke-width="1.3" stroke-dasharray="4 2" marker-end="url(#a)"/>
+<rect x="350" y="290" width="310" height="64" rx="8" fill="#f4f6f8" stroke="#8a8f98" stroke-width="1.3"/>
+<text x="505" y="310" text-anchor="middle" font-size="11" font-weight="700" fill="#1a1a1a">เปรียบเทียบโมเดล (Benchmark)</text>
+<text x="505" y="326" text-anchor="middle" font-size="9.5" fill="#555">IForest vs One-Class SVM vs LOF</text>
+<text x="505" y="341" text-anchor="middle" font-size="9" fill="#555">RBA จริง (Wiefling 2022) + 40 stealth attack</text>
+<text x="340" y="390" text-anchor="middle" font-size="10" fill="#555">Deploy ใช้ Isolation Forest — SHAP TreeExplainer อธิบายผลได้ทันที (OCSVM ทำไม่ได้)</text>
+<text x="340" y="406" text-anchor="middle" font-size="10" fill="#555">Shadow Mode: log ผลแต่ยังไม่ block จริง (decision = would_mfa / would_block)</text>
+</svg>
