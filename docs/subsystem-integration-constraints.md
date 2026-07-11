@@ -3,7 +3,8 @@
 คู่มือสำหรับทีมที่ต้องการพัฒนา **ระบบย่อย (subsystem)** เพื่อเชื่อมกับ Central Auth Hub
 ครอบคลุม: สิ่งที่ Hub มอบให้, สิ่งที่ dev ต้องสร้างเอง, ข้อจำกัด, และ checklist
 
-> อัปเดต: 2026-06-15 · อ้างอิงระบบจริง (ระบบหอพัก/ห้องสมุด + PHP SDK)
+> อัปเดต: 2026-07-12 · อ้างอิงระบบจริง 3 ตัว (หอพัก/ห้องสมุด/เกรด) + PHP/Node/Python SDK
+> ครอบคลุมเพิ่ม: Roster Sync API (X-Api-Key), Health check จาก Hub, webhook `access_restored`
 
 ---
 
@@ -14,16 +15,58 @@
 ที่ทีมอื่นเป็นเจ้าของ รันคนละเครื่อง/โดเมน/ฐานข้อมูล
 
 ```
-┌──────────┐  redirect    ┌──────────┐   OAuth     ┌──────────┐
-│ Subsystem│─────────────▶│   Hub    │────────────▶│  Google  │
-│ (ของคุณ) │◀──Token(S2S)─│ (Central)│             │          │
-└────┬─────┘              └────┬─────┘              └──────────┘
-     │ webhook (back-channel)  │ ML / RBA / Passkey
-     ◀─────────────────────────┘
+┌──────────┐  redirect        ┌──────────┐   OAuth     ┌──────────┐
+│ Subsystem│─────────────────▶│   Hub    │────────────▶│  Google  │
+│ (ของคุณ) │◀──Token (S2S)────│ (Central)│             │          │
+│          │                  │          │             └──────────┘
+│          │  GET /api/v1/roster (X-Api-Key) ─────────▶│ ML / RBA
+│          │◀── users[] ──────│          │             │ Passkey
+│  /health │◀── ping ทุก 5นาที│          │
+└────┬─────┘                  └────┬─────┘
+     │  webhook (back-channel: revoked / updated / restored)
+     ◀──────────────────────────────┘
 ```
+
+**4 ช่องทางการสื่อสาร Hub ⇄ subsystem:**
+1. **OAuth flow** (subsystem → Hub → subsystem) — login + แลก token
+2. **Webhook back-channel** (Hub → subsystem) — revoke/update/restore แบบ real-time
+3. **Health check** (Hub → subsystem `/health`) — Hub ถามสุขภาพทุก 5 นาที
+4. **Roster Sync** (subsystem → Hub `/api/v1/roster`) — ดึงรายชื่อล่วงหน้า (optional)
 
 **หลักการสำคัญ:** Hub **เอื้อมเข้าไปทำงานในเครื่อง subsystem ไม่ได้** (คนละ trust domain)
 → Hub มอบ "เครื่องมือ + ข้อมูล" ให้ แต่ subsystem ต้อง "ลงมือทำ" ในระบบตัวเอง
+
+---
+
+## 0.1 ระบบย่อยต้องมีอะไรบ้าง ถึงจะเชื่อมต่อ Hub ได้ (Minimum Requirements)
+
+สรุปสั้น — จะเป็น subsystem ที่ Hub ยอมรับได้ ต้องมีครบ **4 ข้อบังคับ** + **2 ข้อแนะนำ**:
+
+### ✅ บังคับ (ไม่มี = เชื่อมไม่ได้)
+
+| # | ต้องมี | ทำไม | อ้างอิง |
+|---|--------|------|---------|
+| 1 | **ลงทะเบียนกับ Hub** → ได้ `client_id` + `client_secret` + `redirect_uri` ที่ approve แล้ว | Hub รู้จัก client + ออก token ให้เฉพาะที่ลงทะเบียน · redirect_uri ต้อง match เป๊ะ | §1.1, §2.1 |
+| 2 | **OAuth callback endpoint** (`/oauth/callback` หรือ path ที่ลงทะเบียน) — public, browser + Hub เข้าถึงได้ | ปลายทางที่ Hub ส่ง `code` กลับ · exchange เป็น JWT ที่นี่ | §2.1 |
+| 3 | **JWT verification** (RS256 ผ่าน JWKS + ตรวจ `aud`=client_id, `iss`, `exp`) | พิสูจน์ว่า token จริง + ไม่ใช่ของระบบอื่น (audience confusion) | §2.2 |
+| 4 | **Session ของตัวเอง + enforce `exp`** (Hub ไม่ใช่ SSO — ไม่ถือ session ให้) | หลัง login user คุยกับ subsystem ตรงๆ Hub มองไม่เห็น | §2.3 |
+
+### 🟡 แนะนำอย่างยิ่ง (production ควรมี)
+
+| # | ควรมี | ได้อะไร | อ้างอิง |
+|---|--------|---------|---------|
+| 5 | **`GET /health` endpoint** (public, ตอบ 200 เร็ว < 1s) | Hub ping ทุก 5 นาที → โชว์สถานะ online/degraded/down ใน admin console + ถ้า down จะกัน login (503 maintenance) | §1.6, §2.7 |
+| 6 | **Webhook receiver** (`/internal/access-*`, verify HMAC) | รับ event revoke/scope-change → เตะ session ทันที (ไม่ต้องรอ token หมดอายุ) | §1.4, §2.4 |
+
+> **ขั้นต่ำสุดที่ "login ได้"** = ข้อ 1–4. แต่ **ข้อ 5 (health) สำคัญมาก** เพราะถ้าไม่มี
+> `/health` Hub จะมองว่า subsystem `down` → บล็อก OAuth flow (503) ในโหมดที่เปิด health-gate.
+> ดังนั้นในทางปฏิบัติ **`/health` ก็เกือบจะบังคับ** (ดู §1.6).
+
+**ข้อกำหนดเชิงเทคนิคที่ตายตัว (บังคับทุกข้อ):**
+- Algorithm: **RS256** (JWT) · **PKCE S256** (flow) · **HMAC-SHA256** (webhook)
+- `redirect_uri` ต้อง match กับที่ลงทะเบียนเป๊ะ (รวม scheme/host/port/path)
+- เก็บ `hub_user_id` (= JWT `sub`) เป็น **UUID อิสระ ไม่มี FK ไป Hub**
+- `client_secret` + PKCE verifier + API key **อยู่ server-side เท่านั้น** (ห้ามใน JS/HTML)
 
 ---
 
@@ -36,8 +79,10 @@
 | **client_id** | `cli_xxxxxxxx` | ระบุตัวตน subsystem ใน OAuth flow |
 | **client_secret** | `sec_xxxxxxxx` | one-time link 15 นาที (ดูครั้งเดียว) | ใช้ token exchange (server-side เท่านั้น) |
 | **subsystem_id** | UUID | reference ภายใน |
-| **status** | `pending` → admin approve → `active` | ใช้ login ได้เมื่อ active |
-| **webhook_endpoints** | `{access_revoked, access_updated}` URL ที่แนะนำ | บอกว่าควรสร้าง receiver ที่ไหน |
+| **api_key** | roster read-only key — one-time (DB เก็บ Argon2 hash) | ดึง roster ล่วงหน้าผ่าน `X-Api-Key` (ดู §1.5) |
+| **access_policy** | `explicit` / `all` / `role` / `attribute` (+ config) | ตัดสินว่าใครเข้าได้ (login + roster ใช้เกณฑ์เดียวกัน) |
+| **status** | `pending` → admin approve → `active` | ใช้ login / ดึง roster ได้เมื่อ active |
+| **webhook_endpoints** | `{access_revoked, access_updated, access_restored}` URL ที่แนะนำ | บอกว่าควรสร้าง receiver ที่ไหน |
 | **webhook_note** | คำแนะนำการ verify HMAC | |
 
 ### 1.2 ตอน OAuth flow (runtime)
@@ -61,14 +106,75 @@
 
 ### 1.4 Webhook ที่ Hub จะ "ส่งมาหา" subsystem (back-channel)
 
-| Event | เมื่อไหร่ | payload หลัก |
-|---|---|---|
-| `access_revoked` | user ถูกถอดจาก whitelist | `hub_user_id`, `reason` |
-| `access_updated` | role เปลี่ยน (เฉพาะคน) / scope-config เปลี่ยน (hub_user_id=null = ทุกคน) | `hub_user_id`, `reason`, `new_role` |
+| Event | เมื่อไหร่ | payload หลัก | subsystem ควรทำ |
+|---|---|---|---|
+| `access_revoked` | user ถูกถอนสิทธิ์ (**ทุกนโยบาย** — whitelist หรือ deny-list ทับ policy) | `hub_user_id`, `reason`, `revoked_by` | mark re-auth **ถาวร** (login ใหม่จะโดน Hub block อยู่แล้ว) |
+| `access_updated` | role/scope เปลี่ยน (เฉพาะคน) · scope-config เปลี่ยน (`hub_user_id`=null = ทุกคน) · **admin force-logout** | `hub_user_id`, `reason`, `new_role?` | บังคับ re-auth เพื่อเอา claim ชุดใหม่ (login ใหม่ได้) |
+| `access_restored` | admin **คืนสิทธิ์** (grant กลับหลัง revoke) | `hub_user_id` | ยกเลิก re-auth marker → session เดิมกลับมาใช้ได้ |
 
-Headers: `X-Hub-Event`, `X-Hub-Signature-256` (HMAC), `X-Hub-Timestamp` (replay protection)
+Headers: `X-Hub-Event`, `X-Hub-Signature-256` (HMAC-SHA256 ของ raw body), `X-Hub-Timestamp` (epoch — กัน replay, ต้องห่างปัจจุบัน ≤ `webhook_max_age_sec`)
 
-### 1.5 SDK สำเร็จรูป (ลด boilerplate)
+> **access_revoked vs access_updated:** revoked = "ถอนถาวร" (deny-list — login ใหม่ก็เข้าไม่ได้จนกว่า
+> admin คืนสิทธิ์) · updated = "เตะออกตอนนี้แต่ login ใหม่ได้" (claim เปลี่ยน / force-logout).
+> ทั้งคู่ subsystem จัดการเหมือนกันคือ **mark session เก่าให้หมดสิทธิ์** ต่างกันแค่ยอมให้ login ใหม่ไหม
+> (Hub เป็นคนตัดสินตอน login ใหม่ผ่าน Access Policy — subsystem ไม่ต้องจำเอง).
+
+### 1.5 Roster Sync API — ดึงรายชื่อผู้ใช้ล่วงหน้า (S2S, read-only)
+
+สำหรับระบบที่ต้อง **สร้างข้อมูลก่อน user login** (เช่น **ระบบเกรด** — เกรดถูก pre-create
+ผูก `hub_user_id` ก่อนนักศึกษาเข้าครั้งแรก · JIT provisioning ตอน login อย่างเดียวไม่พอ):
+
+| รายการ | ค่า |
+|---|---|
+| Endpoint | `GET /api/v1/roster` |
+| Auth | header **`X-Api-Key: <api_key>`** (ได้ตอนลงทะเบียน — one-time) |
+| Rate limit | 30 ครั้ง/นาที |
+| เงื่อนไข | subsystem ต้อง `status=active` (ไม่งั้น 403) |
+| คืนเฉพาะ | `user_id` (UUID), `email`, `user_type` — **data minimization** (ข้อมูลเต็มไหลตอน login ตาม scope) |
+| กรองด้วย | **Access Policy** ของ subsystem (เกณฑ์เดียวกับ login-time — ตัด deny-list ออกให้แล้ว) |
+
+```json
+GET /api/v1/roster    (X-Api-Key: ...)
+→ { "subsystem": "ระบบเกรด", "access_policy": "role", "count": 41,
+    "users": [ {"user_id": "c15c...", "email": "650015@uni.ac.th", "user_type": "student"}, ... ] }
+```
+
+> **หลักการ:** *Hub ตัดสินว่าใครเข้าระบบได้ · subsystem ตัดสินว่าข้อมูลเป็นของใคร* — เช่นระบบเกรด
+> policy เป็น `role:[student]` แต่ถ้าดึงมาแล้วมี user_type อื่นปน subsystem ควร filter เอง
+> (เกรดเป็น business data ของนักศึกษา). deny-list ที่ admin ตั้ง (ถอนสิทธิ์รายคน) จะทำให้ user
+> คนนั้น **หลุดจาก roster อัตโนมัติ** — sync รอบถัดไปจะไม่เห็นเขา.
+
+### 1.6 Health Check — Hub ping /health ของ subsystem (monitoring)
+
+Hub มี background task เช็คสุขภาพ subsystem ทุกตัวที่ `status=active`:
+
+| รายการ | ค่า |
+|---|---|
+| Hub ยิงไปที่ | `GET {origin ของ redirect_uris[0]}/health` (เอา scheme+host จาก redirect_uri ตัวแรก) |
+| ความถี่ | ทุก **5 นาที** (background scheduler) |
+| Timeout | **3 วินาที** |
+| เก็บผล | Redis `subsystem:health:{id}` (cache 30 นาที) → โชว์ในหน้า admin |
+| จัดสถานะ | `online` (200 + latency < 1s) · `degraded` (200 + ≥ 1s, หรือ 5xx ครั้งเดียว) · `down` (timeout / connection refused / 5xx 3 ครั้งซ้อน) |
+| สรุปรายวัน | snapshot 3 รอบ (เช้า 08:00 / บ่าย 13:00 / เย็น 18:00 ICT) → audit log → หน้า `/notifications` |
+
+**subsystem ต้องมีอะไร:** แค่ **endpoint `GET /health` (public, ไม่ต้อง auth) ที่ตอบ `200 OK` เร็ว**
+(ควร < 1s ไม่งั้นถูกจัดเป็น `degraded`). ตัวอย่างที่พอแล้ว:
+
+```python
+@app.get("/health")
+def health():
+    return {"status": "ok"}          # ตอบเร็ว ไม่ต้องแตะ DB ก็ได้ (หรือ + db.stats() ถ้าอยาก)
+```
+
+> ⚠️ **ผลถ้าไม่มี `/health`:** Hub จะเช็คไม่ผ่าน → mark `down`. ในโหมดที่เปิด **health-gate**
+> Hub จะกัน OAuth flow (ตอบ **503 maintenance**) ไม่ให้ user login เข้า subsystem ที่ down
+> → ในทางปฏิบัติ `/health` **เกือบบังคับ**. (เคยเจอบั๊ก: ระบบเกรดตอน dev โดน 503 เพราะ Hub
+> ใน container เข้า `localhost:8003` ไม่ได้ — dev แก้ด้วย docker service-name mapping)
+>
+> **หมายเหตุ dev/Docker:** Hub ใช้ mapping เดียวกับ webhook (`localhost:8001` → `subsystem-dorm:8000`)
+> เวลา ping /health จาก container — prod ต้องเป็น URL จริงที่ Hub เข้าถึงได้.
+
+### 1.7 SDK สำเร็จรูป (ลด boilerplate)
 
 | ภาษา | path | ครอบคลุม |
 |---|---|---|
@@ -92,12 +198,12 @@ Headers: `X-Hub-Event`, `X-Hub-Signature-256` (HMAC), `X-Hub-Timestamp` (replay 
 SDK = ครัวสำเร็จรูป (เตา หม้อ สูตร) · dev = ต้องตั้งในบ้านตัวเอง + เปิดเตา + กดปุ่ม
 ```
 
-| ส่วน | SDK ทำให้ (ไม่ต้องเขียน logic) | dev ยังต้อง wire เอง | งานที่เหลือ |
+| ส่วน                  | SDK ทำให้ (ไม่ต้องเขียน logic)            | dev ยังต้อง wire เอง                                            | งานที่เหลือ |
 |---|---|---|---|
-| **OAuth Flow** | PKCE, state, code exchange | สร้าง login/callback/logout (เรียก SDK) + host + config | น้อย (~10 บรรทัด/ไฟล์) |
-| **JWT Verify** | signature + aud + iss + exp ✅ | แค่เรียก `handleCallback()` | **≈ 0** |
-| **Session + Expiry** | เก็บ session + เช็ค exp/max_age/revoke | เรียก `isAuthenticated()` guard ทุกหน้า + ตั้ง session_max_age | น้อย |
-| **Webhook Receiver** | verify HMAC + RevocationStore | สร้าง webhook.php (เรียก SDK) + host + ตั้ง revocation_store_path | ปานกลาง |
+| **OAuth Flow**       | PKCE, state, code exchange            | สร้าง login/callback/logout (เรียก SDK) + host + config          | น้อย (~10 บรรทัด/ไฟล์) |
+| **JWT Verify**       | signature + aud + iss + exp ✅       | แค่เรียก `handleCallback()`                                      | **≈ 0** |
+| **Session + Expiry** | เก็บ session + เช็ค exp/max_age/revoke  | เรียก `isAuthenticated()` guard ทุกหน้า + ตั้ง session_max_age      | น้อย |
+| **Webhook Receiver** | verify HMAC + RevocationStore         | สร้าง webhook.php (เรียก SDK) + host + ตั้ง revocation_store_path  | ปานกลาง |
 
 **ทำไม SDK ทำให้ 100% ไม่ได้:**
 1. SDK รันบนเครื่อง subsystem — ต้อง include + เรียกในแอปเอง (Hub สั่งแอปคนอื่นรันโค้ดไม่ได้)
@@ -179,6 +285,22 @@ token เอง · มีแต่ subsystem ที่รู้ว่า client_
 - ใช้ `role_in_subsystem` จาก token → จำกัดสิทธิ์ภายใน (เช่น resident vs staff)
 - Hub ส่ง role มาให้ แต่ enforce เป็นของ subsystem
 
+### 2.7 Health endpoint 🟡 แนะนำอย่างยิ่ง (เกือบบังคับ)
+
+สร้าง `GET /health` (public, ไม่ต้อง auth) ตอบ `200 OK` เร็ว < 1s — Hub ping ทุก 5 นาที
+เพื่อโชว์สถานะ + gate การ login (ดู §1.6).
+
+**ทำไม Hub ทำแทนไม่ได้:** Hub เป็นคน "ถาม" ต้องมีคน "ตอบ" ที่ origin ของ subsystem —
+Hub รัน endpoint บนเครื่องคนอื่นไม่ได้ · ต้องเป็น URL ที่ Hub เข้าถึงได้จริง (prod = HTTPS จริง)
+
+> ระบบตัวอย่างทั้ง 3 (หอพัก/ห้องสมุด/เกรด) มี `/health` ครบ — ก็อปแพตเทิร์นได้เลย
+
+### 2.8 Roster pre-provisioning (เฉพาะระบบที่สร้างข้อมูลก่อน login)
+
+ถ้าระบบต้องมี record รอ user อยู่ก่อน login ครั้งแรก (เช่นเกรด) → เขียน job ดึง
+`GET /api/v1/roster` (X-Api-Key) เป็นระยะ แล้ว pre-create record ผูก `hub_user_id` (ดู §1.5).
+ระบบที่ provision ตอน login พอ (หอพัก/ห้องสมุด) **ไม่ต้องทำข้อนี้**.
+
 ---
 
 ## 3. ข้อจำกัด (Constraints)
@@ -191,7 +313,8 @@ token เอง · มีแต่ subsystem ที่รู้ว่า client_
 | authorization code | 60 วินาที + ใช้ครั้งเดียว | atomic (กัน replay) |
 | client_secret | ดูครั้งเดียว 15 นาที | พลาด = rotate ใหม่ |
 | scope ที่ได้จริง | admin approve | ขอเกินจำเป็นไม่ได้ |
-| ใครเข้าได้ | ต้องอยู่ใน whitelist | ไม่ whitelist = 403 |
+| ใครเข้าได้ | **Access Policy** (explicit/all/role/attribute) | ไม่ผ่าน policy = 403 · admin ถอนรายคนได้ทุกนโยบายผ่าน deny-list |
+| status ของ subsystem | ต้อง `active` | `pending`/`suspended` = login + roster ถูก reject |
 | algorithm | RS256 / PKCE S256 / HMAC-SHA256 | บังคับ |
 | redirect_uri | ต้อง match เป๊ะ | แก้ต้อง re-approve |
 
@@ -222,6 +345,8 @@ token เอง · มีแต่ subsystem ที่รู้ว่า client_
 - [ ] session cookie: HttpOnly + SameSite=Lax + Secure (prod)
 - [ ] enforce JWT exp ทุก request (+ session_max_age ถ้าต้องการสั้นลง)
 - [ ] webhook receiver: verify HMAC + timestamp ก่อน act
+- [ ] expose `GET /health` (public, ตอบ 200 เร็ว < 1s) — ไม่งั้น Hub mark down + gate login (§1.6)
+- [ ] API key (roster) อยู่ server-side เท่านั้น · ดึง roster ผ่าน HTTPS
 - [ ] HTTPS ใน production
 - [ ] เก็บ hub_user_id เป็น UUID อิสระ (ไม่มี FK ไป Hub)
 - [ ] log ทุก state-changing action ของ subsystem (audit)
@@ -247,21 +372,26 @@ token เอง · มีแต่ subsystem ที่รู้ว่า client_
 
 ## 6. ตารางสรุป — Hub ให้ vs Dev ทำ
 
-| เรื่อง | Hub ให้ (เครื่องมือ) | Dev ต้องทำ (ใน runtime ตัวเอง) |
-|---|---|---|
-| OAuth | authorize/token endpoint, SDK, JWKS | initiate + รับ callback + exchange |
-| JWT | เซ็น + เปิด JWKS/discovery | verify signature + aud + exp |
-| Session | ออก JWT มี exp | สร้าง session + enforce expiry |
-| Scope | ใส่ field ตาม scope ใน JWT | map claims → profile + แสดงผล |
-| Webhook | ส่ง + เซ็น event + แนะนำ URL | host receiver + verify + act |
-| Revoke real-time | push event | invalidate session ของตัวเอง |
-| Business logic | — | ทั้งหมด (DB, UI, RBAC ภายใน) |
+| เรื่อง              | Hub ให้ (เครื่องมือ)                                          | Dev ต้องทำ (ใน runtime ตัวเอง) |
+|---               |---                                                        |---|
+| OAuth            | authorize/token endpoint, SDK, JWKS                       | initiate + รับ callback + exchange |
+| JWT              | เซ็น + เปิด JWKS/discovery                                  | verify signature + aud + exp |
+| Session          | ออก JWT มี exp                                             | สร้าง session + enforce expiry |
+| Scope            | ใส่ field ตาม scope ใน JWT                                 | map claims → profile + แสดงผล |
+| Webhook          | ส่ง + เซ็น event (revoked/updated/restored) + แนะนำ URL      | host receiver + verify + act |
+| Revoke real-time | push event                                                | invalidate session ของตัวเอง |
+| **Health check** | ping `/health` ทุก 5 นาที + โชว์สถานะ + gate login          | **expose `GET /health` ตอบ 200 เร็ว** |
+| **Roster sync**  | `/api/v1/roster` (X-Api-Key) กรองตาม Access Policy          | (ถ้าต้องการ) ดึง + pre-create record |
+| Business logic   | —                                                         | ทั้งหมด (DB, UI, RBAC ภายใน) |
 
 ---
 
 ## 7. อ้างอิง
 
 - `hub/sdk/php-client/README.md` — 5-minute integration
-- `hub/subsystem-dorm/`, `hub/subsystem-library/` — ตัวอย่าง subsystem จริง (FastAPI)
+- `hub/subsystem-dorm/`, `hub/subsystem-library/` — ตัวอย่าง subsystem จริง (OAuth login)
+- `hub/subsystem-grade/` — ตัวอย่างที่ใช้ **Roster Sync + API key** (pre-provisioning) + webhook receiver ครบ
+- `hub/backend/app/routers/roster.py` — Roster Sync API (source)
+- `hub/backend/app/services/subsystem_health.py` — Health check scheduler (source)
 - `docs/backlog-traceability.md` — ข้อจำกัด IP ใน dev + webhook patterns
 - RFC 6749 (OAuth), 7636 (PKCE), 7519 (JWT), OIDC Discovery 1.0
