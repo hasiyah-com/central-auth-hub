@@ -1,0 +1,30 @@
+# ระบบเกรด (Grade System) — subsystem C stack (port 8003)
+# focused demo ของ Roster Sync + API key. SQLite (ไม่มี postgres แยก)
+#
+# รัน:  docker compose -f docker-compose.grade.yml up -d --build
+# ต้อง register + ใส่ credentials ใน hub/subsystem-grade/.env ก่อน:
+#   docker compose exec hub-backend python -m scripts.register_grade_subsystem
+
+services:
+  subsystem-grade:
+    build: ./hub/subsystem-grade
+    container_name: subsystem-grade
+    env_file: ./hub/subsystem-grade/.env
+    ports:
+      - "8003:8000"
+    volumes:
+      - ./hub/subsystem-grade:/app
+      - grade_data:/app/data
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    networks:
+      default:
+        aliases:
+          - subsystem-grade
+
+networks:
+  default:
+    name: cah-net
+    external: true
+
+volumes:
+  grade_data:

@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}โปรไฟล์ — ระบบเกรด{% endblock %}
+{% block content %}
+
+<h1 class="text-2xl font-extrabold text-slate-900 mb-5">โปรไฟล์</h1>
+
+<div class="bg-white rounded-xl border border-slate-200 p-6 max-w-2xl">
+  <div class="flex items-center gap-4 pb-5 border-b border-slate-100">
+    <div class="w-16 h-16 rounded-2xl bg-indigo-600 grid place-items-center text-white text-2xl font-extrabold">
+      {{ (user.name or user.email or "?")[0]|upper }}
+    </div>
+    <div class="min-w-0">
+      <div class="text-xl font-extrabold text-slate-900 truncate">{{ user.name or user.email or "—" }}</div>
+      <div class="text-sm text-slate-500 font-mono truncate">{{ user.email or "" }}</div>
+      <span class="inline-block mt-1 px-2 py-0.5 rounded bg-indigo-100 text-indigo-700 text-[11px] font-bold">
+        {{ "นักศึกษา" if user.user_type == "student" else ("อาจารย์" if user.user_type == "teacher" else user.user_type) }}
+      </span>
+    </div>
+  </div>
+
+  <!-- field ที่มาตาม scope จริง -->
+  <dl class="grid grid-cols-1 sm:grid-cols-2 gap-4 mt-5">
+    {% for label, value in fields %}
+    <div>
+      <dt class="text-[11px] font-bold text-slate-400 uppercase">{{ label }}</dt>
+      <dd class="text-sm text-slate-800 mt-0.5">{{ value }}</dd>
+    </div>
+    {% endfor %}
+    <div class="sm:col-span-2">
+      <dt class="text-[11px] font-bold text-slate-400 uppercase">Hub User ID (JWT.sub)</dt>
+      <dd class="text-xs text-slate-600 mt-0.5 font-mono break-all">{{ user.hub_user_id }}</dd>
+      <p class="text-[11px] text-slate-400 mt-1">
+        ← ระบบเกรดใช้ค่านี้ match กับตารางเกรดที่ pre-create ไว้ล่วงหน้าจาก Roster Sync
+      </p>
+    </div>
+  </dl>
+
+  {% if missing %}
+  <div class="mt-5 pt-4 border-t border-slate-100">
+    <div class="text-[11px] font-bold text-slate-400 uppercase mb-1.5">ยังไม่ได้ขอ (ไม่อยู่ใน scope)</div>
+    <div class="flex flex-wrap gap-1.5">
+      {% for label in missing %}
+      <span class="px-2 py-0.5 rounded bg-slate-100 text-slate-400 text-[11px] line-through">{{ label }}</span>
+      {% endfor %}
+    </div>
+    <p class="text-[11px] text-slate-400 mt-1.5">
+      ถ้าอยากให้ระบบเกรดเห็น field เหล่านี้ ต้องเพิ่ม scope ตอนลงทะเบียน subsystem
+      (เช่น <span class="font-mono">phone address</span>) — Hub ส่งเฉพาะ field ที่อยู่ใน scope (data minimization)
+    </p>
+  </div>
+  {% endif %}
+</div>
+
+<div class="mt-4 p-4 rounded-xl bg-white border border-slate-200 max-w-2xl text-xs text-slate-500 leading-relaxed">
+  <span class="font-bold text-slate-700">ℹ️ ข้อมูลนี้มาจากไหน:</span>
+  ทุก field ด้านบนมาจาก JWT ที่ Hub ออกให้ตอน login ตาม <strong>scope</strong> ที่ subsystem ตั้งไว้ —
+  ระบบเกรด <strong>ไม่ได้เก็บรหัสผ่าน</strong> และเห็นเฉพาะข้อมูลที่ได้รับอนุญาต (least privilege)
+</div>
+
+{% endblock %}

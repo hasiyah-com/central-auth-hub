@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% block title %}เกรดของฉัน — ระบบเกรด{% endblock %}
+{% block content %}
+
+<div class="flex items-center justify-between mb-5">
+  <div>
+    <h1 class="text-2xl font-extrabold text-slate-900">เกรดของฉัน</h1>
+    <p class="text-sm text-slate-500 mt-0.5">ผลการเรียนภาคเรียนปัจจุบัน</p>
+  </div>
+  {% if gpa is not none %}
+  <div class="text-right">
+    <div class="text-[11px] text-slate-400 font-bold uppercase">GPA</div>
+    <div class="text-3xl font-extrabold text-indigo-700 tabular-nums">{{ gpa }}</div>
+  </div>
+  {% endif %}
+</div>
+
+{% if grades %}
+<div class="bg-white rounded-xl border border-slate-200 overflow-hidden">
+  <table class="w-full text-sm">
+    <thead class="bg-slate-50 text-slate-500 text-xs uppercase">
+      <tr>
+        <th class="px-5 py-3 text-left">รหัสวิชา</th>
+        <th class="px-5 py-3 text-left">ชื่อวิชา</th>
+        <th class="px-5 py-3 text-center">หน่วยกิต</th>
+        <th class="px-5 py-3 text-center">เกรด</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for g in grades %}
+      <tr class="border-t border-slate-100">
+        <td class="px-5 py-3 font-mono">{{ g.subject_code }}</td>
+        <td class="px-5 py-3">{{ g.subject_name }}</td>
+        <td class="px-5 py-3 text-center">{{ g.credits }}</td>
+        <td class="px-5 py-3 text-center font-bold text-lg {{ 'text-rose-600' if g.grade == 'F' else 'text-indigo-700' }}">{{ g.grade }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+    <tfoot class="bg-slate-50 text-slate-600 text-xs font-semibold">
+      <tr>
+        <td class="px-5 py-2" colspan="2">รวม {{ grades|length }} วิชา</td>
+        <td class="px-5 py-2 text-center">{{ total_credits }} หน่วยกิต</td>
+        <td class="px-5 py-2 text-center">GPA {{ gpa if gpa is not none else "—" }}</td>
+      </tr>
+    </tfoot>
+  </table>
+</div>
+{% else %}
+<div class="p-10 text-center bg-white rounded-xl border border-dashed border-slate-300">
+  <div class="text-4xl mb-2">📭</div>
+  <div class="font-semibold text-slate-700">ยังไม่มีเกรดของคุณ</div>
+  <div class="text-sm text-slate-500 mt-1">
+    ข้อมูลเกรดถูกเตรียมโดยสำนักทะเบียนผ่าน Roster Sync — ถ้ายังไม่เห็น
+    แสดงว่าบัญชีนี้ยังไม่ถูก sync หรือไม่ได้อยู่ในรายชื่อนักศึกษา
+  </div>
+</div>
+{% endif %}
+
+{% endblock %}
