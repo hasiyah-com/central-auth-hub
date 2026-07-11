@@ -123,3 +123,6 @@ mkcert
 # Thesis diagram PNG renders >500KB — เกิน pre-commit large-file limit.
 # แหล่งที่มา (mermaid + SVG) commit อยู่แล้ว render ใหม่ได้
 docs/diagrams/thesis/diagram-*.png
+
+# Benchmark report .docx render >500KB — .md source committed alongside
+hub/backend/tests/reports/*.docx
