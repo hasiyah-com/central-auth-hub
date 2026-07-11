@@ -130,6 +130,89 @@ def admin_overview(
     }
 
 
+@router.get("/dashboard/map")
+def dashboard_map(
+    admin: User = Depends(require_hub_admin),
+    db: Session = Depends(get_db),
+):
+    """ข้อมูลสำหรับ SOC dashboard — world map + topology + risk distribution.
+
+    - geo: จำนวน login แยกตามประเทศ (30 วัน) → hotspot บนแผนที่โลก
+    - subsystems: node สำหรับ topology (Hub → ระบบย่อย) + สถานะ health
+    - decisions: การกระจายผลตัดสิน ML/RBA (allow/warn/challenge/block/would_*)
+    - active_now: session ที่ยัง online
+    """
+    since = datetime.utcnow() - timedelta(days=30)
+
+    # ── geo distribution (login ต่อประเทศ × ระดับความเสี่ยง) ──
+    # bucket ตาม risk_score: green <0.40 · yellow 0.40–0.49 · red >=0.50
+    # (เกณฑ์เดียวกับ aggregator: warn 0.40, challenge 0.50)
+    risk_bucket = case(
+        (LoginSession.risk_score >= 0.5, "red"),
+        (LoginSession.risk_score >= 0.4, "yellow"),
+        else_="green",
+    )
+    geo_rows = (
+        db.query(
+            LoginSession.geo_country,
+            risk_bucket.label("risk"),
+            func.count(LoginSession.id).label("cnt"),
+        )
+        .filter(LoginSession.created_at >= since)
+        .group_by(LoginSession.geo_country, risk_bucket)
+        .order_by(func.count(LoginSession.id).desc())
+        .all()
+    )
+    geo = [
+        {"country": (c or "LOCAL"), "risk": r, "count": int(n)}
+        for c, r, n in geo_rows
+        if n
+    ]
+
+    # ── decision distribution ──
+    dec_rows = (
+        db.query(LoginSession.decision, func.count(LoginSession.id))
+        .filter(LoginSession.created_at >= since)
+        .group_by(LoginSession.decision)
+        .all()
+    )
+    decisions = {(d or "unknown"): int(n) for d, n in dec_rows}
+
+    # ── subsystem topology + health ──
+    subs = (
+        db.query(Subsystem)
+        .filter(Subsystem.status.in_(("active", "suspended")))
+        .order_by(Subsystem.name)
+        .all()
+    )
+    subsystems = []
+    for s in subs:
+        health = get_health_status(str(s.id))
+        subsystems.append(
+            {
+                "id": str(s.id),
+                "name": s.name,
+                "status": s.status,
+                "health": (health or {}).get("status") if health else None,
+                "latency_ms": (health or {}).get("latency_ms") if health else None,
+            }
+        )
+
+    active_now = (
+        db.query(func.count(LoginSession.id))
+        .filter(LoginSession.logout_at.is_(None))
+        .scalar()
+        or 0
+    )
+
+    return {
+        "geo": geo,
+        "decisions": decisions,
+        "subsystems": subsystems,
+        "active_now": int(active_now),
+    }
+
+
 # ============ Subsystem list ============
 
 
