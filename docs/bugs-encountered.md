@@ -272,6 +272,62 @@
 
 ---
 
+## 🎓 Subsystem C (ระบบเกรด) + SOC Dashboard + User 360 / Cross-system (Week 10-11)
+
+**B50. Access policy script ขัดกับ docstring จริงของ subsystem — teacher เข้าระบบเกรดไม่ได้**
+- อาการ: teacher login เข้า "ระบบเกรด" (Subsystem C) ไม่ได้ ทั้งที่ระบบต้องการให้ teacher เข้าดูมุมมองอาจารย์ได้ (ตรวจดู login flow แล้วโดน reject ที่ access policy check ก่อนถึง handler)
+- สาเหตุ: `scripts/register_grade_subsystem.py` ตั้ง `ACCESS_POLICY_CONFIG = {"roles": ["student"]}` (+ `allowed_roles=["student"]`) — แต่ `app/roster.py:sync()` docstring เขียนไว้ชัดว่า "Access Policy ของ subsystem นี้เปิดทั้ง student + teacher (teacher ต้อง login ได้เพื่อดูมุมมองอาจารย์)" สองไฟล์นี้ขัดกันเอง เพราะ register script ถูกเขียนขึ้นก่อนแล้วไม่ได้ sync ตาม intent ที่ระบุใน docstring ของ roster.py ภายหลัง — เจอจาก manual code review ก่อน commit ไม่ใช่จาก error message ตรงๆ (คนละ endpoint กับที่ throw)
+- **กฎ:** เมื่อ docstring/comment ของไฟล์หนึ่งอธิบาย behavior ของ config ที่มาจากอีกไฟล์ (เช่น access policy, feature flags) ต้อง cross-check ว่าไฟล์ config จริงตรงกับที่ comment บอกไว้เสมอ — ห้ามเขียน comment ตาม intent แล้วสมมติว่า config จะตามมาเอง ตรวจคู่กันทุกครั้งตอน code review ก่อน commit (โดยเฉพาะ subsystem registration script ที่รันครั้งเดียวแล้วมักไม่มีใครกลับมาดูซ้ำ)
+- **Fix:** `ACCESS_POLICY_CONFIG = {"roles": ["student", "teacher"]}` + `allowed_roles=["student", "teacher"]` (roster.py ยังกรอง `user_type == "student"` เองตอน pre-create เกรด — เปิด login ให้ teacher ไม่ทำให้ grade data รั่วไปหา role อื่น)
+
+**B51. Dashboard KPI แสดง "—" ทั้งที่ค่าจริงคือ 0 (falsy-zero กับ `||`)**
+- อาการ: KPI "บุคลากร" (teacher+staff+admin รวม) บนหน้า Dashboard แสดง "—" เหมือนยังโหลดไม่เสร็จ ทั้งที่ data โหลดมาแล้วจริง — เกิดเฉพาะกรณีผลรวมบังเอิญเป็น 0 จริง (เช่น DB fresh-seed ที่ยังไม่มี teacher/staff/admin เพิ่ม)
+- สาเหตุ: `dashboard/page.tsx` เขียน `value: (counts?.teacher ?? 0) + (counts?.staff ?? 0) + (counts?.admin ?? 0) || "—"` — ตั้งใจใช้ `||` fallback ตอน `counts` ยังเป็น `null` (กำลังโหลด) แต่ JS/TS ถือว่า `0` เป็น falsy เหมือนกัน → ผลรวมที่เป็น `0` จริง (มีความหมาย ไม่ใช่ "ไม่มีข้อมูล") ถูก `||` จับไปแสดง "—" แทน
+- **กฎ:** ห้ามใช้ `computed_value || fallback` เพื่อเช็คสถานะ "ยังไม่โหลด" ถ้า `computed_value` อาจเป็น `0` ที่ถูกต้องตามธรรมชาติ (count, sum, percentage ฯลฯ) — ต้องเช็คสถานะโหลดจาก **source object เอง** เช่น `data ? computed_value : "—"` แยกเรื่อง "ไม่มีข้อมูล" ออกจาก "ข้อมูลคือศูนย์" ให้ชัดเจน
+- **Fix:** เปลี่ยนเป็น `counts ? (counts.teacher ?? 0) + (counts.staff ?? 0) + (counts.admin ?? 0) : "—"`
+- **Verify:** seed DB ให้เหลือเฉพาะ student (teacher/staff/admin = 0) → เปิด `/` (Dashboard) → การ์ด "บุคลากร" ต้องแสดง `0` ไม่ใช่ `—`
+
+**B52. Admin force-logout เตะ Hub session แต่ subsystem cookie ยังใช้ได้ต่อ (ขาด back-channel)**
+- อาการ: กด "Force Logout ทั้งหมด" ในหน้า User 360 → Hub ขึ้นว่าปิด session หมด + revoke JWT แล้ว แต่ผู้ใช้ยัง**ใช้งานระบบย่อยต่อได้** (เปิดหน้าใน subsystem ไม่เด้งออก) จน JWT หมดอายุเอง — user รายงานเอง ("แสดงว่าออกแล้ว...แต่ในระบบย่อยยังไม่เด้งออก")
+- สาเหตุ: `force_logout_user` ปิด `login_sessions.logout_at` + `revoke_jti` **ที่ Hub เท่านั้น** — subsystem มี session cookie ของตัวเอง (stateless signed cookie) ที่ Hub เอื้อมไปลบไม่ได้ (คนละ trust domain, ไม่ใช่ SSO) และ Hub ก็ **ไม่ได้แจ้ง** subsystem ว่า user ถูก logout → subsystem ไม่รู้ ยอมให้ใช้ต่อ. jti blacklist มีผลเฉพาะตอน subsystem verify token กับ Hub ใหม่ (ซึ่งไม่เกิดทุก request หลังตั้ง session แล้ว)
+- **กฎ:** action ที่ Hub ทำแล้วต้องมีผล**ข้าม trust domain** (force-logout, revoke, ban) ต้อง **ยิง webhook back-channel** ให้ทุก subsystem ที่ user มี session ค้าง เสมอ — Hub เปลี่ยน state ฝั่งตัวเองอย่างเดียวไม่พอ เพราะไม่ใช่ SSO (Hub สั่ง subsystem ตรงๆ ไม่ได้ ทำได้แค่ "แจ้ง" ให้ subsystem invalidate session เอง)
+- **Fix:** หลังปิด session — เก็บ `sub_ids` ของ subsystem ที่มี session ค้าง แล้ว loop ยิง `send_access_updated` (= บังคับ re-auth, login ใหม่ได้ ต่างจาก `access_revoked` ที่ถาวร) ให้แต่ละตัว (fail-safe: ยิงไม่สำเร็จ = log ไม่ raise, B21)
+- **Verify:** login subsystem → admin force-logout → เปิดหน้า subsystem ซ้ำ → ต้อง 307 ไป `/login` (ตรวจ grade `reauth_after` เปลี่ยน None → timestamp; response `subsystems_notified`/`webhook_delivered` > 0)
+
+**B53. Relative-time เพี้ยน +7 ชม. — frontend parse naive-UTC เป็น local time**
+- อาการ: หน้า User 360 "Recent Login" แสดง login ที่พึ่งเกิด (< 1 นาที) ว่า "7 ชม.ที่แล้ว"
+- สาเหตุ: backend ส่ง timestamp เป็น **naive UTC** (`datetime.isoformat()` ไม่มี `Z`/offset เช่น `2026-07-11T03:30:00`) — JS `new Date("2026-07-11T03:30:00")` ตาม ECMAScript ตีความ date-time string ที่**ไม่มี tz designator เป็น local time** → ที่ไทย (UTC+7) จึงกลายเป็น 03:30 เวลาไทย = ห่างจากตอนนี้ (10:30) ไป 7 ชม. (ต่างจาก B29/B32 ที่เป็น "คน**อ่าน**ค่า UTC ผิด" — อันนี้คือ "JS **parse** UTC ผิดเป็น local")
+- **กฎ:** timestamp จาก backend เป็น UTC เสมอ (CLAUDE.md) — ฝั่ง frontend ก่อน `new Date()` ต้อง**บังคับ parse เป็น UTC**: เติม `Z` ถ้า string ไม่มี tz designator (regex `/[zZ]$|[+-]\d{2}:?\d{2}$/`) แล้วค่อยแปลงเป็น local ตอนแสดง — อย่าปล่อยให้ JS เดา timezone เอง
+- **Fix:** helper `parseUTC(iso)` เติม `Z` เมื่อไม่มี tz → ใช้แทน `new Date()` ใน `relTime()` (ครอบทุกจุดที่โชว์เวลา: created_at, last_login, session, passkey)
+- **Verify:** node — `new Date(naiveUTCnow)` diff = 420 นาที (bug), `parseUTC(naiveUTCnow)` diff = 0 นาที (ถูก)
+
+**B54. Subsystem ใหม่โดน 503 maintenance ตอน OAuth — Hub health-check เข้า `localhost:PORT` จาก container ไม่ได้**
+- อาการ: ระบบเกรด (port 8003) พึ่ง register → กด login → Hub ตอบหน้า 503 maintenance แทนที่จะเริ่ม OAuth flow
+- สาเหตุ: Hub มี health-gate — ถ้า subsystem = `down` จะกัน OAuth (503). `subsystem_health.py` ยิง `GET {origin ของ redirect_uri}/health` = `http://localhost:8003/health` แต่โค้ดรันใน **container** — `localhost` ใน container ชี้ตัวมันเอง ไม่ใช่ host → connection refused → mark `down`. (redirect_uri ต้องเป็น `localhost:8003` เพราะ browser เข้าถึง แต่ Hub-ใน-container เข้าด้วย URL เดียวกันไม่ได้ — เหมือน B20/B33 ตระกูล Docker networking)
+- **กฎ:** dev/Docker — ทุกที่ที่ Hub (ใน container) เรียก subsystem ด้วย URL `localhost:PORT` (health-check, webhook) ต้องผ่าน docker-service-name mapping (`_DEV_LOCALHOST_MAP`) แปลง `localhost:8003` → `subsystem-grade:8000` ก่อน — **เพิ่ม subsystem ใหม่ต้องเพิ่ม mapping ด้วย**. prod ใช้ URL จริงที่ Hub เข้าถึงได้ (ไม่มีปัญหานี้)
+- **Fix:** เพิ่ม `("localhost","8003")` + `("127.0.0.1","8003")` → `subsystem-grade:8000` ใน `webhook_dispatcher._DEV_LOCALHOST_MAP` (health-check reuse mapping เดียวกัน) + ล้าง cached `down` ใน Redis (`subsystem:health:{id}`) ให้ re-check รอบใหม่
+- **Verify:** กด login ระบบเกรด → เข้า OAuth flow ได้ (ไม่ 503); ตรวจ Redis health status = `online`
+
+**B55. Subsystem ใหม่ (grade) ไม่มี `session_cookie_secure` เลย — ต่างจาก dorm/library**
+- อาการ: ตอนเตรียม production compose ให้ subsystem-grade (สำหรับ deploy ขึ้น VM) พบว่า `config.py`
+  ไม่มี field `session_cookie_secure` เลยแม้แต่ตัวเดียว (ต่างจาก dorm/library ที่มี field + fail-fast
+  validation) และ `_set_session()` ใน `main.py` เรียก `resp.set_cookie(...)` โดยไม่ตั้ง `secure=` เลย
+  — เจอจาก manual code review ตอนเตรียม prod infra ไม่ใช่จาก error ตรงๆ (ยังไม่เคย deploy จริงจึงไม่มีใครสังเกต)
+- สาเหตุ: subsystem-grade เขียนแยกทีหลัง dorm/library แบบ copy pattern บางส่วนแต่ไม่ครบ — เอา session
+  cookie logic มาแต่ไม่เอา `session_cookie_secure` + `validate_production()` มาด้วย ถ้า deploy ขึ้น VM
+  (HTTPS) โดยไม่แก้ session cookie จะไม่มี `Secure` flag → คุกกี้ auth หลุดผ่าน MITM บน network ที่ไม่ปลอดภัยได้
+  (ตัด HTTPS-only guarantee ของ session)
+- **กฎ:** subsystem ใหม่ทุกตัวที่ copy pattern จาก dorm/library ต้องเอา **ทั้งชุด production hardening**
+  มาด้วยเสมอ ไม่ใช่แค่ business logic — โดยเฉพาะ `session_cookie_secure` + `validate_production()`
+  fail-fast (กัน deploy ขึ้น prod ทั้งที่ยังไม่ตั้งค่าปลอดภัย) เช็คด้วย diff กับ subsystem อ้างอิงก่อน commit
+  subsystem ใหม่ทุกครั้ง
+- **Fix:** เพิ่ม `session_cookie_secure: bool = False` + `validate_production()` (เช็ค secret/cookie-secure/
+  client_id/client_secret) ใน `config.py` ตาม pattern dorm/library เป๊ะ + ผูก `secure=settings.session_cookie_secure`
+  เข้า `resp.set_cookie()` ใน `main.py:_set_session()`
+- **Verify:** `docker compose exec subsystem-grade python -c "from app.config import Settings; Settings(app_env='production', session_cookie_secure=False, ...)"` ต้อง raise `ValueError` (fail-fast ทำงาน)
+
+---
+
 ## วิธีเพิ่ม bug ใหม่
 
 1. เพิ่มที่ section ที่เหมาะสม (สร้าง section ใหม่ถ้าจำเป็น)
