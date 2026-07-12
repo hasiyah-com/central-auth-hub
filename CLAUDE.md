@@ -625,6 +625,9 @@ docker compose exec ml-service python -m scripts.train_model
 → **กฎ:** เมื่อแก้ env → `docker compose up -d --force-recreate <service>` (ไม่ใช่ restart)
 → **Verify:** `docker exec <container> env | grep <VAR>`
 
+**B51. Frontend `value || "—"` กลืน 0 จริง** — count/sum ที่เป็น 0 (falsy) โดน `||` แสดง fallback "—" ทั้งที่ข้อมูลโหลดแล้ว (KPI, badge, สถิติ)
+→ **กฎ:** เช็ค "ยังไม่โหลด" จาก **source object** (`data ? computed : "—"`) ห้ามใช้ `computed || fallback` เมื่อ `computed` อาจเป็น `0` ที่ถูกต้อง — แยก "ไม่มีข้อมูล" ออกจาก "ข้อมูลคือศูนย์"
+
 **B52. Action ที่ Hub ทำ ต้องแจ้ง subsystem ข้าม trust domain ด้วย webhook** — force-logout/revoke ที่ Hub ทำแล้วหยุดแค่ Hub เอง = subsystem cookie ยังใช้ต่อได้ (ไม่ใช่ SSO, Hub เอื้อมไปลบ session subsystem ไม่ได้)
 → **กฎ:** ทุก action ที่ควรตัดสิทธิ์ทันที (force-logout, revoke, ban) ต้อง loop ยิง `send_access_updated`/`send_access_revoked` ให้ subsystem ที่ user มี session ค้างอยู่เสมอ — fail-safe (ยิงไม่สำเร็จ = log ไม่ raise, ตาม B21)
 
