@@ -1,0 +1,12 @@
+# Ruff config (root) — โปรเจคใช้ ruff default select (E4/E7/E9/F) ตามเดิม
+# ไฟล์นี้เพิ่มมาเพื่อ per-file-ignore เท่านั้น ไม่เปลี่ยน rule set หลัก
+
+[lint.per-file-ignores]
+# ml-service/scripts/ = สคริปต์ทดลอง/วิเคราะห์ (eval, กราฟ, train แบบ one-off)
+# ผ่อน lint nitpick ที่ไม่ใช่บั๊ก — เขียนแบบ throwaway ได้:
+#   E701 = multiple statements on one line (colon)     เช่น `if x: s += 0.3`
+#   E702 = multiple statements on one line (semicolon) เช่น `a; b`
+#   E731 = assign lambda แทน def                       เช่น `f = lambda x: ...`
+#   E741 = ambiguous variable name                     เช่น `l`
+#   F841 = local variable assigned but never used      (เศษการทดลอง)
+"ml-service/scripts/*.py" = ["E701", "E702", "E731", "E741", "F841"]
