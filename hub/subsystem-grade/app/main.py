@@ -31,7 +31,12 @@ app.include_router(webhook_router)  # /internal/access-* (Hub back-channel)
 templates = Jinja2Templates(directory="templates")
 
 _signer = URLSafeTimedSerializer(settings.session_secret_key, salt="grade-session")
-_oauth_flows: dict[str, str] = {}  # state → code_verifier (in-memory, demo)
+# OAuth flow state — signed cookie (ไม่ใช่ in-memory dict ที่โตไม่จำกัด + หายตอน
+# restart). salt แยกจาก session (CLAUDE.md: separate salt per purpose). เก็บ
+# {state, code_verifier} 10 นาที พอสำหรับเด้งไป Hub/Google แล้วกลับ.
+_oauth_signer = URLSafeTimedSerializer(settings.session_secret_key, salt="grade-oauth")
+_OAUTH_COOKIE = "grade_oauth_flow"
+_OAUTH_MAX_AGE = 600  # 10 นาที
 
 _STAFF_ROLES = ("teacher", "staff")
 _GPA_POINTS = {
@@ -132,20 +137,41 @@ def login_page(request: Request):
 def login_start():
     state = secrets.token_urlsafe(16)
     verifier, challenge = hub_client.generate_pkce_pair()
-    _oauth_flows[state] = verifier
-    return RedirectResponse(hub_client.build_authorize_url(state, challenge))
+    resp = RedirectResponse(hub_client.build_authorize_url(state, challenge))
+    # เก็บ {state, verifier} ใน signed cookie แทน dict (มี TTL, ไม่ leak memory)
+    resp.set_cookie(
+        _OAUTH_COOKIE,
+        _oauth_signer.dumps({"state": state, "verifier": verifier}),
+        max_age=_OAUTH_MAX_AGE,
+        httponly=True,
+        samesite="lax",
+        secure=settings.session_cookie_secure,
+    )
+    return resp
 
 
 @app.get("/oauth/callback")
 async def oauth_callback(request: Request, code: str = "", state: str = ""):
-    verifier = _oauth_flows.pop(state, None)
-    if not verifier or not code:
-        return RedirectResponse("/login?error=oauth_state")
+    # โหลด flow state จาก cookie + verify signature/อายุ + เทียบ state (กัน CSRF)
+    raw = request.cookies.get(_OAUTH_COOKIE)
+    flow = None
+    if raw:
+        try:
+            flow = _oauth_signer.loads(raw, max_age=_OAUTH_MAX_AGE)
+        except (BadSignature, SignatureExpired):
+            flow = None
+    if not flow or not code or flow.get("state") != state:
+        resp = RedirectResponse("/login?error=oauth_state")
+        resp.delete_cookie(_OAUTH_COOKIE)
+        return resp
+    verifier = flow["verifier"]
     try:
         token_resp = await hub_client.exchange_code_for_token(code, verifier)
         claims = await hub_client.verify_hub_jwt(token_resp["access_token"])
     except Exception as e:
-        return RedirectResponse(f"/login?error=verify:{type(e).__name__}")
+        resp = RedirectResponse(f"/login?error=verify:{type(e).__name__}")
+        resp.delete_cookie(_OAUTH_COOKIE)
+        return resp
 
     sess = {
         "hub_user_id": claims["sub"],
@@ -158,6 +184,7 @@ async def oauth_callback(request: Request, code: str = "", state: str = ""):
 
     resp = RedirectResponse("/")
     _set_session(resp, sess)
+    resp.delete_cookie(_OAUTH_COOKIE)  # flow เสร็จแล้ว — เคลียร์ cookie ชั่วคราว
     return resp
 
 
