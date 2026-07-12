@@ -588,7 +588,7 @@ docker compose exec ml-service python -m scripts.train_model
 
 ## Bugs Encountered & Lessons Learned
 
-**📖 Full list**: ดู [`docs/bugs-encountered.md`](docs/bugs-encountered.md) — ทุกบั๊ก (B1-B41+) พร้อมรายละเอียดเต็ม
+**📖 Full list**: ดู [`docs/bugs-encountered.md`](docs/bugs-encountered.md) — ทุกบั๊ก (B1-B55+) พร้อมรายละเอียดเต็ม
 
 ในไฟล์นี้เก็บเฉพาะ **critical bugs ที่กระทบ design philosophy** — ทุก endpoint/feature ใหม่ต้องตรวจกฎเหล่านี้ก่อน commit
 
@@ -625,6 +625,9 @@ docker compose exec ml-service python -m scripts.train_model
 → **กฎ:** เมื่อแก้ env → `docker compose up -d --force-recreate <service>` (ไม่ใช่ restart)
 → **Verify:** `docker exec <container> env | grep <VAR>`
 
+**B52. Action ที่ Hub ทำ ต้องแจ้ง subsystem ข้าม trust domain ด้วย webhook** — force-logout/revoke ที่ Hub ทำแล้วหยุดแค่ Hub เอง = subsystem cookie ยังใช้ต่อได้ (ไม่ใช่ SSO, Hub เอื้อมไปลบ session subsystem ไม่ได้)
+→ **กฎ:** ทุก action ที่ควรตัดสิทธิ์ทันที (force-logout, revoke, ban) ต้อง loop ยิง `send_access_updated`/`send_access_revoked` ให้ subsystem ที่ user มี session ค้างอยู่เสมอ — fail-safe (ยิงไม่สำเร็จ = log ไม่ raise, ตาม B21)
+
 ### หมวดบั๊กเพิ่มเติม (ดูรายละเอียดใน `docs/bugs-encountered.md`)
 
 | Section | Range | Theme |
@@ -641,6 +644,7 @@ docker compose exec ml-service python -m scripts.train_model
 | 🔑 Passkey / WebAuthn (Week 9-10) | B42-B43 | LINE Authlib HS256, Passkey login enumeration (allowCredentials shape) |
 | 🚨 Risk-Triggered MFA (Week 9-10) | B44-B48 | Hard block threshold at finalizer, Force-enroll OTP gate, Browser unsupported → Recovery, atomic consume, runtime grace period |
 | 🧠 ML Feature Expansion (Week 10-11) | B49 | Feature reorder ลืม sync rule_engine.FEAT (score มั่ว) + train/serve skew (synthetic ≠ ค่าจริง) |
+| 🎓 Subsystem C (เกรด) + SOC Dashboard + User 360 (Week 10-11) | B50-B55 | Access policy ขัด docstring (teacher login ไม่ได้), falsy-zero KPI (`\|\|` กับ 0 จริง), force-logout ขาด webhook back-channel, relative-time parse naive-UTC เป็น local (+7ชม.), health-check เข้า `localhost:PORT` จาก container ไม่ได้ (503 gate), subsystem ใหม่ลืม session_cookie_secure |
 
 ### วิธีเพิ่ม bug ใหม่
 
