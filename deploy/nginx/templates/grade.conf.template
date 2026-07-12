@@ -1,0 +1,28 @@
+# grade.${DOMAIN}  →  subsystem-grade:8000 (ระบบเกรด — OAuth client + Roster Sync)
+
+server {
+    listen 80;
+    server_name grade.${DOMAIN};
+
+    location /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+    }
+    location / {
+        return 301 https://$host$request_uri;
+    }
+}
+
+server {
+    listen 443 ssl;
+    http2 on;
+    server_name grade.${DOMAIN};
+
+    ssl_certificate     /etc/letsencrypt/live/grade.${DOMAIN}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/grade.${DOMAIN}/privkey.pem;
+    include /etc/nginx/snippets/ssl-params.conf;
+
+    location / {
+        include /etc/nginx/snippets/proxy-params.conf;
+        proxy_pass http://subsystem-grade:8000;
+    }
+}

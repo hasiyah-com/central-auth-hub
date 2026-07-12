@@ -4,14 +4,17 @@
 → ตอน student login เอา JWT.sub (hub_user_id) มา match → โชว์เกรดของคนนั้น.
 """
 
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+_DEV_SECRET = "dev-grade-secret-change-me"  # pragma: allowlist secret
 
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     app_env: str = "development"
-    session_secret_key: str = "dev-grade-secret-change-me"  # pragma: allowlist secret
+    session_secret_key: str = _DEV_SECRET
 
     # SQLite — self-contained (ไม่ต้องมี postgres container แยก)
     db_path: str = "/app/data/grade.db"
@@ -32,6 +35,7 @@ class Settings(BaseSettings):
 
     session_cookie_name: str = "grade_session"
     session_max_age_seconds: int = 3600
+    session_cookie_secure: bool = False  # dev: false, prod: true (HTTPS)
 
     # Webhook back-channel — ต้องเป็นค่าเดียวกับ Hub WEBHOOK_SHARED_KEY
     # ปล่อยว่าง = ปฏิเสธ webhook ทุกตัว (subsystem ต้อง pull เอง)
@@ -44,6 +48,29 @@ class Settings(BaseSettings):
     @property
     def jwt_issuer(self) -> str:
         return self.hub_issuer
+
+    # ── production config validation (fail-fast, ตาม pattern dorm/library) ──
+    @model_validator(mode="after")
+    def validate_production(self):
+        """ปฏิเสธ start ถ้า APP_ENV=production แต่ยังใช้ค่า default ที่ไม่ปลอดภัย."""
+        if self.app_env == "production":
+            errors = []
+            if self.session_secret_key == _DEV_SECRET:
+                errors.append(
+                    "session_secret_key ยังเป็นค่า default — ต้องสร้างใหม่ใน production"
+                )
+            if not self.session_cookie_secure:
+                errors.append("session_cookie_secure ต้อง True ใน production (HTTPS)")
+            if not self.grade_client_secret:
+                errors.append("grade_client_secret ต้องไม่ว่างใน production")
+            if not self.grade_client_id:
+                errors.append("grade_client_id ต้องไม่ว่างใน production")
+            if errors:
+                raise ValueError(
+                    "❌ Production config validation failed:\n  - "
+                    + "\n  - ".join(errors)
+                )
+        return self
 
 
 settings = Settings()

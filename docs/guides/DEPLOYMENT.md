@@ -1,6 +1,6 @@
 # Production Deployment Runbook — Central Auth Hub
 
-Deploy ระบบจริงขึ้น Internet อย่างปลอดภัย: **VM เดียว + Let's Encrypt + nginx + 4 subdomains**
+Deploy ระบบจริงขึ้น Internet อย่างปลอดภัย: **VM เดียว + Let's Encrypt + nginx + 5 subdomains**
 (อ้างอิง plan: `C:\Users\hasiy\.claude\plans\mellow-wobbling-fiddle.md`)
 
 > งานนี้เป็น **config/infra ล้วน — ไม่แตะ logic แอป**. แอปรองรับ production ผ่าน env อยู่แล้ว
@@ -16,6 +16,7 @@ Deploy ระบบจริงขึ้น Internet อย่างปลอด
 | `auth.<domain>`  | hub-backend:8000  | OAuth, Passkey API, JWKS, OIDC, Hub-served HTML |
 | `dorm.<domain>`  | subsystem-dorm:8000 | ระบบหอพัก |
 | `library.<domain>` | subsystem-library:8000 | ระบบห้องสมุด |
+| `grade.<domain>` | subsystem-grade:8000 | ระบบเกรด (Roster Sync + API key demo) |
 
 เปิด public แค่ **nginx 80/443**. ทุก service อื่น (backend, frontend, ml, postgres×3, redis)
 อยู่ใน network `cah-net` เท่านั้น — prod compose ไม่ publish port ใด ๆ
@@ -25,8 +26,8 @@ Deploy ระบบจริงขึ้น Internet อย่างปลอด
 > ครอบทั้ง admin. (หน้า register) และ auth. (ceremony)
 
 ไฟล์ที่เกี่ยวข้อง: `docker-compose.prod.yml`, `docker-compose.dorm.prod.yml`,
-`docker-compose.library.prod.yml`, `deploy/nginx/`, `deploy/init-letsencrypt.sh`, `deploy/up.sh`,
-`prod.env.template` (×3), `hub/frontend/Dockerfile.prod`
+`docker-compose.library.prod.yml`, `docker-compose.grade.prod.yml`, `deploy/nginx/`,
+`deploy/init-letsencrypt.sh`, `deploy/up.sh`, `prod.env.template` (×4), `hub/frontend/Dockerfile.prod`
 
 ---
 
@@ -34,8 +35,8 @@ Deploy ระบบจริงขึ้น Internet อย่างปลอด
 
 - VM Linux (Ubuntu 22.04+), public IP, **80 + 443 เปิด** (firewall/security group)
 - Docker + Docker Compose plugin
-- โดเมนจริง + **DNS A record** 4 ตัวชี้มาที่ VM:
-  `admin` · `auth` · `dorm` · `library` → `<public-ip>`
+- โดเมนจริง + **DNS A record** 5 ตัวชี้มาที่ VM:
+  `admin` · `auth` · `dorm` · `library` · `grade` → `<public-ip>`
 - ไฟล์ GeoIP `GeoLite2-Country.mmdb` (ฟรีจาก MaxMind) — วางที่ `hub/backend/data/`
 - เพิ่ม redirect URI ใน Google Console — ดู §6
 
@@ -51,8 +52,9 @@ git clone <repo> && cd central-auth-starter
 cp prod.env.template .env.prod
 cp hub/subsystem-dorm/prod.env.template    hub/subsystem-dorm/.env.prod
 cp hub/subsystem-library/prod.env.template hub/subsystem-library/.env.prod
+cp hub/subsystem-grade/prod.env.template   hub/subsystem-grade/.env.prod
 #   แก้ DOMAIN, SECRET_KEY, SECRET_ENCRYPTION_KEY, POSTGRES_PASSWORD,
-#   GOOGLE_*, WEBHOOK_SHARED_KEY (ให้ตรงกันทั้ง Hub + subsystem) ฯลฯ
+#   GOOGLE_*, WEBHOOK_SHARED_KEY (ให้ตรงกันทั้ง Hub + subsystem ทุกตัว) ฯลฯ
 
 # 3.3 วาง GeoIP DB
 #   คัดลอกไฟล์ GeoLite2-Country.mmdb → hub/backend/data/
@@ -68,6 +70,9 @@ docker compose --env-file .env.prod -f docker-compose.prod.yml \
 # 3.6 start Hub stack
 bash deploy/up.sh hub
 
+# 3.6b apply schema migrations (Alembic — ต้องรันทุกครั้งหลัง pull โค้ดที่แก้ models.py)
+docker compose --env-file .env.prod -f docker-compose.prod.yml exec hub-backend alembic upgrade head
+
 # 3.7 seed users + train ML (ครั้งเดียว)
 docker compose --env-file .env.prod -f docker-compose.prod.yml exec hub-backend python -m app.seeds.seed_users
 docker compose --env-file .env.prod -f docker-compose.prod.yml exec ml-service python -m scripts.generate_data
@@ -77,13 +82,25 @@ docker compose --env-file .env.prod -f docker-compose.prod.yml exec ml-service p
 #     กรอกลง hub/subsystem-dorm/.env.prod และ hub/subsystem-library/.env.prod
 #     (redirect_uri ที่ register = https://dorm.<domain>/oauth/callback ฯลฯ)
 
+# 3.8b ลงทะเบียน Subsystem C (ระบบเกรด) — ผ่าน script ไม่ใช่ console (ต้องออก Roster API key ด้วย)
+GRADE_REDIRECT_URI=https://grade.<domain>/oauth/callback \
+  docker compose --env-file .env.prod -f docker-compose.prod.yml \
+  exec hub-backend python -m scripts.register_grade_subsystem
+#   กรอก GRADE_CLIENT_ID / GRADE_CLIENT_SECRET / GRADE_ROSTER_API_KEY ที่ print ออกมา
+#   ลงใน hub/subsystem-grade/.env.prod
+
 # 3.9 start subsystem
 bash deploy/up.sh dorm
 bash deploy/up.sh library
+bash deploy/up.sh grade
 
 # 3.10 seed ข้อมูล subsystem (ครั้งเดียว)
 docker compose --env-file hub/subsystem-dorm/.env.prod -f docker-compose.dorm.prod.yml exec subsystem-dorm python -m scripts.seed_rooms
 docker compose --env-file hub/subsystem-library/.env.prod -f docker-compose.library.prod.yml exec subsystem-library python -m scripts.seed_books
+#   ระบบเกรดไม่มี seed script — sync roster ทำผ่านหน้าเว็บ (§3.11)
+
+# 3.11 sync roster ของระบบเกรด (ครั้งแรก + ทุกครั้งที่มีนักศึกษาเพิ่ม)
+#   login ที่ https://grade.<domain> ด้วยบัญชี teacher/staff → หน้า /manage → กด "Sync ตอนนี้"
 ```
 
 ---
@@ -136,7 +153,7 @@ curl -I https://auth.<domain>/docs           # 404 (ENABLE_DOCS=false)
 | Backup DB | `bash scripts/backup.sh` (pg_dump 3 DB) — ตั้ง cron + offsite |
 | Cert renew | อัตโนมัติ (certbot container renew 12 ชม. + nginx reload 6 ชม.) |
 | แก้ env แล้ว apply | `... up -d --force-recreate <service>` **ห้าม `restart`** (B36) |
-| Redeploy โค้ดใหม่ | `git pull` → `bash deploy/up.sh hub` (build ใหม่) |
+| Redeploy โค้ดใหม่ | `git pull` → `bash deploy/up.sh hub` (build ใหม่) → ถ้าแก้ `models.py`: `... exec hub-backend alembic upgrade head` |
 
 **ห้าม regenerate JWT keys** ตอน redeploy — `hub_jwt_keys` volume persist ไว้ (regenerate = token ทุกใบใช้ไม่ได้)
 
@@ -154,6 +171,7 @@ curl -I https://auth.<domain>/docs           # 404 (ENABLE_DOCS=false)
 
 ## 9. ข้อจำกัด
 
-- **ไม่มี Alembic** — schema สร้างด้วย `create_all` ตอน start (เหมาะ deploy ใหม่); schema change ภายหลังต้องระวัง
+- **Alembic** ควบคุม schema (ไม่ใช่ `create_all` แล้ว) — ทุกครั้งที่ `git pull` โค้ดที่แก้ `models.py`
+  ต้องรัน `alembic upgrade head` ก่อน restart backend (ดู §3 ขั้น 3.6b)
 - **single VM = single point of failure** — รับได้สำหรับ demo/senior project; prod จริงค่อยแยก subsystem เป็นคนละเครื่อง + HA
 - **Redis ไม่มี auth** — ปลอดภัยเพราะไม่ expose ออก public (internal cah-net เท่านั้น)

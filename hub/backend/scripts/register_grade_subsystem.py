@@ -10,12 +10,18 @@ access_policy = "role" (student + teacher) — เกรดเป็นข้อ
 
 idempotent: ถ้ามี client_id นี้อยู่แล้ว → rotate secret + api key ใหม่ (ค่าเก่าใช้ไม่ได้).
 
-รัน:
+รัน (dev — default localhost:8003):
   docker compose exec hub-backend python -m scripts.register_grade_subsystem
+
+รัน (prod — redirect URI ตาม subdomain จริง):
+  GRADE_REDIRECT_URI=https://grade.<domain>/oauth/callback \
+    docker compose --env-file .env.prod -f docker-compose.prod.yml \
+    exec hub-backend python -m scripts.register_grade_subsystem
 """
 
 from __future__ import annotations
 
+import os
 from datetime import datetime
 
 from app.database import SessionLocal
@@ -25,7 +31,9 @@ import secrets
 
 CLIENT_ID = "cli_grade"
 NAME = "ระบบเกรด (Grade System)"
-REDIRECT_URI = "http://localhost:8003/oauth/callback"
+REDIRECT_URI = os.environ.get(
+    "GRADE_REDIRECT_URI", "http://localhost:8003/oauth/callback"
+)
 SCOPE = ["openid", "email", "profile"]
 ACCESS_POLICY = "role"
 ACCESS_POLICY_CONFIG = {"roles": ["student", "teacher"]}

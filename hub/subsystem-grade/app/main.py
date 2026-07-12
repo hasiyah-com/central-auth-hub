@@ -77,6 +77,7 @@ def _set_session(resp, data: dict) -> None:
         max_age=settings.session_max_age_seconds,
         httponly=True,
         samesite="lax",
+        secure=settings.session_cookie_secure,
     )
 
 
