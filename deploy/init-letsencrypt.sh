@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# ออก Let's Encrypt cert ครั้งแรกสำหรับ 4 subdomain (admin/auth/dorm/library)
+# ออก Let's Encrypt cert ครั้งแรกสำหรับ 5 subdomain (admin/auth/dorm/library/grade)
 # แก้ปัญหา chicken-egg: nginx ต้องมี cert ก่อนถึง start ได้ → สร้าง dummy cert
 # ให้ nginx start → ขอ cert จริง → reload
 #
@@ -19,7 +19,7 @@ DOMAIN="$(grep -E '^DOMAIN=' "$ENV_FILE" | head -1 | cut -d= -f2- | tr -d '"')"
 EMAIL="$(grep -E '^(LETSENCRYPT_EMAIL|EMAIL_FROM)=' "$ENV_FILE" | head -1 | cut -d= -f2- | tr -d '"')"
 [ -n "$DOMAIN" ] || { echo "❌ DOMAIN ว่างใน $ENV_FILE"; exit 1; }
 
-SUBS=("admin.$DOMAIN" "auth.$DOMAIN" "dorm.$DOMAIN" "library.$DOMAIN")
+SUBS=("admin.$DOMAIN" "auth.$DOMAIN" "dorm.$DOMAIN" "library.$DOMAIN" "grade.$DOMAIN")
 STAGING="${STAGING:-0}"   # STAGING=1 bash deploy/init-letsencrypt.sh  → ใช้ LE staging (ทดสอบ ไม่โดน rate limit)
 
 echo "▶ Domains: ${SUBS[*]}"
@@ -57,4 +57,4 @@ done
 
 # 4) reload nginx รับ cert จริง
 $COMPOSE exec nginx nginx -s reload
-echo "✅ เสร็จ — cert ออกครบ 4 subdomain. ต่อไป: bash deploy/up.sh hub"
+echo "✅ เสร็จ — cert ออกครบ 5 subdomain. ต่อไป: bash deploy/up.sh hub"

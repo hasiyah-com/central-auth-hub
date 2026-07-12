@@ -1,0 +1,31 @@
+# Subsystem C — ระบบเกรด (Grade System) — PRODUCTION stack (cah-grade)
+#
+# Mirror ของ docker-compose.dorm.prod.yml/library.prod.yml — pattern เดียวกัน
+# ต่างตรงที่ grade ใช้ SQLite (ไม่มี postgres container แยก, ผูก volume ไฟล์เดียว).
+# NO host port (nginx ที่ grade.<domain> proxy เข้ามา), NO source mount, NO --reload.
+#
+# Run:  docker compose --env-file hub/subsystem-grade/.env.prod -f docker-compose.grade.prod.yml up -d --build
+# หรือ: bash deploy/up.sh grade   (Hub stack ต้องขึ้นก่อน — subsystem fetch JWKS จาก hub-backend)
+
+name: cah-grade
+
+services:
+  subsystem-grade:
+    build:
+      context: ./hub/subsystem-grade
+      dockerfile: Dockerfile
+    container_name: hub-subsystem-grade
+    restart: unless-stopped
+    env_file:
+      - ./hub/subsystem-grade/.env.prod
+    volumes:
+      - grade_data:/app/data
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips='*'
+
+networks:
+  default:
+    name: cah-net
+    external: true
+
+volumes:
+  grade_data:
