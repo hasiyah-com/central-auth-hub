@@ -145,9 +145,12 @@ def dashboard_map(
     since = datetime.utcnow() - timedelta(days=30)
 
     # ── geo distribution (login ต่อประเทศ × ระดับความเสี่ยง) ──
-    # bucket ตาม risk_score: green <0.40 · yellow 0.40–0.49 · red >=0.50
+    # bucket ตาม risk_score: red >=0.50 · yellow 0.40–0.49 · green <0.40
     # (เกณฑ์เดียวกับ aggregator: warn 0.40, challenge 0.50)
+    # NULL = ไม่ได้ถูกประเมิน (เช่น ML ล่ม → fail-safe ไม่ให้คะแนน) → "unknown"
+    # ห้ามตกไป green เพราะจะทำให้ login ที่ "ไม่รู้ความเสี่ยง" ดูปลอดภัยผิด ๆ
     risk_bucket = case(
+        (LoginSession.risk_score.is_(None), "unknown"),
         (LoginSession.risk_score >= 0.5, "red"),
         (LoginSession.risk_score >= 0.4, "yellow"),
         else_="green",

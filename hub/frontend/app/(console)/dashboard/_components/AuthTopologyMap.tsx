@@ -5,14 +5,15 @@
  *  - หมุน/ลากได้ เริ่มต้นหันมาที่ประเทศไทย ไฮไลต์ TH
  *  - Hub ปักหมุดที่ตั้งจริง: ม.นราธิวาสราชนครินทร์ จ.นราธิวาส (6.43N, 101.82E)
  *  - เส้นผู้ใช้ → Hub โค้ง geodesic + จุดวิ่งตามเส้น สีตามระดับความเสี่ยง
- *    (เขียว <0.40 · เหลือง 0.40–0.49 · แดง ≥0.50 จาก risk_score จริง)
+ *    (เขียว <0.40 · เหลือง 0.40–0.49 · แดง ≥0.50 · เทา = ไม่ถูกประเมิน/NULL)
  *  - ระบบย่อยรอบวิทยาเขต เชื่อม Hub ด้วยเส้นสีน้ำเงิน จุดสีตาม health
  * โหลด amCharts แบบ dynamic ใน useEffect (กัน SSR พัง)
  */
 
 import { useEffect, useRef } from "react";
 
-type GeoEntry = { country: string; risk: "green" | "yellow" | "red"; count: number };
+type RiskBucket = "green" | "yellow" | "red" | "unknown";
+type GeoEntry = { country: string; risk: RiskBucket; count: number };
 type SubNode = {
   id: string;
   name: string;
@@ -41,6 +42,7 @@ const RISK_HEX: Record<string, number> = {
   green: 0x34d399,
   yellow: 0xfbbf24,
   red: 0xfb7185,
+  unknown: 0x64748b, // slate — login ที่ไม่ได้ถูกประเมิน (เช่น ML ล่ม) ห้ามโชว์เขียว
 };
 const HEALTH_HEX: Record<string, number> = {
   online: 0x34d399,
@@ -57,9 +59,17 @@ export function AuthTopologyMap({
   subsystems: SubNode[];
 }) {
   const chartRef = useRef<HTMLDivElement>(null);
-  // เก็บ data ล่าสุดไว้ใน ref — สร้าง chart ครั้งเดียว ไม่ rebuild ทุก refresh 30s
+  // เก็บ data ล่าสุดไว้ใน ref (effect อ่านค่าปัจจุบันตอน build)
   const dataRef = useRef({ geo, subsystems });
   dataRef.current = { geo, subsystems };
+
+  // signature ของข้อมูล — rebuild globe เฉพาะตอนค่าจริงเปลี่ยน ไม่ใช่ทุก poll 30s
+  // (map เป็น aggregate 30 วัน เปลี่ยนช้า → ปกติ sig เดิม = ไม่ rebuild = ไม่กระพริบ
+  //  แต่ถ้ามี login/health ใหม่เข้ามา sig เปลี่ยน → วาดใหม่รอบเดียว ข้อมูลไม่ค้าง)
+  const sig = JSON.stringify({
+    g: geo.map((x) => [x.country, x.risk, x.count]),
+    s: subsystems.map((x) => [x.id, x.status, x.health]),
+  });
 
   useEffect(() => {
     let disposed = false;
@@ -149,6 +159,7 @@ export function AuthTopologyMap({
         green: lineSeries(RISK_HEX.green, 1.4, 0.65),
         yellow: lineSeries(RISK_HEX.yellow, 1.6, 0.75),
         red: lineSeries(RISK_HEX.red, 1.8, 0.85),
+        unknown: lineSeries(RISK_HEX.unknown, 1.2, 0.5),
       };
 
       // ── จุด/ป้าย ── (point series + bullet ตาม dataContext)
@@ -216,6 +227,7 @@ export function AuthTopologyMap({
         green: moverSeries(RISK_HEX.green),
         yellow: moverSeries(RISK_HEX.yellow),
         red: moverSeries(RISK_HEX.red),
+        unknown: moverSeries(RISK_HEX.unknown),
       };
       function addMover(
         color: keyof typeof moverFor,
@@ -319,9 +331,9 @@ export function AuthTopologyMap({
       disposed = true;
       rootObj?.dispose();
     };
-    // สร้างครั้งเดียว — data refresh ใช้ค่าแรก (map เป็นภาพรวม 30 วัน เปลี่ยนช้า)
+    // rebuild เฉพาะตอน sig เปลี่ยน (dataRef.current มีค่าล่าสุดเสมอ)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [sig]);
 
   return (
     <div>
@@ -335,6 +347,9 @@ export function AuthTopologyMap({
         </span>
         <span className="flex items-center gap-1.5">
           <span className="inline-block w-4 h-0.5 bg-rose-400" /> เสี่ยงสูง (≥0.50)
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="inline-block w-4 h-0.5 bg-slate-500" /> ไม่ถูกประเมิน
         </span>
         <span className="flex items-center gap-1.5">
           <span className="inline-block w-4 h-0.5 bg-blue-500" /> เชื่อมระบบย่อย
