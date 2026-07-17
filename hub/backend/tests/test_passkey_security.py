@@ -137,7 +137,12 @@ def test_login_start_non_json_body_returns_422(client):
     assert r.status_code in (422, 415)
 
 
-# ─── Console /account/passkeys/* = admin only (RBAC) ────────────────────────
+# ─── Console /account/passkeys/* = developer only (RBAC, กัน student) ────────
+#
+# เดิม endpoint พวกนี้เป็น admin-only แต่ commit 53ab5cd (2026-07-05) เปลี่ยนเป็น
+# require_developer (teacher/staff/admin) เพื่อแก้ deadlock: developer ต้องมี passkey
+# ก่อนถึงจะลงทะเบียน subsystem ผ่าน step-up gate ได้ แต่เดิมเพิ่ม passkey ไม่ได้เพราะ
+# ไม่ใช่ admin. RBAC ปัจจุบัน = กัน student เท่านั้น (ดู passkey.py docstring).
 
 ACCOUNT_ENDPOINTS = [
     ("post", "/account/passkeys/register/start"),
@@ -161,16 +166,34 @@ def test_account_endpoints_require_auth(client, method, path):
 
 @pytest.mark.smoke
 @pytest.mark.parametrize("method,path", ACCOUNT_ENDPOINTS)
-def test_account_endpoints_reject_non_admin(
+def test_account_endpoints_reject_student(
+    client, auth_headers, student_token, method, path
+):
+    """student token → 403 (require_developer block student ก่อน body validation)."""
+    headers = auth_headers(student_token)
+    if method == "post":
+        r = client.post(path, json={}, headers=headers)
+    else:
+        r = client.get(path, headers=headers)
+    assert r.status_code == 403, f"{path} ควร block student แต่ได้ {r.status_code}"
+
+
+@pytest.mark.smoke
+@pytest.mark.parametrize("method,path", ACCOUNT_ENDPOINTS)
+def test_account_endpoints_allow_developer(
     client, auth_headers, staff_token, method, path
 ):
-    """staff token (ไม่ใช่ admin) → 403 (require_hub_admin)."""
+    """staff token (developer) → ผ่าน RBAC = ไม่โดน 403.
+
+    (register/finish จะได้ 422 จาก body ว่าง, GET status/list ได้ 200 —
+    ทั้งหมดพิสูจน์ว่า require_developer ปล่อยผ่าน ไม่ block เหมือน student.)
+    """
     headers = auth_headers(staff_token)
     if method == "post":
         r = client.post(path, json={}, headers=headers)
     else:
         r = client.get(path, headers=headers)
-    assert r.status_code == 403, f"{path} ควร block non-admin แต่ได้ {r.status_code}"
+    assert r.status_code != 403, f"{path} ควรปล่อย developer ผ่าน แต่ได้ 403"
 
 
 @pytest.mark.smoke
