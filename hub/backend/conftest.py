@@ -124,6 +124,12 @@ def staff_token(staff_user: User) -> str:
     return token
 
 
+@pytest.fixture
+def student_token(student_user: User) -> str:
+    token, _jti = create_access_token(student_user)
+    return token
+
+
 # ─────────────────────────────────────────────────────────────
 # Helper
 # ─────────────────────────────────────────────────────────────
