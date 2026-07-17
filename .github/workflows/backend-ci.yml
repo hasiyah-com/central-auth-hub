@@ -60,7 +60,7 @@ jobs:
           cache-dependency-path: hub/backend/requirements.txt
 
       - name: Install dependencies
-        run: pip install --no-cache-dir -r requirements.txt
+        run: pip install -r requirements.txt
 
       - name: Generate JWT RS256 keys
         run: |
