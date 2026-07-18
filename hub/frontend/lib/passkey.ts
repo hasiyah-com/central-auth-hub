@@ -530,6 +530,22 @@ export async function mutateWithStepup<T = unknown>(
   );
 }
 
+/**
+ * เริ่ม flow "เปลี่ยนบัญชี Google" (re-link) — ต้องผ่าน **passkey** step-up (inline).
+ * คืน `start_url` ให้ caller `window.location.href = start_url` เพื่อเริ่ม OAuth กับ
+ * บัญชี Google ใหม่ (backend บังคับ passkey เท่านั้น — OTP ไม่ผ่าน).
+ * @throws ApiError {detail:{code:"no_passkey"}} → caller แนะนำไป Account Recovery
+ */
+export async function changeGoogleStart(
+  onVerifying?: (active: boolean) => void
+): Promise<{ start_url: string }> {
+  return mutateWithStepup<{ start_url: string }>(
+    "/auth/account/change-google/start",
+    { method: "POST" },
+    onVerifying
+  );
+}
+
 export async function stepupOtpStart(): Promise<{ sent: boolean; message: string }> {
   return clientFetch("/auth/stepup/otp/start", {
     method: "POST",

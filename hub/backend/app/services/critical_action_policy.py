@@ -67,6 +67,9 @@ CRITICAL_ACTIONS: frozenset[str] = frozenset(
         "session_revoke",
         # Global auth-policy (Week 10) — เปลี่ยนวิธี login ที่ระบบยอมรับ
         "auth_policy_update",
+        # Change Google account (ข้อ 3) — re-link บัญชี Google เข้ากับ user เดิม
+        # (บังคับ passkey เท่านั้น — เช็คเพิ่มใน account_link.change_google_start)
+        "change_google_account",
         # Incident remediation (Week 11) — revoke/block IP/reset passkey/notify
         "incident_action",
     }
