@@ -61,6 +61,11 @@ class Settings(BaseSettings):
     google_client_id: str = ""
     google_client_secret: str = ""
     google_redirect_uri: str = "http://localhost:8000/auth/google/callback"
+    # Change-Google re-link (ข้อ 3) — callback ของ flow เปลี่ยนบัญชี Google
+    # ต้องเพิ่ม URI นี้ใน Google Console → Authorized redirect URIs ด้วย (B17)
+    google_change_redirect_uri: str = (
+        "http://localhost:8000/auth/account/change-google/callback"
+    )
 
     # LINE
     line_client_id: str = ""

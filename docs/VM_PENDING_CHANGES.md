@@ -18,6 +18,7 @@
 | ตัวแปร | ค่า | เหตุผล |
 |---|---|---|
 | `PASSKEY_REQUIRED_AFTER_DAYS` | `7` | เปิด nudge เตือนตั้ง passkey หลังใช้งาน 7 วัน |
+| `GOOGLE_CHANGE_REDIRECT_URI` | `https://auth.<domain>/auth/account/change-google/callback` | flow เปลี่ยนบัญชี Google (ข้อ 3) — ดู §4.2 + ต้องเพิ่มใน Google Console ด้วย |
 
 **คำสั่ง apply (บน VM):**
 ```bash
@@ -156,7 +157,24 @@ curl -kI https://grade.<domain>/health   # 200
 ```
 login ด้วย student → เห็นเกรดตัวเอง / login ด้วย teacher → เห็นหน้า `/teacher` รายชื่อนักศึกษา
 
-### 4.2 อื่นๆ
+### 4.2 Change-Google re-link (ข้อ 3) — env + Google Console
+
+**Env** (`.env.prod`):
+```bash
+cd ~/central-auth-hub
+DOMAIN="$(grep -E '^DOMAIN=' .env.prod | cut -d= -f2-)"
+grep -q '^GOOGLE_CHANGE_REDIRECT_URI=' .env.prod \
+  || echo "GOOGLE_CHANGE_REDIRECT_URI=https://auth.$DOMAIN/auth/account/change-google/callback" >> .env.prod
+docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --force-recreate hub-backend
+```
+
+**Google Console (B17)** — เพิ่ม Authorized redirect URI ตัวที่ 3:
+- `https://auth.<domain>/auth/account/change-google/callback`
+
+**ทดสอบ** (ต้องมี Google test user ≥ 2 บัญชี — B15): login → `/account` → "เปลี่ยนบัญชี Google"
+→ passkey → เลือกบัญชีที่ 2 → กลับมา `login?google_changed=1` → login ด้วยบัญชีใหม่ได้ + ข้อมูลเดิมอยู่ครบ
+
+### 4.3 อื่นๆ
 
 _(ยังไม่มีเพิ่ม — เช่น seed, ALTER มือ, เปิด port ให้จดที่นี่)_
 

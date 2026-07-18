@@ -15,11 +15,32 @@ export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // แจ้งผลจาก flow เปลี่ยนบัญชี Google (redirect กลับมาที่หน้า login)
+  const [notice, setNotice] = useState<{ kind: "ok" | "err"; text: string } | null>(
+    null
+  );
   // Global auth-policy — admin อาจปิด Google หรือ Passkey
   const [policy, setPolicy] = useState<{ google: boolean; passkey: boolean }>({
     google: true,
     passkey: true,
   });
+
+  useEffect(() => {
+    // อ่านผล change-google จาก query (redirect กลับมาแบบ full-page — ไม่ใช้ useSearchParams
+    // เลี่ยง Suspense boundary requirement)
+    const q = new URLSearchParams(window.location.search);
+    if (q.get("google_changed") === "1") {
+      setNotice({
+        kind: "ok",
+        text: "เปลี่ยนบัญชี Google สำเร็จ — เข้าสู่ระบบด้วยบัญชีใหม่",
+      });
+    } else if ((q.get("error") || "").startsWith("change_google")) {
+      setNotice({
+        kind: "err",
+        text: "เปลี่ยนบัญชี Google ไม่สำเร็จ — ลิงก์อาจหมดอายุ หรือบัญชีนั้นถูกใช้แล้ว กรุณาลองใหม่",
+      });
+    }
+  }, []);
 
   useEffect(() => {
     setPasskeySupported(isPasskeySupported());
@@ -118,6 +139,20 @@ export default function LoginPage() {
           <p className="text-sm text-ink-500 mb-8">
             สำหรับผู้ดูแลระบบ — ใช้ Passkey หรือบัญชี Google ที่ลงทะเบียนไว้
           </p>
+
+          {notice && (
+            <div
+              className={
+                "mb-6 p-3 rounded-xl text-sm border " +
+                (notice.kind === "ok"
+                  ? "bg-emerald-50 border-emerald-200 text-emerald-800"
+                  : "bg-rose-50 border-rose-200 text-rose-800")
+              }
+            >
+              {notice.kind === "ok" ? "✓ " : "⚠ "}
+              {notice.text}
+            </div>
+          )}
 
           {/* Passkey login (Phase 2) — conditional on browser support + policy */}
           {policy.passkey && passkeySupported && !showPasskeyDialog && (

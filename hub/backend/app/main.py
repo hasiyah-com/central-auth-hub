@@ -36,6 +36,7 @@ from app.routers import (  # noqa: E402
     oidc,
     passkey,
     roster,
+    account_link,
 )
 from app.services.jwt_service import get_jwks  # noqa: E402
 from app.services.request_id import RequestIdMiddleware  # noqa: E402
@@ -210,6 +211,9 @@ app.include_router(roster.router, tags=["Roster Sync"])
 app.include_router(oidc.router, tags=["OIDC"])
 # Passkey / WebAuthn (Phase 1+ — plan v3)
 app.include_router(passkey.router, tags=["Passkey"])
+app.include_router(
+    account_link.router, prefix="/auth/account", tags=["Account · Change Google"]
+)
 
 
 # ============ JWKS endpoint (OIDC discovery standard path) ============

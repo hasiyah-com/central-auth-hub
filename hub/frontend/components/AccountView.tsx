@@ -9,6 +9,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Topbar } from "@/components/Topbar";
 import {
+  changeGoogleStart,
   fetchBackupCodesStatus,
   isPasskeySupported,
   isPlatformAuthenticatorAvailable,
@@ -43,6 +44,38 @@ export function AccountView() {
   const [error, setError] = useState<string | null>(null);
   const [backupCodes, setBackupCodes] = useState<string[] | null>(null);
   const [showAdd, setShowAdd] = useState(false);
+
+  // Change Google account (re-link) — passkey step-up → redirect ไป Google ใหม่
+  const [googleBusy, setGoogleBusy] = useState(false);
+  const [googleVerifying, setGoogleVerifying] = useState(false);
+  const [googleErr, setGoogleErr] = useState<string | null>(null);
+
+  const handleChangeGoogle = async () => {
+    setGoogleErr(null);
+    setGoogleBusy(true);
+    try {
+      const res = await changeGoogleStart(setGoogleVerifying);
+      window.location.href = res.start_url; // redirect เริ่ม OAuth (page นำทางออก)
+    } catch (e) {
+      const detail = (e as { detail?: unknown })?.detail;
+      const code =
+        typeof detail === "object" && detail
+          ? (detail as { code?: string }).code
+          : undefined;
+      if (code === "no_passkey") {
+        setGoogleErr(
+          "ต้องมี Passkey เพื่อเปลี่ยนบัญชี Google — ตั้งค่า Passkey ด้านล่างก่อน หรือใช้ Account Recovery"
+        );
+      } else if (e instanceof DOMException && e.name === "NotAllowedError") {
+        setGoogleErr("ยกเลิกการยืนยัน Passkey — ลองอีกครั้ง");
+      } else {
+        setGoogleErr(
+          typeof detail === "string" ? detail : "เริ่มเปลี่ยนบัญชีไม่สำเร็จ"
+        );
+      }
+      setGoogleBusy(false);
+    }
+  };
 
   useEffect(() => {
     fetch("/api/me", { credentials: "include" })
@@ -148,6 +181,49 @@ export function AccountView() {
               value={me?.is_hub_admin ? "ผู้ดูแลระบบ (Hub Admin)" : "นักพัฒนา (Developer)"}
             />
           </dl>
+        </div>
+
+        {/* Change Google account (re-link) */}
+        <div className="bg-white rounded-xl border border-ink-200 p-6 shadow-sm">
+          <div className="flex items-start justify-between gap-4 flex-wrap">
+            <div className="min-w-0">
+              <h3 className="text-sm font-bold text-ink-800 flex items-center gap-2">
+                <span>🔵</span> บัญชี Google ที่เชื่อม
+              </h3>
+              <p className="text-sm text-ink-500 mt-1">
+                ใช้เข้าสู่ระบบ:{" "}
+                <span className="font-mono text-ink-800">{me?.email || "—"}</span>
+              </p>
+              <p className="text-[11px] text-ink-400 mt-1 max-w-md leading-relaxed">
+                เปลี่ยนได้ถ้าลืมรหัส Gmail / บัญชีถูกปิด / เปลี่ยนอีเมล — ข้อมูลและสิทธิ์
+                เดิมอยู่ครบ (ต้องยืนยันด้วย Passkey ก่อน แล้วเลือกบัญชี Google ใหม่)
+              </p>
+            </div>
+            <button
+              onClick={handleChangeGoogle}
+              disabled={googleBusy}
+              className="px-4 py-2 rounded-lg border border-ink-300 hover:bg-ink-50 text-sm font-semibold text-ink-700 disabled:opacity-50 whitespace-nowrap"
+            >
+              {googleVerifying
+                ? "กำลังยืนยัน…"
+                : googleBusy
+                  ? "กำลังเริ่ม…"
+                  : "เปลี่ยนบัญชี Google"}
+            </button>
+          </div>
+          {googleErr && (
+            <div className="mt-3 text-xs text-rose-700 bg-rose-50 border border-rose-200 rounded-lg p-2.5">
+              {googleErr}
+              {googleErr.includes("Passkey") && (
+                <>
+                  {" · "}
+                  <a href="/auth/passkey/recover" className="underline">
+                    Account Recovery
+                  </a>
+                </>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Security heading */}
