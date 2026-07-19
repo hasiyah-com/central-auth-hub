@@ -22,6 +22,8 @@ import {
   adminGrantUserAccess,
   adminForceLogoutUser,
   adminDeleteUser,
+  adminGetUserCredentials,
+  type CredentialList,
   type UserAccessList,
   type UserLoginSessions,
   type UserSummary,
@@ -162,6 +164,7 @@ export default function UserDetailPage({ params }: { params: { id: string } }) {
   const [history, setHistory] = useState<UserLoginSessions | null>(null);
   const [passkeys, setPasskeys] = useState<AdminUserPasskeys | null>(null);
   const [summary, setSummary] = useState<UserSummary | null>(null);
+  const [creds, setCreds] = useState<CredentialList | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [verifying, setVerifying] = useState(false);
@@ -177,12 +180,14 @@ export default function UserDetailPage({ params }: { params: { id: string } }) {
       adminGetUserLoginSessions(id).catch(() => null),
       adminListUserPasskeys(id).catch(() => null),
       adminGetUserSummary(id).catch(() => null),
+      adminGetUserCredentials(id).catch(() => null),
     ])
-      .then(([a, h, p, s]) => {
+      .then(([a, h, p, s, c]) => {
         setAccess(a);
         setHistory(h);
         setPasskeys(p);
         setSummary(s);
+        setCreds(c);
       })
       .catch((e) => setError(e?.detail || "โหลดไม่สำเร็จ"))
       .finally(() => setLoading(false));
@@ -636,6 +641,55 @@ export default function UserDetailPage({ params }: { params: { id: string } }) {
                         เหลือ {passkeys?.backup_codes.remaining ?? 0}/{passkeys?.backup_codes.total ?? 0}
                       </Badge>
                     </div>
+                  </div>
+                </section>
+
+                {/* Credential Management + Recovery Ready */}
+                <section className="bg-white rounded-xl border border-ink-200 shadow-sm">
+                  <div className="px-4 py-3.5 border-b border-ink-100 flex items-center justify-between">
+                    <h3 className="text-sm font-bold text-ink-700">Authentication Methods</h3>
+                    {creds && (
+                      <Badge tone={creds.recovery_ready ? "good" : "warn"}>
+                        {creds.recovery_ready ? "✓ Recovery Ready" : "⚠ ไม่พร้อมกู้"}
+                      </Badge>
+                    )}
+                  </div>
+                  <div className="p-4 space-y-1.5">
+                    {!creds ? (
+                      <div className="text-sm text-ink-400 text-center py-3">—</div>
+                    ) : (
+                      creds.credentials.map((c, i) => (
+                        <div
+                          key={c.id || `${c.credential_type}-${i}`}
+                          className="flex items-center gap-2.5 px-3 py-2 rounded-lg border border-ink-100 text-xs"
+                        >
+                          <span className="text-base">
+                            {c.credential_type === "GOOGLE"
+                              ? "🔵"
+                              : c.credential_type === "TOTP"
+                                ? "🔐"
+                                : "🔑"}
+                          </span>
+                          <div className="flex-1 min-w-0">
+                            <div className="font-semibold text-ink-800 truncate">
+                              {c.credential_type}{" "}
+                              <span className="font-normal text-ink-400">{c.label}</span>
+                            </div>
+                          </div>
+                          <Badge
+                            tone={
+                              c.status === "ACTIVE" || c.status === "verified"
+                                ? "good"
+                                : c.status === "SUSPENDED"
+                                  ? "warn"
+                                  : "default"
+                            }
+                          >
+                            {c.status}
+                          </Badge>
+                        </div>
+                      ))
+                    )}
                   </div>
                 </section>
               </div>

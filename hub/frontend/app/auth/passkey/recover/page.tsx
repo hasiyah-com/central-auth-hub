@@ -18,12 +18,14 @@ import {
   recoverEmailOtpStart,
   recoverEmailOtpVerify,
   recoverWithBackupCode,
+  recoverWithTotp,
+  submitRecoveryRequest,
   regenOtpStart,
   regenOtpVerify,
 } from "@/lib/passkey";
 import { CodesAck } from "./_CodesAck";
 
-type Tab = "backup" | "otp" | "regen";
+type Tab = "backup" | "otp" | "regen" | "totp" | "ticket";
 
 const HUB_URL = process.env.NEXT_PUBLIC_HUB_URL || "http://localhost:8000";
 
@@ -65,6 +67,7 @@ function RecoverInner() {
   const [code, setCode] = useState("");
   const [otp, setOtp] = useState("");
   const [otpSent, setOtpSent] = useState(false);
+  const [reason, setReason] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [doneMsg, setDoneMsg] = useState<string | null>(null);
@@ -102,6 +105,31 @@ function RecoverInner() {
         : await recoverEmailOtpStart(email);
       setOtpSent(true);
       alert(r.message);
+    } catch (e) {
+      setError(errMsg(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const doTotp = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const r = await recoverWithTotp(email, code);
+      window.location.href = r.start_url; // → เริ่ม OAuth เชื่อม Gmail ใหม่
+    } catch (e) {
+      setError(errMsg(e));
+      setBusy(false);
+    }
+  };
+
+  const doTicket = async () => {
+    setBusy(true);
+    setError(null);
+    try {
+      const r = await submitRecoveryRequest({ email, reason });
+      setDoneMsg(r.message);
     } catch (e) {
       setError(errMsg(e));
     } finally {
@@ -176,11 +204,21 @@ function RecoverInner() {
             </div>
           ) : (
             <>
-              <div className="flex gap-1 mb-4 p-1 bg-gray-100 rounded-lg">
+              <div className="flex flex-wrap gap-1 mb-4 p-1 bg-gray-100 rounded-lg">
                 {tabBtn("backup", "Backup Code")}
-                {tabBtn("otp", "กู้ด้วย OTP")}
-                {tabBtn("regen", "ขอ codes ใหม่")}
+                {tabBtn("otp", "Email OTP")}
+                {tabBtn("totp", "Authenticator")}
+                {tabBtn("ticket", "ขอ Admin ช่วย")}
+                {tabBtn("regen", "codes ใหม่")}
               </div>
+
+              {(tab === "totp" || tab === "ticket") && (
+                <div className="mb-3 text-[11px] text-ink-500 bg-ink-50 border border-ink-100 rounded-lg p-2 leading-relaxed">
+                  {tab === "totp"
+                    ? "เข้า Gmail เดิม + Passkey ไม่ได้ แต่มีแอป Authenticator → ยืนยันแล้วเปลี่ยนไปบัญชี Google ใหม่"
+                    : "ไม่เหลือวิธียืนยันเลย → ยื่นคำขอ ผู้ดูแลจะตรวจบัตร นศ./ปชช. แล้วออกลิงก์ให้"}
+                </div>
+              )}
 
               <input
                 type="email"
@@ -208,6 +246,45 @@ function RecoverInner() {
                     className="w-full py-2.5 rounded-lg font-semibold bg-brand-600 text-white hover:bg-brand-700 disabled:bg-gray-200 disabled:text-gray-400"
                   >
                     {busy ? "กำลังตรวจสอบ…" : "กู้บัญชีด้วย Backup Code"}
+                  </button>
+                </>
+              ) : tab === "totp" ? (
+                <>
+                  <input
+                    type="text"
+                    value={code}
+                    onChange={(e) =>
+                      setCode(e.target.value.replace(/\D/g, "").slice(0, 6))
+                    }
+                    placeholder="รหัส 6 หลักจากแอป"
+                    inputMode="numeric"
+                    disabled={busy}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg mb-3 font-mono tracking-widest text-center focus:ring-2 focus:ring-brand-500"
+                  />
+                  <button
+                    onClick={doTotp}
+                    disabled={busy || !email.trim() || code.length !== 6}
+                    className="w-full py-2.5 rounded-lg font-semibold bg-brand-600 text-white hover:bg-brand-700 disabled:bg-gray-200 disabled:text-gray-400"
+                  >
+                    {busy ? "กำลังตรวจสอบ…" : "ยืนยัน → เปลี่ยนบัญชี Google"}
+                  </button>
+                </>
+              ) : tab === "ticket" ? (
+                <>
+                  <textarea
+                    value={reason}
+                    onChange={(e) => setReason(e.target.value)}
+                    placeholder="อธิบายสั้นๆ ว่าเข้าไม่ได้เพราะอะไร (optional)"
+                    disabled={busy}
+                    rows={3}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg mb-3 text-sm focus:ring-2 focus:ring-brand-500"
+                  />
+                  <button
+                    onClick={doTicket}
+                    disabled={busy || !email.trim()}
+                    className="w-full py-2.5 rounded-lg font-semibold bg-brand-600 text-white hover:bg-brand-700 disabled:bg-gray-200 disabled:text-gray-400"
+                  >
+                    {busy ? "กำลังส่ง…" : "ยื่นคำขอกู้บัญชี"}
                   </button>
                 </>
               ) : (

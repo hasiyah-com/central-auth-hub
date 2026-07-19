@@ -21,6 +21,7 @@ import {
 } from "@/lib/passkey";
 import { BackupCodesModal } from "@/components/account/BackupCodesModal";
 import { PasskeyCard } from "@/components/account/PasskeyCard";
+import { TotpCard } from "@/components/account/TotpCard";
 
 type Me = {
   email: string;
@@ -337,6 +338,9 @@ export function AccountView() {
             </div>
           )}
         </div>
+
+        {/* Authenticator (TOTP) */}
+        <TotpCard />
 
         {/* Backup codes status + regenerate */}
         {backupStatus && backupStatus.generation > 0 && (
