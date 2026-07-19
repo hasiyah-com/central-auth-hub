@@ -40,6 +40,12 @@ docker compose --env-file .env.prod -f docker-compose.prod.yml exec hub-backend 
 
 **Pending migrations รอ apply:**
 - `5e31bcaf0cf4` add refresh_id to login_sessions (refresh token feature)
+- `a1b2c3d4e5f6` **TOTP + Recovery Ticket + credential lifecycle** — user_totp_credentials,
+  recovery_tickets, recovery_ticket_approvals + passkey_credentials.status (backfill REVOKED)
+
+> ⚠️ TOTP feature ต้อง **rebuild backend** (dep ใหม่ `pyotp`) + **rebuild frontend** (dep ใหม่
+> `qrcode.react`) — ใช้ `up -d --build` ไม่ใช่แค่ restart. **ไม่ต้องเพิ่ม Google Console URI**
+> (reuse change-google callback เดิม). ไม่ต้องแก้ env.
 
 _(ยังไม่มี migration ใหม่เพิ่มจาก session ล่าสุด — graduated/resigned status + deny-list ใช้ column/type เดิม)_
 
