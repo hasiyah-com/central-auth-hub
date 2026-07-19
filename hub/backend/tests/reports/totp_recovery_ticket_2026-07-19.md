@@ -72,6 +72,23 @@ change_google + passkey_login + passkey_recovery + rbac + stepup_cache -q` → *
 
 ---
 
-## สถานะ: Backend เสร็จครบ 3 เฟส (TOTP + Recovery + Ticket + Credential Mgmt)
-**Frontend (UI)** ยังไม่ทำ — TotpCard (QR) · Credential Management view · recover TOTP tab ·
-`/recovery-tickets` admin page · User 360 (Recovery Ready + Auth Methods) · lib helpers
+## Phase 4 — Frontend (UI) ✅
+
+**สร้าง/แก้:** `lib/passkey.ts` (helpers: totp enroll/verify/disable/status, recoverWithTotp,
+submitRecoveryRequest, credentials, admin ticket approve/reject) · `components/account/TotpCard.tsx`
+(enroll QR ด้วย qrcode.react) · `AccountView.tsx` (+TotpCard) · `recover/page.tsx` (+tab Authenticator
++ ขอ Admin ช่วย) · `app/(console)/recovery-tickets/page.tsx` (admin triage + evidence form + four-eyes) ·
+`Sidebar.tsx` (+คำขอกู้บัญชี) · `users/[id]/page.tsx` (Authentication Methods + Recovery Ready badge) ·
+`package.json` (qrcode.react)
+
+**Verify:**
+- `tsc --noEmit` exit 0 (ทุกไฟล์)
+- Browser (public recover page): 5 tabs render · คลิก Authenticator → TOTP input + "ยืนยัน →
+  เปลี่ยนบัญชี Google" · **no console errors** · qrcode.react bundle โหลดสะอาด
+- pages ที่ต้อง login (TotpCard, /recovery-tickets, User360) — tsc ผ่าน + reuse helpers เดียวกับที่ verify แล้ว
+
+---
+
+## สรุป: เสร็จครบทั้ง 4 เฟส (backend 3 + frontend)
+Backend 20 tests + 86 regression · Frontend tsc 0 + browser verify · ทุก improvement 10 ข้อจากรีวิว
+พับเข้าครบ (lifecycle, four-eyes, credential_type GOOGLE, audit source, evidence, recovery level ฯลฯ)

@@ -20,6 +20,7 @@ const ADMIN_NAV = [
   { href: "/users", label: "ผู้ใช้งาน", icon: "👥" },
   { href: "/subsystems", label: "ระบบย่อย", icon: "🧩" },
   { href: "/pending-requests", label: "คำขอ Approve", icon: "📋" },
+  { href: "/recovery-tickets", label: "คำขอกู้บัญชี", icon: "🆘" },
   { href: "/ml", label: "ML / ความผิดปกติ", icon: "🧠" },
   { href: "/api-alerts", label: "API Alerts", icon: "🛡️" },
   { href: "/ip-blacklist", label: "IP Blacklist", icon: "🚫" },

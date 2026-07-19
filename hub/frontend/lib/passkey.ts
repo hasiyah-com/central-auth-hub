@@ -455,6 +455,158 @@ export async function recoverEmailOtpVerify(
   });
 }
 
+/** TOTP recovery (public) — เข้า email/passkey ไม่ได้ → ยืนยัน TOTP → one-time link เปลี่ยน Google. */
+export async function recoverWithTotp(
+  email: string,
+  code: string
+): Promise<{ recovered: boolean; start_url: string }> {
+  return clientFetch("/auth/passkey/recover/totp", {
+    method: "POST",
+    body: JSON.stringify({ email: email.trim(), code: code.trim() }),
+  });
+}
+
+/** ยื่นคำขอกู้บัญชี (public, opaque) — admin ต้อง approve. */
+export async function submitRecoveryRequest(body: {
+  email: string;
+  credential_type?: string;
+  reason?: string;
+}): Promise<{ submitted: boolean; message: string }> {
+  return clientFetch("/auth/recovery/request", {
+    method: "POST",
+    body: JSON.stringify({ ...body, email: body.email.trim() }),
+  });
+}
+
+// ── TOTP authenticator (self) ─────────────────────────────────
+
+export type TotpStatus = { enabled: boolean; status: string | null };
+
+export async function totpStatus(): Promise<TotpStatus> {
+  return clientFetch("/auth/account/totp/status");
+}
+
+/** enroll เริ่ม (step-up gated) — คืน otpauth_uri (QR) + secret (manual). */
+export async function totpEnrollStart(
+  onVerifying?: (a: boolean) => void
+): Promise<{ otpauth_uri: string; secret: string }> {
+  return mutateWithStepup(
+    "/auth/account/totp/enroll/start",
+    { method: "POST" },
+    onVerifying
+  );
+}
+
+export async function totpEnrollVerify(
+  code: string
+): Promise<{ enabled: boolean; status: string }> {
+  return clientFetch("/auth/account/totp/enroll/verify", {
+    method: "POST",
+    body: JSON.stringify({ code: code.trim() }),
+  });
+}
+
+export async function totpDisable(
+  onVerifying?: (a: boolean) => void
+): Promise<{ status: string }> {
+  return mutateWithStepup(
+    "/auth/account/totp",
+    { method: "DELETE" },
+    onVerifying
+  );
+}
+
+/** step-up ด้วย TOTP (JWT required) — ใส่รหัส 6 หลักจากแอป. */
+export async function stepupWithTotp(
+  code: string
+): Promise<{ granted: boolean; ttl_sec: number }> {
+  return clientFetch("/auth/stepup/totp/verify", {
+    method: "POST",
+    body: JSON.stringify({ code: code.trim() }),
+  });
+}
+
+// ── Credential Management ─────────────────────────────────────
+
+export type Credential = {
+  credential_type: "GOOGLE" | "PASSKEY" | "TOTP";
+  id?: string;
+  label: string;
+  status: string;
+  device_type?: string | null;
+  linked?: boolean;
+  created_at?: string | null;
+  last_used?: string | null;
+  last_login?: string | null;
+  last_changed?: string | null;
+};
+
+export type CredentialList = {
+  credentials: Credential[];
+  backup_codes_remaining: number;
+  recovery_ready: boolean;
+};
+
+export async function fetchMyCredentials(): Promise<CredentialList> {
+  return clientFetch("/auth/account/credentials");
+}
+
+export async function adminGetUserCredentials(
+  userId: string
+): Promise<CredentialList> {
+  return clientFetch(`/admin/users/${userId}/credentials`);
+}
+
+// ── Recovery Tickets (admin) ──────────────────────────────────
+
+export type RecoveryTicket = {
+  id: string;
+  email: string;
+  credential_type: string | null;
+  reason: string | null;
+  recovery_level: "NORMAL" | "HIGH";
+  status: string;
+  created_at: string | null;
+  approvals: number;
+  required: number;
+  approvers: string[];
+};
+
+export async function adminListRecoveryTickets(
+  status = "pending"
+): Promise<{ items: RecoveryTicket[]; total: number }> {
+  return clientFetch(`/admin/recovery-tickets?status=${status}`);
+}
+
+export async function adminApproveTicket(
+  ticketId: string,
+  body: { evidence_type?: string; evidence_note?: string; remark?: string },
+  onVerifying?: (a: boolean) => void
+): Promise<{
+  approved?: boolean;
+  relink_url?: string;
+  awaiting_second_approval?: boolean;
+  approvals: number;
+  required?: number;
+}> {
+  return mutateWithStepup(
+    `/admin/recovery-tickets/${ticketId}/approve`,
+    { method: "POST", body: JSON.stringify(body) },
+    onVerifying
+  );
+}
+
+export async function adminRejectTicket(
+  ticketId: string,
+  onVerifying?: (a: boolean) => void
+): Promise<{ rejected: boolean }> {
+  return mutateWithStepup(
+    `/admin/recovery-tickets/${ticketId}/reject`,
+    { method: "POST" },
+    onVerifying
+  );
+}
+
 // ── Step-up re-auth (Phase 5) ─────────────────────────────────
 
 /**
