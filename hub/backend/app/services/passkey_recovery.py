@@ -27,7 +27,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.config import settings
-from app.models import PasskeyBackupCode, PasskeyCredential, User
+from app.models import CRED_REVOKED, PasskeyBackupCode, PasskeyCredential, User
 from app.redis_client import redis_client
 from app.services import mfa_service
 from app.services.secret_service import hash_secret, verify_secret
@@ -200,6 +200,7 @@ def _revoke_all_passkeys(user_id: UUIDType | str, db: Session, *, reason: str) -
             {
                 PasskeyCredential.revoked_at: now,
                 PasskeyCredential.revoked_reason: reason,
+                PasskeyCredential.status: CRED_REVOKED,
             },
             synchronize_session=False,
         )

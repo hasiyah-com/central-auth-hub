@@ -25,6 +25,18 @@ def uuid_pk():
     return Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
 
 
+# ── Credential lifecycle (ใช้ร่วม Passkey + TOTP) ──
+# REGISTERED = สร้างแล้วรอยืนยัน (TOTP enroll pending) · ACTIVE = ใช้ได้ ·
+# SUSPENDED = ระงับชั่วคราว (auth ไม่ได้ กลับมาได้) · REVOKED = เพิกถอนถาวร
+CRED_REGISTERED = "REGISTERED"
+CRED_ACTIVE = "ACTIVE"
+CRED_SUSPENDED = "SUSPENDED"
+CRED_REVOKED = "REVOKED"
+CREDENTIAL_STATUSES = frozenset(
+    {CRED_REGISTERED, CRED_ACTIVE, CRED_SUSPENDED, CRED_REVOKED}
+)
+
+
 class User(Base):
     """ผู้ใช้ในระบบ (seed 100 คนตอน setup)"""
 
@@ -391,6 +403,10 @@ class PasskeyCredential(Base):
         String(50), nullable=True
     )  # user_deleted | admin_reset | backup_recovery | email_recovery
 
+    # Credential lifecycle (REGISTERED/ACTIVE/SUSPENDED/REVOKED) — ACTIVE เท่านั้นที่ auth ได้
+    # sync กับ revoked_at: revoke → status=REVOKED; suspend → SUSPENDED (revoked_at ยัง NULL)
+    status = Column(String(20), nullable=False, server_default=CRED_ACTIVE, index=True)
+
     # Attestation flags (from authenticator)
     backup_eligible = Column(Boolean, nullable=True)
     backup_state = Column(Boolean, nullable=True)
@@ -448,3 +464,88 @@ class AppSetting(Base):
     value = Column(JSON, nullable=False)
     updated_by = Column(UUID(as_uuid=True), nullable=True)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class UserTotpCredential(Base):
+    """TOTP authenticator credential — Fallback Authentication Factor.
+
+    1 user → 1 TOTP (unique). secret เก็บ **Fernet-encrypted** (reversible — ต้องใช้
+    generate/verify code; ต่างจาก passkey/backup-code ที่ hash ทางเดียว).
+    Lifecycle: REGISTERED (enroll/start) → ACTIVE (enroll/verify) → SUSPENDED/REVOKED.
+    เฉพาะ ACTIVE เท่านั้นที่ verify/step-up/recover ได้.
+    """
+
+    __tablename__ = "user_totp_credentials"
+
+    id = uuid_pk()
+    user_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+        index=True,
+    )
+    secret_encrypted = Column(Text, nullable=False)  # Fernet (SECRET_ENCRYPTION_KEY)
+    status = Column(
+        String(20), nullable=False, server_default=CRED_REGISTERED, index=True
+    )
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    enabled_at = Column(DateTime, nullable=True)  # ตอน verify → ACTIVE
+    last_used_at = Column(DateTime, nullable=True)
+
+
+class RecoveryTicket(Base):
+    """คำขอกู้บัญชี (ทางสุดท้าย — user ไม่มี email/passkey/TOTP เหลือ).
+
+    Flow: user ยื่น → ticket pending → admin approve (four-eyes ถ้า HIGH) →
+    ระบบออก one-time link (change_google token) → user เชื่อม Gmail ใหม่เอง.
+    NORMAL = 1 approval · HIGH = 2 approvals จาก admin ต่างคน.
+    """
+
+    __tablename__ = "recovery_tickets"
+
+    id = uuid_pk()  # = Ticket ID
+    user_id = Column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True, index=True
+    )
+    email = Column(String(255), nullable=False, index=True)  # ที่ user กรอกตอนยื่น
+    credential_type = Column(String(20), nullable=True)  # PASSKEY | TOTP (factor ที่หาย)
+    reason = Column(Text, nullable=True)
+    recovery_level = Column(
+        String(10), nullable=False, server_default="NORMAL"
+    )  # NORMAL | HIGH
+    status = Column(
+        String(20), nullable=False, server_default="pending", index=True
+    )  # pending | approved | rejected | consumed | expired
+    requested_ip = Column(INET, nullable=True)
+    link_token = Column(Text, nullable=True)  # change_google token (ออกตอน approve ครบ)
+    token_expires_at = Column(DateTime, nullable=True)
+    consumed_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class RecoveryTicketApproval(Base):
+    """1 row = 1 admin ที่ยืนยัน ticket (four-eyes audit trail).
+
+    บันทึกหลักฐานที่ admin ตรวจนอกระบบ (บัตร นศ./บัตร ปชช.) ต่อการอนุมัติแต่ละครั้ง.
+    """
+
+    __tablename__ = "recovery_ticket_approvals"
+    __table_args__ = (
+        UniqueConstraint("ticket_id", "admin_id"),
+    )  # กัน admin เดิม approve ซ้ำ
+
+    id = uuid_pk()
+    ticket_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("recovery_tickets.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    admin_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    evidence_type = Column(
+        String(30), nullable=True
+    )  # student_card | citizen_id | other
+    evidence_note = Column(Text, nullable=True)
+    remark = Column(Text, nullable=True)
+    approved_at = Column(DateTime, default=datetime.utcnow, nullable=False)

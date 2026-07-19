@@ -49,7 +49,7 @@ def set_granted(
     if not user_id or not jti:
         log.warning("stepup_cache.set_granted called with empty user_id or jti")
         return
-    if method not in ("passkey", "otp"):
+    if method not in ("passkey", "otp", "totp"):
         log.warning("stepup_cache.set_granted unknown method=%r", method)
     ttl = ttl_sec if ttl_sec is not None else settings.stepup_cache_ttl_sec
     payload = json.dumps(

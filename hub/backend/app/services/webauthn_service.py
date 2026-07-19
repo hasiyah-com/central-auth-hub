@@ -48,7 +48,7 @@ from webauthn.helpers.structs import (
 )
 
 from app.config import settings
-from app.models import PasskeyCredential, User
+from app.models import CRED_ACTIVE, CRED_REVOKED, PasskeyCredential, User
 from app.redis_client import redis_client
 
 log = logging.getLogger(__name__)
@@ -125,6 +125,7 @@ def count_active(user_id: UUIDType | str, db: Session) -> int:
         .filter(
             PasskeyCredential.user_id == user_id,
             PasskeyCredential.revoked_at.is_(None),
+            PasskeyCredential.status == CRED_ACTIVE,
         )
         .scalar()
         or 0
@@ -455,6 +456,7 @@ def revoke_passkey(
         )
     row.revoked_at = datetime.now(timezone.utc).replace(tzinfo=None)
     row.revoked_reason = reason
+    row.status = CRED_REVOKED
     db.flush()
     return row
 
@@ -616,6 +618,7 @@ def auth_complete(
             PasskeyCredential.credential_id == cred_id_bytes,
             PasskeyCredential.user_id == user.id,
             PasskeyCredential.revoked_at.is_(None),
+            PasskeyCredential.status == CRED_ACTIVE,
         )
         .first()
     )
@@ -778,6 +781,7 @@ def discoverable_complete(
             PasskeyCredential.credential_id == cred_id_bytes,
             PasskeyCredential.user_id == user.id,
             PasskeyCredential.revoked_at.is_(None),
+            PasskeyCredential.status == CRED_ACTIVE,
         )
         .first()
     )
@@ -918,6 +922,7 @@ def stepup_complete(
             PasskeyCredential.credential_id == cred_id_bytes,
             PasskeyCredential.user_id == user.id,
             PasskeyCredential.revoked_at.is_(None),
+            PasskeyCredential.status == CRED_ACTIVE,
         )
         .first()
     )

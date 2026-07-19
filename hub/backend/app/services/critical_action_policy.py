@@ -70,6 +70,10 @@ CRITICAL_ACTIONS: frozenset[str] = frozenset(
         # Change Google account (ข้อ 3) — re-link บัญชี Google เข้ากับ user เดิม
         # (บังคับ passkey เท่านั้น — เช็คเพิ่มใน account_link.change_google_start)
         "change_google_account",
+        # TOTP authenticator — enroll/suspend/revoke (เพิ่ม/ลบ auth factor = critical)
+        "totp_enroll",
+        # Recovery ticket review (admin approve/reject คำขอกู้บัญชี)
+        "recovery_ticket_review",
         # Incident remediation (Week 11) — revoke/block IP/reset passkey/notify
         "incident_action",
     }

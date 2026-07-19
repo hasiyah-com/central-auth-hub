@@ -131,6 +131,57 @@ def _revoke_all_sessions(db: Session, user: User) -> dict:
 
 
 # ─────────────────────────────────────────────────────────────
+# Cooldown + token mint (reuse โดย passkey/TOTP-recover/admin-ticket)
+# ─────────────────────────────────────────────────────────────
+
+_COOLDOWN_PREFIX = "change_google_cooldown"
+_COOLDOWN_TTL = 86400  # 24h — เปลี่ยนบัญชีซ้ำไม่ได้ในช่วงนี้ (self-service)
+
+
+def in_cooldown(user_id: str) -> bool:
+    """True ถ้า user เพิ่งเปลี่ยนบัญชี Google ใน 24 ชม. (เฉพาะ self-service เช็ค)."""
+    return bool(redis_client.exists(f"{_COOLDOWN_PREFIX}:{user_id}"))
+
+
+def _set_cooldown(user_id: str) -> None:
+    redis_client.setex(f"{_COOLDOWN_PREFIX}:{user_id}", _COOLDOWN_TTL, "1")
+
+
+def _mint_change_token(
+    user_id: str,
+    *,
+    source: str = "SELF",
+    ttl: int = _CHANGE_TTL,
+    jti: str | None = None,
+    ip: str | None = None,
+    ticket_id: str | None = None,
+) -> tuple[str, str]:
+    """Mint single-use change_google token → (token, start_url).
+
+    ใช้โดยทุก path ที่ปลดล็อก re-link: passkey change (SELF), TOTP recover (RECOVERY),
+    admin ticket (RECOVERY + ticket_id). callback อ่าน source/ticket_id จาก payload →
+    audit changed_by + consume ticket.
+    """
+    token = secrets.token_urlsafe(32)
+    redis_client.setex(
+        f"{_CHANGE_PREFIX}:{token}",
+        ttl,
+        json.dumps(
+            {
+                "user_id": str(user_id),
+                "source": source,
+                "jti": jti,
+                "ip": ip,
+                "ticket_id": ticket_id,
+                "at": datetime.now(timezone.utc).isoformat(),
+            }
+        ),
+    )
+    start_url = f"{settings.hub_base_url}/auth/account/change-google/redirect?t={token}"
+    return token, start_url
+
+
+# ─────────────────────────────────────────────────────────────
 # Core apply logic (testable — แยกจาก OAuth plumbing)
 # ─────────────────────────────────────────────────────────────
 
@@ -143,6 +194,7 @@ def _apply_google_relink(
     new_email: str | None,
     email_verified: bool | None,
     ip: str | None,
+    source: str = "SELF",
 ) -> tuple[bool, str]:
     """ใช้บัญชี Google ใหม่กับ user เดิม — guards → apply → revoke → alert → audit.
 
@@ -189,6 +241,7 @@ def _apply_google_relink(
         target_id=user.id,
         ip=ip,
         metadata={
+            "changed_by": source,  # SELF | RECOVERY — แยกเปลี่ยนปกติจากการกู้คืน
             "old_email": old_email,
             "new_email": new_email,
             "old_sub_prefix": (old_sub or "")[:12],
@@ -198,6 +251,9 @@ def _apply_google_relink(
         },
     )
     db.commit()
+
+    # ── Cooldown 24h (กันเปลี่ยนบัญชีซ้ำถี่ / bounce) ──
+    _set_cooldown(str(user.id))
 
     # ── Alert emails (หลัง commit — fail-safe) ──
     _send_alert(old_email, old_email=old_email, new_email=new_email, ip=ip, when=now)
@@ -235,20 +291,19 @@ def change_google_start(
             },
         )
 
-    token = secrets.token_urlsafe(32)
-    redis_client.setex(
-        f"{_CHANGE_PREFIX}:{token}",
-        _CHANGE_TTL,
-        json.dumps(
-            {
-                "user_id": str(user.id),
-                "jti": jti,
-                "ip": get_client_ip(request),
-                "at": datetime.now(timezone.utc).isoformat(),
-            }
-        ),
+    # 24h cooldown (self-service) — recovery/admin bypass (ไม่เรียก check นี้)
+    if in_cooldown(str(user.id)):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail={
+                "code": "change_google_cooldown",
+                "message": "เปลี่ยนบัญชี Google ได้ 1 ครั้ง/24 ชม. — ถ้าเข้าไม่ได้จริงใช้กู้บัญชี",
+            },
+        )
+
+    _token, start_url = _mint_change_token(
+        str(user.id), source="SELF", jti=jti, ip=get_client_ip(request)
     )
-    start_url = f"{settings.hub_base_url}/auth/account/change-google/redirect?t={token}"
     return {"start_url": start_url}
 
 
@@ -312,9 +367,27 @@ async def change_google_callback(request: Request, db: Session = Depends(get_db)
         new_email=userinfo.get("email"),
         email_verified=userinfo.get("email_verified"),
         ip=get_client_ip(request),
+        source=payload.get("source", "SELF"),
     )
     if ok:
+        # recovery ผ่าน ticket → mark ticket consumed (best-effort)
+        if payload.get("ticket_id"):
+            _consume_ticket(db, payload["ticket_id"])
         return _login_redirect("google_changed=1")
 
     log.info("change-google rejected for user=%s reason=%s", user.id, reason)
     return _login_redirect(f"error=change_google_{reason}")
+
+
+def _consume_ticket(db: Session, ticket_id: str) -> None:
+    """mark recovery ticket = consumed หลัง re-link สำเร็จ (fail-safe)."""
+    try:
+        from app.models import RecoveryTicket
+
+        t = db.query(RecoveryTicket).filter(RecoveryTicket.id == ticket_id).first()
+        if t and t.status == "approved":
+            t.status = "consumed"
+            t.consumed_at = datetime.now(timezone.utc)
+            db.commit()
+    except Exception as e:  # noqa: BLE001
+        log.warning("consume ticket %s failed: %r", ticket_id, e)
