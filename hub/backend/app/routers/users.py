@@ -249,6 +249,21 @@ def count_users(
     return {ut: c for ut, c in rows}
 
 
+@router.get("/{user_id}/credentials")
+def get_user_credentials(
+    user_id: str,
+    admin: User = Depends(require_hub_admin),
+    db: Session = Depends(get_db),
+):
+    """Credential Management (admin view) — auth methods + recovery status ของ user."""
+    from app.services import credential_service
+
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    return credential_service.list_credentials(user, db)
+
+
 @router.get("/{user_id}", response_model=UserResponse)
 def get_user(
     user_id: str,
@@ -444,6 +459,12 @@ def update_user(
         if db.query(User).filter(User.email == new_email, User.id != user.id).first():
             raise HTTPException(status_code=409, detail="email นี้มีอยู่แล้ว")
         data["email"] = new_email
+        # ⚠️ admin เปลี่ยน email → ต้องเคลียร์ google_sub เดิมด้วย ไม่งั้น login ครั้งหน้า
+        # Google ส่ง sub ใหม่ (คนละอันกับที่ผูกไว้) → โดน mismatch guard (auth.py) บล็อกถาวร.
+        # set NULL → login ครั้งหน้า re-bind sub ใหม่ (TOFU) + reset email_verified
+        if new_email != (user.email or "").lower():
+            user.google_sub = None
+            user.email_verified = False
     if "identifier" in data and data["identifier"]:
         if (
             db.query(User)

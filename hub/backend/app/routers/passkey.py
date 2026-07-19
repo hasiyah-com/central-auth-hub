@@ -44,6 +44,7 @@ from app.services import (
     passkey_recovery,
     risk_challenge,
     stepup_cache,
+    totp_service,
     webauthn_service,
 )
 from app.services.audit_service import log_action
@@ -107,6 +108,11 @@ class RecoverEmailOtpStartRequest(BaseModel):
 class RecoverEmailOtpVerifyRequest(BaseModel):
     email: EmailStr = Field(..., max_length=255)
     otp: str = Field(..., min_length=4, max_length=10)
+
+
+class RecoverTotpRequest(BaseModel):
+    email: EmailStr = Field(..., max_length=255)
+    code: str = Field(..., min_length=6, max_length=8)
 
 
 # Audit action constants (Phase 1 + 2 subset — see plan § 7 for full list)
@@ -206,6 +212,7 @@ PASSKEY_RECOVERY_SUCCESS = "passkey_recovery_success"
 PASSKEY_RECOVERY_FAILED = "passkey_recovery_failed"
 PASSKEY_RECOVERY_VIA_BACKUP_CODE = "passkey_recovery_via_backup_code"
 PASSKEY_RECOVERY_VIA_EMAIL_OTP = "passkey_recovery_via_email_otp"
+PASSKEY_RECOVERY_VIA_TOTP = "passkey_recovery_via_totp"
 BACKUP_CODE_USED = "backup_code_used"
 
 
@@ -596,6 +603,73 @@ async def recover_backup_code(
         "recovered": True,
         "message": "Passkey ทั้งหมดถูกลบแล้ว — login ด้วย Google แล้วตั้งค่า Passkey ใหม่",
     }
+
+
+@router.post(
+    "/auth/passkey/recover/totp",
+    summary="กู้บัญชีด้วย Authenticator (TOTP) → เปลี่ยนบัญชี Google (re-link)",
+)
+@limiter.limit("5/minute")
+async def recover_totp(
+    request: Request,
+    body: RecoverTotpRequest,
+    db: Session = Depends(get_db),
+) -> dict:
+    """เคส "เข้า email เดิมไม่ได้ + passkey หาย" — ยืนยันด้วย TOTP → ออก one-time link
+    ให้เชื่อม Gmail ใหม่ (reuse change_google flow). Opaque (anti-enum)."""
+    from app.routers.account_link import _mint_change_token
+
+    email = body.email.strip().lower()
+    ip = get_client_ip(request)
+    user = _resolve_user(email, db)
+
+    log_action(
+        db,
+        actor_id=user.id if user else None,
+        action=PASSKEY_RECOVERY_STARTED,
+        target_type="user",
+        target_id=user.id if user else None,
+        ip=ip,
+        metadata={"email": email[:120], "method": "totp"},
+    )
+
+    ok = bool(user) and totp_service.verify_active(user.id, body.code, db)
+    if not ok:
+        log_action(
+            db,
+            actor_id=user.id if user else None,
+            action=PASSKEY_RECOVERY_FAILED,
+            target_type="user",
+            target_id=user.id if user else None,
+            ip=ip,
+            metadata={"email": email[:120], "method": "totp"},
+        )
+        db.commit()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"code": "recovery_failed", "message": "email หรือรหัสไม่ถูกต้อง"},
+        )
+
+    _token, start_url = _mint_change_token(str(user.id), source="RECOVERY", ip=ip)
+    log_action(
+        db,
+        actor_id=user.id,
+        action=PASSKEY_RECOVERY_VIA_TOTP,
+        target_type="user",
+        target_id=user.id,
+        ip=ip,
+    )
+    log_action(
+        db,
+        actor_id=user.id,
+        action=PASSKEY_RECOVERY_SUCCESS,
+        target_type="user",
+        target_id=user.id,
+        ip=ip,
+        metadata={"method": "totp"},
+    )
+    db.commit()
+    return {"recovered": True, "start_url": start_url}
 
 
 @router.post(
