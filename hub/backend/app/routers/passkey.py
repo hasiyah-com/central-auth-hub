@@ -41,6 +41,7 @@ from app.models import AccessList, LoginSession, User
 from app.rate_limiter import limiter
 from app.redis_client import redis_client
 from app.services import (
+    mfa_policy,
     passkey_recovery,
     risk_challenge,
     stepup_cache,
@@ -921,6 +922,9 @@ async def login_finish(
         )
 
     # Issue JWT
+    # หมายเหตุ Always-2FA (โดยตั้งใจ): login นี้ primary = passkey ซึ่งเป็น strong factor
+    # ในตัว (MFA-grade) → ผ่าน Always-2FA อยู่แล้ว ไม่เด้ง step-up ซ้ำ (ต่างจาก Google
+    # callback ที่ต้อง step-up). ดู mfa_policy.login_method_satisfies_2fa — audit ไว้ด้านล่าง
     token, jti = create_access_token(result.user)
 
     # LoginSession + 4-Layer RBA/ML จริง (ไม่ hardcode 0.0 แล้ว)
@@ -943,6 +947,9 @@ async def login_finish(
             "credential_id": str(result.credential.id),
             "device_name": result.credential.device_name,
             "counter_regression": result.counter_regression,
+            # auditable: Always-2FA ถูก satisfy ด้วย passkey (ไม่ใช่ถูกข้าม)
+            "effective_mfa_always": result.user.effective_mfa_always,
+            "mfa_satisfied_by": mfa_policy.STRONG_LOGIN_METHODS[0],  # "passkey"
         },
     )
     db.commit()
@@ -1027,6 +1034,8 @@ async def login_discoverable_finish(
         db.commit()
         raise
 
+    # Always-2FA (โดยตั้งใจ): discoverable passkey = strong factor → ผ่าน 2FA อยู่แล้ว
+    # (เหมือน login_finish) — ดู mfa_policy.login_method_satisfies_2fa
     token, jti = create_access_token(result.user)
     session_row = await _build_login_session(
         result, request, jti, db, method="discoverable"
@@ -1047,6 +1056,9 @@ async def login_discoverable_finish(
             "provider": "passkey",
             "method": "discoverable",
             "credential_id": str(result.credential.id),
+            # auditable: Always-2FA ถูก satisfy ด้วย passkey (ไม่ใช่ถูกข้าม)
+            "effective_mfa_always": result.user.effective_mfa_always,
+            "mfa_satisfied_by": "passkey",
         },
     )
     db.commit()
@@ -1284,9 +1296,11 @@ def _finalize_after_reauth(
     payload: dict,
     request: Request,
     db: Session,
+    method: str = "passkey",
 ) -> str:
     """หลัง re-auth ผ่าน → ออก authorization code (subsystem) หรือ JWT (hub_direct).
 
+    `method` = factor ที่ใช้ยืนยัน ("passkey" / "totp") — บันทึกใน audit + stepup_cache.
     Returns: redirect URL string.
     """
     flow = payload.get("flow")
@@ -1347,7 +1361,7 @@ def _finalize_after_reauth(
             target_id=authreq["subsystem_id"],
             ip=client_ip,
             metadata={
-                "method": "passkey",
+                "method": method,
                 "risk_score": payload.get("risk_score"),
             },
         )
@@ -1381,7 +1395,7 @@ def _finalize_after_reauth(
         target_id=user.id,
         ip=client_ip,
         metadata={
-            "method": "passkey",
+            "method": method,
             "risk_score": payload.get("risk_score"),
             "flow": "hub_direct",
         },
@@ -1389,7 +1403,7 @@ def _finalize_after_reauth(
     stepup_cache.set_granted(
         user_id=str(user.id),
         jti=token_jti,
-        method="passkey",
+        method=method,
         ip=client_ip,
     )
     refresh_qs = f"&refresh_token={refresh_token}" if refresh_token else ""
@@ -1425,6 +1439,9 @@ async def risk_stepup_page(
             risk_score=payload.get("risk_score", 0.0),
             reasons=reasons,
             nonce=nonce,
+            has_totp=totp_service.is_enabled(user.id, db),
+            has_passkey=webauthn_service.count_active(user.id, db) > 0,
+            preferred_factor=user.mfa_preferred_factor,
         )
     )
 
@@ -1492,6 +1509,54 @@ async def risk_stepup_verify(
         raise HTTPException(status_code=410, detail="challenge ถูกใช้ไปแล้ว — login ใหม่")
     redirect_url = _finalize_after_reauth(
         user=user, payload=consumed, request=request, db=db
+    )
+    db.commit()
+    return JSONResponse({"redirect_url": redirect_url})
+
+
+class RiskStepupVerifyTotpBody(BaseModel):
+    challenge_id: str = Field(..., min_length=8, max_length=128)
+    code: str = Field(..., min_length=6, max_length=8)
+
+
+@router.post("/auth/passkey/risk-stepup/verify-totp")
+@limiter.limit(settings.rate_limit_token)
+async def risk_stepup_verify_totp(
+    request: Request,
+    body: RiskStepupVerifyTotpBody,
+    db: Session = Depends(get_db),
+):
+    """ยืนยันด้วย TOTP ที่ด่าน risk-stepup (Always-2FA / risk mfa — factor ทางเลือก).
+
+    Mirror ของ /risk-stepup/verify (passkey): verify ACTIVE TOTP → consume challenge
+    (atomic, B9) → finalize (method=totp). code ผิด = opaque + audit (B7).
+    """
+    payload, user = _load_challenge_user(body.challenge_id, db)
+    if payload.get("kind") != "reauth":
+        raise HTTPException(status_code=400, detail="challenge นี้ไม่ใช่สำหรับ re-auth")
+    ip = get_client_ip(request)
+
+    if not totp_service.verify_active(user.id, body.code, db):
+        log_action(
+            db,
+            actor_id=user.id,
+            action="risk_mfa_verify_failed",
+            target_type="user",
+            target_id=user.id,
+            ip=ip,
+            metadata={"code": "totp_invalid", "method": "totp"},
+        )
+        db.commit()
+        raise HTTPException(
+            status_code=401,
+            detail={"code": "totp_invalid", "message": "รหัสไม่ถูกต้อง"},
+        )
+
+    consumed = risk_challenge.consume(body.challenge_id)
+    if not consumed:
+        raise HTTPException(status_code=410, detail="challenge ถูกใช้ไปแล้ว — login ใหม่")
+    redirect_url = _finalize_after_reauth(
+        user=user, payload=consumed, request=request, db=db, method="totp"
     )
     db.commit()
     return JSONResponse({"redirect_url": redirect_url})
@@ -2005,21 +2070,78 @@ def _risk_stepup_html(
     risk_score: float,
     reasons: list,
     nonce: str,
+    has_totp: bool = False,
+    has_passkey: bool = True,
+    preferred_factor: str | None = None,
 ) -> str:
-    """Hub-served HTML page สำหรับ Risk Re-Auth (Passkey).
+    """Hub-served HTML page สำหรับ Risk Re-Auth (Passkey หรือ TOTP).
 
     Dark theme + IBM Plex Sans Thai + CSP nonce — pattern เดียวกับ
-    _passkey_enroll_html ใน oauth.py.
+    _passkey_enroll_html ใน oauth.py. รับได้ทั้ง passkey (WebAuthn) และ TOTP
+    (ถ้า user เปิด) — จัดลำดับตาม `preferred_factor`.
     """
     safe_email = (
         user_email.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
     )
-    reasons_html = (
-        "".join(
-            f"<li>{r.replace('<', '&lt;').replace('>', '&gt;')}</li>"
-            for r in reasons[:5]
-        )
-        or "<li>ตรวจพบความเสี่ยงผิดปกติจากระบบ ML</li>"
+    # TOTP section (แสดงถ้า user มี ACTIVE TOTP) — ช่องกรอก 6 หลัก + ปุ่มยืนยัน
+    # style ฝังใน fragment (nonced) — เลี่ยงแตะ CSS ที่แชร์กับหน้า force-enroll
+    totp_label = "หรือใช้ Authenticator" if has_passkey else "ยืนยันด้วย Authenticator"
+    totp_section = (
+        f"""
+    <style nonce="{nonce}">
+      .btn-totp {{ color:var(--ink); background:rgba(148,178,224,.10);
+                   border:1px solid var(--line); margin-top:10px; }}
+      .btn-totp:hover {{ background:rgba(148,178,224,.18); }}
+      .or-sep {{ display:flex; align-items:center; gap:10px; margin:16px 0 12px;
+        color:var(--muted); font-size:11px; letter-spacing:.06em; text-transform:uppercase;
+        font-family:'IBM Plex Mono',monospace; }}
+      .or-sep::before, .or-sep::after {{ content:''; flex:1; height:1px; background:var(--line); }}
+      .totp-in {{ width:100%; padding:13px 14px; border-radius:12px; margin-bottom:10px;
+        background:rgba(7,11,20,.6); border:1px solid var(--line); color:var(--ink);
+        font-family:'IBM Plex Mono',monospace; font-size:20px; letter-spacing:.4em;
+        text-align:center; }}
+      .totp-in:focus {{ outline:none; border-color:var(--mint-2); }}
+    </style>
+    <div class="totp-box" id="totpBox">
+      <div class="or-sep"><span>{totp_label}</span></div>
+      <input class="totp-in" id="totpIn" type="text" inputmode="numeric"
+        autocomplete="one-time-code" maxlength="6" placeholder="รหัส 6 หลัก">
+      <button class="btn btn-totp" id="verifyTotp">📱 ยืนยันด้วยรหัส</button>
+    </div>"""
+        if has_totp
+        else ""
+    )
+    # ลำดับ: preferred=totp → TOTP ก่อน passkey; ไม่มี passkey → TOTP เป็นหลัก
+    totp_first = has_totp and (preferred_factor == "totp" or not has_passkey)
+    # passkey block (ปุ่ม + ลิงก์ recover) — ซ่อนปุ่ม passkey ถ้าไม่มี passkey
+    passkey_btn = (
+        '<button class="btn btn-pk" id="verify">🔑 ยืนยันด้วย Passkey</button>'
+        if has_passkey
+        else ""
+    )
+    factor_blocks = (
+        (totp_section + "\n    " + passkey_btn)
+        if totp_first
+        else (passkey_btn + totp_section)
+    )
+    # reasons box แสดงเฉพาะตอนมี reason จริง (risk-triggered) — สำหรับ Always-2FA
+    # (ไม่ได้เสี่ยง) จะไม่ขึ้น "ตรวจพบความเสี่ยง" ที่ทำให้ user งงทุก login
+    reasons_html = "".join(
+        f"<li>{r.replace('<', '&lt;').replace('>', '&gt;')}</li>" for r in reasons[:5]
+    )
+    reasons_block = (
+        f"""<div class="reasons">
+      <div class="reasons-title">ปัจจัยเสี่ยงที่ตรวจพบ</div>
+      <ul>{reasons_html}</ul>
+      <div class="score">risk_score: {risk_score:.3f}</div>
+    </div>"""
+        if reasons
+        else ""
+    )
+    subtitle = (
+        "ระบบตรวจพบความเสี่ยงจากการ login ครั้งนี้<br>กรุณายืนยันตัวตนเพื่อความปลอดภัย"
+        if reasons
+        else "กรุณายืนยันตัวตนอีกครั้งเพื่อความปลอดภัย"
     )
     return f"""<!DOCTYPE html><html lang="th"><head><meta charset="UTF-8">
 <title>ยืนยันตัวตน · Central Auth Hub</title>
@@ -2090,21 +2212,17 @@ def _risk_stepup_html(
       <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
     </div>
     <h1>ยืนยันตัวตนอีกครั้ง</h1>
-    <p class="sub">ระบบตรวจพบความเสี่ยงจากการ login ครั้งนี้<br>กรุณายืนยันด้วย Passkey เพื่อความปลอดภัย</p>
+    <p class="sub">{subtitle}</p>
     <div class="who">{safe_email}</div>
   </div>
   <div class="body">
-    <div class="reasons">
-      <div class="reasons-title">ปัจจัยเสี่ยงที่ตรวจพบ</div>
-      <ul>{reasons_html}</ul>
-      <div class="score">risk_score: {risk_score:.3f}</div>
-    </div>
+    {reasons_block}
     <div class="err" id="err"></div>
     <div class="unsupported" id="unsupported">
       ⚠️ <strong>เบราว์เซอร์นี้ไม่รองรับ Passkey</strong><br>
       กรุณาใช้อุปกรณ์ที่รองรับ หรือใช้ <a href="/auth/passkey/recover" style="color:var(--mint)">Account Recovery</a>
     </div>
-    <button class="btn btn-pk" id="verify">🔑 ยืนยันด้วย Passkey</button>
+    {factor_blocks}
     <a class="btn btn-recover" href="/auth/passkey/recover">ทำ Passkey หาย? → กู้บัญชี</a>
   </div>
   <div class="foot">WebAuthn · FIDO2 · Risk-Based Authentication</div>
@@ -2122,7 +2240,7 @@ function pkSupported() {{ return !!(window.PublicKeyCredential && navigator.cred
 const btn=document.getElementById('verify'), errEl=document.getElementById('err');
 function showErr(m){{ errEl.textContent=m; errEl.classList.add('show'); }}
 
-if(!pkSupported()){{
+if(btn && !pkSupported()){{
   document.getElementById('unsupported').classList.add('show');
   btn.disabled=true;
 }}
@@ -2155,6 +2273,28 @@ async function doVerify(){{
   }} catch(err){{ showErr(err.message||'ยืนยันไม่สำเร็จ');
     btn.disabled=false; btn.textContent='🔑 ยืนยันด้วย Passkey'; }}
 }}
-btn.addEventListener('click', doVerify);
+if(btn) btn.addEventListener('click', doVerify);
+
+// ── TOTP verify (ถ้า user เปิด Authenticator) ──
+const tBtn=document.getElementById('verifyTotp'), tIn=document.getElementById('totpIn');
+async function doVerifyTotp(){{
+  errEl.classList.remove('show');
+  const code=(tIn.value||'').trim();
+  if(code.length<6){{ showErr('กรอกรหัส 6 หลัก'); return; }}
+  tBtn.disabled=true; tBtn.innerHTML='<span class="spinner"></span> กำลังยืนยัน…';
+  try {{
+    const f=await fetch('/auth/passkey/risk-stepup/verify-totp',{{method:'POST',headers:{{'Content-Type':'application/json'}},
+      body:JSON.stringify({{challenge_id:CHALLENGE_ID,code:code}})}});
+    if(!f.ok){{ const e=await f.json().catch(()=>({{}})); const d=e.detail;
+      throw new Error(typeof d==='string'?d:(d&&d.message?d.message:'รหัสไม่ถูกต้อง')); }}
+    const data=await f.json();
+    window.location.href=data.redirect_url;
+  }} catch(err){{ showErr(err.message||'ยืนยันไม่สำเร็จ');
+    tBtn.disabled=false; tBtn.textContent='📱 ยืนยันด้วยรหัส'; tIn.value=''; }}
+}}
+if(tBtn){{
+  tBtn.addEventListener('click', doVerifyTotp);
+  tIn.addEventListener('keydown', e=>{{ if(e.key==='Enter') doVerifyTotp(); }});
+}}
 </script>
 </body></html>"""

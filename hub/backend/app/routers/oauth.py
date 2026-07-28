@@ -58,6 +58,8 @@ from app.services.secret_service import verify_secret
 from app.services import webauthn_service
 from app.services import passkey_recovery
 from app.services import risk_challenge
+from app.services import mfa_policy
+from app.services import totp_service
 
 router = APIRouter()
 
@@ -389,11 +391,11 @@ async def oauth_callback(
         user=user, authreq=authreq, request=request, db=db, provider="google"
     )
 
-    # ===== Passkey enrollment interstitial (subsystem users รวมนักศึกษา) =====
-    # ถ้า user ยังไม่มี passkey → เสนอตั้งค่าก่อน redirect กลับ subsystem
-    # (นักศึกษาเข้า Hub console ไม่ได้ — นี่คือทางเดียวที่จะลง passkey)
-    # pattern เดียวกับ Google/GitHub: "set up a passkey for faster sign-in"
-    if webauthn_service.count_active(user.id, db) == 0:
+    # ===== Credential setup interstitial (subsystem users รวมนักศึกษา) =====
+    # ยังไม่มี factor เลย (passkey หรือ TOTP) → เสนอตั้งค่าก่อน redirect กลับ subsystem
+    # (นักศึกษาเข้า Hub console ไม่ได้ — นี่คือทางเดียวที่จะตั้ง credential)
+    # เคารพ "ข้ามไปก่อน" (snooze 7 วัน) + "ไม่ต้องถามอีก" (ถาวร) — ไม่บล็อกการเข้าใช้งาน
+    if mfa_policy.should_prompt_setup(user, db):
         # persist google_sub binding + profile sync ที่ทำไว้ก่อนหน้า
         db.commit()
         redis_client.setex(
@@ -628,8 +630,12 @@ async def _finalize_subsystem_login(
     # Shadow mode = log only (would_* ไม่ enforce). MFA/block เด้งเฉพาะ enforce mode.
     enforcing = not settings.ml_shadow_mode
     is_hard_block = enforcing and risk_score >= settings.risk_block_hard_threshold
-    is_mfa_required = (
-        enforcing and not is_hard_block and actual_decision in ("block", "challenge")
+    # รวม risk-based MFA + Always-2FA (user pref / admin) เป็น gate เดียว (mfa_policy)
+    is_mfa_required = mfa_policy.is_second_factor_required(
+        user,
+        actual_decision=actual_decision,
+        enforcing=enforcing,
+        is_hard_block=is_hard_block,
     )
 
     if is_hard_block:
@@ -672,7 +678,9 @@ async def _finalize_subsystem_login(
     # ─── Risk-Triggered MFA flow (0.50 ≤ score < 0.85) ───────────────────
     grace_banner_remaining_days: int | None = None  # set ถ้า grace branch
     if is_mfa_required:
-        has_passkey = webauthn_service.count_active(user.id, db) > 0
+        # มี factor ที่สอง (passkey หรือ TOTP) → risk-stepup (รับได้ทั้งคู่);
+        # ไม่มีเลย → grace / force-enroll passkey (ต้องตั้งอย่างน้อย 1)
+        has_passkey = mfa_policy.has_second_factor(user, db)
 
         if has_passkey:
             # Branch A: Passkey Re-Auth
@@ -957,6 +965,29 @@ class EnrollFinishRequest(BaseModel):
     hub_state: str = Field(..., min_length=8, max_length=128)
     device_name: str = Field(..., min_length=1, max_length=100)
     credential: dict = Field(..., description="WebAuthn attestation")
+    mfa_always: bool = Field(
+        default=False, description="ติ๊ก 'ขอยืนยันทุกครั้งที่ล็อกอิน' ในหน้า enroll"
+    )
+
+
+def _apply_mfa_always(user: User, enabled: bool, request: Request, db: Session) -> None:
+    """เปิด Always-2FA จากหน้า enroll (ทางเดียวที่นักศึกษาตั้งค่าได้ — เข้า /account ไม่ได้).
+
+    เปิดได้อย่างเดียว (ไม่ปิด) — การปิดต้องทำที่ /account ซึ่งต้องผ่าน step-up
+    กัน attacker ที่ยึด enroll context ไปปิดการป้องกันของเหยื่อ
+    """
+    if not enabled or user.mfa_always:
+        return
+    user.mfa_always = True
+    log_action(
+        db,
+        actor_id=user.id,
+        action="account_security_updated",
+        target_type="user",
+        target_id=user.id,
+        ip=get_client_ip(request),
+        metadata={"changed_by": "SELF", "mfa_always": True, "at": "interstitial"},
+    )
 
 
 def _load_enroll_user(hub_state: str, db: Session) -> User:
@@ -1048,28 +1079,205 @@ async def oauth_passkey_enroll_finish(
             metadata={"count": len(codes), "trigger": "subsystem_enroll"},
         )
         resp["backup_codes"] = codes
+    _apply_mfa_always(user, body.mfa_always, request, db)
     db.commit()
     return resp
+
+
+def _credential_setup_done_html(
+    *, user_email: str, has_factor: bool, nonce: str
+) -> str:
+    """หน้าสรุปหลังตั้ง credential แบบ standalone (ปุ่ม "เพิ่มการยืนยันตัวตน")."""
+    safe_email = (
+        user_email.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    )
+    icon = "✅" if has_factor else "ℹ️"
+    title = "ตั้งค่าเรียบร้อย" if has_factor else "ยังไม่ได้ตั้งค่า"
+    msg = (
+        "บัญชีของคุณมีการยืนยันตัวตนแล้ว — ใช้เข้าระบบและกู้บัญชีได้"
+        if has_factor
+        else "คุณข้ามขั้นตอนนี้ไป กลับมาตั้งค่าได้ทุกเมื่อจากปุ่ม “เพิ่มการยืนยันตัวตน”"
+    )
+    return f"""<!DOCTYPE html><html lang="th"><head><meta charset="UTF-8">
+<title>{title} · Central Auth Hub</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style nonce="{nonce}">
+  body {{ font-family:system-ui,-apple-system,"Segoe UI",sans-serif; background:#070b14;
+    color:#e8eef7; min-height:100vh; margin:0; display:grid; place-items:center; padding:32px 16px; }}
+  .card {{ width:100%; max-width:420px; background:linear-gradient(180deg,#141c30,#0b1120);
+    border:1px solid rgba(148,178,224,.14); border-radius:20px; padding:34px 30px; text-align:center; }}
+  .ic {{ font-size:44px; margin-bottom:10px; }}
+  h1 {{ font-size:21px; margin:0 0 8px; font-weight:600; }}
+  p {{ color:#8a99b5; font-size:14px; line-height:1.65; margin:0 0 6px; }}
+  .who {{ font-family:ui-monospace,monospace; font-size:11px; color:#34e8c4; margin-top:14px;
+    word-break:break-all; }}
+</style></head><body>
+  <div class="card">
+    <div class="ic">{icon}</div>
+    <h1>{title}</h1>
+    <p>{msg}</p>
+    <p>ปิดหน้านี้แล้วกลับไปเข้าใช้งานระบบได้เลย</p>
+    <div class="who">{safe_email}</div>
+  </div>
+</body></html>"""
+
+
+class AlwaysMfaRequest(BaseModel):
+    hub_state: str = Field(..., min_length=8, max_length=128)
+
+
+@router.post("/security/always-2fa")
+@limiter.limit(settings.rate_limit_token)
+async def oauth_enable_always_2fa(
+    request: Request,
+    body: AlwaysMfaRequest,
+    db: Session = Depends(get_db),
+):
+    """เปิด Always-2FA จากหน้า enroll โดยไม่ต้อง enroll factor ใหม่.
+
+    ใช้เมื่อ user มี factor อยู่แล้ว (จะได้ไม่ถูกบังคับเพิ่ม passkey ซ้ำ) หรือกด
+    "เปิด" ใน popup หลังตั้งค่าเสร็จ. **เปิดได้อย่างเดียว ปิดไม่ได้** (ดู
+    `_apply_mfa_always`) — ต้องมี factor อยู่แล้วถึงเปิดได้ ไม่งั้นจะล็อกตัวเองออก
+    """
+    user = _load_enroll_user(body.hub_state, db)
+    if not mfa_policy.has_second_factor(user, db):
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "no_factor",
+                "message": "ต้องตั้ง Passkey หรือ Authenticator อย่างน้อย 1 อย่างก่อน",
+            },
+        )
+    _apply_mfa_always(user, True, request, db)
+    db.commit()
+    return {"mfa_always": True}
+
+
+class EnrollTotpVerifyRequest(BaseModel):
+    hub_state: str = Field(..., min_length=8, max_length=128)
+    code: str = Field(..., min_length=6, max_length=8)
+    mfa_always: bool = Field(
+        default=False, description="ติ๊ก 'ขอยืนยันทุกครั้งที่ล็อกอิน' ในหน้า enroll"
+    )
+
+
+@router.post("/totp/enroll/start")
+@limiter.limit(settings.rate_limit_token)
+async def oauth_totp_enroll_start(
+    request: Request,
+    body: EnrollStartRequest,
+    db: Session = Depends(get_db),
+):
+    """สร้าง TOTP secret + otpauth URI — ใช้ identity จาก enroll context (ไม่ต้อง JWT).
+
+    สำหรับ subsystem users รวมนักศึกษาที่เข้า Hub console ไม่ได้ (mirror passkey enroll).
+    row ถูกสร้างเป็น REGISTERED — ต้อง verify code ก่อนถึงเป็น ACTIVE.
+    """
+    user = _load_enroll_user(body.hub_state, db)
+    secret, uri = totp_service.start_enroll(user.id, db)
+    db.commit()
+    # qr_svg render ฝั่ง server — หน้านี้ Hub-served + CSP บล็อก CDN (fail-safe → "")
+    return {"secret": secret, "otpauth_uri": uri, "qr_svg": totp_service.qr_svg(uri)}
+
+
+@router.post("/totp/enroll/verify")
+@limiter.limit(settings.rate_limit_token)
+async def oauth_totp_enroll_verify(
+    request: Request,
+    body: EnrollTotpVerifyRequest,
+    db: Session = Depends(get_db),
+):
+    """ยืนยัน code → TOTP ACTIVE (identity จาก enroll context)."""
+    user = _load_enroll_user(body.hub_state, db)
+    if not totp_service.confirm_enroll(user.id, body.code, db):
+        log_action(
+            db,
+            actor_id=user.id,
+            action="totp_enroll_failed",
+            target_type="user",
+            target_id=user.id,
+            ip=get_client_ip(request),
+            metadata={"at": "interstitial"},
+        )
+        db.commit()
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "totp_invalid", "message": "รหัสไม่ถูกต้อง"},
+        )
+    log_action(
+        db,
+        actor_id=user.id,
+        action="totp_enabled",
+        target_type="user",
+        target_id=user.id,
+        ip=get_client_ip(request),
+        metadata={"at": "interstitial"},
+    )
+    _apply_mfa_always(user, body.mfa_always, request, db)
+    db.commit()
+    return {"enabled": True, "status": "ACTIVE"}
 
 
 @router.get("/continue")
 async def oauth_continue(
     request: Request,
     hub_state: str,
+    action: str | None = None,
     db: Session = Depends(get_db),
 ):
-    """หลัง interstitial (ตั้ง passkey หรือ ข้าม) → ออก authorization code + redirect.
+    """หลัง interstitial (ตั้ง credential / ข้าม / ไม่ถามอีก) → authorization code + redirect.
+
+    `action`:
+      - `skip`  → snooze 7 วัน (เตือนใหม่รอบหน้า)
+      - `never` → ไม่ถามอีกถาวร (`security_onboarding_dismissed`)
+      - อื่นๆ/ไม่ส่ง → ตั้งค่าสำเร็จแล้ว ไม่ต้องแตะ flag
 
     ใช้ identity จาก enroll context → _finalize_subsystem_login (access_list, RBA,
     block, authcode เหมือน flow ปกติ).
     """
     raw = redis_client.get(f"authreq:{hub_state}")
-    if not raw:
-        raise HTTPException(
-            status_code=400, detail="OAuth request หมดอายุ — เริ่ม login ใหม่"
-        )
-    authreq = json.loads(raw)
     user = _load_enroll_user(hub_state, db)
+    # standalone setup (ปุ่ม "เพิ่มการยืนยันตัวตน") — ไม่มี authreq เพราะไม่ได้มาจาก
+    # subsystem OAuth flow → จบที่หน้า "เสร็จแล้ว" แทน redirect กลับ subsystem
+    standalone = raw is None
+    authreq = json.loads(raw) if raw else None
+
+    if action == "skip":
+        mfa_policy.snooze_onboarding(user)
+        log_action(
+            db,
+            actor_id=user.id,
+            action="security_onboarding_snoozed",
+            target_type="user",
+            target_id=user.id,
+            ip=get_client_ip(request),
+            metadata={"days": mfa_policy.ONBOARDING_SNOOZE_DAYS, "at": "interstitial"},
+        )
+        db.commit()
+    elif action == "never":
+        user.security_onboarding_dismissed = True
+        log_action(
+            db,
+            actor_id=user.id,
+            action="security_onboarding_dismissed",
+            target_type="user",
+            target_id=user.id,
+            ip=get_client_ip(request),
+            metadata={"at": "interstitial"},
+        )
+        db.commit()
+
+    if standalone:
+        # ไม่มี OAuth request ค้าง — จบที่หน้าสรุปผล (ไม่ออก JWT / ไม่แตะ session)
+        has_factor = mfa_policy.has_second_factor(user, db)
+        redis_client.delete(f"enroll:{hub_state}")
+        nonce = secrets.token_urlsafe(16)
+        request.state.csp_nonce = nonce
+        return HTMLResponse(
+            content=_credential_setup_done_html(
+                user_email=user.email, has_factor=has_factor, nonce=nonce
+            )
+        )
 
     callback_url = await _finalize_subsystem_login(
         user=user,
@@ -1279,12 +1487,25 @@ def logout(
 
 
 def _passkey_enroll_html(
-    hub_state: str, subsystem_name: str, user_email: str, nonce: str
+    hub_state: str,
+    subsystem_name: str,
+    user_email: str,
+    nonce: str,
+    has_passkey: bool = False,
+    has_totp: bool = False,
+    mfa_always: bool = False,
 ) -> str:
-    """หน้าเสนอตั้งค่า Passkey หลัง Google login (ก่อน redirect กลับ subsystem).
+    """หน้า "เพิ่มการยืนยันตัวตน" หลัง Google login.
 
-    รองรับทุก user รวมนักศึกษา (ไม่ต้องเข้า Hub console). มีปุ่ม "ข้ามไปก่อน"
-    เสมอ (opt-in — Decision: ไม่บังคับ). Passkey แรก → แสดง backup codes (must save).
+    ขั้นตอน:
+      - **มี factor อยู่แล้ว** → ขั้น "จัดการ" (เห็นสถานะ + เปิด Always-2FA ได้ทันที
+        โดยไม่ต้องเพิ่ม factor ซ้ำ + เลือกเพิ่มอีกวิธีได้)
+      - **ยังไม่มี factor** → ขั้น "เลือกวิธี" → ขั้น "ตั้งค่า"
+        ตั้งเสร็จแล้วถ้ายังไม่ได้ติ๊ก Always-2FA → **popup ถามอีกครั้ง**
+
+    รองรับทุก user รวมนักศึกษา (เข้า Hub console ไม่ได้ — นี่คือทางเดียว).
+    "ข้ามไปก่อน" (snooze 7 วัน) + "ไม่ต้องถามอีก" (ถาวร) — ไม่บังคับ (opt-in).
+    Passkey แรก → แสดง backup codes (must save).
     """
     safe_name = (
         subsystem_name.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
@@ -1292,124 +1513,256 @@ def _passkey_enroll_html(
     safe_email = (
         user_email.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
     )
+    has_factor = has_passkey or has_totp
+    first_step = "stepManage" if has_factor else "stepChoose"
+    pk_state = "✓ ตั้งค่าแล้ว" if has_passkey else "ยังไม่ได้ตั้ง"
+    totp_state = "✓ ตั้งค่าแล้ว" if has_totp else "ยังไม่ได้ตั้ง"
+    always_row = (
+        '<div class="done-row">✓ เปิด "ขอยืนยันทุกครั้งที่ล็อกอิน" อยู่แล้ว</div>'
+        if mfa_always
+        else """<button class="btn btn-go" id="enableAlways">
+        เปิด "ขอยืนยันทุกครั้งที่ล็อกอิน"</button>"""
+    )
     return f"""<!DOCTYPE html><html lang="th"><head><meta charset="UTF-8">
-<title>ตั้งค่า Passkey · {safe_name}</title>
+<title>เพิ่มการยืนยันตัวตน · {safe_name}</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@500;600;700&family=IBM+Plex+Sans+Thai:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style nonce="{nonce}">
-  :root {{ --bg-0:#070b14; --ink:#e8eef7; --muted:#8a99b5; --mint:#34e8c4;
-           --mint-2:#13b89a; --line:rgba(148,178,224,.14); --danger:#ff6b81; --amber:#f5b97a; }}
+  :root {{ --bg:#070b14; --ink:#e8eef7; --muted:#8a99b5; --mint:#34e8c4; --mint-2:#13b89a;
+           --line:rgba(148,178,224,.16); --danger:#ff6b81; --amber:#f5b97a; }}
   * {{ box-sizing:border-box; }}
-  html,body {{ margin:0; height:100%; }}
-  body {{ font-family:'IBM Plex Sans Thai',system-ui,sans-serif; background:var(--bg-0);
-          color:var(--ink); min-height:100vh; display:grid; place-items:center;
-          padding:32px 16px; overflow:hidden; position:relative; }}
-  body::before {{ content:''; position:fixed; inset:-20%; z-index:0;
-    background:radial-gradient(40% 50% at 18% 22%, rgba(52,232,196,.16), transparent 70%),
-      radial-gradient(45% 55% at 85% 18%, rgba(82,120,255,.16), transparent 70%),
-      radial-gradient(60% 60% at 50% 110%, rgba(120,80,220,.12), transparent 70%);
-    filter:blur(20px); animation:drift 18s ease-in-out infinite alternate; }}
-  @keyframes drift {{ from{{transform:translateY(0) scale(1)}} to{{transform:translateY(-3%) scale(1.06)}} }}
-  .card {{ position:relative; z-index:1; width:100%; max-width:440px;
-    background:linear-gradient(180deg, rgba(20,28,48,.86), rgba(11,17,32,.92));
-    border:1px solid var(--line); border-radius:22px; backdrop-filter:blur(14px);
-    box-shadow:0 30px 80px -20px rgba(0,0,0,.7), 0 0 60px -30px rgba(52,232,196,.5);
-    overflow:hidden; animation:rise .7s cubic-bezier(.2,.8,.2,1) both; }}
-  @keyframes rise {{ from{{opacity:0; transform:translateY(16px)}} to{{opacity:1; transform:none}} }}
-  .top {{ padding:30px 32px 4px; text-align:center; }}
-  .key-emblem {{ width:62px; height:62px; margin:0 auto 14px; border-radius:18px;
-    background:linear-gradient(135deg, rgba(52,232,196,.2), rgba(52,232,196,.05));
-    border:1px solid rgba(52,232,196,.35); display:grid; place-items:center; color:var(--mint); }}
-  h1 {{ font-family:'Kanit',sans-serif; font-weight:600; font-size:24px; margin:0 0 6px; }}
-  .sub {{ color:var(--muted); font-size:13.5px; margin:0; line-height:1.55; }}
+  html,body {{ margin:0; }}
+  body {{ font-family:'IBM Plex Sans Thai',system-ui,sans-serif; background:var(--bg);
+    color:var(--ink); min-height:100vh; display:grid; place-items:center; padding:28px 16px; }}
+  .card {{ width:100%; max-width:440px; background:linear-gradient(180deg,#141c30,#0b1120);
+    border:1px solid var(--line); border-radius:20px; overflow:hidden;
+    box-shadow:0 28px 70px -24px rgba(0,0,0,.75); }}
+  .top {{ padding:26px 28px 0; text-align:center; }}
+  .emblem {{ width:54px; height:54px; margin:0 auto 12px; border-radius:16px;
+    background:rgba(52,232,196,.12); border:1px solid rgba(52,232,196,.32);
+    display:grid; place-items:center; font-size:25px; }}
+  h1 {{ font-family:'Kanit',sans-serif; font-weight:600; font-size:21px; margin:0 0 6px; }}
+  .sub {{ color:var(--muted); font-size:13.5px; line-height:1.6; margin:0; }}
   .who {{ font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--mint);
-          margin-top:10px; word-break:break-all; }}
-  .body {{ padding:20px 32px 26px; }}
-  .benefits {{ list-style:none; padding:0; margin:0 0 18px; display:grid; gap:9px; }}
-  .benefits li {{ display:flex; gap:9px; font-size:13px; color:#c4d0e4; align-items:flex-start; }}
-  .benefits i {{ color:var(--mint); flex:none; margin-top:1px; }}
-  label.fld {{ font-size:11px; color:var(--muted); font-family:'IBM Plex Mono',monospace;
-               display:block; margin-bottom:6px; }}
-  input {{ width:100%; padding:13px 14px; border-radius:11px; border:1px solid var(--line);
-           background:rgba(7,11,20,.7); color:var(--ink); font-size:14.5px;
-           font-family:'IBM Plex Sans Thai',sans-serif; margin-bottom:14px; }}
-  input:focus {{ outline:none; border-color:var(--mint-2); box-shadow:0 0 0 3px rgba(52,232,196,.16); }}
-  .btn {{ display:flex; align-items:center; justify-content:center; gap:10px; width:100%;
+    margin-top:10px; word-break:break-all; }}
+  .body {{ padding:22px 28px 24px; }}
+
+  /* ── ขั้นที่ 1: การ์ดเลือกวิธี ── */
+  .opt {{ width:100%; display:flex; align-items:center; gap:14px; text-align:left;
+    padding:15px 16px; margin-bottom:11px; border-radius:14px; cursor:pointer;
+    background:rgba(148,178,224,.05); border:1px solid var(--line); color:var(--ink);
+    font-family:inherit; transition:border-color .15s, background .15s, transform .15s; }}
+  .opt:hover {{ border-color:var(--mint-2); background:rgba(52,232,196,.07); transform:translateY(-1px); }}
+  .opt .ic {{ font-size:26px; flex:none; width:34px; text-align:center; }}
+  .opt .t {{ font-family:'Kanit',sans-serif; font-weight:500; font-size:15.5px;
+    display:flex; align-items:center; gap:7px; margin-bottom:2px; }}
+  .opt .d {{ font-size:12.5px; color:var(--muted); line-height:1.5; }}
+  .opt .arrow {{ margin-left:auto; color:var(--muted); font-size:18px; flex:none; }}
+  .tag {{ font-family:'IBM Plex Mono',monospace; font-size:9.5px; letter-spacing:.04em;
+    padding:2px 7px; border-radius:999px; background:rgba(52,232,196,.16);
+    color:var(--mint); border:1px solid rgba(52,232,196,.3); }}
+
+  /* ── ขั้น "จัดการ" (มี factor อยู่แล้ว) ── */
+  .status {{ border:1px solid var(--line); border-radius:13px; overflow:hidden; margin-bottom:14px; }}
+  .st-row {{ display:flex; justify-content:space-between; align-items:center;
+    padding:12px 14px; font-size:13.5px; }}
+  .st-row + .st-row {{ border-top:1px solid var(--line); }}
+  .st-row b {{ font-family:'IBM Plex Mono',monospace; font-size:11.5px; color:var(--mint); font-weight:500; }}
+  .done-row {{ padding:13px 14px; border-radius:12px; margin-bottom:12px; font-size:13px;
+    background:rgba(52,232,196,.1); border:1px solid rgba(52,232,196,.3); color:var(--mint); }}
+  .opt-sm {{ margin-top:12px; padding:12px 14px; }}
+  .opt-sm .ic {{ font-size:20px; }}
+  .opt-sm .t {{ font-size:14px; }}
+
+  /* ── ติ๊กเปิด Always-2FA (ทางเดียวที่นักศึกษาตั้งได้ — เข้า /account ไม่ได้) ── */
+  .always {{ display:flex; gap:11px; align-items:flex-start; margin-top:14px;
+    padding:13px 14px; border-radius:12px; cursor:pointer;
+    background:rgba(148,178,224,.05); border:1px solid var(--line); }}
+  .always:hover {{ border-color:rgba(148,178,224,.32); }}
+  .always input {{ width:17px; height:17px; margin:1px 0 0; accent-color:var(--mint-2);
+    flex:none; cursor:pointer; }}
+  .always b {{ display:block; font-family:'Kanit',sans-serif; font-weight:500;
+    font-size:13.5px; margin-bottom:2px; }}
+  .always .d {{ display:block; font-size:12px; color:var(--muted); line-height:1.5; }}
+
+  /* ── ปุ่มรอง (ข้าม / ไม่ถามอีก) ── */
+  .skips {{ display:flex; gap:10px; margin-top:14px; padding-top:16px;
+    border-top:1px solid var(--line); }}
+  .skips a {{ flex:1; text-align:center; padding:11px 8px; border-radius:11px;
+    font-size:13px; text-decoration:none; color:var(--muted);
+    border:1px solid var(--line); transition:color .15s, border-color .15s; }}
+  .skips a:hover {{ color:var(--ink); border-color:rgba(148,178,224,.35); }}
+
+  /* ── ขั้นที่ 2: แผงตั้งค่า ── */
+  .step {{ display:none; }}
+  .step.on {{ display:block; }}
+  .back {{ display:inline-flex; align-items:center; gap:6px; background:none; border:none;
+    color:var(--muted); font-family:inherit; font-size:13px; cursor:pointer;
+    padding:0; margin-bottom:16px; }}
+  .back:hover {{ color:var(--ink); }}
+  .fld {{ display:block; font-size:12px; color:var(--muted); margin-bottom:7px; }}
+  input[type=text] {{ width:100%; padding:12px 14px; border-radius:12px; margin-bottom:14px;
+    background:rgba(7,11,20,.65); border:1px solid var(--line); color:var(--ink);
+    font-family:inherit; font-size:14.5px; }}
+  input[type=text]:focus {{ outline:none; border-color:var(--mint-2); }}
+  .btn {{ display:flex; align-items:center; justify-content:center; gap:9px; width:100%;
     padding:14px 16px; border-radius:13px; font-family:'Kanit',sans-serif; font-weight:500;
-    font-size:15.5px; border:1px solid transparent; cursor:pointer; text-decoration:none;
-    transition:transform .15s, box-shadow .25s, background .2s; }}
-  .btn-pk {{ color:#04221c; background:linear-gradient(100deg,var(--mint),#5ff0d6);
-             box-shadow:0 10px 30px -10px rgba(52,232,196,.6); }}
-  .btn-pk:hover {{ transform:translateY(-2px); }}
-  .btn-pk[disabled] {{ opacity:.5; cursor:not-allowed; transform:none; }}
-  .btn-skip {{ color:var(--muted); background:transparent; border-color:transparent;
-               margin-top:8px; font-size:13.5px; }}
-  .btn-skip:hover {{ color:var(--ink); }}
-  .err {{ display:none; gap:8px; font-size:12.5px; color:var(--danger); margin-bottom:12px;
+    font-size:15px; border:1px solid transparent; cursor:pointer; text-decoration:none; }}
+  .btn-go {{ color:#04221c; background:linear-gradient(100deg,var(--mint),#5ff0d6); }}
+  .btn-go:hover {{ filter:brightness(1.05); }}
+  .btn-go[disabled] {{ opacity:.5; cursor:not-allowed; }}
+
+  /* ── QR ── */
+  .qr {{ background:#fff; border-radius:14px; padding:11px; margin:4px auto 12px;
+    width:186px; height:186px; }}
+  .qr svg {{ display:block; width:100%; height:100%; }}
+  .hint {{ font-size:12.5px; color:var(--muted); text-align:center; line-height:1.6; margin:0 0 6px; }}
+  .secret {{ font-family:'IBM Plex Mono',monospace; font-size:11.5px; color:var(--mint);
+    word-break:break-all; text-align:center; display:block; margin-bottom:14px; }}
+  #totpCode {{ font-family:'IBM Plex Mono',monospace; font-size:20px; letter-spacing:.42em;
+    text-align:center; }}
+
+  .err {{ display:none; font-size:12.5px; color:var(--danger); margin-bottom:14px;
     background:rgba(255,107,129,.08); border:1px solid rgba(255,107,129,.28);
-    padding:10px 12px; border-radius:10px; line-height:1.45; }}
-  .err.show {{ display:flex; }}
-  .unsupported {{ display:none; font-size:12.5px; color:var(--amber); margin-bottom:12px;
-    background:rgba(245,185,122,.08); border:1px solid rgba(245,185,122,.28);
-    padding:10px 12px; border-radius:10px; }}
-  .unsupported.show {{ display:block; }}
-  .spinner {{ width:16px; height:16px; border:2px solid rgba(4,34,28,.35);
+    padding:10px 12px; border-radius:10px; line-height:1.5; }}
+  .err.show {{ display:block; }}
+  .note {{ display:none; font-size:12.5px; color:var(--amber); margin-bottom:14px;
+    background:rgba(245,185,122,.08); border:1px solid rgba(245,185,122,.26);
+    padding:10px 12px; border-radius:10px; line-height:1.55; }}
+  .note.show {{ display:block; }}
+  .spinner {{ width:15px; height:15px; border:2px solid rgba(4,34,28,.35);
     border-top-color:#04221c; border-radius:50%; animation:spin .7s linear infinite; }}
   @keyframes spin {{ to{{transform:rotate(360deg)}} }}
-  .foot {{ padding:13px 32px; border-top:1px solid var(--line); text-align:center;
-    font-family:'IBM Plex Mono',monospace; font-size:10px; color:#56657f; letter-spacing:.06em; }}
-  /* backup codes modal */
-  .modal {{ display:none; position:fixed; inset:0; z-index:5; background:rgba(3,6,12,.8);
+  .foot {{ padding:12px 28px; border-top:1px solid var(--line); text-align:center;
+    font-family:'IBM Plex Mono',monospace; font-size:9.5px; color:#56657f; letter-spacing:.05em; }}
+
+  /* ── modal backup codes ── */
+  .modal {{ display:none; position:fixed; inset:0; z-index:5; background:rgba(3,6,12,.82);
     backdrop-filter:blur(6px); place-items:center; padding:24px 16px; }}
   .modal.show {{ display:grid; }}
   .modal-card {{ width:100%; max-width:430px; background:linear-gradient(180deg,#141c30,#0b1120);
-    border:1px solid var(--line); border-radius:18px; overflow:hidden;
-    max-height:92vh; overflow-y:auto; }}
+    border:1px solid var(--line); border-radius:18px; overflow:hidden; max-height:92vh; overflow-y:auto; }}
   .modal-h {{ padding:22px 26px 0; }}
-  .modal-h h2 {{ font-family:'Kanit',sans-serif; font-size:19px; margin:0 0 4px; }}
-  .modal-b {{ padding:16px 26px 22px; }}
-  .codes {{ display:grid; grid-template-columns:1fr 1fr; gap:8px; margin:6px 0 16px; }}
-  .code {{ font-family:'IBM Plex Mono',monospace; font-size:14px; letter-spacing:.06em;
+  .modal-h h2 {{ font-family:'Kanit',sans-serif; font-size:18px; margin:0 0 4px; }}
+  .modal-b {{ padding:14px 26px 22px; }}
+  .codes {{ display:grid; grid-template-columns:1fr 1fr; gap:8px; margin:6px 0 14px; }}
+  .code {{ font-family:'IBM Plex Mono',monospace; font-size:13.5px; letter-spacing:.05em;
     background:rgba(7,11,20,.8); border:1px solid var(--line); border-radius:9px;
-    padding:9px 11px; color:#cfe; text-align:center; }}
+    padding:9px 10px; color:#cfe; text-align:center; }}
   .warn {{ font-size:12px; color:var(--amber); background:rgba(245,185,122,.08);
-    border:1px solid rgba(245,185,122,.25); border-radius:10px; padding:10px 12px; margin-bottom:14px; }}
+    border:1px solid rgba(245,185,122,.25); border-radius:10px; padding:10px 12px; margin-bottom:12px; }}
   .row {{ display:flex; gap:8px; margin-bottom:12px; }}
-  .row .btn {{ font-size:13.5px; padding:11px; }}
+  .row .btn {{ font-size:13px; padding:10px; }}
   .btn-mini {{ background:rgba(255,255,255,.05); border-color:var(--line); color:var(--ink); }}
   .btn-mini.done {{ background:rgba(52,232,196,.14); border-color:rgba(52,232,196,.4); color:var(--mint); }}
   .ack {{ display:flex; gap:9px; align-items:flex-start; font-size:12.5px; color:#c4d0e4;
-    padding:10px; border-radius:9px; cursor:pointer; }}
+    padding:8px 0; cursor:pointer; }}
   .ack input {{ width:auto; margin:2px 0 0; }}
 </style></head><body>
 <div class="card">
   <div class="top">
-    <div class="key-emblem">
-      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg>
-    </div>
-    <h1>ตั้งค่า Passkey</h1>
-    <p class="sub">ครั้งหน้าเข้า {safe_name} ได้เร็วขึ้น<br>ด้วยลายนิ้วมือ/ใบหน้า — ไม่ต้องผ่าน Google</p>
+    <div class="emblem">🛡️</div>
+    <h1>เพิ่มการยืนยันตัวตน</h1>
+    <p class="sub">ป้องกันบัญชีของคุณเมื่อเข้าใช้ {safe_name}<br>ตั้งครั้งเดียว ใช้ได้ตลอด</p>
     <div class="who">{safe_email}</div>
   </div>
   <div class="body">
-    <ul class="benefits">
-      <li><i class="">✓</i><span>ปลอดภัยกว่ารหัสผ่าน — กัน phishing ได้</span></li>
-      <li><i class="">✓</i><span>login เร็ว — แตะครั้งเดียว</span></li>
-      <li><i class="">✓</i><span>ผูกกับอุปกรณ์นี้ ใช้ที่อื่นไม่ได้</span></li>
-    </ul>
-
     <div class="err" id="err"></div>
-    <div class="unsupported" id="unsupported">⚠️ เบราว์เซอร์นี้ไม่รองรับ Passkey — กด "ข้ามไปก่อน" เพื่อเข้าระบบ</div>
 
-    <label class="fld" for="dev">ชื่ออุปกรณ์</label>
-    <input type="text" id="dev" value="อุปกรณ์ของฉัน" maxlength="100">
+    <!-- ── ขั้น "จัดการ" (เมื่อมี factor อยู่แล้ว — ไม่บังคับเพิ่มซ้ำ) ── -->
+    <div class="step" id="stepManage">
+      <div class="status">
+        <div class="st-row"><span>🔑 Passkey</span><b>{pk_state}</b></div>
+        <div class="st-row"><span>📱 Authenticator</span><b>{totp_state}</b></div>
+      </div>
+      {always_row}
+      <button class="opt opt-sm" id="addMore">
+        <span class="ic">＋</span>
+        <span><span class="t">เพิ่มอีกวิธี</span>
+        <span class="d">มีหลายวิธีสำรองไว้ ปลอดภัยกว่า</span></span>
+        <span class="arrow">›</span>
+      </button>
+      <div class="skips">
+        <a href="/oauth/continue?hub_state={hub_state}">เสร็จแล้ว</a>
+      </div>
+    </div>
 
-    <button class="btn btn-pk" id="setup">ตั้งค่า Passkey</button>
-    <a class="btn btn-skip" id="skip" href="/oauth/continue?hub_state={hub_state}">ข้ามไปก่อน</a>
+    <!-- ── ขั้นที่ 1: เลือกวิธี ── -->
+    <div class="step" id="stepChoose">
+      <button class="opt" id="pickPasskey">
+        <span class="ic">🔑</span>
+        <span>
+          <span class="t">Passkey <span class="tag">แนะนำ</span></span>
+          <span class="d">ลายนิ้วมือ / ใบหน้า / PIN ของเครื่องนี้ — ปลอดภัยที่สุด</span>
+        </span>
+        <span class="arrow">›</span>
+      </button>
+      <button class="opt" id="pickTotp">
+        <span class="ic">📱</span>
+        <span>
+          <span class="t">แอป Authenticator</span>
+          <span class="d">รหัส 6 หลักจากแอป — ใช้ได้ทุกอุปกรณ์ แม้เครื่องไม่รองรับ Passkey</span>
+        </span>
+        <span class="arrow">›</span>
+      </button>
+      <div class="note" id="unsupported">
+        ⚠️ เบราว์เซอร์นี้ไม่รองรับ Passkey — แนะนำให้ใช้ <b>แอป Authenticator</b>
+      </div>
+      <label class="always" for="alwaysChk">
+        <input type="checkbox" id="alwaysChk">
+        <span>
+          <b>ขอยืนยันตัวตนทุกครั้งที่ล็อกอิน</b>
+          <span class="d">ปลอดภัยขึ้น — ปกติระบบจะขอเฉพาะตอนพบความเสี่ยง</span>
+        </span>
+      </label>
+      <div class="skips">
+        <a href="/oauth/continue?hub_state={hub_state}&amp;action=skip">ข้ามไปก่อน</a>
+        <a href="/oauth/continue?hub_state={hub_state}&amp;action=never">ไม่ต้องถามอีก</a>
+      </div>
+    </div>
+
+    <!-- ── ขั้นที่ 2a: Passkey ── -->
+    <div class="step" id="stepPasskey">
+      <button class="back" data-back>‹ เลือกวิธีอื่น</button>
+      <label class="fld" for="dev">ตั้งชื่ออุปกรณ์นี้</label>
+      <input type="text" id="dev" value="อุปกรณ์ของฉัน" maxlength="100">
+      <button class="btn btn-go" id="setup">🔑 ตั้งค่า Passkey</button>
+    </div>
+
+    <!-- ── ขั้นที่ 2b: Authenticator ── -->
+    <div class="step" id="stepTotp">
+      <button class="back" data-back>‹ เลือกวิธีอื่น</button>
+      <div class="qr" id="qr"></div>
+      <p class="hint">สแกน QR ด้วยแอป Authenticator<br>(Google Authenticator, Microsoft Authenticator ฯลฯ)</p>
+      <code class="secret" id="secretTxt"></code>
+      <label class="fld" for="totpCode">กรอกรหัส 6 หลักจากแอป</label>
+      <input type="text" id="totpCode" inputmode="numeric" autocomplete="one-time-code"
+        maxlength="6" placeholder="000000">
+      <button class="btn btn-go" id="totpVerify">ยืนยันรหัส</button>
+    </div>
   </div>
-  <div class="foot">WebAuthn · FIDO2 · ปลอดภัยตามมาตรฐาน</div>
+  <div class="foot">WebAuthn · FIDO2 · TOTP RFC 6238</div>
+</div>
+
+<!-- popup ถาม Always-2FA หลังตั้งค่าเสร็จ (เฉพาะตอนไม่ได้ติ๊กไว้ก่อน) -->
+<div class="modal" id="alwaysModal">
+  <div class="modal-card">
+    <div class="modal-h">
+      <h2>🛡️ ตั้งค่าเรียบร้อย</h2>
+      <p class="sub">ต้องการให้ระบบ<b>ขอยืนยันตัวตนทุกครั้ง</b>ที่ล็อกอินไหม?</p>
+    </div>
+    <div class="modal-b">
+      <p class="hint" style="text-align:left">
+        ปกติระบบจะขอยืนยันเฉพาะตอนพบความเสี่ยง (เช่น เข้าจากประเทศใหม่)<br>
+        เปิดตัวเลือกนี้ = ขอทุกครั้ง ปลอดภัยขึ้นแต่ช้าลงเล็กน้อย
+      </p>
+      <button class="btn btn-go" id="alwaysYes">เปิด — ขอทุกครั้ง</button>
+      <button class="btn btn-mini" id="alwaysNo" style="margin-top:9px">
+        ไม่ต้อง — ขอเฉพาะตอนเสี่ยง</button>
+    </div>
+  </div>
 </div>
 
 <div class="modal" id="bcModal">
@@ -1424,7 +1777,7 @@ def _passkey_enroll_html(
         <button class="btn btn-mini" id="dlBtn">💾 ดาวน์โหลด</button>
       </div>
       <label class="ack"><input type="checkbox" id="ackChk"><span>ฉันบันทึก backup codes ไว้แล้ว</span></label>
-      <button class="btn btn-pk" id="bcContinue" disabled style="margin-top:10px">เข้าสู่ระบบต่อ</button>
+      <button class="btn btn-go" id="bcContinue" disabled>เข้าสู่ระบบต่อ</button>
     </div>
   </div>
 </div>
@@ -1432,7 +1785,9 @@ def _passkey_enroll_html(
 <script nonce="{nonce}">
 const HUB_STATE = {json.dumps(hub_state)};
 const CONTINUE_URL = '/oauth/continue?hub_state=' + encodeURIComponent(HUB_STATE);
-
+const errEl = document.getElementById('err');
+function showErr(m){{ errEl.textContent = m; errEl.classList.add('show'); }}
+function clearErr(){{ errEl.classList.remove('show'); }}
 function b64urlToBuf(s) {{ const p=s.replace(/-/g,'+').replace(/_/g,'/');
   const pad=p.length%4===0?'':'='.repeat(4-(p.length%4)); const bin=atob(p+pad);
   const a=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++)a[i]=bin.charCodeAt(i); return a.buffer; }}
@@ -1440,66 +1795,176 @@ function bufToB64url(buf) {{ const a=new Uint8Array(buf); let b='';
   for(let i=0;i<a.length;i++)b+=String.fromCharCode(a[i]);
   return btoa(b).replace(/\\+/g,'-').replace(/\\//g,'_').replace(/=+$/,''); }}
 function pkSupported() {{ return !!(window.PublicKeyCredential && navigator.credentials && navigator.credentials.create); }}
+// ติ๊กไว้ที่ขั้นเลือกวิธี → ส่งไปพร้อมตอนตั้งค่าสำเร็จ (เปิด Always-2FA)
+function wantAlways() {{ return !!document.getElementById('alwaysChk').checked; }}
 
-const setup=document.getElementById('setup'), devEl=document.getElementById('dev');
-const errEl=document.getElementById('err');
-function showErr(m){{ errEl.textContent=m; errEl.classList.add('show'); }}
+const HAS_FACTOR = {str(has_factor).lower()};
+const ALREADY_ALWAYS = {str(mfa_always).lower()};
 
-if(!pkSupported()){{
-  document.getElementById('unsupported').classList.add('show');
-  setup.disabled=true;
+// ── สลับขั้น ──
+function show(id) {{
+  clearErr();
+  ['stepManage','stepChoose','stepPasskey','stepTotp'].forEach(s =>
+    document.getElementById(s).classList.toggle('on', s === id));
 }}
+show({json.dumps(first_step)});
+document.querySelectorAll('[data-back]').forEach(b =>
+  b.addEventListener('click', () => show('stepChoose')));
 
-async function doSetup(){{
-  errEl.classList.remove('show');
-  const dev=(devEl.value||'').trim()||'อุปกรณ์ของฉัน';
-  setup.disabled=true; setup.innerHTML='<span class="spinner"></span> กำลังตั้งค่า…';
+// ── ขั้นจัดการ: เปิด Always-2FA โดยไม่ต้องเพิ่ม factor ซ้ำ ──
+const enableAlways = document.getElementById('enableAlways');
+if (enableAlways) {{
+  enableAlways.addEventListener('click', async () => {{
+    clearErr();
+    enableAlways.disabled = true;
+    enableAlways.innerHTML = '<span class="spinner"></span> กำลังบันทึก…';
+    try {{
+      const r = await fetch('/oauth/security/always-2fa', {{method:'POST',
+        headers:{{'Content-Type':'application/json'}}, body:JSON.stringify({{hub_state:HUB_STATE}})}});
+      if(!r.ok) {{ const e = await r.json().catch(()=>({{}})); const d = e.detail;
+        throw new Error(typeof d==='string' ? d : (d&&d.message ? d.message : 'บันทึกไม่สำเร็จ')); }}
+      enableAlways.outerHTML =
+        '<div class="done-row">✓ เปิด "ขอยืนยันทุกครั้งที่ล็อกอิน" แล้ว</div>';
+    }} catch(err) {{ showErr(err.message || 'บันทึกไม่สำเร็จ');
+      enableAlways.disabled = false;
+      enableAlways.textContent = 'เปิด "ขอยืนยันทุกครั้งที่ล็อกอิน"'; }}
+  }});
+}}
+const addMore = document.getElementById('addMore');
+if (addMore) addMore.addEventListener('click', () => show('stepChoose'));
+
+// ── หลังตั้งค่าสำเร็จ: ถาม Always-2FA ถ้ายังไม่ได้ติ๊ก/ยังไม่เปิด ──
+function afterEnroll() {{
+  if (ALREADY_ALWAYS || wantAlways()) {{ window.location.href = CONTINUE_URL; return; }}
+  document.getElementById('alwaysModal').classList.add('show');
+}}
+document.getElementById('alwaysNo').addEventListener('click',
+  () => {{ window.location.href = CONTINUE_URL; }});
+document.getElementById('alwaysYes').addEventListener('click', async (e) => {{
+  const b = e.currentTarget;
+  b.disabled = true; b.innerHTML = '<span class="spinner"></span> กำลังบันทึก…';
   try {{
-    const s=await fetch('/oauth/passkey/enroll/start',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{hub_state:HUB_STATE}})}});
-    if(!s.ok){{ const e=await s.json().catch(()=>({{}})); throw new Error(typeof e.detail==='string'?e.detail:'เริ่มไม่สำเร็จ'); }}
-    const opts=await s.json();
-    opts.challenge=b64urlToBuf(opts.challenge);
-    opts.user.id=b64urlToBuf(opts.user.id);
-    (opts.excludeCredentials||[]).forEach(c=>c.id=b64urlToBuf(c.id));
+    await fetch('/oauth/security/always-2fa', {{method:'POST',
+      headers:{{'Content-Type':'application/json'}}, body:JSON.stringify({{hub_state:HUB_STATE}})}});
+  }} catch(err) {{ /* fail-safe — ตั้ง factor สำเร็จแล้ว อย่าขวางการเข้าระบบ */ }}
+  window.location.href = CONTINUE_URL;
+}});
+
+if(!pkSupported()) document.getElementById('unsupported').classList.add('show');
+
+// ── เลือก Passkey ──
+document.getElementById('pickPasskey').addEventListener('click', () => {{
+  if(!pkSupported()) {{ showErr('เบราว์เซอร์นี้ไม่รองรับ Passkey — กรุณาใช้แอป Authenticator แทน'); return; }}
+  show('stepPasskey');
+  document.getElementById('dev').focus();
+}});
+
+// ── เลือก Authenticator → ขอ secret + QR ──
+const pickTotp = document.getElementById('pickTotp');
+pickTotp.addEventListener('click', async () => {{
+  clearErr();
+  const original = pickTotp.innerHTML;
+  pickTotp.disabled = true;
+  try {{
+    const r = await fetch('/oauth/totp/enroll/start', {{method:'POST',
+      headers:{{'Content-Type':'application/json'}}, body:JSON.stringify({{hub_state:HUB_STATE}})}});
+    if(!r.ok) {{ const e = await r.json().catch(()=>({{}}));
+      throw new Error(typeof e.detail==='string' ? e.detail : 'เริ่มไม่สำเร็จ'); }}
+    const d = await r.json();
+    const qrEl = document.getElementById('qr');
+    if (d.qr_svg) {{ qrEl.innerHTML = d.qr_svg; }}
+    else {{ qrEl.style.display = 'none'; }}
+    document.getElementById('secretTxt').textContent = d.secret;
+    show('stepTotp');
+    document.getElementById('totpCode').focus();
+  }} catch(err) {{ showErr(err.message || 'เริ่มไม่สำเร็จ'); }}
+  finally {{ pickTotp.disabled = false; pickTotp.innerHTML = original; }}
+}});
+
+// ── ตั้งค่า Passkey ──
+const setup = document.getElementById('setup');
+setup.addEventListener('click', async () => {{
+  clearErr();
+  const dev = (document.getElementById('dev').value || '').trim() || 'อุปกรณ์ของฉัน';
+  setup.disabled = true; setup.innerHTML = '<span class="spinner"></span> กำลังตั้งค่า…';
+  try {{
+    const s = await fetch('/oauth/passkey/enroll/start', {{method:'POST',
+      headers:{{'Content-Type':'application/json'}}, body:JSON.stringify({{hub_state:HUB_STATE}})}});
+    if(!s.ok) {{ const e = await s.json().catch(()=>({{}}));
+      throw new Error(typeof e.detail==='string' ? e.detail : 'เริ่มไม่สำเร็จ'); }}
+    const opts = await s.json();
+    opts.challenge = b64urlToBuf(opts.challenge);
+    opts.user.id = b64urlToBuf(opts.user.id);
+    (opts.excludeCredentials||[]).forEach(c => c.id = b64urlToBuf(c.id));
     let cred;
-    try {{ cred=await navigator.credentials.create({{publicKey:opts}}); }}
-    catch(ce){{ throw new Error('การตั้งค่าถูกยกเลิก หรืออุปกรณ์ไม่รองรับ'); }}
+    try {{ cred = await navigator.credentials.create({{publicKey:opts}}); }}
+    catch(ce) {{ throw new Error('การตั้งค่าถูกยกเลิก หรืออุปกรณ์ไม่รองรับ'); }}
     if(!cred) throw new Error('ไม่ได้รับข้อมูลจากอุปกรณ์');
-    const resp=cred.response;
-    const payload={{ id:cred.id, rawId:bufToB64url(cred.rawId), type:cred.type,
+    const resp = cred.response;
+    const payload = {{ id:cred.id, rawId:bufToB64url(cred.rawId), type:cred.type,
       authenticatorAttachment:cred.authenticatorAttachment,
       response:{{ attestationObject:bufToB64url(resp.attestationObject),
         clientDataJSON:bufToB64url(resp.clientDataJSON),
         transports:resp.getTransports?resp.getTransports():[] }},
       clientExtensionResults:cred.getClientExtensionResults?cred.getClientExtensionResults():{{}} }};
-    const f=await fetch('/oauth/passkey/enroll/finish',{{method:'POST',headers:{{'Content-Type':'application/json'}},
-      body:JSON.stringify({{hub_state:HUB_STATE,device_name:dev,credential:payload}})}});
-    if(!f.ok){{ const e=await f.json().catch(()=>({{}})); const d=e.detail;
-      throw new Error(typeof d==='string'?d:(d&&d.code?d.code:'ตั้งค่าไม่สำเร็จ')); }}
-    const data=await f.json();
-    if(data.backup_codes && data.backup_codes.length){{ showBackupCodes(data.backup_codes); }}
-    else {{ window.location.href=CONTINUE_URL; }}
-  }} catch(err){{ showErr(err.message||'ตั้งค่าไม่สำเร็จ'); setup.disabled=false; setup.textContent='ตั้งค่า Passkey'; }}
-}}
-setup.addEventListener('click', doSetup);
+    const f = await fetch('/oauth/passkey/enroll/finish', {{method:'POST',
+      headers:{{'Content-Type':'application/json'}},
+      body:JSON.stringify({{hub_state:HUB_STATE, device_name:dev, credential:payload,
+        mfa_always:wantAlways()}})}});
+    if(!f.ok) {{ const e = await f.json().catch(()=>({{}})); const d = e.detail;
+      throw new Error(typeof d==='string' ? d : (d&&d.code ? d.code : 'ตั้งค่าไม่สำเร็จ')); }}
+    const data = await f.json();
+    if(data.backup_codes && data.backup_codes.length) showBackupCodes(data.backup_codes);
+    else afterEnroll();
+  }} catch(err) {{ showErr(err.message || 'ตั้งค่าไม่สำเร็จ');
+    setup.disabled = false; setup.textContent = '🔑 ตั้งค่า Passkey'; }}
+}});
 
-function showBackupCodes(codes){{
-  const wrap=document.getElementById('codes');
-  wrap.innerHTML=codes.map(c=>'<div class="code">'+c+'</div>').join('');
+// ── ยืนยันรหัส TOTP ──
+const totpVerify = document.getElementById('totpVerify');
+const totpCode = document.getElementById('totpCode');
+async function doTotpVerify() {{
+  clearErr();
+  const code = (totpCode.value || '').trim();
+  if(code.length < 6) {{ showErr('กรอกรหัส 6 หลัก'); return; }}
+  totpVerify.disabled = true; totpVerify.innerHTML = '<span class="spinner"></span> กำลังตรวจสอบ…';
+  try {{
+    const r = await fetch('/oauth/totp/enroll/verify', {{method:'POST',
+      headers:{{'Content-Type':'application/json'}},
+      body:JSON.stringify({{hub_state:HUB_STATE, code:code, mfa_always:wantAlways()}})}});
+    if(!r.ok) {{ const e = await r.json().catch(()=>({{}})); const d = e.detail;
+      throw new Error(typeof d==='string' ? d : (d&&d.message ? d.message : 'รหัสไม่ถูกต้อง')); }}
+    afterEnroll();
+  }} catch(err) {{ showErr(err.message || 'ยืนยันไม่สำเร็จ');
+    totpVerify.disabled = false; totpVerify.textContent = 'ยืนยันรหัส';
+    totpCode.value = ''; totpCode.focus(); }}
+}}
+totpVerify.addEventListener('click', doTotpVerify);
+totpCode.addEventListener('keydown', e => {{ if(e.key === 'Enter') doTotpVerify(); }});
+
+// ── backup codes modal ──
+function showBackupCodes(codes) {{
+  document.getElementById('codes').innerHTML =
+    codes.map(c => '<div class="code">' + c + '</div>').join('');
   document.getElementById('bcModal').classList.add('show');
-  const txt=codes.join('\\n');
-  let saved=false;
-  const chk=document.getElementById('ackChk'), cont=document.getElementById('bcContinue');
-  const copyBtn=document.getElementById('copyBtn'), dlBtn=document.getElementById('dlBtn');
-  function refresh(){{ cont.disabled=!(saved && chk.checked); }}
-  copyBtn.addEventListener('click', async()=>{{ try{{ await navigator.clipboard.writeText(txt); }}catch(e){{}}
-    copyBtn.classList.add('done'); copyBtn.textContent='✓ คัดลอกแล้ว'; saved=true; refresh(); }});
-  dlBtn.addEventListener('click', ()=>{{ const b=new Blob(['Central Auth Hub — Backup Codes\\n\\n'+txt+'\\n'],{{type:'text/plain'}});
-    const u=URL.createObjectURL(b); const a=document.createElement('a'); a.href=u;
-    a.download='passkey-backup-codes.txt'; a.click(); URL.revokeObjectURL(u);
-    dlBtn.classList.add('done'); dlBtn.textContent='✓ ดาวน์โหลดแล้ว'; saved=true; refresh(); }});
+  const txt = codes.join('\\n');
+  let saved = false;
+  const chk = document.getElementById('ackChk'), cont = document.getElementById('bcContinue');
+  const copyBtn = document.getElementById('copyBtn'), dlBtn = document.getElementById('dlBtn');
+  function refresh() {{ cont.disabled = !(saved && chk.checked); }}
+  copyBtn.addEventListener('click', async () => {{
+    try {{ await navigator.clipboard.writeText(txt); }} catch(e) {{}}
+    copyBtn.classList.add('done'); copyBtn.textContent = '✓ คัดลอกแล้ว'; saved = true; refresh(); }});
+  dlBtn.addEventListener('click', () => {{
+    const b = new Blob(['Central Auth Hub — Backup Codes\\n\\n' + txt + '\\n'], {{type:'text/plain'}});
+    const u = URL.createObjectURL(b); const a = document.createElement('a');
+    a.href = u; a.download = 'passkey-backup-codes.txt'; a.click(); URL.revokeObjectURL(u);
+    dlBtn.classList.add('done'); dlBtn.textContent = '✓ ดาวน์โหลดแล้ว'; saved = true; refresh(); }});
   chk.addEventListener('change', refresh);
-  cont.addEventListener('click', ()=>{{ window.location.href=CONTINUE_URL; }});
+  cont.addEventListener('click', () => {{
+    document.getElementById('bcModal').classList.remove('show');
+    afterEnroll();  // เก็บ backup codes เสร็จ → ค่อยถาม Always-2FA
+  }});
 }}
 </script>
 </body></html>"""
@@ -1976,6 +2441,12 @@ def _login_chooser_html(
         '<a class="recover-link" href="/oauth/passkey/recover">ทำ Passkey หาย? กู้บัญชี</a>'
         if allow_passkey
         else ""
+    )
+    # ทางเข้า "ตั้งค่าการยืนยันตัวตน" สำหรับ **ทุก role รวมนักศึกษา**
+    # (นักศึกษาเข้า Hub console ไม่ได้ → ถ้าเคยกด "ข้าม/ไม่ถามอีก" ต้องมีทางกลับมาตั้ง)
+    recover_block += (
+        '<a class="recover-link" href="/auth/credentials/setup">'
+        "🛡️ ตั้งค่า Passkey / Authenticator ของบัญชี</a>"
     )
     return f"""<!DOCTYPE html><html lang="th"><head><meta charset="UTF-8">
 <title>เข้าสู่ระบบ · {safe_name}</title>

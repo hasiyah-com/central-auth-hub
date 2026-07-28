@@ -18,6 +18,9 @@ PyJWT[crypto]==2.12.0
 argon2-cffi==23.1.0
 # TOTP (RFC 6238) — authenticator app เป็น fallback authentication factor
 pyotp==2.9.0
+# qrcode — render otpauth QR เป็น SVG inline ในหน้า Hub-served interstitial
+# (pure-python, ไม่ต้อง PIL; CSP บล็อก CDN จึงต้อง render ฝั่ง server)
+qrcode==8.0
 # authlib 1.6.12 → fix CVE-2026-44681 (signature bypass) + 9 อื่น ๆ
 authlib==1.6.12
 itsdangerous==2.2.0

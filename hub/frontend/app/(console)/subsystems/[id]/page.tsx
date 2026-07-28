@@ -163,6 +163,7 @@ type ActiveSession = {
   device_type: string | null;
   decision: string | null;
   login_at: string | null;
+  session_expires_at: string | null;
   duration_sec: number;
 };
 
@@ -1393,16 +1394,16 @@ export default function SubsystemDetailPage({
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-xs font-bold text-ink-500 uppercase tracking-wider">
               <span className="inline-flex items-center gap-2">
-                <span className="relative flex h-2 w-2">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-                </span>
-                ผู้ใช้กำลัง active{" "}
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-sky-500"></span>
+                Session ที่ยังใช้งานได้{" "}
                 {active && (
-                  <span className="text-emerald-600 font-extrabold tabular-nums">
+                  <span className="text-sky-600 font-extrabold tabular-nums">
                     ({active.count})
                   </span>
                 )}
+                <span className="hidden lg:inline normal-case font-normal text-ink-400 text-[10px]">
+                  · ค่าประมาณจากอายุ session (~60น) — Hub มองไม่เห็นการใช้งานจริงในระบบย่อย
+                </span>
               </span>
             </h3>
             <button
@@ -1420,7 +1421,7 @@ export default function SubsystemDetailPage({
               </div>
             ) : active.sessions.length === 0 ? (
               <div className="p-6 text-center text-ink-400 text-sm">
-                ไม่มี user กำลังใช้งานตอนนี้
+                ไม่มี session ที่ยังใช้งานได้ตอนนี้
               </div>
             ) : (
               <div className="overflow-x-auto">
@@ -1481,8 +1482,21 @@ export default function SubsystemDetailPage({
                               })
                             : "—"}
                         </td>
-                        <td className="px-4 py-3 text-xs font-semibold text-emerald-700 tabular-nums">
-                          {formatDuration(s.duration_sec)}
+                        <td className="px-4 py-3 text-xs tabular-nums">
+                          <div className="font-semibold text-sky-700">
+                            {formatDuration(s.duration_sec)}
+                          </div>
+                          {s.session_expires_at && (
+                            <div className="text-[10px] text-ink-400" title="session น่าจะหมดอายุประมาณนี้ (ตาม cookie subsystem)">
+                              valid ถึง ~
+                              {parseUTC(s.session_expires_at).toLocaleTimeString("th-TH", {
+                                timeZone: "Asia/Bangkok",
+                                hour: "2-digit",
+                                minute: "2-digit",
+                                hour12: false,
+                              })}
+                            </div>
+                          )}
                         </td>
                         <td className="px-4 py-3 text-right">
                           <button
@@ -1563,7 +1577,7 @@ export default function SubsystemDetailPage({
                 ))}
               </select>
               <div className="text-[10px] text-ink-400 mt-1">
-                ระบบยอมรับ: {(sub.allowed_roles || ["user"]).join(", ")}
+                {/* ระบบยอมรับ: {(sub.allowed_roles || ["user"]).join(", ")} */}
               </div>
             </div>
             <button
@@ -1582,8 +1596,8 @@ export default function SubsystemDetailPage({
                 📄 อัปโหลด CSV
               </div>
               <div className="text-[11px] text-ink-500 mt-0.5">
-                CSV header: <code className="font-mono">email,role,note</code> —
-                ระบบ skip คนที่ไม่อยู่ใน Hub หรือ role ไม่ตรง allowed_roles
+                {/* CSV header: <code className="font-mono">email,role,note</code> —
+                ระบบ skip คนที่ไม่อยู่ใน Hub หรือ role ไม่ตรง allowed_roles */}
               </div>
             </div>
             <input

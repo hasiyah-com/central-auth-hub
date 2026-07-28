@@ -81,6 +81,18 @@ ml-service/data/simulated_4layer_results.csv
 ml-service/data/shap/
 hub/frontend/tsconfig.tsbuildinfo
 
+# ============ ML eval — generated data + backups (regenerate ได้ด้วย seed 42) ============
+*.bak_*
+ml-service/data/learning_curve_pool.csv
+ml-service/data/learning_curve_result.csv
+ml-service/data/*_grounded.csv
+ml-service/models/iforest_grounded.pkl
+# generated attack/eval datasets — .md report committed alongside (regenerate ผ่าน scripts)
+hub/backend/tests/reports/attack_set.csv
+hub/backend/tests/reports/eval_set.csv
+hub/backend/tests/reports/train_grounded.csv
+hub/backend/tests/reports/test_grounded.csv
+
 # Playwright
 /test-results/
 /playwright-report/

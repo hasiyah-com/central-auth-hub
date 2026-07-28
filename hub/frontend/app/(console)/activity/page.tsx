@@ -31,6 +31,8 @@ type Activity = {
   is_attack_ip: boolean;
   logout_at: string | null;
   online_seconds?: number;
+  session_kind?: "hub" | "subsystem";
+  session_expires_at?: string | null;
 };
 
 type HourBucket = { hour: string | null; count: number; blocked: number };
@@ -236,6 +238,9 @@ export default function ActivityPage() {
   }, []);
 
   const k = data?.kpis;
+  // stale = โหลดรอบล่าสุดพลาด แต่ยังมี data เก่าค้างอยู่ → เตือนว่าไม่ใช่ realtime
+  // (กันเข้าใจผิดว่า pulse เขียว = คนออนไลน์จริงตอนนี้ ทั้งที่ fetch ค้างไปแล้ว)
+  const stale = !!error && !!data;
 
   return (
     <>
@@ -287,8 +292,13 @@ export default function ActivityPage() {
           <div className="flex-1" />
 
           {lastUpdated && (
-            <span className="font-mono text-[11px] text-ink-400">
-              อัปเดต {lastUpdated.toLocaleTimeString("th-TH", { hour12: false })}
+            <span
+              className={`font-mono text-[11px] ${
+                stale ? "text-amber-400 font-bold" : "text-ink-400"
+              }`}
+            >
+              {stale ? "⚠ ค้าง · " : "อัปเดต "}
+              {lastUpdated.toLocaleTimeString("th-TH", { hour12: false })}
             </span>
           )}
           <button
@@ -309,7 +319,7 @@ export default function ActivityPage() {
 
         {/* ── KPI strip ── */}
         <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-6">
-          <Kpi label="ออนไลน์ตอนนี้" value={data?.active_count ?? "—"} accent="#10b981" sub="ทุกระบบรวมกัน" pulse={(data?.active_count ?? 0) > 0} />
+          <Kpi label="Session ใช้งานอยู่" value={data?.active_count ?? "—"} accent="#10b981" sub="Hub + ระบบย่อย" pulse={(data?.active_count ?? 0) > 0} />
           <Kpi label="เข้าใช้งาน" value={k?.total ?? "—"} accent="#0ea5e9" sub={`${hours} ชม.ล่าสุด`} />
           <Kpi label="ถูกบล็อก" value={k?.blocked ?? "—"} accent="#e11d48" sub="block / would-block" danger={(k?.blocked ?? 0) > 0} />
           <Kpi label="ต้อง MFA" value={k?.challenged ?? "—"} accent="#f97316" sub="challenge / mfa" />
@@ -322,25 +332,32 @@ export default function ActivityPage() {
         </div>
 
         {/* ── ผู้ใช้ที่กำลังออนไลน์ (ทุกระบบย่อยรวมกัน) ── */}
-        <div className="mb-6 bg-white rounded-xl border border-emerald-200 shadow-sm overflow-hidden">
+        <div
+          className={`mb-6 bg-white rounded-xl border shadow-sm overflow-hidden transition ${
+            stale ? "border-amber-300 opacity-60 grayscale" : "border-emerald-200"
+          }`}
+          title={stale ? "ข้อมูลอาจไม่เป็นปัจจุบัน — โหลดรอบล่าสุดไม่สำเร็จ" : undefined}
+        >
           <div className="flex items-center gap-2 px-5 py-3 bg-gradient-to-r from-emerald-50 to-white border-b border-emerald-100">
             <span className="relative flex h-2.5 w-2.5">
               <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
               <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500" />
             </span>
             <h2 className="text-sm font-extrabold text-emerald-900">
-              กำลังออนไลน์
+              Session ที่ใช้งานอยู่
             </h2>
             <span className="px-2 py-0.5 rounded-full bg-emerald-600 text-white text-xs font-bold tabular-nums">
               {data?.active_count ?? 0}
             </span>
-            {/* <span className="text-[11px] text-emerald-700/70 ml-1">        ทุกระบบย่อยรวมกัน · ออกจากระบบแล้วจะย้ายไปประวัติด้านล่าง</span> */}
+            <span className="hidden md:inline text-[11px] text-emerald-700/70 ml-1">
+              🟢 Hub = ออนไลน์จริง · 🔵 ระบบย่อย = session ที่ยัง valid (ค่าประมาณ)
+            </span>
           </div>
           {!data ? (
             <div className="px-5 py-8 text-center text-ink-400 text-sm">กำลังโหลด…</div>
           ) : data.active.length === 0 ? (
             <div className="px-5 py-8 text-center text-ink-400 text-sm">
-              ไม่มีผู้ใช้ออนไลน์ตอนนี้
+              ไม่มี session ที่ใช้งานอยู่ตอนนี้
             </div>
           ) : (
             <div className="divide-y divide-emerald-50">
@@ -361,7 +378,12 @@ export default function ActivityPage() {
                         {it.full_name || ""}{it.user_type ? ` · ${it.user_type}` : ""}
                       </div>
                     </div>
-                    <div className="hidden md:block w-40 text-sm text-ink-700 truncate">
+                    <div className="hidden md:block w-44 text-sm text-ink-700 truncate">
+                      <span
+                        className={`inline-block w-1.5 h-1.5 rounded-full mr-1.5 align-middle ${
+                          it.session_kind === "hub" ? "bg-emerald-500" : "bg-sky-500"
+                        }`}
+                      />
                       {it.subsystem_name ? `🧩 ${it.subsystem_name}` : "🏛️ Hub-direct"}
                     </div>
                     <span className={`hidden lg:inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[11px] font-semibold ${ch.cls}`}>
@@ -378,11 +400,32 @@ export default function ActivityPage() {
                       <span className="font-mono text-[10px] text-ink-400 ml-1">{it.ip || ""}</span>
                     </div>
                     <div className="ml-auto sm:ml-0 text-right flex-none w-24">
-                      <div className="inline-flex items-center gap-1 text-emerald-700 font-bold text-xs">
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                        {fmtDuration(it.created_at)}
-                      </div>
-                      <div className="text-[10px] text-ink-400">ออนไลน์</div>
+                      {it.session_kind === "hub" ? (
+                        <>
+                          <div className="inline-flex items-center gap-1 text-emerald-700 font-bold text-xs">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                            {fmtDuration(it.created_at)}
+                          </div>
+                          <div className="text-[10px] text-ink-400">ออนไลน์จริง</div>
+                        </>
+                      ) : (
+                        <>
+                          <div
+                            className="inline-flex items-center gap-1 text-sky-700 font-bold text-xs"
+                            title={
+                              it.session_expires_at
+                                ? `session valid ถึง ${fmtClock(it.session_expires_at)}`
+                                : undefined
+                            }
+                          >
+                            <span className="w-1.5 h-1.5 rounded-full bg-sky-500" />
+                            {fmtDuration(it.created_at)}
+                          </div>
+                          <div className="text-[10px] text-ink-400">
+                            session{it.session_expires_at ? ` · ถึง ${fmtClock(it.session_expires_at).slice(-8, -3)}` : ""}
+                          </div>
+                        </>
+                      )}
                     </div>
                   </div>
                 );

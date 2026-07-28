@@ -22,6 +22,7 @@ import {
 import { BackupCodesModal } from "@/components/account/BackupCodesModal";
 import { PasskeyCard } from "@/components/account/PasskeyCard";
 import { TotpCard } from "@/components/account/TotpCard";
+import { SecurityCard } from "@/components/account/SecurityCard";
 
 type Me = {
   email: string;
@@ -107,6 +108,21 @@ export function AccountView() {
     if (ok) isPlatformAuthenticatorAvailable().then(setPlatformAvailable);
     refresh();
   }, [refresh]);
+
+  // มาจากการ์ด SecurityOnboarding (?setup=passkey|totp|both) → scroll ไปการ์ดที่เลือก
+  // (both → passkey ก่อน). ใช้ window.location เลี่ยง useSearchParams (ไม่ต้อง Suspense)
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const setup = new URLSearchParams(window.location.search).get("setup");
+    if (!setup) return;
+    const targetId = setup === "totp" ? "setup-totp" : "setup-passkey";
+    const t = setTimeout(() => {
+      document
+        .getElementById(targetId)
+        ?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 300);
+    return () => clearTimeout(t);
+  }, []);
 
   const atMax = passkeys.length >= maxPasskeys;
 
@@ -243,7 +259,10 @@ export function AccountView() {
         )}
 
         {/* Passkey list */}
-        <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-4">
+        <div
+          id="setup-passkey"
+          className="bg-white rounded-xl border border-gray-200 p-6 space-y-4"
+        >
           <div className="flex items-center justify-between">
             <div>
               <h3 className="text-lg font-bold text-gray-900">Passkey ของคุณ</h3>
@@ -340,7 +359,12 @@ export function AccountView() {
         </div>
 
         {/* Authenticator (TOTP) */}
-        <TotpCard />
+        <div id="setup-totp">
+          <TotpCard />
+        </div>
+
+        {/* Always-2FA + preferred factor */}
+        <SecurityCard />
 
         {/* Backup codes status + regenerate */}
         {backupStatus && backupStatus.generation > 0 && (

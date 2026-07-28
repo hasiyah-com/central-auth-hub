@@ -10,6 +10,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from datetime import datetime
@@ -204,22 +205,56 @@ class UserUpdate(BaseModel):
 # ============ Endpoints ============
 
 
+def _escape_like(term: str) -> str:
+    """Escape wildcard ของ LIKE ที่ user พิมพ์มา (`\\`, `%`, `_`).
+
+    ถ้าไม่ escape: พิมพ์ `%` จะกลายเป็น wildcard คืนทุกแถว (ผลลัพธ์หลอก)
+    และ `_` จะ match อักษรใดก็ได้ 1 ตัว. escape `\\` ก่อนเสมอ ไม่งั้นจะ
+    ไป escape ตัว escape ที่เพิ่งใส่เอง.
+    """
+    return term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
 @router.get("/", response_model=list[UserResponse])
 def list_users(
     skip: int = 0,
     limit: int = 100,
+    q: Optional[str] = Query(
+        None,
+        description=(
+            "ค้นหาแบบอิสระ — พิมพ์อะไรก็ได้ (ชื่อ/นามสกุล/อีเมล/รหัส/คณะ/สาขา/"
+            "ตำแหน่ง/เบอร์โทร) ค้นบางส่วนได้ ไม่สนตัวพิมพ์เล็กใหญ่"
+        ),
+    ),
     user_type: Optional[str] = Query(None, description="filter by user_type"),
-    faculty: Optional[str] = Query(None, description="filter by faculty"),
+    faculty: Optional[str] = Query(None, description="filter by faculty (ตรงตัวเป๊ะ)"),
     admin: User = Depends(require_hub_admin),
     db: Session = Depends(get_db),
 ):
-    """List all users with optional filters. (admin only)"""
-    q = db.query(User)
+    """List all users with optional filters. (admin only)
+
+    `q` = free-text search ข้ามหลายฟิลด์พร้อมกัน (OR) — ใช้ ILIKE จึงเป็น
+    partial + case-insensitive. ใช้ร่วมกับ `user_type`/`faculty` ได้ (AND).
+    """
+    query = db.query(User)
+    if q and q.strip():
+        like = f"%{_escape_like(q.strip())}%"
+        query = query.filter(
+            or_(
+                User.full_name.ilike(like),
+                User.email.ilike(like),
+                User.identifier.ilike(like),
+                User.faculty.ilike(like),
+                User.major.ilike(like),
+                User.year_or_position.ilike(like),
+                User.phone.ilike(like),
+            )
+        )
     if user_type:
-        q = q.filter(User.user_type == user_type)
+        query = query.filter(User.user_type == user_type)
     if faculty:
-        q = q.filter(User.faculty == faculty)
-    users = q.offset(skip).limit(limit).all()
+        query = query.filter(User.faculty == faculty)
+    users = query.offset(skip).limit(limit).all()
     return [
         UserResponse(
             id=str(u.id),

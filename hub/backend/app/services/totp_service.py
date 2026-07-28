@@ -43,6 +43,23 @@ def provisioning_uri(secret: str, email: str) -> str:
     return pyotp.TOTP(secret).provisioning_uri(name=email, issuer_name=_ISSUER)
 
 
+def qr_svg(uri: str) -> str:
+    """render otpauth URI เป็น SVG inline (สำหรับหน้า Hub-served ที่ CSP บล็อก CDN).
+
+    fail-safe (B21): ถ้า render ไม่ได้ คืน "" แล้วหน้าเว็บ fallback ไปกรอก secret มือ
+    — ไม่ทำให้ flow ล่ม.
+    """
+    try:
+        import qrcode
+        import qrcode.image.svg
+
+        img = qrcode.make(uri, image_factory=qrcode.image.svg.SvgPathImage, box_size=10)
+        return img.to_string(encoding="unicode")
+    except Exception as e:  # pragma: no cover — fail-safe
+        log.warning("totp qr render failed: %s", e)
+        return ""
+
+
 def verify(secret: str, code: str, valid_window: int = 1) -> bool:
     """ตรวจ code 6 หลัก — valid_window=1 (ยอม ±1 step กัน clock skew, ไม่กว้างเกิน)."""
     if not secret or not code:

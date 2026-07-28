@@ -40,7 +40,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 | Auth Protocol | OAuth 2.0 + PKCE + JWT (RS256) + JWKS discovery |
 | Containers | Docker Compose (3 stacks: cah-hub / cah-dorm / cah-library) |
 | Frontend | Next.js 14 (App Router) + TypeScript + Tailwind CSS |
-| ML Algorithm | 4-Layer RBA: Rule Engine + Behavior Profiling + Isolation Forest + Aggregation (Freeman 2016, Wiefling 2022, F-RBA 2024) |
+| ML Algorithm | 4-Layer RBA: Rule Engine + Behavior Profiling + Isolation Forest + Aggregation (Freeman 2016, Wiefling 2023) |
 | ML Interpretability | SHAP TreeExplainer (Lundberg & Lee 2017) — per-feature contribution |
 
 ## Architecture
@@ -388,20 +388,25 @@ bash scripts/routine/eod.sh            # เย็น: pre-commit + diff + commi
 
 | # | Feature | Category | Citation |
 |---|---------|----------|----------|
-| 1 | hour_of_day | Temporal | Wiefling 2022 |
+| 1 | hour_of_day | Temporal | Wiefling 2023 |
 | 2 | day_of_week | Temporal | Wiefling 2020 |
-| 3 | is_weekend | Temporal | Wiefling 2022 |
-| 4 | hours_from_typical_login_time | Temporal (personalized) | Wiefling 2022 |
-| 5 | is_thailand | Geographic | Wiefling 2022 |
-| 6 | is_new_country | Geographic | Freeman 2016 / Wiefling 2022 |
-| 7 | country_change_count_30d | Geographic | Wiefling 2022 |
+| 3 | is_weekend | Temporal | Wiefling 2023 |
+| 4 | hours_from_typical_login_time | Temporal (personalized) | Wiefling 2023 |
+| 5 | is_thailand | Geographic | Wiefling 2023 |
+| 6 | is_new_country | Geographic | Freeman 2016 / Wiefling 2023 |
+| 7 | country_change_count_30d | Geographic | Wiefling 2023 |
 | 8 | is_new_device | Device | Laperdrix 2020 |
-| 9 | is_new_user_agent_family | Device | Laperdrix 2020 / Iqbal 2021 |
-| 10 | log_minutes_since_last_login | Velocity | Microsoft Entra |
-| 11 | login_count_24h | Velocity | Microsoft Entra |
-| 12 | failed_logins_24h | Brute Force | NIST SP 800-63B-4 |
+| 9 | is_new_user_agent_family | Device | Laperdrix 2020 / Andriamilanto 2021 |
+| 10 | log_minutes_since_last_login | Velocity | Freeman 2016 (+ Microsoft Entra docs) |
+| 11 | login_count_24h | Velocity | Freeman 2016 (+ Microsoft Entra docs) |
+| 12 | failed_logins_24h | Brute Force | NIST SP 800-63B-4 / MITRE T1110.004 |
 
-**Cold start policy** — features that require history (hours_from_typical_login_time) need `MIN_HISTORY_FOR_PERSONALIZATION = 5` sessions, else return neutral (0.0).
+**Cold start policy** — features that require history (hours_from_typical_login_time) need `MIN_HISTORY_FOR_PERSONALIZATION = 5` sessions, else return neutral (0.0). (แนวทางเดียวกับ F-RBA 2024 ที่เสนอวิธีรับมือ cold start)
+
+> 📚 **รายละเอียดอ้างอิงเต็ม** (ผู้แต่ง/ปี/DOI/ใช้อ้างส่วนไหน) ดู [`docs/references.md`](docs/references.md)
+> ⚠️ **อย่าใช้ Iqbal 2021** อ้าง `is_new_user_agent_family` — เปเปอร์นั้น (FP-Inspector, IEEE S&P 2021)
+> เป็นงาน *ตรวจจับ/บล็อก* fingerprinting เพื่อ privacy ไม่ใช่งานที่สนับสนุนการใช้ fingerprint ยืนยันตัวตน
+> → ใช้ Laperdrix 2020 / Andriamilanto 2021 แทน; Iqbal ใช้อ้างได้เฉพาะประเด็นข้อจำกัด/จริยธรรม
 
 ## RBAC (Role-Based Access Control)
 
@@ -799,13 +804,24 @@ docker compose exec hub-backend pytest . -v -s
 
 ## External Standards & Specs
 
+> 📚 **รายการอ้างอิงฉบับเต็ม** (29 รายการ · ผู้แต่ง/ปี/DOI/BibTeX/ใช้อ้างส่วนไหนของโค้ด)
+> ดู [`docs/references.md`](docs/references.md)
+
 - RFC 6749 — OAuth 2.0
 - RFC 7636 — PKCE
 - RFC 7519 — JWT
-- NIST SP 800-63B-4 — Digital Identity Guidelines (2024 draft)
+- RFC 6238 — TOTP (Time-Based One-Time Password)
+- W3C WebAuthn Level 2 — Passkey / FIDO2
+- NIST SP 800-63B — Digital Identity Guidelines
 - OWASP Top 10 — Web App Security
-- Wiefling et al. (2022) ACM TOPS — Risk-Based Authentication
+- MITRE ATT&CK — T1078 (Valid Accounts), T1110.003/004 (Password Spraying / Credential Stuffing), T1539 (Steal Web Session Cookie)
+- **Wiefling et al. (2023) ACM TOPS 26(1) — Risk-Based Authentication** ⭐ อ้างอิงหลัก (attacker model 5 ระดับ)
+- Büttner et al. (2024) UbiSec — Account Recovery + RBA (ตรงกับ recovery ladder ของระบบ)
+- Freeman et al. (2016) NDSS — Statistical account-takeover detection
 - Liu, Ting, Zhou (2008) ICDM — Isolation Forest
+- Lundberg & Lee (2017) NIPS — SHAP
+- Laperdrix et al. (2020) ACM TWEB — Browser Fingerprinting: A Survey
+- Fereidouni et al. (2024) — F-RBA (arXiv preprint; ใช้อ้าง cold-start)
 
 ## Contact / Owner
 

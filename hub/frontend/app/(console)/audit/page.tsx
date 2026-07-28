@@ -244,7 +244,7 @@ function AuditPageInner() {
         <div className="mb-5 flex flex-wrap items-center gap-3">
           <input
             type="text"
-            placeholder="filter action (เช่น subsystem_approved)…"
+            placeholder="filter action (เช่น login, revoke, approved)"
             value={action}
             onChange={(e) => setAction(e.target.value)}
             className="px-3 py-2 rounded-lg border border-ink-200 bg-white text-sm focus:outline-none focus:border-brand-500 w-72 font-mono"

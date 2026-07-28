@@ -7,11 +7,15 @@ Flow (Week 2 — Hub <-> Google เท่านั้น ยังไม่ร�
   4. GET /.well-known/jwks.json -> public key สำหรับ verify
 """
 
+import json
+import secrets
+
 import httpx
 from authlib.integrations.starlette_client import OAuth, OAuthError
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from pydantic import BaseModel, Field
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -44,6 +48,8 @@ from app.services.identity_challenge import is_user_challenged
 from app.security.risk_engine import evaluate_login_risk
 from app.services import webauthn_service
 from app.services import risk_challenge
+from app.services import mfa_policy
+from app.redis_client import redis_client
 
 router = APIRouter()
 
@@ -105,6 +111,26 @@ async def google_login(request: Request, db: Session = Depends(get_db)):
     # + การเทส (register passkey หลายอีเมลบนเครื่องเดียว)
     return await oauth.google.authorize_redirect(
         request, redirect_uri, prompt="select_account"
+    )
+
+
+@router.get("/credentials/setup")
+@limiter.limit(settings.rate_limit_login)
+async def credentials_setup_start(request: Request, db: Session = Depends(get_db)):
+    """ปุ่ม "เพิ่มการยืนยันตัวตน" — login Google แล้วไปหน้าตั้ง credential โดยตรง.
+
+    ใช้ได้ **ทุก role รวมนักศึกษา** เพราะ callback ที่ intent นี้จะไม่ออก Hub JWT
+    และไม่ผ่าน student block (ตั้ง passkey/TOTP อย่างเดียว ไม่เข้า console).
+    reuse redirect URI เดิม → ไม่ต้องเพิ่มอะไรใน Google Console.
+    """
+    if not get_auth_policy(db)["google"]:
+        raise HTTPException(
+            status_code=403,
+            detail="Google login ถูกปิดใช้งานโดยผู้ดูแลระบบ",
+        )
+    request.session["cred_setup"] = True
+    return await oauth.google.authorize_redirect(
+        request, settings.google_redirect_uri, prompt="select_account"
     )
 
 
@@ -173,6 +199,10 @@ async def google_callback(request: Request, db: Session = Depends(get_db)):
 
     client_ip = get_client_ip(request)
 
+    # intent=setup — มาจากปุ่ม "เพิ่มการยืนยันตัวตน" (ตั้ง credential อย่างเดียว)
+    # ไม่ออก Hub JWT + ไม่ติด student block → นักศึกษาใช้ได้โดยไม่ต้องแก้ RBAC
+    setup_intent = bool(request.session.pop("cred_setup", False))
+
     # หา user ใน DB (จาก 100 คนที่ seed)
     user = db.query(User).filter(User.email == email).first()
     if not user:
@@ -220,7 +250,8 @@ async def google_callback(request: Request, db: Session = Depends(get_db)):
         raise HTTPException(status_code=403, detail=f"บัญชีถูก {user.status}")
 
     # *** นโยบาย: นักศึกษาเข้าระบบกลางโดยตรงไม่ได้ ***
-    if user.user_type == "student":
+    # (ยกเว้น setup_intent — ตั้ง credential อย่างเดียว ไม่ได้ JWT/console)
+    if user.user_type == "student" and not setup_intent:
         log_action(
             db,
             actor_id=user.id,
@@ -306,6 +337,46 @@ async def google_callback(request: Request, db: Session = Depends(get_db)):
         )
     if not user.google_sub:
         user.google_sub = google_sub
+
+    # ── intent=setup → หน้าตั้ง credential อย่างเดียว (ไม่ออก JWT ไม่แตะ RBA) ──
+    # identity ผ่านการตรวจครบแล้ว (email/status/identity-challenge/google_sub guard)
+    # reuse หน้า + endpoints ของ OAuth interstitial ผ่าน enroll context เดียวกัน
+    if setup_intent:
+        db.commit()
+        setup_state = "cs_" + secrets.token_urlsafe(24)
+        redis_client.setex(
+            f"enroll:{setup_state}",
+            600,
+            json.dumps({"user_id": str(user.id), "email": user.email}),
+        )
+        log_action(
+            db,
+            actor_id=user.id,
+            action="credential_setup_opened",
+            target_type="user",
+            target_id=user.id,
+            ip=client_ip,
+            metadata={"user_type": user.user_type},
+        )
+        db.commit()
+        from app.routers.oauth import _passkey_enroll_html  # lazy — เลี่ยง circular
+        from app.services import totp_service
+
+        nonce = secrets.token_urlsafe(16)
+        request.state.csp_nonce = nonce
+        # ส่งสถานะปัจจุบันไปด้วย — ถ้ามี factor แล้วจะขึ้นขั้น "จัดการ"
+        # (เปิด Always-2FA ได้เลย ไม่ต้องถูกบังคับเพิ่ม passkey ซ้ำ)
+        return HTMLResponse(
+            content=_passkey_enroll_html(
+                hub_state=setup_state,
+                subsystem_name="บัญชีของคุณ",
+                user_email=user.email,
+                nonce=nonce,
+                has_passkey=webauthn_service.count_active(user.id, db) > 0,
+                has_totp=totp_service.is_enabled(user.id, db),
+                mfa_always=user.effective_mfa_always,
+            )
+        )
 
     # Sync display name from Google (source of truth) on every login.
     # Keeps the Hub user's full_name up to date with whatever the user shows
@@ -396,8 +467,13 @@ async def google_callback(request: Request, db: Session = Depends(get_db)):
     # Shadow mode = log only (would_* ไม่ enforce). MFA/block เด้งเฉพาะ enforce mode.
     enforcing = not settings.ml_shadow_mode
     is_hard_block = enforcing and risk_score >= settings.risk_block_hard_threshold
-    is_mfa_required = (
-        enforcing and not is_hard_block and actual_decision in ("block", "challenge")
+    # รวม risk-based MFA + Always-2FA (user pref / admin) เป็น gate เดียว (mfa_policy)
+    # — always-on ทำงานแม้ shadow mode; ยืนยันครั้งเดียว ไม่ซ้อนกับ risk
+    is_mfa_required = mfa_policy.is_second_factor_required(
+        user,
+        actual_decision=actual_decision,
+        enforcing=enforcing,
+        is_hard_block=is_hard_block,
     )
 
     if is_hard_block:
@@ -436,7 +512,9 @@ async def google_callback(request: Request, db: Session = Depends(get_db)):
         )
 
     if is_mfa_required:
-        has_passkey = webauthn_service.count_active(user.id, db) > 0
+        # มี factor ที่สอง (passkey หรือ TOTP) → risk-stepup (รับได้ทั้งคู่);
+        # ไม่มีเลย → grace / force-enroll passkey (ต้องตั้งอย่างน้อย 1)
+        has_passkey = mfa_policy.has_second_factor(user, db)
         if has_passkey:
             challenge_id = risk_challenge.mint(
                 user_id=str(user.id),
@@ -896,8 +974,13 @@ async def line_callback(request: Request, db: Session = Depends(get_db)):
     # Shadow mode = log only (would_* ไม่ enforce). MFA/block เด้งเฉพาะ enforce mode.
     enforcing = not settings.ml_shadow_mode
     is_hard_block = enforcing and risk_score >= settings.risk_block_hard_threshold
-    is_mfa_required = (
-        enforcing and not is_hard_block and actual_decision in ("block", "challenge")
+    # รวม risk-based MFA + Always-2FA (user pref / admin) เป็น gate เดียว (mfa_policy)
+    # — always-on ทำงานแม้ shadow mode; ยืนยันครั้งเดียว ไม่ซ้อนกับ risk
+    is_mfa_required = mfa_policy.is_second_factor_required(
+        user,
+        actual_decision=actual_decision,
+        enforcing=enforcing,
+        is_hard_block=is_hard_block,
     )
 
     if is_hard_block:
@@ -936,7 +1019,9 @@ async def line_callback(request: Request, db: Session = Depends(get_db)):
         )
 
     if is_mfa_required:
-        has_passkey = webauthn_service.count_active(user.id, db) > 0
+        # มี factor ที่สอง (passkey หรือ TOTP) → risk-stepup (รับได้ทั้งคู่);
+        # ไม่มีเลย → grace / force-enroll passkey (ต้องตั้งอย่างน้อย 1)
+        has_passkey = mfa_policy.has_second_factor(user, db)
         if has_passkey:
             challenge_id = risk_challenge.mint(
                 user_id=str(user.id),
@@ -1391,8 +1476,12 @@ async def refresh_access_token(
         db.query(LoginSession).filter(LoginSession.id == result["session_id"]).first()
     )
     if sess:
+        from datetime import datetime as _dt
+
         sess.jti = token_jti
         sess.refresh_id = result["refresh_id"]
+        # refresh = สัญญาณ presence จริง (user ยัง active) → bump online heartbeat
+        sess.last_seen_at = _dt.utcnow()
         db.commit()
 
     return {
@@ -1472,6 +1561,48 @@ def logout(
         )
         db.commit()
     return {"status": "ok", "token_revoked": revoked}
+
+
+@router.post("/heartbeat")
+def heartbeat(
+    credentials: HTTPAuthorizationCredentials = Depends(bearer_scheme),
+    db: Session = Depends(get_db),
+):
+    """Presence ping — bump last_seen_at ของ session ปัจจุบัน (online detection).
+
+    frontend console เรียกเป็นระยะ (~60 วิ) ระหว่างเปิดหน้าอยู่ → Hub รู้ว่า user
+    ยัง active จริง (ไม่ใช่แค่ล็อกอินค้างไว้). throttle: เขียนเฉพาะเมื่อ last_seen
+    เก่ากว่า 20 วิ (กัน write ถี่เกิน). idempotent — token เสีย/หมดอายุ = 200 ok:false
+    """
+    from datetime import datetime as _dt, timedelta as _td
+    from app.services.jwt_service import verify_token
+
+    try:
+        payload = verify_token(credentials.credentials)
+    except Exception:
+        return {"ok": False}
+
+    jti = payload.get("jti")
+    if not jti:
+        return {"ok": False}
+
+    now = _dt.utcnow()
+    # bump เฉพาะ session ที่ยังเปิด + last_seen เก่ากว่า 20 วิ (throttle write)
+    updated = (
+        db.query(LoginSession)
+        .filter(
+            LoginSession.jti == jti,
+            LoginSession.logout_at.is_(None),
+            or_(
+                LoginSession.last_seen_at.is_(None),
+                LoginSession.last_seen_at < now - _td(seconds=20),
+            ),
+        )
+        .update({LoginSession.last_seen_at: now}, synchronize_session=False)
+    )
+    if updated:
+        db.commit()
+    return {"ok": True}
 
 
 @router.get("/me")

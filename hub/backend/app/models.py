@@ -75,8 +75,26 @@ class User(Base):
     )
     email_verified_at = Column(DateTime, nullable=True)
 
+    # Always-2FA (user choice) — บังคับยืนยัน factor ที่สองทุก login
+    # ยุบเข้ากับ risk-based MFA gate เดิม (ไม่เพิ่มด่าน) — ดู auth.py is_mfa_required
+    # admin ถูกบังคับเสมอผ่าน property effective_mfa_always (ปิดเองไม่ได้)
+    mfa_always = Column(Boolean, default=False, nullable=False, server_default="false")
+    # factor ที่อยากใช้ก่อนที่ด่าน step-up ("passkey" / "totp") — จัดลำดับ UI เท่านั้น
+    mfa_preferred_factor = Column(String(16), nullable=True)
+    # กด "ไม่ต้องถามอีก" ในการ์ดชวนตั้งความปลอดภัยหลัง login (per-account)
+    security_onboarding_dismissed = Column(
+        Boolean, default=False, nullable=False, server_default="false"
+    )
+    # กด "ข้ามไปก่อน" → พักการเตือนถึงเวลานี้ (≈7 วัน) แล้วเตือนใหม่ — ไม่บล็อก
+    security_onboarding_snoozed_until = Column(DateTime, nullable=True)
+
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    @property
+    def effective_mfa_always(self) -> bool:
+        """Always-2FA มีผลจริงไหม — user เปิดเอง หรือเป็น admin (บังคับ)."""
+        return bool(self.mfa_always or self.is_hub_admin)
 
 
 class Subsystem(Base):
@@ -191,6 +209,11 @@ class LoginSession(Base):
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
     # NULL = session ยังเปิด / มีค่า = ปิดเมื่อ subsystem แจ้ง logout (back-channel)
     logout_at = Column(DateTime, nullable=True, index=True)
+    # presence heartbeat — bump ทุกครั้งที่ Hub เห็น activity จริงของ session นี้
+    # (refresh token + /auth/heartbeat จาก console). ใช้ตัดสิน "online" แทน created_at
+    # ที่เป็นแค่ proxy 15 นาที. NULL = session เก่าก่อน migration → query ใช้
+    # COALESCE(last_seen_at, created_at) เป็น fallback
+    last_seen_at = Column(DateTime, nullable=True, index=True)
     # JWT identifier (jti claim) ของ token ที่ออกให้ session นี้
     # ใช้สำหรับ force-revoke ผ่าน jwt_service.revoke_jti()
     # อัปเดตทุกครั้งที่ refresh (access token ใหม่ = jti ใหม่)

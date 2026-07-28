@@ -39,6 +39,7 @@ from app.routers import (  # noqa: E402
     account_link,
     totp,
     recovery,
+    account_security,
 )
 from app.services.jwt_service import get_jwks  # noqa: E402
 from app.services.request_id import RequestIdMiddleware  # noqa: E402
@@ -218,6 +219,7 @@ app.include_router(
 )
 app.include_router(totp.router, tags=["Account · TOTP"])
 app.include_router(recovery.router, tags=["Recovery Ticket"])
+app.include_router(account_security.router, tags=["Account · Security"])
 
 
 # ============ JWKS endpoint (OIDC discovery standard path) ============
