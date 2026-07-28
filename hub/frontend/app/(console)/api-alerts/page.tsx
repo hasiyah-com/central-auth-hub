@@ -114,7 +114,7 @@ export default function ApiAlertsPage() {
               Rule-Based API Anomaly Detection
             </h2>
             <p className="text-xs text-ink-400 mt-1">
-              ตรวจจับพฤติกรรม API ผิดปกติจาก request_logs (OWASP API4:2023 + NIST SP 800-228)
+              {/* ตรวจจับพฤติกรรม API ผิดปกติจาก request_logs (OWASP API4:2023 + NIST SP 800-228) */}
             </p>
           </div>
           <div className="flex items-center gap-3">

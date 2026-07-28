@@ -42,12 +42,22 @@ docker compose --env-file .env.prod -f docker-compose.prod.yml exec hub-backend 
 - `5e31bcaf0cf4` add refresh_id to login_sessions (refresh token feature)
 - `a1b2c3d4e5f6` **TOTP + Recovery Ticket + credential lifecycle** — user_totp_credentials,
   recovery_tickets, recovery_ticket_approvals + passkey_credentials.status (backfill REVOKED)
+- `b2c3d4e5f6a7` **Always-2FA (user choice)** — users.mfa_always / mfa_preferred_factor /
+  security_onboarding_dismissed (default false — ไม่มี backfill)
+- `c3d4e5f6a7b8` **Onboarding snooze** — users.security_onboarding_snoozed_until
+  (กด "ข้ามไปก่อน" → พักเตือน 7 วัน)
 
 > ⚠️ TOTP feature ต้อง **rebuild backend** (dep ใหม่ `pyotp`) + **rebuild frontend** (dep ใหม่
 > `qrcode.react`) — ใช้ `up -d --build` ไม่ใช่แค่ restart. **ไม่ต้องเพิ่ม Google Console URI**
 > (reuse change-google callback เดิม). ไม่ต้องแก้ env.
 
-_(ยังไม่มี migration ใหม่เพิ่มจาก session ล่าสุด — graduated/resigned status + deny-list ใช้ column/type เดิม)_
+> Always-2FA (`b2c3d4e5f6a7`) — **ไม่แก้ env ไม่แตะ Google Console** แค่ migration +
+> rebuild frontend (มากับ qrcode.react rebuild เดิม). admin ถูกบังคับ 2FA อัตโนมัติหลัง migrate.
+
+> ⚠️ Credential setup interstitial (`c3d4e5f6a7b8`) — **dep ใหม่ backend `qrcode==8.0`**
+> (render QR เป็น SVG ในหน้า Hub-served เพราะ CSP บล็อก CDN) → ต้อง `up -d --build hub-backend`
+> ไม่ใช่แค่ restart. **ไม่ต้องเพิ่ม Google Console URI** (ปุ่ม "เพิ่มการยืนยันตัวตน" reuse
+> `/auth/google/callback` เดิม ผ่าน session flag `cred_setup`).
 
 ---
 

@@ -1101,35 +1101,30 @@ def list_active_sessions(
     admin: User = Depends(require_hub_admin),
     db: Session = Depends(get_db),
 ):
-    """แสดง user ที่กำลัง active ใน subsystem นี้ (login แล้วยังไม่ logout + ไม่หมดอายุ JWT).
+    """แสดง user ที่มี session ยัง active ใน subsystem นี้.
 
-    เกณฑ์ active:
-      - logout_at IS NULL
-      - created_at อยู่ใน JWT expire window (จริงๆ user อาจปิด browser แต่ token ยังใช้ได้)
+    ใช้เกณฑ์เดียวกับหน้า /activity (`_active_session_condition`) — สำหรับ subsystem
+    คือ "session validity": valid ตั้งแต่ login ไปจน + อายุ cookie ของ subsystem
+    (~60 นาที) หรือจนกว่าจะ logout/revoke. ไม่ใช่ "กำลังคลิกอยู่" (Hub มองไม่เห็น
+    การคลิกใน subsystem) — โชว์ session_expires_at ให้ admin เห็นว่า valid ถึงเมื่อไหร่
     """
     subsystem = db.query(Subsystem).filter(Subsystem.id == subsystem_id).first()
     if not subsystem:
         raise HTTPException(status_code=404, detail="ไม่พบ subsystem")
 
-    cutoff = datetime.utcnow() - timedelta(
-        minutes=settings.jwt_access_token_expire_minutes
-    )
-
+    now = datetime.utcnow()
     rows = (
         db.query(LoginSession, User.email, User.full_name, User.user_type)
         .outerjoin(User, User.id == LoginSession.user_id)
         .filter(
             LoginSession.subsystem_id == subsystem.id,
-            LoginSession.logout_at.is_(None),
-            LoginSession.created_at >= cutoff,
-            # ตัด session ที่ถูก block ออก — ไม่ถือว่า active
-            LoginSession.decision.notin_(["block", "would_block"]),
+            _active_session_condition(now),
         )
         .order_by(LoginSession.created_at.desc())
         .all()
     )
 
-    now = datetime.utcnow()
+    ttl = timedelta(minutes=_SUBSYSTEM_SESSION_TTL_MIN)
     return {
         "subsystem": {"id": str(subsystem.id), "name": subsystem.name},
         "count": len(rows),
@@ -1148,6 +1143,10 @@ def list_active_sessions(
                 "device_type": sess.device_type,
                 "decision": sess.decision,
                 "login_at": sess.created_at.isoformat() if sess.created_at else None,
+                # session valid ถึงเมื่อไหร่ (login + TTL) — ค่าประมาณตาม cookie subsystem
+                "session_expires_at": (sess.created_at + ttl).isoformat()
+                if sess.created_at
+                else None,
                 "duration_sec": int((now - sess.created_at).total_seconds())
                 if sess.created_at
                 else 0,
@@ -2648,6 +2647,50 @@ def update_auth_policy(
 _BLOCKED_DECISIONS = ("block", "would_block")
 _CHALLENGED_DECISIONS = ("challenge", "mfa", "would_mfa", "would_challenge")
 
+# ── นิยาม "session ที่ยัง active" (แสดงในหน้า /activity + subsystem detail) ──
+# เปลี่ยนจาก "เดาว่ากำลังคลิกอยู่" → "session ที่ Hub รู้ว่ายัง valid" (authoritative)
+# เพราะ Hub เป็น IdP — รู้เรื่อง session/token แม่น แต่มองไม่เห็นการคลิกใน subsystem
+# (ไม่ใช่ SSO). แยกเกณฑ์ตามชนิด session ที่ Hub เห็นต่างกัน:
+#
+#   hub-direct (subsystem_id NULL) — Hub เห็นทุก request ของตัวเอง → ใช้ presence
+#     heartbeat (last_seen_at ภายใน HUB window). ปิดแท็บ → หลุดเร็ว (แม่นเรื่อง "อยู่จริง")
+#
+#   subsystem — Hub เห็นแค่ตอน login (ไม่เห็นการคลิกข้างใน) → ใช้ "session validity":
+#     valid ตั้งแต่ created_at ไปจน + อายุ cookie ของ subsystem (SUBSYSTEM_SESSION_TTL)
+#     = ตรงกับตอน cookie subsystem หมดจริง ไม่ใช่หน้าต่างมั่วๆ. logout/revoke ที่ Hub
+#     รู้ (back-channel) → logout_at ถูก set → ตัดออกทันที
+#
+# ทั้งคู่ต้อง: ไม่ logout + jti NOT NULL (กัน ghost ที่ challenge/mfa ไม่ผ่าน) + ไม่ block
+_HUB_ONLINE_WINDOW_MIN = 5  # hub-direct: heartbeat ต่อเนื่องขณะเปิด console
+# subsystem session TTL — ตรงกับ session_max_age_seconds ของ subsystem (default 3600=60นาที)
+# ดู hub/subsystem-*/app/config.py:session_max_age_seconds. subsystem ที่ตั้งต่างจากนี้
+# จะคลาดได้บ้าง (Hub ไม่เก็บค่า per-subsystem) — 60 นาทีตรงกับทุก subsystem ปัจจุบัน
+_SUBSYSTEM_SESSION_TTL_MIN = 60
+
+
+def _active_session_condition(now: datetime):
+    """SQLAlchemy condition: session ที่ยัง active — ใช้ร่วมทั้ง /activity + subsystem detail.
+
+    single source of truth (กัน 2 หน้าใช้เกณฑ์ต่างกันจนขัดกัน).
+    """
+    hub_cutoff = now - timedelta(minutes=_HUB_ONLINE_WINDOW_MIN)
+    sub_cutoff = now - timedelta(minutes=_SUBSYSTEM_SESSION_TTL_MIN)
+    last_activity = func.coalesce(LoginSession.last_seen_at, LoginSession.created_at)
+    return and_(
+        LoginSession.logout_at.is_(None),
+        LoginSession.jti.isnot(None),
+        LoginSession.decision.notin_(_BLOCKED_DECISIONS),
+        or_(
+            # hub-direct → presence heartbeat (อยู่จริงตอนนี้)
+            and_(LoginSession.subsystem_id.is_(None), last_activity >= hub_cutoff),
+            # subsystem → session validity (valid จนกว่า cookie จะหมด/โดน revoke)
+            and_(
+                LoginSession.subsystem_id.isnot(None),
+                LoginSession.created_at >= sub_cutoff,
+            ),
+        ),
+    )
+
 
 def _activity_item(ls, email, full_name, user_type, sub_name, now=None) -> dict:
     """แปลง (LoginSession + joined fields) → dict สำหรับ feed.
@@ -2677,9 +2720,16 @@ def _activity_item(ls, email, full_name, user_type, sub_name, now=None) -> dict:
         "device_type": ls.device_type,
         "is_attack_ip": bool(ls.is_attack_ip),
         "logout_at": ls.logout_at.isoformat() if ls.logout_at else None,
+        # hub = presence จริง (heartbeat) · subsystem = session validity (estimate)
+        "session_kind": "hub" if ls.subsystem_id is None else "subsystem",
     }
     if now is not None and ls.created_at is not None:
         d["online_seconds"] = int((now - ls.created_at).total_seconds())
+        # subsystem: valid ถึงเมื่อไหร่ (ค่าประมาณตาม cookie TTL) — hub ใช้ heartbeat ไม่ต้อง
+        if ls.subsystem_id is not None:
+            d["session_expires_at"] = (
+                ls.created_at + timedelta(minutes=_SUBSYSTEM_SESSION_TTL_MIN)
+            ).isoformat()
     return d
 
 
@@ -2808,16 +2858,10 @@ def access_activity(
     elif subsystem_id:
         base = base.filter(LoginSession.subsystem_id == subsystem_id)
 
-    # ── แยก "กำลังออนไลน์" ออกจาก "ประวัติ" ──
-    #   active = logout_at NULL + อยู่ใน JWT window + ไม่ถูก block
-    #   history = ที่เหลือ (logout แล้ว / JWT หมดอายุ / ถูก block)
-    #   → พอ user logout (logout_at set) row จะหลุดจาก active ไปอยู่ history
-    jwt_cutoff = now - timedelta(minutes=settings.jwt_access_token_expire_minutes)
-    active_cond = and_(
-        LoginSession.logout_at.is_(None),
-        LoginSession.created_at >= jwt_cutoff,
-        LoginSession.decision.notin_(_BLOCKED_DECISIONS),
-    )
+    # ── แยก "session active" ออกจาก "ประวัติ" (เกณฑ์เดียวกับ subsystem detail) ──
+    #   active = _active_session_condition (hub=heartbeat / subsystem=session validity)
+    #   history = ที่เหลือ (logout / เกิน window / ghost / block)
+    active_cond = _active_session_condition(now)
 
     # Active (online now) — ทุก subsystem รวมกัน, ไม่ paginate (cap 200)
     active_rows = (

@@ -89,6 +89,31 @@ submitRecoveryRequest, credentials, admin ticket approve/reject) · `components/
 
 ---
 
+## Phase 4b — Inline step-up TOTP fallback (ปิด gap Part A4) ✅
+
+**อาการที่พบ:** step-up ใน UI ขึ้นแค่ passkey — `runWithStepup()` (lib/passkey.ts) hard-code
+`stepUpWithPasskey()` อย่างเดียว, `onVerifying` เป็นแค่ boolean spinner ไม่มีช่องกรอก TOTP
+→ user ที่ไม่มี passkey เด้งไป recovery ทั้งที่มี TOTP ใช้แทนได้
+
+**แก้ (frontend, reuse helper เดิม `stepupWithTotp`):**
+- `lib/passkey.ts` — `runWithStepup(run, onVerifying, opts?)` : passkey fail (no_passkey /
+  user cancel `NotAllowedError`) + `opts.totpFallback !== false` + มี provider → เรียก
+  `_totpStepupPrompt()` (modal) → retry. `registerTotpStepupPrompt()` registry.
+  `mutateWithStepup` thread `opts` ต่อ. **`changeGoogleStart` ตั้ง `totpFallback:false`**
+  (passkey-only — backend บังคับ, กัน retry loop เพราะ gate change_google ปฏิเสธ totp)
+- `components/StepupTotpProvider.tsx` (ใหม่) — modal กรอก 6 หลัก, เช็ค `totpStatus()` ก่อน
+  (ถ้าไม่มี TOTP → ข้อความแนะนำ ไม่ dead-end), verify + error เอง, resolve true/false
+- `app/layout.tsx` — mount `<StepupTotpProvider>` ครอบทุกหน้า (console+developer+account)
+
+**Verify:** `tsc --noEmit` — ไม่มี error ในไฟล์ที่แก้ (เหลือแต่ amcharts5/qrcode.react ที่รอ `npm i`)
+
+**Manual E2E (บน stack ที่รันจริง):** login เป็น user ที่**มี TOTP แต่ไม่มี passkey** → ทำ
+critical action (เช่น suspend/disable TOTP, admin approve ticket) → passkey ceremony ล้ม/ไม่มี →
+modal TOTP เด้ง → กรอกรหัส → action ผ่าน · เทียบ change-google: ต้อง**ไม่**เด้ง TOTP (คงข้อความ
+"ต้องมี Passkey")
+
+---
+
 ## สรุป: เสร็จครบทั้ง 4 เฟส (backend 3 + frontend)
 Backend 20 tests + 86 regression · Frontend tsc 0 + browser verify · ทุก improvement 10 ข้อจากรีวิว
 พับเข้าครบ (lifecycle, four-eyes, credential_type GOOGLE, audit source, evidence, recovery level ฯลฯ)

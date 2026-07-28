@@ -40,17 +40,25 @@ export default function UsersPage() {
   const router = useRouter();
   const [users, setUsers] = useState<User[]>([]);
   const [type, setType] = useState<string>("");
-  const [faculty, setFaculty] = useState<string>("");
+  const [search, setSearch] = useState<string>("");
+  // ค่าที่ยิงจริงหลัง debounce — กันยิง request ทุกตัวอักษรที่พิมพ์
+  const [debouncedSearch, setDebouncedSearch] = useState<string>("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [formModal, setFormModal] = useState<{ mode: "create" | "edit"; user?: UserRow } | null>(null);
+
+  // debounce 300ms — พิมพ์ต่อเนื่องยิงครั้งเดียวตอนหยุดพิมพ์
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search), 300);
+    return () => clearTimeout(t);
+  }, [search]);
 
   function load() {
     setLoading(true);
     setError(null);
     const qs = new URLSearchParams();
     if (type) qs.set("user_type", type);
-    if (faculty) qs.set("faculty", faculty);
+    if (debouncedSearch.trim()) qs.set("q", debouncedSearch.trim());
     qs.set("limit", "200");
     clientFetch<User[]>(`/admin/users/?${qs.toString()}`)
       .then(setUsers)
@@ -59,7 +67,7 @@ export default function UsersPage() {
   }
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(load, [type, faculty]);
+  useEffect(load, [type, debouncedSearch]);
 
   const columns: Column<User>[] = [
     {
@@ -131,13 +139,27 @@ export default function UsersPage() {
             <option value="staff">เจ้าหน้าที่</option>
             <option value="admin">Admin</option>
           </select>
-          <input
-            type="text"
-            placeholder="กรองตามคณะ…"
-            value={faculty}
-            onChange={(e) => setFaculty(e.target.value)}
-            className="px-3 py-2 rounded-lg border border-ink-200 bg-white text-sm focus:outline-none focus:border-brand-500 w-56"
-          />
+          <div className="relative">
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-400 text-sm pointer-events-none">
+              🔍
+            </span>
+            <input
+              type="text"
+              placeholder="ค้นหา ชื่อ, อีเมล, รหัส, คณะ, สาขา…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="pl-9 pr-8 py-2 rounded-lg border border-ink-200 bg-white text-sm focus:outline-none focus:border-brand-500 w-72"
+            />
+            {search && (
+              <button
+                onClick={() => setSearch("")}
+                title="ล้างคำค้นหา"
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-ink-400 hover:text-ink-700 text-sm"
+              >
+                ✕
+              </button>
+            )}
+          </div>
           <button
             onClick={() => setFormModal({ mode: "create" })}
             className="ml-auto px-4 py-2 rounded-lg bg-brand-600 text-white text-sm font-medium hover:bg-brand-700"
@@ -145,7 +167,11 @@ export default function UsersPage() {
             + เพิ่มผู้ใช้
           </button>
           <div className="text-xs text-ink-500">
-            {loading ? "กำลังโหลด…" : `${users.length} รายการ`}
+            {loading
+              ? "กำลังโหลด…"
+              : debouncedSearch.trim()
+                ? `พบ ${users.length} รายการ จากคำค้น "${debouncedSearch.trim()}"`
+                : `${users.length} รายการ`}
           </div>
         </div>
 
@@ -158,7 +184,11 @@ export default function UsersPage() {
         <DataTable
           columns={columns}
           rows={users}
-          emptyMessage="ไม่พบผู้ใช้"
+          emptyMessage={
+            debouncedSearch.trim()
+              ? `ไม่พบผู้ใช้ที่ตรงกับ "${debouncedSearch.trim()}"`
+              : "ไม่พบผู้ใช้"
+          }
           onRowClick={(u) => router.push(`/users/${u.id}`)}
         />
       </main>

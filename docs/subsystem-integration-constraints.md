@@ -3,8 +3,9 @@
 คู่มือสำหรับทีมที่ต้องการพัฒนา **ระบบย่อย (subsystem)** เพื่อเชื่อมกับ Central Auth Hub
 ครอบคลุม: สิ่งที่ Hub มอบให้, สิ่งที่ dev ต้องสร้างเอง, ข้อจำกัด, และ checklist
 
-> อัปเดต: 2026-07-12 · อ้างอิงระบบจริง 3 ตัว (หอพัก/ห้องสมุด/เกรด) + PHP/Node/Python SDK
-> ครอบคลุมเพิ่ม: Roster Sync API (X-Api-Key), Health check จาก Hub, webhook `access_restored`
+> อัปเดต: 2026-07-20 · อ้างอิงระบบจริง 3 ตัว (หอพัก/ห้องสมุด/เกรด) + PHP/Node/Python SDK
+> ครอบคลุมเพิ่ม: Roster Sync API (X-Api-Key), Health check จาก Hub, webhook `access_restored`,
+> **Token Revocation + `/oauth/introspect` (RFC 7662), access token อายุ 15 นาที**
 
 ---
 
@@ -89,8 +90,9 @@
 
 | ได้รับ | จาก | รายละเอียด |
 |---|---|---|
-| **authorization code** | `GET /oauth/authorize` → callback | อายุ 60 วินาที ใช้ครั้งเดียว |
-| **access_token (JWT)** | `POST /oauth/token` | RS256, อายุ 60 นาที, มี claims ตาม scope |
+| **authorization code** | `GET /oauth/authorize` → callback | อายุ 60 วินาที ใช้ครั้งเดียว (atomic `getdel`) |
+| **access_token (JWT)** | `POST /oauth/token` | RS256, **อายุ 15 นาที** (`expires_in: 900`), มี claims ตาม scope + `jti` |
+| **expires_in** | token response | วินาทีที่เหลือ — **อย่า hardcode 3600** ให้อ่านจาก field นี้เสมอ |
 | **scope + role_in_subsystem** | token response | บอก field ที่ได้ + role ของ user |
 | **passkey_grace_remaining_days** | token response (optional) | banner เตือนตั้ง passkey (ถ้ามี) |
 
@@ -102,7 +104,50 @@
 | `GET /.well-known/jwks.json` | public key (RS256) สำหรับ verify JWT — cache 10 นาที |
 | `GET /oauth/authorize` | เริ่ม flow (client_id, redirect_uri, state, code_challenge) |
 | `POST /oauth/token` | แลก code → JWT (server-to-server) |
-| `POST /oauth/logout` | back-channel logout (optional) |
+| `POST /oauth/introspect` | **RFC 7662** — เช็คว่า token ยัง active ไหม (ดู §1.3.1) |
+| `POST /oauth/logout` | back-channel logout — subsystem แจ้ง Hub ว่า user ออกแล้ว |
+
+**`POST /oauth/logout`** — form fields: `client_id`, `client_secret`, `hub_user_id`
+Hub จะ mark `logout_at` บน session ล่าสุดของคู่ (user, subsystem) นี้ + revoke jti.
+Idempotent — ไม่มี active session ก็คืน 200 (ไม่ใช่ error) ควรเรียกทุกครั้งที่ user กด logout
+ในระบบย่อย เพื่อให้หน้า admin ของ Hub แสดงสถานะ session ตรงความจริง
+
+#### 1.3.1 Token Revocation — ทำไม verify JWT อย่างเดียวอาจไม่พอ
+
+Hub มี **jti blacklist** (Redis) — เมื่อ admin สั่ง force-logout / revoke สิทธิ์ / user logout เอง
+Hub จะ revoke `jti` ของ token นั้นทันที **แต่ JWT ที่อยู่ในมือ subsystem ยังมี signature ถูกต้อง
+และยังไม่หมดอายุ** → ถ้า subsystem verify ด้วย JWKS อย่างเดียวจะ **ไม่รู้ว่าถูก revoke แล้ว**
+
+มี 3 ทางเลือกในการรับมือ (เลือกตามความเข้มงวดที่ต้องการ):
+
+| วิธี | ความเข้มงวด | ต้นทุน | เหมาะกับ |
+|---|---|---|---|
+| **1. Webhook receiver** (แนะนำ) | สูง — รู้ทันทีที่ Hub push | ต้อง host endpoint | ระบบทั่วไป — เตะ session ทันทีตอนได้ event |
+| **2. Introspection** ทุก request สำคัญ | สูงสุด — เช็ค real-time | +1 HTTP call ต่อครั้ง | หน้าที่มีผลกระทบสูง (อนุมัติ/จ่ายเงิน) |
+| **3. ปล่อยหมดอายุเอง** | ต่ำ | 0 | ความเสี่ยงต่ำ — แต่ token อยู่ได้ถึง 15 นาทีหลัง revoke |
+
+```
+POST /oauth/introspect          (Content-Type: application/x-www-form-urlencoded)
+  token=<access_token>&client_id=<ของคุณ>&client_secret=<ของคุณ>
+
+→ {"active": true, "client_id": "...", "username": "...", "scope": "...", "sub": "..."}
+→ {"active": false}     ← หมดอายุ / ถูก revoke / เป็น token ของ client อื่น
+```
+
+> **ข้อจำกัดด้านความปลอดภัย:** client introspect ได้เฉพาะ token ที่ `aud` ตรงกับ `client_id`
+> ของตัวเอง — ถ้าเอา token ของระบบอื่นมา introspect จะได้ `{"active": false}` เสมอ (กัน
+> subsystem สอดแนม token ข้ามระบบ)
+
+#### 1.3.2 Refresh Token — subsystem **ไม่ได้รับ**
+
+`POST /oauth/token` คืนเฉพาะ `access_token` (15 นาที) — **ไม่มี `refresh_token`**
+Refresh token (30 วัน, rotating) ออกให้เฉพาะ **การเข้าระบบกลางโดยตรง** (Hub admin console) เท่านั้น
+
+**แล้ว subsystem ต้องทำยังไงเมื่อ token หมดอายุ?** → subsystem ไม่ได้ผูกอายุ session ตัวเองกับ
+JWT ของ Hub: หลัง `handleCallback()` สำเร็จ ให้สร้าง **session ของตัวเอง** (cookie) ที่มีอายุ
+ตามนโยบายของระบบคุณเอง (เช่น 1 ชม.) — JWT ใช้เพียงครั้งเดียวตอนพิสูจน์ตัวตน ไม่ต้องเก็บไว้
+เรียกซ้ำ ถ้า session ตัวเองหมดอายุก็ส่ง user ไป login ที่ Hub ใหม่ (ซึ่งมักจะผ่านทันทีเพราะ
+Hub ยังจำ user ได้)
 
 ### 1.4 Webhook ที่ Hub จะ "ส่งมาหา" subsystem (back-channel)
 
@@ -144,18 +189,53 @@ GET /api/v1/roster    (X-Api-Key: ...)
 > (เกรดเป็น business data ของนักศึกษา). deny-list ที่ admin ตั้ง (ถอนสิทธิ์รายคน) จะทำให้ user
 > คนนั้น **หลุดจาก roster อัตโนมัติ** — sync รอบถัดไปจะไม่เห็นเขา.
 
-### 1.6 Health Check — Hub ping /health ของ subsystem (monitoring)
+### 1.6 Health Check — Hub ping สุขภาพ subsystem (monitoring)
 
 Hub มี background task เช็คสุขภาพ subsystem ทุกตัวที่ `status=active`:
 
 | รายการ | ค่า |
 |---|---|
-| Hub ยิงไปที่ | `GET {origin ของ redirect_uris[0]}/health` (เอา scheme+host จาก redirect_uri ตัวแรก) |
 | ความถี่ | ทุก **5 นาที** (background scheduler) |
-| Timeout | **3 วินาที** |
+| Timeout | **3 วินาที** ต่อ 1 request |
 | เก็บผล | Redis `subsystem:health:{id}` (cache 30 นาที) → โชว์ในหน้า admin |
-| จัดสถานะ | `online` (200 + latency < 1s) · `degraded` (200 + ≥ 1s, หรือ 5xx ครั้งเดียว) · `down` (timeout / connection refused / 5xx 3 ครั้งซ้อน) |
 | สรุปรายวัน | snapshot 3 รอบ (เช้า 08:00 / บ่าย 13:00 / เย็น 18:00 ICT) → audit log → หน้า `/notifications` |
+| Alert | สถานะเปลี่ยน `online` ↔ `down`/`degraded` → ยิง alert ในหน้า Notifications ทันที (online→online เงียบ) |
+
+#### 1.6.1 ลำดับการ ping — ไม่ใช่แค่ยิง `/health` เฉยๆ
+
+Hub **เดา path ก่อน** จาก path ของ `redirect_uris[0]` แล้วค่อย fallback ไปมาตรฐาน เรียงตามลำดับนี้
+(หยุดทันทีที่เจอ 200 — ถ้าไม่เจอเลยลองต่อจนครบ):
+
+```
+1. {origin}{prefix}/health       ← prefix = parent path ของ redirect_uri (เช่น /oauth/callback → /oauth)
+2. {origin}{prefix}/health.php   ← เผื่อ subsystem เป็น PHP ใน subfolder เดียวกับ callback
+3. {origin}/health               ← มาตรฐานจริง (แนะนำให้ใช้ path นี้เสมอ)
+4. {origin}/health.php           ← เผื่อ PHP ที่ root
+5. {origin}/                     ← สุดท้ายสุด — ได้ 200 ก็จริง แต่ = degraded เสมอ (ดู 1.6.3)
+```
+
+> ⚠️ **latency ที่บันทึกไว้ คือเวลารวมของทุก candidate ที่ลองมาแล้ว** ไม่ใช่เวลาของ request เดียว
+> ถ้า redirect_uri มี path ซับซ้อน (เช่น `/oauth/callback`) ระบบจะเสียเวลาลอง candidate 1-2 ก่อน
+> (มักได้ 404 เร็ว ๆ) แล้วค่อยเจอของจริงที่ candidate 3 — latency ที่โชว์จึงบวมกว่าความเป็นจริง
+> ของ endpoint `/health` เอง ทั้งที่ subsystem ทำงานปกติ **ไม่ใช่ตัวชี้วัดว่า subsystem ช้าเสมอไป**
+
+#### 1.6.2 4 ระดับสถานะ (เกณฑ์จริงจากโค้ด `subsystem_health.py`)
+
+| สถานะ | สี | เงื่อนไข |
+|---|---|---|
+| 🟢 `online` | เขียว | เจอ candidate ที่ตอบ **HTTP 200** และ **latency รวม < 1000ms** |
+| 🟡 `degraded` | เหลือง | ดู 3 กรณีใน §1.6.3 |
+| 🔴 `down` | แดง | ลองครบทุก candidate แล้วไม่เจอ 200 เลย — รวมถึง connection ล้มเหลวทุกจุด (timeout / DNS resolve ไม่ได้ / connection refused / 5xx ทุกจุด) |
+| ⚪ `unknown` | เทา | subsystem ไม่มี `redirect_uris` ตั้งไว้เลย — เช็คไม่ได้ตั้งแต่ต้น (ไม่เคยยิง request ออกไป) |
+
+#### 1.6.3 3 สาเหตุที่เป็น `degraded` (แยกกันจริงในโค้ด ไม่ใช่กรณีเดียว)
+
+1. **ตอบ 200 จริงแต่ช้า** — เจอ `/health` (หรือ candidate ที่ถูกต้อง) ทำงานปกติ แต่ latency รวม **≥ 1000ms**
+2. **ตอบ 200 ได้แค่ที่ root `/`** — ไม่มี `/health` endpoint เลยในระบบย่อยนั้น ต้อง fallback ไปหน้าแรกแทน
+   → **ถูก mark เป็น degraded เสมอ ไม่ว่าจะเร็วแค่ไหน** (บันทึก error แจ้งว่า "ไม่มี /health endpoint —
+   แนะนำให้สร้าง") เพราะ root `/` ไม่ได้ยืนยันว่า business logic ของระบบย่อยทำงานได้จริง
+3. **ตอบ 4xx ที่ไม่ใช่ 404** (เช่น 401/403) — แปลว่า endpoint **มีอยู่จริงแต่ถูกบล็อก** (เช่นต้อง auth
+   ก่อนเข้า) → ถือว่าระบบยังไม่ตาย แค่ config health endpoint ผิด ไม่ควรต้อง auth
 
 **subsystem ต้องมีอะไร:** แค่ **endpoint `GET /health` (public, ไม่ต้อง auth) ที่ตอบ `200 OK` เร็ว**
 (ควร < 1s ไม่งั้นถูกจัดเป็น `degraded`). ตัวอย่างที่พอแล้ว:
@@ -166,13 +246,20 @@ def health():
     return {"status": "ok"}          # ตอบเร็ว ไม่ต้องแตะ DB ก็ได้ (หรือ + db.stats() ถ้าอยาก)
 ```
 
-> ⚠️ **ผลถ้าไม่มี `/health`:** Hub จะเช็คไม่ผ่าน → mark `down`. ในโหมดที่เปิด **health-gate**
-> Hub จะกัน OAuth flow (ตอบ **503 maintenance**) ไม่ให้ user login เข้า subsystem ที่ down
-> → ในทางปฏิบัติ `/health` **เกือบบังคับ**. (เคยเจอบั๊ก: ระบบเกรดตอน dev โดน 503 เพราะ Hub
-> ใน container เข้า `localhost:8003` ไม่ได้ — dev แก้ด้วย docker service-name mapping)
+> ⚠️ **ผลถ้าไม่มี `/health`:** Hub จะไล่ลองจนตกไปที่ root fallback → mark `degraded` เสมอ (ไม่ใช่ `down`
+> ทันที — แต่ก็ไม่ใช่ `online` เต็มรูปแบบ) ในโหมดที่เปิด **health-gate** Hub จะกัน OAuth flow (ตอบ
+> **503 maintenance**) ไม่ให้ user login เข้า subsystem ที่ `down` → ในทางปฏิบัติ `/health` **เกือบบังคับ**
+> (เคยเจอบั๊ก: ระบบเกรดตอน dev โดน 503 เพราะ Hub ใน container เข้า `localhost:8003` ไม่ได้ —
+> dev แก้ด้วย docker service-name mapping, ดู B54 ใน `docs/bugs-encountered.md`)
 >
 > **หมายเหตุ dev/Docker:** Hub ใช้ mapping เดียวกับ webhook (`localhost:8001` → `subsystem-dorm:8000`)
-> เวลา ping /health จาก container — prod ต้องเป็น URL จริงที่ Hub เข้าถึงได้.
+> เวลา ping /health จาก container — prod ต้องเป็น URL จริงที่ Hub เข้าถึงได้ ไม่มี mapping นี้แล้ว
+>
+> **กรณีพบจริง (dev, 2026-07-20):** container ที่ **หยุดทำงานแล้ว** (`exited`) ทำให้ Docker DNS
+> ยัง resolve ชื่อ service ได้แต่ไม่มีอะไรฟังพอร์ต → **ConnectTimeout** (คนละ error กับ stack ที่
+> **ไม่เคย up เลย** ซึ่ง Docker DNS ไม่รู้จักชื่อตั้งแต่ต้น → **ConnectError: Name or service not known**)
+> ทั้งสองแบบจบที่สถานะ `down` เหมือนกัน แต่ error message ต่างกันช่วยวินิจฉัยสาเหตุได้ว่า
+> "เคยรันแล้วหยุด" หรือ "ไม่เคยรันเลย"
 
 ### 1.7 SDK สำเร็จรูป (ลด boilerplate)
 
@@ -309,8 +396,10 @@ Hub รัน endpoint บนเครื่องคนอื่นไม่ไ
 
 | ข้อจำกัด | ค่า | หมายเหตุ |
 |---|---|---|
-| อายุ access token | 60 นาที | คงที่ |
-| authorization code | 60 วินาที + ใช้ครั้งเดียว | atomic (กัน replay) |
+| อายุ access token | **15 นาที** | อ่านจาก `expires_in` (900) อย่า hardcode |
+| refresh token | **ไม่ออกให้ subsystem** | เฉพาะ Hub-direct — subsystem ใช้ session ตัวเอง (§1.3.2) |
+| การ revoke token | Hub revoke `jti` ได้ทุกเมื่อ | JWT ยัง valid ทางเทคนิค → ต้องใช้ webhook/introspect (§1.3.1) |
+| authorization code | 60 วินาที + ใช้ครั้งเดียว | atomic `getdel` (กัน replay) |
 | client_secret | ดูครั้งเดียว 15 นาที | พลาด = rotate ใหม่ |
 | scope ที่ได้จริง | admin approve | ขอเกินจำเป็นไม่ได้ |
 | ใครเข้าได้ | **Access Policy** (explicit/all/role/attribute) | ไม่ผ่าน policy = 403 · admin ถอนรายคนได้ทุกนโยบายผ่าน deny-list |
@@ -333,6 +422,11 @@ Hub รัน endpoint บนเครื่องคนอื่นไม่ไ
 - **ไม่ใช่ SSO** — login subsystem A ไม่ carry ไป B
 - **เปลี่ยน scope ไม่ revoke token เดิม** — มีผลกับ login ครั้งถัดไป (หรือใช้ webhook access_updated)
 - **session แยกต่อ subsystem** — แต่ละระบบจัดการเอง
+- **JWT อายุสั้น (15 นาที) ไม่ใช่อายุ session ของคุณ** — ใช้ JWT พิสูจน์ตัวตนครั้งเดียวตอน callback
+  แล้วสร้าง session ของตัวเองต่อ อย่าผูกอายุ session เข้ากับ `exp` ของ JWT ตรงๆ (ไม่งั้น user
+  จะหลุดทุก 15 นาที) — แต่ก็อย่าตั้งยาวเกินไปจนขัดนโยบายความปลอดภัย (แนะนำ 1 ชม.)
+- **Hub อาจ revoke token ระหว่างทาง** — force-logout/ถอนสิทธิ์ที่ Hub ไม่ทำให้ JWT ในมือคุณ
+  เสียทันที ต้องมี webhook receiver ถึงจะเตะ session ได้ตรงเวลา (ดู §1.3.1)
 
 ---
 
@@ -344,6 +438,8 @@ Hub รัน endpoint บนเครื่องคนอื่นไม่ไ
 - [ ] client_secret อยู่ server-side เท่านั้น (ห้ามใน JS/HTML)
 - [ ] session cookie: HttpOnly + SameSite=Lax + Secure (prod)
 - [ ] enforce JWT exp ทุก request (+ session_max_age ถ้าต้องการสั้นลง)
+- [ ] มีแผนรับมือ token revocation — webhook receiver (แนะนำ) หรือ `/oauth/introspect` สำหรับ
+      หน้าที่มีผลกระทบสูง (§1.3.1) · อย่าเชื่อแค่ signature ว่า token ยังใช้ได้
 - [ ] webhook receiver: verify HMAC + timestamp ก่อน act
 - [ ] expose `GET /health` (public, ตอบ 200 เร็ว < 1s) — ไม่งั้น Hub mark down + gate login (§1.6)
 - [ ] API key (roster) อยู่ server-side เท่านั้น · ดึง roster ผ่าน HTTPS
@@ -376,10 +472,10 @@ Hub รัน endpoint บนเครื่องคนอื่นไม่ไ
 |---               |---                                                        |---|
 | OAuth            | authorize/token endpoint, SDK, JWKS                       | initiate + รับ callback + exchange |
 | JWT              | เซ็น + เปิด JWKS/discovery                                  | verify signature + aud + exp |
-| Session          | ออก JWT มี exp                                             | สร้าง session + enforce expiry |
+| Session          | ออก JWT อายุ 15 นาที (มี exp + jti)                         | สร้าง session ของตัวเอง + enforce expiry |
 | Scope            | ใส่ field ตาม scope ใน JWT                                 | map claims → profile + แสดงผล |
 | Webhook          | ส่ง + เซ็น event (revoked/updated/restored) + แนะนำ URL      | host receiver + verify + act |
-| Revoke real-time | push event                                                | invalidate session ของตัวเอง |
+| Revoke real-time | push event + jti blacklist + `/oauth/introspect`           | invalidate session ของตัวเอง (webhook หรือ introspect) |
 | **Health check** | ping `/health` ทุก 5 นาที + โชว์สถานะ + gate login          | **expose `GET /health` ตอบ 200 เร็ว** |
 | **Roster sync**  | `/api/v1/roster` (X-Api-Key) กรองตาม Access Policy          | (ถ้าต้องการ) ดึง + pre-create record |
 | Business logic   | —                                                         | ทั้งหมด (DB, UI, RBAC ภายใน) |

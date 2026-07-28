@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import StepupTotpProvider from "@/components/StepupTotpProvider";
 
 export const metadata: Metadata = {
   title: "Central Auth Hub — Admin",
@@ -25,7 +26,9 @@ export default function RootLayout({
           rel="stylesheet"
         />
       </head>
-      <body>{children}</body>
+      <body>
+        <StepupTotpProvider>{children}</StepupTotpProvider>
+      </body>
     </html>
   );
 }

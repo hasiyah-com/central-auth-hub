@@ -187,8 +187,8 @@ export default function IpBlacklistPage() {
               IP Blacklist Management
             </h2>
             <p className="text-xs text-ink-400 mt-1">
-              IP ที่อยู่ใน blacklist จะถูกตั้ง is_attack_ip = true อัตโนมัติตอน login
-              (Wiefling 2022)
+              {/* IP ที่อยู่ใน blacklist จะถูกตั้ง is_attack_ip = true อัตโนมัติตอน login
+              (Wiefling 2022) */}
             </p>
           </div>
           <button

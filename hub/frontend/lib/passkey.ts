@@ -486,6 +486,54 @@ export async function totpStatus(): Promise<TotpStatus> {
   return clientFetch("/auth/account/totp/status");
 }
 
+// ── Account Security (Always-2FA + onboarding) ────────────────────────────
+
+export type SecurityStatus = {
+  mfa_always: boolean;
+  effective_mfa_always: boolean;
+  is_admin: boolean;
+  mfa_preferred_factor: "passkey" | "totp" | null;
+  has_passkey: boolean;
+  has_totp: boolean;
+  has_second_factor: boolean;
+  security_onboarding_dismissed: boolean;
+  security_onboarding_snoozed_until: string | null;
+  /** source of truth เดียวกับ OAuth interstitial — ใช้ตัดสินใจแสดงการ์ด */
+  should_prompt_setup: boolean;
+};
+
+export async function fetchSecurityStatus(): Promise<SecurityStatus> {
+  return clientFetch("/auth/account/security-status");
+}
+
+export async function updateSecurity(body: {
+  mfa_always?: boolean;
+  mfa_preferred_factor?: "passkey" | "totp" | "";
+}): Promise<SecurityStatus> {
+  return clientFetch("/auth/account/security", {
+    method: "PATCH",
+    body: JSON.stringify(body),
+  });
+}
+
+export async function dismissSecurityOnboarding(): Promise<{
+  dismissed: boolean;
+}> {
+  return clientFetch("/auth/account/security/dismiss-onboarding", {
+    method: "POST",
+  });
+}
+
+/** "ไว้ทีหลัง" — พักเตือน 7 วัน (ผูกกับบัญชี ไม่ใช่แค่เครื่องนี้) */
+export async function snoozeSecurityOnboarding(): Promise<{
+  snoozed: boolean;
+  until: string;
+}> {
+  return clientFetch("/auth/account/security/snooze-onboarding", {
+    method: "POST",
+  });
+}
+
 /** enroll เริ่ม (step-up gated) — คืน otpauth_uri (QR) + secret (manual). */
 export async function totpEnrollStart(
   onVerifying?: (a: boolean) => void
@@ -630,22 +678,54 @@ export async function stepUpWithPasskey(): Promise<{ granted: boolean; ttl_sec: 
 }
 
 /**
+ * Global fallback prompt สำหรับ inline step-up ด้วย TOTP.
+ * `StepupTotpProvider` (mount ครั้งเดียวใน root layout) ลงทะเบียนไว้ →
+ * `runWithStepup` เรียกเมื่อ passkey ไม่ได้ (no_passkey / user ยกเลิก).
+ * คืน `true` ถ้ายืนยัน TOTP สำเร็จ (stepup cache method="totp" ถูก set แล้ว),
+ * `false` ถ้า user ปิด modal.
+ */
+let _totpStepupPrompt: (() => Promise<boolean>) | null = null;
+
+export function registerTotpStepupPrompt(
+  fn: (() => Promise<boolean>) | null
+): void {
+  _totpStepupPrompt = fn;
+}
+
+function hasErrCode(e: unknown, code: string): boolean {
+  const d = (e as ApiError | undefined)?.detail;
+  return (
+    typeof d === "object" && d !== null && (d as { code?: string }).code === code
+  );
+}
+
+function isUserCancel(e: unknown): boolean {
+  return e instanceof DOMException && e.name === "NotAllowedError";
+}
+
+/**
  * Inline step-up wrapper (Option C — ไม่ redirect, ไม่เสียข้อมูลในฟอร์ม).
  *
  * รัน mutation; ถ้าเจอ 403 stepup_required → ทำ passkey ceremony ในหน้า
  * (navigator.credentials.get) → retry mutation เดิม 1 ครั้ง.
+ *
+ * **Fallback TOTP:** ถ้า passkey ไม่ได้ (ไม่มี passkey / user กด cancel) และ
+ * `opts.totpFallback !== false` และมี `StepupTotpProvider` mount อยู่ →
+ * เด้ง modal ให้กรอกรหัส TOTP 6 หลัก (ยกเว้น change-google ที่บังคับ passkey).
  *
  * mutation ต้องใช้ clientFetch ด้วย ``stepupMode:"throw"`` เพื่อไม่ให้ interceptor
  * พา redirect ก่อน (ดู lib/api.ts).
  *
  * @param run   ฟังก์ชันที่ทำ mutation (เรียกซ้ำได้ — idempotent ฝั่ง intent)
  * @param onVerifying  callback แจ้ง UI ว่ากำลัง verify (แสดง spinner/ปุ่ม)
- * @throws ApiError {detail:{code:"no_passkey"}} ถ้า user ไม่มี passkey → caller
- *         แสดงข้อความให้ไปตั้งค่า/ใช้ Recovery
+ * @param opts  totpFallback=false → ไม่เสนอ TOTP (passkey-only เช่น change-google)
+ * @throws ApiError {detail:{code:"no_passkey"}} ถ้า user ไม่มี passkey และไม่ยืนยัน
+ *         TOTP → caller แสดงข้อความให้ไปตั้งค่า/ใช้ Recovery
  */
 export async function runWithStepup<T>(
   run: () => Promise<T>,
-  onVerifying?: (active: boolean) => void
+  onVerifying?: (active: boolean) => void,
+  opts?: { totpFallback?: boolean }
 ): Promise<T> {
   try {
     return await run();
@@ -654,7 +734,19 @@ export async function runWithStepup<T>(
     if (err?.status === 403 && isStepupRequired(err.detail)) {
       onVerifying?.(true);
       try {
-        await stepUpWithPasskey(); // inline WebAuthn ceremony → set stepup cache
+        try {
+          await stepUpWithPasskey(); // inline WebAuthn ceremony → set stepup cache
+        } catch (pkErr) {
+          // passkey ไม่ได้ → fallback TOTP (ถ้าอนุญาต + มี modal ลงทะเบียน)
+          const canTotp =
+            opts?.totpFallback !== false &&
+            _totpStepupPrompt !== null &&
+            (hasErrCode(pkErr, "no_passkey") || isUserCancel(pkErr));
+          if (!canTotp) throw pkErr;
+          const ok = await _totpStepupPrompt!(); // modal จัดการ verify + error เอง
+          if (!ok) throw pkErr; // user ปิด modal → คืน error เดิม (เช่น no_passkey)
+          // ok=true → stepup cache method="totp" ถูก set แล้ว
+        }
       } finally {
         onVerifying?.(false);
       }
@@ -669,23 +761,25 @@ export async function runWithStepup<T>(
  *
  * เทียบเท่า: runWithStepup(() => clientFetch(path, {...init, stepupMode:"throw"}))
  * ใช้แทน clientFetch ตรง ๆ ในทุก mutation ที่เป็น critical action (เพิ่ม/ลบ/แก้)
- * เพื่อให้ verify Passkey ในหน้า ไม่ redirect ไม่เสีย state.
+ * เพื่อให้ verify Passkey/TOTP ในหน้า ไม่ redirect ไม่เสีย state.
  */
 export async function mutateWithStepup<T = unknown>(
   path: string,
   init: RequestInit = {},
-  onVerifying?: (active: boolean) => void
+  onVerifying?: (active: boolean) => void,
+  opts?: { totpFallback?: boolean }
 ): Promise<T> {
   return runWithStepup<T>(
     () => clientFetch<T>(path, { ...init, stepupMode: "throw" }),
-    onVerifying
+    onVerifying,
+    opts
   );
 }
 
 /**
  * เริ่ม flow "เปลี่ยนบัญชี Google" (re-link) — ต้องผ่าน **passkey** step-up (inline).
  * คืน `start_url` ให้ caller `window.location.href = start_url` เพื่อเริ่ม OAuth กับ
- * บัญชี Google ใหม่ (backend บังคับ passkey เท่านั้น — OTP ไม่ผ่าน).
+ * บัญชี Google ใหม่ (backend บังคับ passkey เท่านั้น — OTP/TOTP ไม่ผ่าน จึงปิด TOTP fallback).
  * @throws ApiError {detail:{code:"no_passkey"}} → caller แนะนำไป Account Recovery
  */
 export async function changeGoogleStart(
@@ -694,7 +788,8 @@ export async function changeGoogleStart(
   return mutateWithStepup<{ start_url: string }>(
     "/auth/account/change-google/start",
     { method: "POST" },
-    onVerifying
+    onVerifying,
+    { totpFallback: false } // change-google = passkey-only (backend บังคับ)
   );
 }
 

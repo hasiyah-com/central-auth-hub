@@ -20,13 +20,14 @@ Run:
     docker compose exec hub-backend python -m scripts.evaluate_real_logins
 """
 
+import argparse
 import asyncio
 import sys
 from collections import Counter
 
 from app.config import settings
 from app.database import SessionLocal
-from app.models import LoginSession
+from app.models import LoginSession, User
 from app.security.risk_engine import evaluate_login_risk
 from app.services.feature_extraction import extract_session_features
 
@@ -34,6 +35,22 @@ from app.services.feature_extraction import extract_session_features
 FRICTION = {"mfa", "challenge", "block", "would_mfa", "would_challenge", "would_block"}
 BLOCK_LEVEL = {"block", "would_block"}
 SAMPLE_LIMIT = 1000
+
+# ── clean mode: นิยาม "test traffic" ที่จะตัดออกจากการวัด (ไม่ลบ DB) ──
+#   1. synthetic — session ที่สร้างจาก test script (marker ใน user_agent / อีเมล demo)
+#   2. dev burst — วันที่ user เดียว login เกิน MAX_PER_DAY ครั้ง (ตอนพัฒนา/เทส)
+#      ผู้ใช้จริงในโปรดักชันไม่ login 90 ครั้ง/วัน → burst = artifact ไม่ใช่พฤติกรรมจริง
+SYNTHETIC_UA_MARKERS = ("RiskDemo",)
+SYNTHETIC_EMAILS = ("risk-demo@uni.ac.th",)
+DEFAULT_MAX_PER_DAY = 10
+
+
+def _is_synthetic(email: str | None, ua: str | None) -> bool:
+    if email and email in SYNTHETIC_EMAILS:
+        return True
+    if ua and any(m in ua for m in SYNTHETIC_UA_MARKERS):
+        return True
+    return False
 
 
 async def _score(db, s) -> dict:
@@ -58,6 +75,20 @@ async def _score(db, s) -> dict:
 
 
 async def main() -> int:
+    ap = argparse.ArgumentParser(description="Real-traffic FPR evaluation")
+    ap.add_argument(
+        "--clean",
+        action="store_true",
+        help="ตัด test traffic (synthetic + dev burst) ออกจากการวัด",
+    )
+    ap.add_argument(
+        "--max-per-day",
+        type=int,
+        default=DEFAULT_MAX_PER_DAY,
+        help=f"clean: ตัด session ในวันที่ login เกิน N ครั้ง (default {DEFAULT_MAX_PER_DAY})",
+    )
+    args = ap.parse_args()
+
     db = SessionLocal()
     try:
         rows = (
@@ -70,6 +101,26 @@ async def main() -> int:
         if not rows:
             print("ไม่มี login_sessions — ข้าม")
             return 0
+
+        n_excluded_syn = n_excluded_burst = 0
+        if args.clean:
+            # map user_id → email (เช็ค synthetic email)
+            emails = {u.id: u.email for u in db.query(User.id, User.email).all()}
+            # นับ session ต่อ (user, วัน) เพื่อหา burst days
+            per_day: Counter = Counter()
+            for s in rows:
+                per_day[(s.user_id, s.created_at.date())] += 1
+
+            kept = []
+            for s in rows:
+                if _is_synthetic(emails.get(s.user_id), s.user_agent):
+                    n_excluded_syn += 1
+                    continue
+                if per_day[(s.user_id, s.created_at.date())] > args.max_per_day:
+                    n_excluded_burst += 1
+                    continue
+                kept.append(s)
+            rows = kept
 
         normal_decisions = Counter()
         attack_decisions = Counter()
@@ -109,8 +160,14 @@ async def main() -> int:
         mean_normal = sum(scores_normal) / len(scores_normal) if scores_normal else 0.0
 
         print("=" * 64)
-        print("Phase 1.1 — Real-traffic Evaluation (current 23-feature model)")
+        mode = "CLEAN (ตัด test traffic)" if args.clean else "RAW (ทั้งหมด)"
+        print(f"Phase 1.1 — Real-traffic Evaluation [{mode}]")
         print("=" * 64)
+        if args.clean:
+            print(
+                f"ตัดออก: synthetic {n_excluded_syn} + dev-burst {n_excluded_burst} "
+                f"(> {args.max_per_day}/วัน)"
+            )
         print(f"sessions scored : {n_normal + n_attack}")
         print(f"  normal        : {n_normal}")
         print(f"  attack (label): {n_attack}")

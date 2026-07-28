@@ -134,10 +134,10 @@ export default function LoginPage() {
           </div>
 
           <h1 className="text-2xl font-extrabold text-ink-900 mb-2">
-            เข้าสู่ระบบ
+            เข้าสู่ระบบรวมศูนย์
           </h1>
           <p className="text-sm text-ink-500 mb-8">
-            สำหรับผู้ดูแลระบบ — ใช้ Passkey หรือบัญชี Google ที่ลงทะเบียนไว้
+            {/* ลงชื่อเข้าใช้ระบบด้วย Passkey หรือบัญชี Google ที่ลงทะเบียนไว้ */}
           </p>
 
           {notice && (
@@ -185,7 +185,7 @@ export default function LoginPage() {
                 </button>
               </div>
               <p className="text-xs text-emerald-800">
-                กรอก email ของคุณ แล้วระบบจะถาม biometric / security key
+                {/* กรอก email ของคุณ แล้วระบบจะถาม biometric / security key */}
               </p>
               <input
                 type="email"
@@ -280,8 +280,21 @@ export default function LoginPage() {
           </a>
           */}
 
+          {/* เพิ่มการยืนยันตัวตน — ตั้ง passkey/TOTP โดยไม่เข้า console
+              ใช้ได้ทุก role รวมนักศึกษา (backend ไม่ออก JWT ที่ intent นี้) */}
+          <a
+            href={`${HUB_URL}/auth/credentials/setup`}
+            className="mt-3 w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl border border-emerald-300 text-emerald-700 font-semibold hover:bg-emerald-50 transition"
+          >
+            <span>🛡️</span>
+            <span>เพิ่มการยืนยันตัวตน</span>
+          </a>
+          <p className="mt-1.5 text-[11px] text-ink-400 text-center">
+            {/* ตั้ง Passkey หรือ Authenticator — นักศึกษาก็ใช้ได้ */}
+          </p>
+
           <div className="mt-6 text-xs text-ink-400 text-center">
-            เฉพาะผู้ใช้ที่มีสิทธิ์ <code className="font-mono">is_hub_admin</code> เท่านั้น
+            © 2024 Central Auth Hub
           </div>
           {policy.passkey && passkeySupported && (
             <div className="mt-2 text-center">

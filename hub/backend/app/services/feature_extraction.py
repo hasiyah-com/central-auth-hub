@@ -15,6 +15,20 @@ Cold Start Policy:
   - personalized features (hours_from_typical, weekday_usage) require MIN_HISTORY
   - ถ้า history น้อยไป ให้ค่า neutral (0) — ไม่ลงโทษ user ใหม่
 
+⚠️ Point-in-time invariant (กัน data leakage) — **ห้ามลืมเมื่อเพิ่ม feature ใหม่**:
+  ทุก query ที่ดึง "ประวัติ" ต้องกรอง `created_at < now` เสมอ
+  (LoginSession, PasskeyCredential, AccessList — รวมถึงฟิลด์เวลาอย่าง last_used_at/granted_at)
+
+  เหตุผล: ฟังก์ชันนี้ถูกเรียก 2 แบบ
+    1. ตอน login จริง  → now = utcnow() (ไม่มี row อนาคต — ไม่มีผลอะไร)
+    2. ตอน re-score ย้อนหลัง → now = session.created_at ใช้โดย 5 scripts:
+       export_labeled_data / evaluate_on_real / evaluate_real_logins /
+       calibrate_thresholds / check_feature_drift
+  ถ้าไม่กรอง แบบที่ 2 จะ "มองเห็นอนาคต" → training data, metric, threshold เพี้ยนทั้งหมด
+  (เคยเจอจริง: session อายุ 8 วันรายงาน login_count_24h=78 เพราะนับ session วันนี้เข้ามา)
+
+  กันไว้ด้วย tests/test_feature_point_in_time.py
+
 ตัดจากเวอร์ชัน 17: is_weekend (= f(day_of_week)), has_passkey (= f(passkey_count>0))
 """
 
@@ -180,7 +194,10 @@ def extract_session_features(
     # Cold Start: ถ้ามี history < 5 session ให้ค่า 0 (neutral, ไม่ penalize user ใหม่)
     past_sessions = (
         db.query(LoginSession.created_at)
-        .filter(LoginSession.user_id == user_id)
+        .filter(
+            LoginSession.user_id == user_id,
+            LoginSession.created_at < now,  # point-in-time (ดู docstring)
+        )
         .order_by(LoginSession.created_at.desc())
         .limit(50)
         .all()
@@ -211,6 +228,7 @@ def extract_session_features(
             .filter(
                 LoginSession.user_id == user_id,
                 LoginSession.geo_country.is_not(None),
+                LoginSession.created_at < now,  # point-in-time
             )
             .distinct()
             .all()
@@ -227,6 +245,7 @@ def extract_session_features(
             LoginSession.user_id == user_id,
             LoginSession.geo_country.is_not(None),
             LoginSession.created_at >= cutoff_30d,
+            LoginSession.created_at < now,  # point-in-time
         )
         .distinct()
         .all()
@@ -242,6 +261,7 @@ def extract_session_features(
             .filter(
                 LoginSession.user_id == user_id,
                 LoginSession.user_agent.is_not(None),
+                LoginSession.created_at < now,  # point-in-time
             )
             .distinct()
             .all()
@@ -259,7 +279,10 @@ def extract_session_features(
     # === Velocity ===
     last = (
         db.query(LoginSession)
-        .filter(LoginSession.user_id == user_id)
+        .filter(
+            LoginSession.user_id == user_id,
+            LoginSession.created_at < now,  # point-in-time
+        )
         .order_by(LoginSession.created_at.desc())
         .first()
     )
@@ -275,6 +298,7 @@ def extract_session_features(
         .filter(
             LoginSession.user_id == user_id,
             LoginSession.created_at >= cutoff_24h,
+            LoginSession.created_at < now,  # point-in-time
         )
         .scalar()
         or 0
@@ -287,6 +311,7 @@ def extract_session_features(
             LoginSession.user_id == user_id,
             LoginSession.decision.in_(["block", "would_block"]),
             LoginSession.created_at >= cutoff_24h,
+            LoginSession.created_at < now,  # point-in-time
         )
         .scalar()
         or 0
@@ -301,9 +326,12 @@ def extract_session_features(
         .filter(
             PasskeyCredential.user_id == user_id,
             PasskeyCredential.revoked_at.is_(None),
+            PasskeyCredential.created_at < now,  # point-in-time
         )
         .all()
     )
+    # last_used_at ที่เกิดหลัง now = การใช้งานในอนาคต → ตัดทิ้ง (point-in-time)
+    pk_rows = [(c, (lu if (lu and lu < now) else None)) for c, lu in pk_rows]
     if pk_rows:
         passkey_count = float(len(pk_rows))
         oldest = (
@@ -334,6 +362,7 @@ def extract_session_features(
         LoginSession.user_id == user_id,
         LoginSession.logout_at.is_(None),
         LoginSession.created_at >= concurrent_cutoff,
+        LoginSession.created_at < now,  # point-in-time
     )
     # cap ที่ FEATURE_RANGES max (กันเกิน validation → ml-service reject → fail-safe 0
     # = ปัญหาแฝง: concurrent สูงถูกมองเป็นปกติ). ≥cap = "เยอะมาก" เท่ากันหมด
@@ -345,6 +374,7 @@ def extract_session_features(
                 LoginSession.user_id == user_id,
                 LoginSession.logout_at.is_(None),
                 LoginSession.created_at >= concurrent_cutoff,
+                LoginSession.created_at < now,  # point-in-time
             )
             .scalar()
             or 0
@@ -372,7 +402,8 @@ def extract_session_features(
         .filter(AccessList.user_id == user_id)
         .all()
     )
-    change_times = [t for row in perm_rows for t in row if t is not None]
+    # point-in-time: การเปลี่ยนสิทธิ์ที่เกิดหลัง now ต้องมองไม่เห็น
+    change_times = [t for row in perm_rows for t in row if t is not None and t < now]
     if change_times:
         ever_changed_permission = 1.0
         latest_change = max(change_times)
@@ -391,6 +422,7 @@ def extract_session_features(
                 LoginSession.is_account_takeover.is_(True),
                 LoginSession.is_attack_ip.is_(True),
             ),
+            LoginSession.created_at < now,  # point-in-time (กัน label leakage)
         )
         .scalar()
         or 0
