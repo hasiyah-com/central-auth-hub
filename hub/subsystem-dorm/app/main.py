@@ -69,4 +69,4 @@ def spa():
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "service": "subsystem-dorm", "version": "0.1.0"}
+    return {"status": "healthy", "service": "subsystem-dorm", "version": "0.1.0"}
