@@ -15,6 +15,7 @@ Flow:
   GET /oauth/test-callback -> หน้าจำลอง redirect_uri ของ subsystem
 """
 
+import html
 import json
 import secrets
 from datetime import datetime
@@ -2717,10 +2718,12 @@ emailEl.addEventListener('input', clearErr);
 
 def _maintenance_html(subsystem_name: str, health: dict) -> str:
     """หน้า HTML แสดงตอน subsystem ล่ม (alt. ของ redirect ไป Google)."""
-    checked_at = (health.get("checked_at") or "").replace("T", " ")[:19]
-    error = health.get("error") or "subsystem ไม่ตอบ health check"
+    # esc ชื่อ + error (มาจาก DB / health) — กัน HTML injection (audit run-1 #1)
+    safe_name = html.escape(subsystem_name, quote=True)
+    checked_at = html.escape((health.get("checked_at") or "").replace("T", " ")[:19])
+    error = html.escape(health.get("error") or "subsystem ไม่ตอบ health check")
     return f"""<!DOCTYPE html><html lang="th"><head><meta charset="UTF-8">
-<title>{subsystem_name} ปิดปรับปรุง</title>
+<title>{safe_name} ปิดปรับปรุง</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
   body {{ font-family: 'Sarabun', system-ui, sans-serif; background: #f8fafc;
@@ -2749,7 +2752,7 @@ def _maintenance_html(subsystem_name: str, health: dict) -> str:
 <div class="card">
   <div class="hero">
     <div class="icon">🔧</div>
-    <div class="title">{subsystem_name}<br>ปิดปรับปรุงชั่วคราว</div>
+    <div class="title">{safe_name}<br>ปิดปรับปรุงชั่วคราว</div>
   </div>
   <div class="body">
     <p>ระบบนี้กำลังมีปัญหาทางเทคนิค — ทีมงานได้รับแจ้งและอยู่ระหว่างแก้ไข</p>
@@ -2772,8 +2775,10 @@ def _maintenance_html(subsystem_name: str, health: dict) -> str:
 
 def _suspended_html(subsystem_name: str) -> str:
     """หน้า HTML แสดงตอน subsystem ถูก admin ระงับ (status=suspended)."""
+    # esc ชื่อ subsystem (มาจาก DB) — กัน HTML injection (audit run-1 #1)
+    safe_name = html.escape(subsystem_name, quote=True)
     return f"""<!DOCTYPE html><html lang="th"><head><meta charset="UTF-8">
-<title>{subsystem_name} ถูกระงับการใช้งาน</title>
+<title>{safe_name} ถูกระงับการใช้งาน</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
   body {{ font-family: 'Sarabun', system-ui, sans-serif; background: #f8fafc;
@@ -2798,7 +2803,7 @@ def _suspended_html(subsystem_name: str) -> str:
 <div class="card">
   <div class="hero">
     <div class="icon">🚫</div>
-    <div class="title">{subsystem_name}<br>ถูกระงับการใช้งาน</div>
+    <div class="title">{safe_name}<br>ถูกระงับการใช้งาน</div>
   </div>
   <div class="body">
     <p>ระบบนี้ถูก admin <strong>ระงับการใช้งานชั่วคราว</strong> —
@@ -2826,12 +2831,22 @@ def _suspended_html(subsystem_name: str) -> str:
 # ============ ตัวช่วยทดสอบ (dev only) ============
 
 
+def _dev_only() -> None:
+    """404 ใน production — dev-only endpoint ไม่ควรเข้าถึงได้บนระบบจริง.
+
+    404 (ไม่ใช่ 403) เพื่อไม่ให้ leak ว่ามี endpoint นี้อยู่.
+    """
+    if settings.app_env == "production":
+        raise HTTPException(status_code=404, detail="Not Found")
+
+
 @router.get("/pkce-helper")
 def pkce_helper():
-    """สร้างคู่ code_verifier / code_challenge สำหรับทดสอบ.
+    """สร้างคู่ code_verifier / code_challenge สำหรับทดสอบ (dev only).
 
     ในระบบจริง subsystem จะสร้างคู่นี้เอง — endpoint นี้มีไว้ช่วยทดสอบ Week 4
     """
+    _dev_only()
     verifier, challenge = generate_pkce_pair()
     return {
         "code_verifier": verifier,
@@ -2842,11 +2857,17 @@ def pkce_helper():
 
 @router.get("/test-callback", response_class=HTMLResponse)
 def test_callback(code: str = "", state: str = ""):
-    """หน้าจำลอง redirect_uri ของ subsystem — แสดง code + state ที่ Hub ส่งกลับมา.
+    """หน้าจำลอง redirect_uri ของ subsystem — แสดง code + state ที่ Hub ส่งกลับมา (dev only).
 
     ตอนทดสอบ: ลงทะเบียน subsystem ด้วย
         redirect_uri = http://localhost:8000/oauth/test-callback
     """
+    _dev_only()
+    # escape code/state — เป็น query param ที่ client คุมได้ (กัน reflected XSS)
+    import html as _html
+
+    code = _html.escape(code)
+    state = _html.escape(state)
     html = f"""<!DOCTYPE html><html lang="th"><head><meta charset="UTF-8">
 <title>OAuth Test Callback</title>
 <style>
