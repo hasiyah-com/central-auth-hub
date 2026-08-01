@@ -1,0 +1,243 @@
+[
+  {
+    "verdict": "confirmed",
+    "title": "Stored HTML injection in subsystem suspended/maintenance pages via unescaped subsystem name",
+    "description": "The public OAuth entrypoint GET /oauth/authorize renders two HTML pages built with Python f-strings that interpolate the subsystem's name (and, on the maintenance page, a health-error string) without HTML-escaping: _suspended_html (shown when subsystem.status=='suspended', HTTP 503) and _maintenance_html (shown when the pre-flight health check reports status=='down'). The sibling function _login_chooser_html DOES escape the same value (oauth.py:2394, with the comment 'esc ชื่อ subsystem (กัน HTML injection — ชื่อมาจาก DB)'), proving the escape was known-necessary and simply omitted in these two functions. subsystem.name is attacker-influenceable by a developer (teacher/staff/admin) at registration. A developer can then self-trigger the maintenance page at will by taking their own approved subsystem offline (health check -> down), or the suspended page appears when an admin suspends it. The page is served to ANY visitor of the OAuth login link (the endpoint is unauthenticated). Impact is constrained by the app's Content-Security-Policy (default-src 'self'; no 'unsafe-inline', no script-src) which blocks inline <script> and inline event handlers (onerror=) and external resource loads — so arbitrary JavaScript execution is NOT achievable. Residual impact is HTML injection: page defacement/phishing content, and a <meta http-equiv=\"refresh\" content=\"0;url=https://evil.com\"> tag, which CSP does not restrict, redirecting the victim to an attacker page (credential-phishing under the trusted Hub origin).",
+    "root_cause": "_suspended_html and _maintenance_html in hub/backend/app/routers/oauth.py do not HTML-escape the interpolated subsystem_name (and error) before embedding them in the f-string HTML, allowing stored HTML injection that renders in every visitor's browser.",
+    "intended_behavior": "When a subsystem is suspended or down, /oauth/authorize should show a friendly branded status page displaying the subsystem's name as inert text. The name comes from the database and must be HTML-escaped before interpolation, exactly as _login_chooser_html already does.",
+    "trace": [
+      {
+        "kind": "entrypoint",
+        "file": "hub/backend/app/routers/oauth.py",
+        "line": 76,
+        "scope": "authorize",
+        "description": "Public unauthenticated GET /oauth/authorize looks up the subsystem by client_id from the query string."
+      },
+      {
+        "kind": "propagation",
+        "file": "hub/backend/app/routers/oauth.py",
+        "line": 103,
+        "scope": "authorize",
+        "description": "When subsystem.status=='suspended', returns HTMLResponse(content=_suspended_html(subsystem_name=subsystem.name)); the analogous maintenance branch at line 136 calls _maintenance_html with subsystem.name and health error."
+      },
+      {
+        "kind": "sink",
+        "file": "hub/backend/app/routers/oauth.py",
+        "line": 2775,
+        "scope": "_suspended_html",
+        "description": "subsystem_name is interpolated directly into the returned HTML f-string (title and .title div) with no escaping; _maintenance_html at line 2718 does the same for subsystem_name and the health 'error' string."
+      }
+    ],
+    "conditions": [
+      {
+        "kind": "authorization_role",
+        "description": "Attacker holds a developer account (teacher/staff/admin) able to register a subsystem and set its name; the subsystem must be approved by an admin (who sees the name at approval time)."
+      },
+      {
+        "kind": "data_state",
+        "description": "The subsystem must be in status 'suspended' (admin action) or fail the pre-flight health check ('down'), which a developer can self-induce by stopping their own subsystem service."
+      },
+      {
+        "kind": "user_interaction",
+        "description": "A victim must visit the subsystem's /oauth/authorize login link while it is suspended/down."
+      },
+      {
+        "kind": "system_configuration",
+        "description": "CSP (default-src 'self', no unsafe-inline) blocks JavaScript execution, limiting impact to HTML defacement and meta-refresh redirect rather than XSS."
+      }
+    ],
+    "execution": {
+      "attacker_perspective": "A developer (teacher/staff/admin) who owns a registered subsystem, or a malicious actor who has compromised such an account.",
+      "payloads": [
+        "Subsystem name set to: <meta http-equiv=\"refresh\" content=\"0;url=https://evil.example/phish\">",
+        "Or defacement: </div><h1 style=\"position:fixed;inset:0;background:#fff;z-index:9999\">Login here: <a href=\"https://evil.example\">continue</a></h1>"
+      ],
+      "instructions": [
+        "Register a subsystem via POST /developer/subsystems with name containing the HTML payload (or PATCH the name later).",
+        "Get it approved (or use an already-approved subsystem you own).",
+        "Stop the subsystem's service so the Hub pre-flight health check marks it 'down' (or wait for an admin suspension).",
+        "Distribute/keep the normal OAuth login link GET /oauth/authorize?client_id=<yours>&redirect_uri=...&state=...&code_challenge=...",
+        "Any victim who opens the link receives the maintenance/suspended HTML with the injected markup executed by their browser."
+      ],
+      "expected_result": "The victim's browser parses the injected HTML served from the trusted Hub origin: with the meta-refresh payload the victim is redirected to the attacker's phishing page; with the defacement payload attacker-controlled content overlays the page."
+    },
+    "remediation": {
+      "strategy": "HTML-escape subsystem_name and the health error string in _suspended_html and _maintenance_html before interpolation, using the same escaping already applied in _login_chooser_html (or Python's html.escape with quote=True). Prefer a single shared helper so future status pages cannot regress.",
+      "code_changes": [
+        {
+          "file_name": "hub/backend/app/routers/oauth.py",
+          "fixed_code": "import html as _html\n\ndef _suspended_html(subsystem_name: str) -> str:\n    safe_name = _html.escape(subsystem_name, quote=True)\n    return f\"\"\"...<div class=\\\"title\\\">{safe_name}<br>...\"\"\"\n\ndef _maintenance_html(subsystem_name: str, health: dict) -> str:\n    safe_name = _html.escape(subsystem_name, quote=True)\n    error = _html.escape(health.get(\"error\") or \"subsystem ไม่ตอบ health check\", quote=True)\n    # interpolate safe_name / error instead of the raw values"
+        }
+      ]
+    },
+    "severity": {
+      "likelihood": {
+        "score": "low",
+        "reason": "Requires a developer/admin-approved subsystem plus a victim visiting a suspended/down login link; the developer role is semi-trusted and the malicious name is visible to the approving admin."
+      },
+      "impact": {
+        "score": "medium",
+        "reason": "Stored, cross-user HTML injection served from the trusted Hub origin; JavaScript is blocked by CSP but meta-refresh redirect enables convincing credential phishing and defacement."
+      },
+      "overall_severity": "medium"
+    },
+    "confidence": {
+      "score": "high",
+      "reason": "Both sink functions read directly and confirmed to interpolate subsystem_name/error with no escaping; the sibling _login_chooser_html escaping and the public reachability of /oauth/authorize were both verified against source. CSP mitigation of JS was confirmed live in the prior pentest."
+    }
+  },
+  {
+    "verdict": "confirmed",
+    "title": "Blind SSRF via developer-configured access-revoke webhook URL (no internal-range restriction)",
+    "description": "When a subsystem's access is updated/revoked/restored, the Hub sends a signed HTTP POST to a webhook URL. The URL is derived by _resolve_webhook_url from subsystem.access_revoke_webhook_url — a value set entirely by the subsystem's developer (teacher/staff/admin) at registration or via PATCH /developer/subsystems/{id}. _translate_for_docker only rewrites localhost targets for dev convenience and, in production, returns the URL unchanged; there is no allowlist and no block on private/link-local/loopback ranges anywhere on the path. The Hub (httpx.Client.post) will therefore issue an attacker-directed POST to any host reachable from the Hub container — internal services (e.g., http://hub-postgres:5432, other subsystems), or cloud metadata (http://169.254.169.254/latest/meta-data/). The POST carries a JSON body with an HMAC-SHA256 signature header, and the upstream response is NOT reflected back to the attacker, so this is blind SSRF: useful for internal network reachability probing (via connect success/timeout/error timing), hitting internal POST endpoints, and forcing the Hub to originate traffic to internal hosts. It does not by itself exfiltrate response bodies.",
+    "root_cause": "_resolve_webhook_url/_translate_for_docker in hub/backend/app/services/webhook_dispatcher.py do not validate the developer-supplied webhook host against an allowlist or reject private/loopback/link-local ranges, allowing the Hub to be induced to POST to arbitrary internal addresses.",
+    "intended_behavior": "A subsystem owner registers a webhook on their own public HTTPS domain so the Hub can notify them of access changes; the Hub should only call vetted, external subsystem endpoints, not arbitrary internal hosts.",
+    "trace": [
+      {
+        "kind": "entrypoint",
+        "file": "hub/backend/app/routers/developer.py",
+        "line": 333,
+        "scope": "register_subsystem",
+        "description": "Developer sets access_revoke_webhook_url from the request payload (also settable via PATCH /developer/subsystems/{id} around line 1150)."
+      },
+      {
+        "kind": "propagation",
+        "file": "hub/backend/app/services/webhook_dispatcher.py",
+        "line": 97,
+        "scope": "_resolve_webhook_url",
+        "description": "Uses subsystem.access_revoke_webhook_url as the override URL with no host validation."
+      },
+      {
+        "kind": "propagation",
+        "file": "hub/backend/app/services/webhook_dispatcher.py",
+        "line": 61,
+        "scope": "_translate_for_docker",
+        "description": "In production returns the URL unchanged; in dev only rewrites localhost — no private-range/allowlist filtering."
+      },
+      {
+        "kind": "sink",
+        "file": "hub/backend/app/services/webhook_dispatcher.py",
+        "line": 197,
+        "scope": "send_access_updated",
+        "description": "httpx.Client(timeout=5.0).post(url, ...) issues the Hub-originated POST to the attacker-chosen URL."
+      }
+    ],
+    "conditions": [
+      {
+        "kind": "authorization_role",
+        "description": "Attacker holds a developer account (teacher/staff/admin) that owns a subsystem and can set its access_revoke_webhook_url."
+      },
+      {
+        "kind": "network_routing",
+        "description": "Target internal host must be reachable from the Hub backend container's network."
+      },
+      {
+        "kind": "data_state",
+        "description": "An access change (whitelist add/revoke/role change, force-logout, etc.) must fire for the owned subsystem to trigger dispatch; several are self-triggerable by the developer on their own subsystem."
+      }
+    ],
+    "execution": {
+      "attacker_perspective": "A semi-trusted developer who owns a subsystem and wants the Hub to make requests to internal hosts it can reach but the attacker cannot.",
+      "payloads": [
+        "access_revoke_webhook_url = http://169.254.169.254/latest/meta-data/",
+        "access_revoke_webhook_url = http://hub-postgres:5432/",
+        "access_revoke_webhook_url = http://10.0.0.5:8080/internal/endpoint"
+      ],
+      "instructions": [
+        "PATCH /developer/subsystems/{id} setting access_revoke_webhook_url to the internal target.",
+        "Trigger an access change on the owned subsystem (e.g., add then revoke a whitelist user, or force a config change) so the Hub dispatches the webhook.",
+        "Observe dispatch success/latency/error in the Hub's alerting/logs to infer reachability of the internal target."
+      ],
+      "expected_result": "The Hub backend issues an outbound POST to the specified internal address; connection success/timeout/error timing reveals whether the internal host/port is reachable, confirming SSRF."
+    },
+    "remediation": {
+      "strategy": "Before dispatching, resolve the webhook host and reject any address in loopback/private/link-local/unique-local ranges (and the cloud metadata IP), enforce https:// in production, and ideally constrain the webhook host to the subsystem's registered redirect_uri origin. Keep the existing dev docker-service mapping behind an explicit dev-only branch.",
+      "code_changes": [
+        {
+          "file_name": "hub/backend/app/services/webhook_dispatcher.py",
+          "fixed_code": "import ipaddress, socket\nfrom urllib.parse import urlparse\n\ndef _is_safe_public_url(url: str) -> bool:\n    p = urlparse(url)\n    if settings.app_env == \"production\" and p.scheme != \"https\":\n        return False\n    host = p.hostname or \"\"\n    try:\n        for info in socket.getaddrinfo(host, None):\n            ip = ipaddress.ip_address(info[4][0])\n            if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:\n                return False\n    except Exception:\n        return False\n    return True\n# call _is_safe_public_url(url) after _resolve_webhook_url and skip dispatch (log) if False, except for the intentional dev docker-service map."
+        }
+      ]
+    },
+    "severity": {
+      "likelihood": {
+        "score": "medium",
+        "reason": "Requires a developer account, but that role legitimately configures the webhook URL and can self-trigger dispatch; no additional bug is needed."
+      },
+      "impact": {
+        "score": "medium",
+        "reason": "Blind SSRF: internal-network probing and Hub-originated POSTs to internal hosts/metadata; response bodies are not returned to the attacker and the body is HMAC-signed, limiting downstream acceptance."
+      },
+      "overall_severity": "medium"
+    },
+    "confidence": {
+      "score": "high",
+      "reason": "The full path from developer-set access_revoke_webhook_url through _resolve_webhook_url and _translate_for_docker (returns URL unchanged in prod) to httpx.post was read directly; no private-range or allowlist guard exists on the path."
+    }
+  },
+  {
+    "verdict": "confirmed",
+    "title": "LIKE-wildcard injection in admin traffic search and IP-blacklist search",
+    "description": "Two admin-only search endpoints build a SQL LIKE pattern by directly wrapping the user-supplied query in %...% without escaping the LIKE metacharacters % and _ (and the escape character), unlike the free-text user search in users.py which uses a dedicated _escape_like helper. In /admin/traffic (admin.py:2850) and the IP-blacklist list (ip_blacklist.py:50) an admin-supplied search term containing % or _ is treated as a wildcard, so the filter matches more or fewer rows than the literal term. Because both endpoints are gated by require_hub_admin and the searched data is already fully visible to admins, this does not cross a data boundary — it is a low-severity correctness/consistency defect and a deviation from the project's own LIKE-escaping rule, not a data-exfiltration vector.",
+    "root_cause": "The search handlers in hub/backend/app/routers/admin.py and hub/backend/app/routers/ip_blacklist.py do not escape LIKE metacharacters in the user-supplied term before building the ilike pattern, causing wildcard interpretation of % and _.",
+    "intended_behavior": "Admin free-text search should match the literal term as a substring; LIKE metacharacters in user input must be escaped (as users.py:_escape_like already does) so they are treated literally.",
+    "trace": [
+      {
+        "kind": "entrypoint",
+        "file": "hub/backend/app/routers/admin.py",
+        "line": 2849,
+        "scope": "list_traffic",
+        "description": "Admin-supplied q query parameter is taken unescaped."
+      },
+      {
+        "kind": "sink",
+        "file": "hub/backend/app/routers/admin.py",
+        "line": 2851,
+        "scope": "list_traffic",
+        "description": "like = f'%{q.strip()}%' is passed to User.email.ilike(like)/User.full_name.ilike(like) without escaping % or _; ip_blacklist.py:50-56 has the same pattern."
+      }
+    ],
+    "conditions": [
+      {
+        "kind": "authorization_role",
+        "description": "Requires a hub-admin account (require_hub_admin); the data searched is already visible to that admin."
+      }
+    ],
+    "execution": {
+      "attacker_perspective": "A hub admin (the only role that can reach the endpoint) — so there is no privilege boundary crossed; this is reported as a correctness/hardening defect.",
+      "payloads": [
+        "q=%",
+        "q=a_c"
+      ],
+      "instructions": [
+        "Call GET /admin/traffic?q=% (or the IP-blacklist search) as an admin.",
+        "Observe that % matches all rows and _ matches any single character rather than the literal characters."
+      ],
+      "expected_result": "Search returns wildcard-matched rows instead of literal-substring matches, confirming unescaped LIKE metacharacters."
+    },
+    "remediation": {
+      "strategy": "Reuse the existing users.py _escape_like helper (escape backslash, % and _) for both search handlers and pass an explicit ESCAPE character to ilike.",
+      "code_changes": [
+        {
+          "file_name": "hub/backend/app/routers/admin.py",
+          "fixed_code": "from app.routers.users import _escape_like\nlike = f\"%{_escape_like(q.strip())}%\"\nbase = base.filter(or_(User.email.ilike(like, escape=\"\\\\\"), User.full_name.ilike(like, escape=\"\\\\\")))"
+        }
+      ]
+    },
+    "severity": {
+      "likelihood": {
+        "score": "low",
+        "reason": "Only reachable by a hub admin."
+      },
+      "impact": {
+        "score": "informational",
+        "reason": "No data boundary crossed — admin already sees all searched rows; effect is incorrect match breadth, not disclosure."
+      },
+      "overall_severity": "low"
+    },
+    "confidence": {
+      "score": "high",
+      "reason": "Both call sites read directly; contrast with users.py:_escape_like confirms the escaping is deliberately applied elsewhere and omitted here."
+    }
+  }
+]
