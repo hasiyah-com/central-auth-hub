@@ -14,8 +14,10 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import ipaddress
 import json
 import logging
+import socket
 from datetime import datetime, timezone
 from typing import Any
 from urllib.parse import urlparse
@@ -94,6 +96,63 @@ def _translate_for_docker(url: str) -> str:
     return url
 
 
+def _is_safe_webhook_url(url: str) -> bool:
+    """SSRF guard (audit run-1 #2): กัน Hub ถูกหลอกยิงเข้า internal host.
+
+    Production: บังคับ https + host ห้าม resolve ไป private/loopback/link-local/
+    reserved (เช่น cloud metadata 169.254.169.254, RFC1918, docker service ภายใน).
+    Subsystem จริงอยู่บน public HTTPS domain (ตามสถาปัตยกรรม) จึงผ่าน.
+
+    Dev: localhost / docker-service names เป็น target ที่ตั้งใจ (ไม่ใช่ threat model)
+    → อนุญาต. Fail-closed: resolve ไม่ได้/scheme ผิด → False.
+
+    หมายเหตุ: check นี้ resolve ตอน validate แล้ว httpx resolve อีกครั้งตอนยิง
+    (มี TOCTOU/DNS-rebinding เหลืออยู่ — ยอมรับได้ระดับโปรเจกต์; robust เต็มต้อง
+    pin resolved IP แล้วส่ง Host header). Range check คือชั้นหลักที่ปิดช่อง.
+    """
+    try:
+        p = urlparse(url)
+    except Exception:
+        return False
+    if not p.scheme or not p.hostname:
+        return False
+    if settings.app_env != "production":
+        return True
+    if p.scheme != "https":
+        return False
+    try:
+        infos = socket.getaddrinfo(p.hostname, None)
+    except Exception:
+        return False
+    for info in infos:
+        try:
+            ip = ipaddress.ip_address(info[4][0])
+        except ValueError:
+            return False
+        if (
+            ip.is_private
+            or ip.is_loopback
+            or ip.is_link_local
+            or ip.is_reserved
+            or ip.is_multicast
+            or ip.is_unspecified
+        ):
+            return False
+    return True
+
+
+def _guard(url: str, subsystem_id: Any) -> str | None:
+    """Validate final resolved URL ผ่าน SSRF guard — unsafe → None + log (skip dispatch)."""
+    if _is_safe_webhook_url(url):
+        return url
+    log.warning(
+        "webhook blocked (SSRF guard) — unsafe target url=%r subsystem=%s",
+        url,
+        subsystem_id,
+    )
+    return None
+
+
 def _resolve_webhook_url(subsystem: Subsystem, path: str) -> str | None:
     """หา URL ของ webhook endpoint บน subsystem.
 
@@ -130,7 +189,7 @@ def _resolve_webhook_url(subsystem: Subsystem, path: str) -> str | None:
                     url = clean
             except Exception:
                 url = clean + path
-        return _translate_for_docker(url)
+        return _guard(_translate_for_docker(url), subsystem.id)
 
     uris = list(subsystem.redirect_uris or [])
     if not uris:
@@ -140,7 +199,7 @@ def _resolve_webhook_url(subsystem: Subsystem, path: str) -> str | None:
         if not parsed.scheme or not parsed.netloc:
             return None
         url = f"{parsed.scheme}://{parsed.netloc}{path}"
-        return _translate_for_docker(url)
+        return _guard(_translate_for_docker(url), subsystem.id)
     except Exception:
         return None
 
