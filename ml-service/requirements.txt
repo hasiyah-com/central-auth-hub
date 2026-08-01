@@ -1,4 +1,6 @@
-fastapi==0.115.0
+# fastapi 0.118 + starlette 0.48 → fix CVE-2024-47874 / CVE-2025-54121 / CVE-2025-62727
+fastapi==0.118.0
+starlette==0.48.0
 uvicorn[standard]==0.32.0
 pydantic==2.9.2
 
