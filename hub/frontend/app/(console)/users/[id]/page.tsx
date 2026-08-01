@@ -30,6 +30,7 @@ import {
   type AdminUserPasskeys,
 } from "@/lib/passkey";
 import { UserFormModal, type UserRow } from "../_components/UserFormModal";
+import { parseUTC, relTime } from "@/lib/format";
 
 const TYPE_TONE: Record<string, "brand" | "good" | "warn" | "danger" | "default"> = {
   student: "brand",
@@ -56,28 +57,7 @@ function scopeCat(scope: string): string {
   return "other";
 }
 
-/**
- * Backend ส่ง timestamp เป็น naive UTC (`datetime.isoformat()` ไม่มี `Z`/offset).
- * `new Date("2026-07-11T03:30:00")` ถูกตีความเป็น "local time" → ที่ไทย (UTC+7)
- * login ที่พึ่งเกิดจะเพี้ยนเป็น "7 ชม.ก่อน". เติม `Z` ถ้ายังไม่มี tz designator
- * เพื่อบังคับให้ parse เป็น UTC ก่อนแปลงเป็นเวลาท้องถิ่นตอนแสดงผล.
- */
-function parseUTC(iso: string): Date {
-  const hasTz = /[zZ]$|[+-]\d{2}:?\d{2}$/.test(iso);
-  return new Date(hasTz ? iso : iso + "Z");
-}
-
-function relTime(iso: string | null): string {
-  if (!iso) return "—";
-  const d = parseUTC(iso);
-  const m = Math.floor((Date.now() - d.getTime()) / 60000);
-  if (m < 1) return "เมื่อครู่";
-  if (m < 60) return `${m} นาทีก่อน`;
-  if (m < 1440) return `${Math.floor(m / 60)} ชม.ก่อน`;
-  const day = Math.floor(m / 1440);
-  if (day < 30) return `${day} วันก่อน`;
-  return d.toLocaleDateString("th-TH");
-}
+// parseUTC + relTime ย้ายไป lib/format.ts (canonical + unit-tested — กันบั๊ก B53)
 
 function riskLabel(score: number | null): { text: string; tone: string; dot: string } {
   if (score === null) return { text: "—", tone: "bg-ink-100 text-ink-500", dot: "#cbd5e1" };
