@@ -326,4 +326,4 @@ def manage_sync(request: Request):
 
 @app.get("/health")
 def health():
-    return {"status": "ok", **db.stats()}
+    return {"status": "healthy", **db.stats()}
