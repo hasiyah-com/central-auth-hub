@@ -3,10 +3,16 @@
 > คู่มือสำหรับ **ทีมเจ้าของระบบย่อย** (subsystem team) ที่จะ deploy ระบบย่อยขึ้น production
 > แล้วเชื่อมต่อกับ **Central Auth Hub** (Central IAM) ผ่าน OAuth 2.0 + PKCE
 >
-> ต่างจาก [`DEPLOYMENT.md`](DEPLOYMENT.md) ตรงที่ไฟล์นั้นเป็น **runbook ฝั่ง Hub owner**
-> (deploy ทุก stack ด้วย nginx + Let's Encrypt + docker-compose บน VPS ตัวเอง) —
-> ส่วนไฟล์นี้เป็น flow ฝั่ง **subsystem team** ที่ deploy *เฉพาะระบบย่อยของตัวเอง* ผ่าน
-> **Coolify** (PaaS self-hosted) แล้วชี้ `HUB_*_URL` มายัง Central IAM ที่ทีมกลาง host ไว้
+> **ทั้ง Central IAM (Hub) และระบบย่อย deploy บน Coolify เหมือนกัน — แค่คนละเซิร์ฟเวอร์:**
+> ทีมกลาง run Hub บน Coolify server ของตัวเอง (`https://hub.example.ac.th`), ส่วนทีม
+> เจ้าของระบบย่อยแต่ละทีม run ระบบย่อยของตัวเองบน Coolify server แยกอีกตัว แล้วชี้
+> `HUB_*_URL` ข้ามมาที่ Hub ผ่าน HTTPS สาธารณะ — แยก server ทำให้ trust domain แยกจริง
+> (subsystem team เข้าถึง DB/secret ของ Hub ไม่ได้) ตรงกับสถาปัตยกรรมจริงที่คนละทีมดูแล
+>
+> ไฟล์นี้โฟกัส flow ฝั่ง **subsystem team** (deploy เฉพาะระบบย่อยของตัวเอง). สำหรับขั้นตอน
+> ภายในของฝั่ง Hub เอง (generate JWT keys, seed users, train ML, migration ฯลฯ) ดู
+> [`DEPLOYMENT.md`](DEPLOYMENT.md) — หลักการ deploy เหมือนกัน (Coolify: Git → build →
+> env → domain → TLS อัตโนมัติ) ต่างแค่รายการ service ที่ต้อง run
 >
 > สถาปัตยกรรม **ไม่ใช่ SSO** — ระบบย่อยมี session ของตัวเองแยกจาก Hub, Hub ทำหน้าที่
 > authenticate + authorize เท่านั้น (ดู CLAUDE.md)
@@ -21,7 +27,7 @@
 ```
   ┌─────────────────┐   6. register    ┌──────────────────┐
   │  Subsystem Team │─────────────────▶│  Central IAM Hub │
-  │  (Coolify host) │◀── client_id ────│  (ทีมกลาง host)  │
+  │ Coolify server 1│◀── client_id ────│ Coolify server 2 │
   └────────┬────────┘   + secret       └──────────────────┘
            │ 1. source → 2. Docker → 3. .env.production
            │ 4. DB+migration → 5. domain/DNS
