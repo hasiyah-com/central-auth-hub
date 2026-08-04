@@ -1,68 +1,48 @@
-# Hub Auth Platform (Central IAM) — COOLIFY deployment
+# Hub Auth Platform (Central IAM) — DOKPLOY deployment (DB แยกเป็น Dokploy resource)
 # ─────────────────────────────────────────────────────────────────────────────
-# ใช้กับ Coolify resource เดียว type "Docker Compose" (บน Coolify server ของทีมกลาง).
-# ต่างจาก docker-compose.prod.yml (self-managed VPS + nginx + certbot) ตรงที่:
-#   - ❌ ตัด nginx + certbot ออก  → Coolify มี reverse proxy (Traefik) ออก TLS
-#        (Let's Encrypt) + route domain ให้เอง ถ้าปล่อยไว้ nginx จะแย่ง port 80/443
-#        ชนกับ Coolify proxy → deploy พัง
-#   - ❌ ไม่ผูก external network cah-net → Coolify สร้าง network ให้เอง service คุยกัน
-#        ด้วยชื่อ service (postgres/redis/ml-service/hub-backend) ได้เลย
-#   - ❌ ไม่มี container_name / host ports → ให้ Coolify จัดการ (กันชนตอน redeploy)
-#   - ❌ ไม่ใช้ env_file .env.prod → ตั้ง env ทั้งหมดใน Coolify UI (Environment Variables)
-#        Coolify inject ให้ทุก service + ใช้ interpolation ${VAR} ใน compose นี้ได้
+# Compose นี้มี "เฉพาะ app 3 ตัว": ml-service + hub-backend + hub-frontend
+# ส่วน PostgreSQL + Redis = สร้างเป็น Dokploy Database resource แยกต่างหาก
+# (Dokploy จัดการ backup/monitoring ให้ + data อยู่รอด redeploy ของ app)
 #
-# ── ตั้งค่าใน Coolify UI ──────────────────────────────────────────────────────
-# 1. New Resource → Docker Compose → ชี้ repo, Compose file = docker-compose.coolify.yml
-# 2. Environment Variables (ใส่ครบก่อน deploy):
-#      POSTGRES_USER, POSTGRES_PASSWORD, POSTGRES_DB
-#      SECRET_KEY, SECRET_ENCRYPTION_KEY           (prod: ห้ามเป็น default — Hub fail-fast)
-#      GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET
-#      WEBHOOK_SHARED_KEY                          (ต้องตรงกับทุก subsystem)
-#      APP_ENV=production, ENABLE_DOCS=false, ML_SHADOW_MODE=true
-#      NEXT_PUBLIC_HUB_URL=https://hub.<domain>    (build arg ของ frontend)
-#      ...(ตัวอื่นตาม .env.example ของ Hub)
-# 3. Domains (ตั้งต่อ service — Coolify ออก TLS + route ให้):
-#      hub-backend  → https://hub.<domain>    (port 8000) — API/OAuth/JWKS สำหรับ subsystem
-#      hub-frontend → https://admin.<domain>  (port 3000) — admin console
-#      postgres/redis/ml-service = ไม่ตั้ง domain → internal only
-# 4. หลัง deploy ครั้งแรก (ผ่าน Coolify → Terminal ของ hub-backend):
-#      python -m scripts.generate_jwt_keys      # ต้องมีก่อน ไม่งั้น backend fail-fast
-#      alembic upgrade head                      # migration
-#      python -m app.seeds.seed_users            # 100 users
-#      (ml) python -m scripts.generate_data && python -m scripts.train_model
+# ── ทำไมแยก DB ──
+#   - data durability: ลบ/redeploy compose app ไม่กระทบ DB
+#   - Dokploy UI: backup อัตโนมัติ + ปุ่ม restore + metrics ต่อ DB
 #
-# หมายเหตุ: ขั้นตอนภายในของ Hub (keys/seed/train/migration) เหมือน DEPLOYMENT.md §3
-# ต่างแค่รันผ่าน Coolify terminal แทน docker compose exec
+# ── ต่างจาก docker-compose.prod.yml (self-managed VPS + nginx + certbot) ──
+#   - ❌ ตัด nginx + certbot → Dokploy มี Traefik ออก TLS (Let's Encrypt) + route domain
+#   - ❌ ตัด postgres + redis → เป็น Dokploy Database resource (ดู §A ข้างล่าง)
+#   - ❌ ไม่มี container_name / host ports → Dokploy จัดการ
+#   - ❌ ไม่ใช้ env_file → ตั้ง env ใน Dokploy UI (Environment) inject ให้ทุก service
+#
+# ═══ §A. สร้าง Database ก่อน deploy compose นี้ ═══════════════════════════════
+# ใน Dokploy → project → Create Service → เลือก type Database:
+#   1. PostgreSQL (v15) → ตั้ง user/password/db → หลังสร้างจะได้ "Internal Host"
+#      เช่น  s6660506018db-postgres-xxxx  (ใช้เป็น host ใน DATABASE_URL)
+#   2. Redis (v7) → ได้ Internal Host เช่น  s6660506018db-redis-xxxx
+#   * ทั้งคู่อยู่บน network "dokploy-network" → app ในไฟล์นี้เข้าถึงได้ (ดู networks ล่าง)
+#
+# ═══ §B. Environment ที่ต้องตั้งใน Dokploy (ของ compose service นี้) ═══════════
+#   DATABASE_URL=postgresql+psycopg2://<user>:<pass>@<pg-internal-host>:5432/<db>
+#   REDIS_URL=redis://<redis-internal-host>:6379/0
+#   SECRET_KEY=...                  SECRET_ENCRYPTION_KEY=...   (prod: ห้าม default)
+#   GOOGLE_CLIENT_ID=...            GOOGLE_CLIENT_SECRET=...
+#   GOOGLE_REDIRECT_URI=https://hub.<domain>/auth/google/callback
+#   GOOGLE_CHANGE_REDIRECT_URI=https://hub.<domain>/auth/account/change-google/callback
+#   HUB_ISSUER=https://hub.<domain>     WEBHOOK_SHARED_KEY=...
+#   APP_ENV=production  ENABLE_DOCS=false  ML_SHADOW_MODE=true
+#   NEXT_PUBLIC_HUB_URL=https://hub.<domain>   (build arg ของ frontend)
+#
+# ═══ §C. Domains (ตั้งต่อ service ใน Dokploy → Traefik ออก TLS ให้) ════════════
+#   hub-backend  → https://hub.<domain>    port 8000  (subsystem fetch JWKS/OAuth ที่นี่)
+#   hub-frontend → https://admin.<domain>  port 3000  (admin console)
+#   ml-service   = ไม่ตั้ง domain (internal)
+#
+# ═══ §D. หลัง deploy สำเร็จ — init ครั้งเดียว (Dokploy → Terminal ของ hub-backend) ═
+#   python -m app.seeds.seed_users                                  # 100 users
+#   (ml-service terminal) python -m scripts.generate_data && python -m scripts.train_model
+#   * JWT keys + alembic migration = boot command ทำให้อัตโนมัติแล้ว (ไม่ต้องรันเอง)
 
 services:
-  postgres:
-    image: postgres:15-alpine
-    restart: unless-stopped
-    environment:
-      POSTGRES_USER: ${POSTGRES_USER:?set in Coolify env}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set in Coolify env}
-      POSTGRES_DB: ${POSTGRES_DB:?set in Coolify env}
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    # ไม่มี domain → internal only (เข้าถึงผ่าน service name "postgres:5432")
-
-  redis:
-    image: redis:7-alpine
-    restart: unless-stopped
-    volumes:
-      - redis_data:/data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    # internal only — ไม่ expose ออก public (ไม่มี auth โดยตั้งใจ)
-
   ml-service:
     build:
       context: ./ml-service
@@ -72,38 +52,35 @@ services:
       - ml_models:/app/models
       - ml_data:/app/data
     command: uvicorn app.main:app --host 0.0.0.0 --port 9000
-    # hub-backend เรียกผ่าน http://ml-service:9000 (network ภายในของ Coolify)
+    # internal only — hub-backend เรียกผ่าน http://ml-service:9000 (default network)
 
   hub-backend:
     build:
       context: ./hub/backend
       dockerfile: Dockerfile
     restart: unless-stopped
-    # โดเมนตั้งใน Coolify UI → port 8000 (public: subsystem fetch JWKS/OAuth ที่นี่)
+    # โดเมนตั้งใน Dokploy UI → port 8000 (public: subsystem fetch JWKS/OAuth ที่นี่)
     expose:
       - "8000"
     environment:
-      # ค่าที่ประกอบจาก part อื่น (secret/GOOGLE_*/WEBHOOK ฯลฯ Coolify inject ให้เอง)
-      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
-      REDIS_URL: redis://redis:6379/0
+      # ชี้ไป Dokploy Database resource (internal host บน dokploy-network) — ตั้งใน §B
+      DATABASE_URL: ${DATABASE_URL:?ตั้งใน Dokploy env — ชี้ Postgres resource}
+      REDIS_URL: ${REDIS_URL:?ตั้งใน Dokploy env — ชี้ Redis resource}
       ML_SERVICE_URL: http://ml-service:9000
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
     volumes:
       # JWT RSA keys — persist (regenerate = invalidate token ทุกใบ)
       - hub_jwt_keys:/app/keys
       # GeoIP DB (optional) — อัปโหลด GeoLite2-Country.mmdb เข้า volume นี้
       # ถ้าไม่มี → geo_country = NULL (ปกติสำหรับ dev/private IP, ไม่ใช่บั๊ก)
       - hub_data:/app/data
+    networks:
+      - default          # คุยกับ ml-service
+      - dokploy-network  # เข้าถึง Postgres/Redis resource + ให้ Traefik route เข้ามา
     # Boot sequence (idempotent — ปลอดภัยรันทุกครั้งที่ container start):
     #   1. gen JWT keys ถ้ายังไม่มี (test -f กัน + < /dev/null กัน input() ค้าง)
     #      — จำเป็นเพราะ lifespan fail-fast ถ้าไม่มี key (volume ว่างตอน deploy แรก)
-    #   2. alembic upgrade head — สร้าง/อัปเดต schema (ไม่มี create_all() ในโค้ด)
-    #      no-op ถ้า schema ล่าสุดอยู่แล้ว
-    #   3. exec uvicorn — --proxy-headers อ่าน X-Forwarded-Proto/For จาก Coolify proxy (B20)
+    #   2. alembic upgrade head — สร้าง/อัปเดต schema (ไม่มี create_all() ในโค้ด) no-op ถ้าล่าสุดแล้ว
+    #   3. exec uvicorn — --proxy-headers อ่าน X-Forwarded-Proto/For จาก Dokploy proxy (B20)
     #      1 worker: lifespan มี background scheduler (api_guard/subsystem_health) — หลาย worker = รันซ้ำ
     command: >
       sh -c "test -f /app/keys/jwt_private.pem || python -m scripts.generate_jwt_keys < /dev/null;
@@ -116,21 +93,28 @@ services:
       dockerfile: Dockerfile.prod
       args:
         # NEXT_PUBLIC_* ถูก inline ตอน build (client pages: login, passkey/recover)
-        NEXT_PUBLIC_HUB_URL: ${NEXT_PUBLIC_HUB_URL:?set in Coolify env (https://hub.<domain>)}
+        NEXT_PUBLIC_HUB_URL: ${NEXT_PUBLIC_HUB_URL:?ตั้งใน Dokploy env (https://hub.<domain>)}
     restart: unless-stopped
-    # โดเมนตั้งใน Coolify UI → port 3000 (admin console)
+    # โดเมนตั้งใน Dokploy UI → port 3000 (admin console)
     expose:
       - "3000"
     environment:
       HUB_INTERNAL_URL: http://hub-backend:8000
       NODE_ENV: production
+    networks:
+      - default          # คุยกับ hub-backend
+      - dokploy-network  # ให้ Traefik route เข้ามา
     depends_on:
       hub-backend:
         condition: service_started
 
+networks:
+  default:
+  # network กลางของ Dokploy (Traefik + Database resource อยู่บนนี้) — สร้างโดย Dokploy แล้ว
+  dokploy-network:
+    external: true
+
 volumes:
-  postgres_data:
-  redis_data:
   hub_jwt_keys:
   hub_data:
   ml_models:
