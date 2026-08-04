@@ -59,9 +59,22 @@ function CallbackInner() {
           me?.is_hub_admin === true || me?.user_type === "admin";
         const dest = isAdmin ? "/dashboard" : "/developer/subsystems";
 
+        // ยังไม่มี 2FA + ยังไม่ปิดถาวร/ยังไม่ snooze → แสดงหน้า interstitial
+        // "เพิ่มความปลอดภัย" ครั้งเดียวก่อนเข้าหน้าหลัก (ไม่ใช่ banner ทุกหน้า)
+        const status = await fetch(
+          "/api/proxy/auth/account/security-status",
+          { credentials: "include" }
+        )
+          .then((r) => (r.ok ? r.json() : null))
+          .catch(() => null);
+
+        const finalDest = status?.should_prompt_setup
+          ? `/auth/setup?next=${encodeURIComponent(dest)}`
+          : dest;
+
         // ใช้ window.location.href แทน router.replace
         // เพื่อ full reload — กัน RSC cache ของ middleware เก่า
-        window.location.href = dest;
+        window.location.href = finalDest;
       } catch (e) {
         const err = e as { message?: string };
         setError(err.message || "set-token failed");
