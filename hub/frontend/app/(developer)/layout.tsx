@@ -1,6 +1,6 @@
 import { Sidebar } from "@/components/Sidebar";
-import { SecurityOnboarding } from "@/components/SecurityOnboarding";
 
+// การ์ด "เพิ่มความปลอดภัย" ย้ายไปเป็นหน้า interstitial /auth/setup แล้ว (แสดงครั้งเดียวหลัง login)
 export default function DeveloperLayout({
   children,
 }: {
@@ -9,10 +9,7 @@ export default function DeveloperLayout({
   return (
     <div className="min-h-screen flex bg-ink-50">
       <Sidebar />
-      <div className="flex-1 flex flex-col min-w-0">
-        <SecurityOnboarding accountHref="/developer/account" />
-        {children}
-      </div>
+      <div className="flex-1 flex flex-col min-w-0">{children}</div>
     </div>
   );
 }
