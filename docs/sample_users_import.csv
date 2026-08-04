@@ -1,0 +1,5 @@
+email,full_name,user_type,identifier,faculty,major,year_or_position,phone
+somchai.j@example.invalid,สมชาย ใจดี,teacher,T001,วิศวกรรมศาสตร์,คอมพิวเตอร์,ผศ.,0812345678
+suda.n@example.invalid,สุดา งานเยี่ยม,staff,S001,,,จนท. ฝ่ายทะเบียน,0823456789
+nong.r@example.invalid,น้อง เรียนดี,student,650101,วิศวกรรมศาสตร์,ไฟฟ้า,ปี 2,0834567890
+admin.it@example.invalid,ผู้ดูแลระบบ ไอที,admin,A02,,,ผู้ดูแลระบบ,0845678901
