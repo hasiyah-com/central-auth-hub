@@ -62,11 +62,36 @@ services:
     # โดเมนตั้งใน Dokploy UI → port 8000 (public: subsystem fetch JWKS/OAuth ที่นี่)
     expose:
       - "8000"
+    # ⚠️ Dokploy inject env เข้า container "เฉพาะตัวที่ list ที่นี่" (ผ่าน ${VAR} interpolation)
+    # ตั้งค่าใน Dokploy UI → Environment แล้วมันจะเติมให้ · ที่ไม่ list = ไม่ถึง container
     environment:
-      # ชี้ไป Dokploy Database resource (internal host บน dokploy-network) — ตั้งใน §B
+      # ── core ──
+      APP_ENV: ${APP_ENV:-production}
+      SECRET_KEY: ${SECRET_KEY:?ตั้งใน Dokploy env}
+      SECRET_ENCRYPTION_KEY: ${SECRET_ENCRYPTION_KEY:?ตั้งใน Dokploy env (Fernet key)}
+      ENABLE_DOCS: ${ENABLE_DOCS:-false}
+      # ── DB / cache / ML (internal) ──
       DATABASE_URL: ${DATABASE_URL:?ตั้งใน Dokploy env — ชี้ Postgres resource}
       REDIS_URL: ${REDIS_URL:?ตั้งใน Dokploy env — ชี้ Redis resource}
       ML_SERVICE_URL: http://ml-service:9000
+      ML_SHADOW_MODE: ${ML_SHADOW_MODE:-true}
+      # ── URLs / CORS ──
+      HUB_BASE_URL: ${HUB_BASE_URL:-}
+      HUB_ISSUER: ${HUB_ISSUER:-}
+      ADMIN_FRONTEND_URL: ${ADMIN_FRONTEND_URL:-}
+      CORS_ALLOW_ORIGINS: ${CORS_ALLOW_ORIGINS:-}
+      # ── Google OAuth (ขาดตัวใดตัวหนึ่ง = login พัง "Missing client_id") ──
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:?ตั้งใน Dokploy env}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:?ตั้งใน Dokploy env}
+      GOOGLE_REDIRECT_URI: ${GOOGLE_REDIRECT_URI:?ตั้งใน Dokploy env (https://<backend>/auth/google/callback)}
+      OAUTH_CALLBACK_URI: ${OAUTH_CALLBACK_URI:-}
+      GOOGLE_CHANGE_REDIRECT_URI: ${GOOGLE_CHANGE_REDIRECT_URI:-}
+      # ── webhook (ให้ subsystem) ──
+      WEBHOOK_SHARED_KEY: ${WEBHOOK_SHARED_KEY:-}
+      # ── Passkey / WebAuthn (ตั้งเมื่อจะใช้ passkey บน prod — RP_ID = host ของ frontend) ──
+      WEBAUTHN_RP_ID: ${WEBAUTHN_RP_ID:-}
+      WEBAUTHN_RP_NAME: ${WEBAUTHN_RP_NAME:-Central Auth Hub}
+      WEBAUTHN_ORIGINS: ${WEBAUTHN_ORIGINS:-}
     volumes:
       # JWT RSA keys — persist (regenerate = invalidate token ทุกใบ)
       - hub_jwt_keys:/app/keys
