@@ -1,0 +1,50 @@
+# Subsystem C — ระบบเกรด (Grade) — DOKPLOY deployment
+# ─────────────────────────────────────────────────────────────────────────────
+# Dokploy resource เดียว type "Docker Compose". grade ใช้ SQLite (self-contained)
+# → ไม่มี postgres, แค่ app + volume เก็บไฟล์ grade.db (persist ข้าม redeploy)
+#
+# ═══ Environment ที่ต้องตั้งใน Dokploy UI ═══════════════════════════════════════
+#   APP_ENV=production
+#   SESSION_SECRET_KEY=<random 64 chars>
+#   GRADE_CLIENT_ID / GRADE_CLIENT_SECRET / GRADE_ROSTER_API_KEY
+#       (ได้จาก: python -m scripts.register_grade_subsystem ที่ Hub)
+#   HUB_INTERNAL_URL=https://<hub-domain>      HUB_PUBLIC_URL=https://<hub-domain>
+#   HUB_ISSUER=https://<hub-domain>            (ต้องตรง Hub settings.hub_issuer)
+#   GRADE_PUBLIC_URL=https://<grade-domain>
+#   GRADE_CALLBACK_URL=https://<grade-domain>/oauth/callback   (register กับ Hub ให้ตรง)
+#   HUB_WEBHOOK_SHARED_KEY=<ตรงกับ Hub>
+#
+# ═══ Domain ═══════════════════════════════════════════════════════════════════
+#   subsystem-grade → https://<grade-domain>   port 8000
+#
+# schema (SQLite) สร้างอัตโนมัติตอน startup (db.init_db → CREATE TABLE IF NOT EXISTS)
+# sync roster ครั้งแรก: login teacher/staff → หน้า /manage → กด "Sync ตอนนี้"
+
+services:
+  subsystem-grade:
+    build:
+      context: ./hub/subsystem-grade
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    expose:
+      - "8000"
+    env_file:
+      - .env
+    environment:
+      # override — บังคับ SQLite ไปที่ volume ที่ persist (ชนะ .env)
+      DB_PATH: /app/data/grade.db
+    volumes:
+      # เก็บ grade.db — ถ้าไม่มี volume นี้ ข้อมูลเกรดหายทุก redeploy
+      - grade_data:/app/data
+    networks:
+      - default
+      - dokploy-network  # ให้ Traefik route เข้ามา
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips='*'
+
+networks:
+  default:
+  dokploy-network:
+    external: true
+
+volumes:
+  grade_data:
