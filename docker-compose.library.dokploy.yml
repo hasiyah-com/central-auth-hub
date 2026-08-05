@@ -1,0 +1,65 @@
+# Subsystem B — ระบบห้องสมุด (Library) — DOKPLOY deployment
+# ─────────────────────────────────────────────────────────────────────────────
+# Dokploy resource เดียว type "Docker Compose" (บน Dokploy server ของทีม library).
+# self-contained: postgres-library อยู่ใน compose นี้เลย (pattern เดียวกับ dorm)
+#
+# ═══ Environment ที่ต้องตั้งใน Dokploy UI ═══════════════════════════════════════
+#   APP_ENV=production
+#   SESSION_SECRET_KEY=<random 64 chars>       SESSION_COOKIE_SECURE=true
+#   LIBRARY_POSTGRES_USER / LIBRARY_POSTGRES_PASSWORD / LIBRARY_POSTGRES_DB
+#   LIBRARY_CLIENT_ID / LIBRARY_CLIENT_SECRET  (ได้จากลงทะเบียนกับ Hub /developer)
+#   HUB_INTERNAL_URL=https://<hub-domain>      HUB_PUBLIC_URL=https://<hub-domain>
+#   LIBRARY_CALLBACK_URL=https://<library-domain>/oauth/callback  (register กับ Hub ให้ตรง)
+#   HUB_WEBHOOK_SHARED_KEY=<ตรงกับ Hub>        SESSION_COOKIE_NAME=library_session
+#   DEFAULT_BORROW_DAYS=7   MAX_BORROWS_PER_MEMBER=5   (business rule — optional)
+#
+# ═══ Domain ═══════════════════════════════════════════════════════════════════
+#   subsystem-library → https://<library-domain>   port 8000
+#   postgres-library  = ไม่ตั้ง domain (internal)
+#
+# schema สร้างอัตโนมัติตอน startup (create_all). seed 30 หนังสือ (Dokploy terminal):
+#   python -m scripts.seed_books
+
+services:
+  postgres-library:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${LIBRARY_POSTGRES_USER:?set in Dokploy env}
+      POSTGRES_PASSWORD: ${LIBRARY_POSTGRES_PASSWORD:?set in Dokploy env}
+      POSTGRES_DB: ${LIBRARY_POSTGRES_DB:?set in Dokploy env}
+    volumes:
+      - postgres_library_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${LIBRARY_POSTGRES_USER} -d ${LIBRARY_POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  subsystem-library:
+    build:
+      context: ./hub/subsystem-library
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    expose:
+      - "8000"
+    env_file:
+      - .env
+    environment:
+      # override — ชี้ postgres ใน compose นี้เสมอ (ชนะ .env)
+      DATABASE_URL: postgresql+psycopg2://${LIBRARY_POSTGRES_USER}:${LIBRARY_POSTGRES_PASSWORD}@postgres-library:5432/${LIBRARY_POSTGRES_DB}
+    depends_on:
+      postgres-library:
+        condition: service_healthy
+    networks:
+      - default          # คุยกับ postgres-library
+      - dokploy-network  # ให้ Traefik route เข้ามา
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips='*'
+
+networks:
+  default:
+  dokploy-network:
+    external: true
+
+volumes:
+  postgres_library_data:
