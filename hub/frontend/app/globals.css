@@ -18,3 +18,25 @@ body {
 }
 
 /* Sarabun via Google Fonts — loaded in layout.tsx */
+
+/* Staggered reveal — ใช้ในหน้า /auth/setup (reduced-motion safe) */
+@keyframes fadeUp {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.reveal {
+  opacity: 0;
+  animation: fadeUp 0.55s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+@media (prefers-reduced-motion: reduce) {
+  .reveal {
+    animation: none;
+    opacity: 1;
+  }
+}
