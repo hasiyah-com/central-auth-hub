@@ -1,46 +1,29 @@
-# Subsystem A — ระบบหอพัก (Dorm) — DOKPLOY deployment
+# Subsystem A — ระบบหอพัก (Dorm) — DOKPLOY deployment (DB แยกเป็น Dokploy resource)
 # ─────────────────────────────────────────────────────────────────────────────
-# Dokploy resource เดียว type "Docker Compose" (บน Dokploy server ของทีม dorm).
-# self-contained: postgres-dorm อยู่ใน compose นี้เลย (ไม่ต้องสร้าง DB resource แยก)
-# — subsystem DB เล็ก + แต่ละทีม deploy เอง → เก็บ DB ไว้ในก้อนเดียวง่ายกว่า
+# Compose นี้มี "เฉพาะ app" — PostgreSQL สร้างเป็น Dokploy Database resource แยก
+# (แบบเดียวกับ Hub) → data อยู่รอด redeploy + Dokploy backup ให้
 #
-# ต่างจาก docker-compose.dorm.prod.yml (nginx VPS) ตรงที่:
-#   - ❌ ไม่มี container_name / host ports → Dokploy จัดการ
-#   - ❌ ไม่ผูก external cah-net → ใช้ dokploy-network (Traefik route + service คุยกัน)
-#   - env ทั้งหมดจาก Dokploy UI → .env → env_file inject ครบ (ไม่ต้อง list ทีละตัว)
+# ═══ §A. สร้าง Database ก่อน ═══════════════════════════════════════════════════
+# Dokploy → Create Service → Database → PostgreSQL (v15) → ตั้ง user/pass/db
+#   → หลังสร้างได้ "Internal Host" เช่น  <project>-dorm-postgres-xxxx
 #
-# ═══ Environment ที่ต้องตั้งใน Dokploy UI ═══════════════════════════════════════
+# ═══ §B. Environment ที่ต้องตั้งใน Dokploy UI (ของ compose นี้) ═════════════════
 #   APP_ENV=production
 #   SESSION_SECRET_KEY=<random 64 chars>       SESSION_COOKIE_SECURE=true
-#   DORM_POSTGRES_USER / DORM_POSTGRES_PASSWORD / DORM_POSTGRES_DB
+#   DATABASE_URL=postgresql+psycopg2://<user>:<pass>@<dorm-pg-internal-host>:5432/<db>
 #   DORM_CLIENT_ID / DORM_CLIENT_SECRET        (ได้จากลงทะเบียนกับ Hub /developer)
 #   HUB_INTERNAL_URL=https://<hub-domain>      HUB_PUBLIC_URL=https://<hub-domain>
 #   DORM_CALLBACK_URL=https://<dorm-domain>/oauth/callback   (register กับ Hub ให้ตรง)
 #   HUB_WEBHOOK_SHARED_KEY=<ตรงกับ Hub>        SESSION_COOKIE_NAME=dorm_session
 #
-# ═══ Domain (Dokploy → Traefik ออก TLS) ═══════════════════════════════════════
+# ═══ §C. Domain (Dokploy → Traefik ออก TLS) ═══════════════════════════════════
 #   subsystem-dorm → https://<dorm-domain>   port 8000
-#   postgres-dorm  = ไม่ตั้ง domain (internal)
 #
-# หมายเหตุ: schema สร้างอัตโนมัติตอน startup (Base.metadata.create_all) — ไม่ต้อง migration
-# seed 24 ห้อง (ครั้งเดียว, Dokploy terminal): python -m scripts.seed_rooms
+# ⚠️ ตั้ง Compose Path ใน Dokploy = docker-compose.dorm.dokploy.yml (ไม่ใช่ .prod.yml)
+# หมายเหตุ: schema สร้างอัตโนมัติตอน startup (create_all) — ไม่ต้อง migration
+# seed 24 ห้อง (Dokploy terminal ครั้งเดียว): python -m scripts.seed_rooms
 
 services:
-  postgres-dorm:
-    image: postgres:15-alpine
-    restart: unless-stopped
-    environment:
-      POSTGRES_USER: ${DORM_POSTGRES_USER:?set in Dokploy env}
-      POSTGRES_PASSWORD: ${DORM_POSTGRES_PASSWORD:?set in Dokploy env}
-      POSTGRES_DB: ${DORM_POSTGRES_DB:?set in Dokploy env}
-    volumes:
-      - postgres_dorm_data:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DORM_POSTGRES_USER} -d ${DORM_POSTGRES_DB}"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
   subsystem-dorm:
     build:
       context: ./hub/subsystem-dorm
@@ -48,25 +31,15 @@ services:
     restart: unless-stopped
     expose:
       - "8000"
-    # env ทั้งหมดจาก Dokploy UI (.env) — inject ครบทุกตัว
+    # env ทั้งหมดจาก Dokploy UI (.env) — รวม DATABASE_URL ที่ชี้ Postgres resource
     env_file:
       - .env
-    environment:
-      # override — ชี้ postgres ใน compose นี้เสมอ (ชนะ .env)
-      DATABASE_URL: postgresql+psycopg2://${DORM_POSTGRES_USER}:${DORM_POSTGRES_PASSWORD}@postgres-dorm:5432/${DORM_POSTGRES_DB}
-    depends_on:
-      postgres-dorm:
-        condition: service_healthy
     networks:
-      - default          # คุยกับ postgres-dorm
-      - dokploy-network  # ให้ Traefik route เข้ามา
+      # อยู่บน dokploy-network → เข้าถึง Postgres resource + ให้ Traefik route เข้ามา
+      - dokploy-network
     # --proxy-headers อ่าน X-Forwarded-For จาก Dokploy proxy ถูก (get_client_ip)
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips='*'
 
 networks:
-  default:
   dokploy-network:
     external: true
-
-volumes:
-  postgres_dorm_data:
