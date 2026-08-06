@@ -190,3 +190,58 @@ func (r *strReader) Read(p []byte) (int, error) {
 
 // ensure encoding/json + unused suppression
 var _ = json.Marshal
+
+// ── #4 open redirect: safeReturnTo ──
+
+func TestSafeReturnTo(t *testing.T) {
+	cases := map[string]string{
+		"/dashboard":     "/dashboard",  // same-origin path → kept
+		"/a/b?x=1":       "/a/b?x=1",    // path+query → kept
+		"//evil.com":     "/",           // protocol-relative → rejected
+		"//evil.com/x":   "/",           // protocol-relative → rejected
+		`/\evil.com`:     "/",           // backslash fold → rejected
+		"https://evil":   "/",           // absolute → rejected
+		"":               "/",           // empty → root
+		"javascript:x":   "/",           // scheme → rejected
+	}
+	for in, want := range cases {
+		if got := safeReturnTo(in); got != want {
+			t.Errorf("safeReturnTo(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+// ── #7 concurrent revokedAt access (run with -race) ──
+
+func TestRevokedMapConcurrent(t *testing.T) {
+	srv, cfg := newTestServer(t, nil)
+	body := `{"event":"access_revoked","hub_user_id":"u1"}`
+	done := make(chan struct{})
+	// writers via the real webhook path (mutex-guarded)
+	for i := 0; i < 8; i++ {
+		go func() {
+			for j := 0; j < 50; j++ {
+				ts := strconv.FormatInt(time.Now().Unix(), 10)
+				req := httptest.NewRequest(http.MethodPost, "/cah-auth/webhook/access-revoked", io.NopCloser(stringReader(body)))
+				req.Header.Set("X-Hub-Signature-256", signBody(cfg.WebhookSharedKey, body))
+				req.Header.Set("X-Hub-Timestamp", ts)
+				srv.HandleWebhook(httptest.NewRecorder(), req)
+			}
+			done <- struct{}{}
+		}()
+	}
+	// readers via the mutex-guarded accessor
+	for i := 0; i < 8; i++ {
+		go func() {
+			for j := 0; j < 50; j++ {
+				srv.revokedMu.RLock()
+				_ = srv.revokedAt["u1"]
+				srv.revokedMu.RUnlock()
+			}
+			done <- struct{}{}
+		}()
+	}
+	for i := 0; i < 16; i++ {
+		<-done
+	}
+}
