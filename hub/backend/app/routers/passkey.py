@@ -58,7 +58,7 @@ from app.services.feature_extraction import (
     parse_device_type,
     parse_os_name,
 )
-from app.services.geoip import lookup_country
+from app.services.geoip import lookup_country, lookup_geo
 from app.services.ip_blacklist import is_blacklisted
 from app.services.jwt_service import create_access_token
 from app.services import refresh_token_service
@@ -139,7 +139,7 @@ async def _build_login_session(result, request, jti, db, method: str) -> LoginSe
     """
     ip = get_client_ip(request)
     user_agent = request.headers.get("user-agent")
-    geo_country = lookup_country(ip)
+    geo_country, geo_city = lookup_geo(ip)
 
     features = extract_session_features(
         db,
@@ -188,6 +188,7 @@ async def _build_login_session(result, request, jti, db, method: str) -> LoginSe
         ip=ip,
         user_agent=user_agent,
         geo_country=geo_country,
+        geo_city=geo_city,
         os_name=parse_os_name(user_agent),
         browser=parse_browser(user_agent),
         device_type=parse_device_type(user_agent),
@@ -863,6 +864,34 @@ async def login_start(
     return webauthn_service.auth_begin(body.email.strip().lower(), db)
 
 
+def _block_student_hub_login(user, db, ip, method: str) -> None:
+    """นักศึกษาเข้าระบบกลาง (Hub-direct) โดยตรงไม่ได้ — B19 (audit run-2 #3).
+
+    Google/LINE callback บล็อกที่จุด issue JWT อยู่แล้ว. passkey login ก็ต้องบล็อก
+    ด้วย ไม่งั้นนักศึกษาที่ลง passkey ไว้ (เพื่อ subsystem risk-stepup) จะมิ้นท์
+    Hub-direct JWT (aud=hub.internal) ได้ — enrollment ยังทำได้ ห้ามแค่ login.
+    """
+    if getattr(user, "user_type", None) != "student":
+        return
+    log_action(
+        db,
+        actor_id=user.id,
+        action="hub_login_blocked_student",
+        target_type="user",
+        target_id=user.id,
+        ip=ip,
+        metadata={"email": (user.email or "")[:120], "method": method},
+    )
+    db.commit()
+    raise HTTPException(
+        status_code=403,
+        detail={
+            "code": "student_blocked",
+            "message": "นักศึกษาเข้าระบบกลางโดยตรงไม่ได้ — ใช้งานผ่านระบบย่อยเท่านั้น",
+        },
+    )
+
+
 @router.post(
     "/auth/passkey/login/finish",
     summary="ยืนยัน assertion + issue JWT",
@@ -904,6 +933,9 @@ async def login_finish(
         )
         db.commit()
         raise
+
+    # B19 — นักศึกษาห้ามได้ Hub-direct JWT (audit run-2 #3)
+    _block_student_hub_login(result.user, db, ip, "passkey")
 
     # Counter regression — log separately + flag in response
     if result.counter_regression:
@@ -1033,6 +1065,9 @@ async def login_discoverable_finish(
         )
         db.commit()
         raise
+
+    # B19 — นักศึกษาห้ามได้ Hub-direct JWT (audit run-2 #3)
+    _block_student_hub_login(result.user, db, ip, "discoverable")
 
     # Always-2FA (โดยตั้งใจ): discoverable passkey = strong factor → ผ่าน 2FA อยู่แล้ว
     # (เหมือน login_finish) — ดู mfa_policy.login_method_satisfies_2fa

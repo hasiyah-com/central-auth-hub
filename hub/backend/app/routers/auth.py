@@ -32,7 +32,7 @@ from app.services.feature_extraction import (
     parse_device_type,
     parse_os_name,
 )
-from app.services.geoip import lookup_country
+from app.services.geoip import lookup_geo
 from app.services.hooks import (
     EVT_LOGIN_FAILURE,
     EVT_LOGIN_PRE,
@@ -401,7 +401,7 @@ async def google_callback(request: Request, db: Session = Depends(get_db)):
     # ใช้ engine เดียวกับ subsystem OAuth flow → session ทุกแบบมี
     # risk_score / risk_breakdown / risk_reasons ครบใน UI
     user_agent = request.headers.get("user-agent")
-    geo_country = lookup_country(client_ip)
+    geo_country, geo_city = lookup_geo(client_ip)
 
     # 1) สกัด features จาก session + history (12 features)
     features = extract_session_features(
@@ -447,6 +447,7 @@ async def google_callback(request: Request, db: Session = Depends(get_db)):
         ip=client_ip,
         user_agent=user_agent,
         geo_country=geo_country,
+        geo_city=geo_city,
         os_name=parse_os_name(user_agent),
         browser=parse_browser(user_agent),
         device_type=parse_device_type(user_agent),
@@ -908,7 +909,7 @@ async def line_callback(request: Request, db: Session = Depends(get_db)):
     # ใช้ engine เดียวกับ subsystem OAuth flow → session ทุกแบบมี
     # risk_score / risk_breakdown / risk_reasons ครบใน UI
     user_agent = request.headers.get("user-agent")
-    geo_country = lookup_country(client_ip)
+    geo_country, geo_city = lookup_geo(client_ip)
 
     # 1) สกัด features จาก session + history (12 features)
     features = extract_session_features(
@@ -954,6 +955,7 @@ async def line_callback(request: Request, db: Session = Depends(get_db)):
         ip=client_ip,
         user_agent=user_agent,
         geo_country=geo_country,
+        geo_city=geo_city,
         os_name=parse_os_name(user_agent),
         browser=parse_browser(user_agent),
         device_type=parse_device_type(user_agent),
@@ -1297,7 +1299,7 @@ async def _refresh_risk_gate(
 
     client_ip = get_client_ip(request)
     user_agent = request.headers.get("user-agent")
-    geo_country = lookup_country(client_ip)
+    geo_country, geo_city = lookup_geo(client_ip)
 
     features = extract_session_features(
         db,
@@ -1475,6 +1477,11 @@ async def refresh_access_token(
     sess = (
         db.query(LoginSession).filter(LoginSession.id == result["session_id"]).first()
     )
+    # session ถูก force-logout ไปแล้ว → ห้ามชุบชีวิตด้วย refresh (audit run-2 #1).
+    # refresh ตัวใหม่ที่ rotate เพิ่งออก ต้อง revoke ทิ้ง (ไม่งั้น orphan ค้างใน Redis)
+    if sess is not None and sess.logout_at is not None:
+        refresh_token_service.revoke(result["refresh_id"])
+        raise HTTPException(status_code=401, detail="session terminated")
     if sess:
         from datetime import datetime as _dt
 

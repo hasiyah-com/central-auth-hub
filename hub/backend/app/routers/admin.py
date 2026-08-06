@@ -46,6 +46,7 @@ from app.services.change_request_service import close_subsystem_login_sessions
 from app.services.auth_policy import get_auth_policy, set_auth_policy
 from app.services.identity_challenge import create_challenge
 from app.services.jwt_service import revoke_jti
+from app.services import refresh_token_service
 from app.services.webhook_dispatcher import (
     send_access_restored,
     send_access_revoked,
@@ -740,6 +741,7 @@ def user_login_sessions(
             "is_hub_direct": s.subsystem_id is None,
             "ip": str(s.ip) if s.ip else None,
             "geo_country": s.geo_country,
+            "geo_city": s.geo_city,
             "os_name": s.os_name,
             "browser": s.browser,
             "device_type": s.device_type,
@@ -846,6 +848,10 @@ def force_logout_user(
     sub_ids = set()
     for s in sessions:
         s.logout_at = now
+        # revoke refresh token too — ไม่งั้น attacker เรียก /auth/refresh มิ้นท์
+        # access token ใหม่ กลับเข้าระบบได้ ทั้งที่ถูก force-logout แล้ว (audit run-2 #1)
+        if s.refresh_id:
+            refresh_token_service.revoke(s.refresh_id)
         if s.subsystem_id is not None:
             sub_ids.add(s.subsystem_id)
         if s.jti:
