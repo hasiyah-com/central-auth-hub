@@ -1,0 +1,282 @@
+[
+  {
+    "verdict": "confirmed",
+    "title": "Admin force-logout does not revoke refresh tokens, so /auth/refresh trivially restores an ejected session",
+    "description": "Admin 'Force Logout All' (POST /admin/users/{id}/force-logout) marks every active LoginSession logout_at=now, blacklists each session's access-token jti, and fires subsystem webhooks — but it never revokes the rotating refresh token. The refresh Redis entry (refresh:{refresh_id}) is left intact, and POST /auth/refresh loads the session by id, overwrites its jti and refresh_id with fresh values, and bumps last_seen_at WITHOUT ever consulting logout_at (its only guard is User.status=='active', which force-logout does not change by design). An attacker holding the pre-logout refresh token therefore calls /auth/refresh once and receives a brand-new access token + rotating 30-day refresh token, fully reinstating the session the admin believed was terminated; the logged-out session row is silently revived. Two sibling revoke paths (self-logout auth.py:1549 and account_link _revoke_all_sessions) correctly revoke the refresh token — force_logout_user is the outlier. In the project default ML_SHADOW_MODE=true the refresh risk-gate does not block, and even in enforce mode a same-IP/device refresh is normal-risk and allowed.",
+    "root_cause": "force_logout_user in hub/backend/app/routers/admin.py does not call refresh_token_service.revoke(s.refresh_id) for each session, and refresh_access_token in hub/backend/app/routers/auth.py does not reject sessions whose logout_at is set, allowing a force-logged-out session to be revived via refresh-token rotation.",
+    "intended_behavior": "Admin force-logout is an incident-response control that should immediately and durably terminate all of a user's sessions (access AND refresh), so a compromised/ejected account cannot regain access without a fresh interactive login.",
+    "trace": [
+      {"kind": "entrypoint", "file": "hub/backend/app/routers/admin.py", "line": 820, "scope": "force_logout_user", "description": "Admin POST /admin/users/{user_id}/force-logout iterates active sessions."},
+      {"kind": "propagation", "file": "hub/backend/app/routers/admin.py", "line": 847, "scope": "force_logout_user", "description": "Loop sets s.logout_at=now and revoke_jti(s.jti) but has no refresh_id handling — the refresh token is never revoked."},
+      {"kind": "propagation", "file": "hub/backend/app/routers/auth.py", "line": 1459, "scope": "refresh_access_token", "description": "POST /auth/refresh calls refresh_token_service.rotate(body.refresh_token), which succeeds because the refresh Redis entry still exists."},
+      {"kind": "sink", "file": "hub/backend/app/routers/auth.py", "line": 1476, "scope": "refresh_access_token", "description": "Loads LoginSession by id, overwrites sess.jti and sess.refresh_id with new values and bumps last_seen_at, never checking sess.logout_at; a fresh non-blacklisted access token + refresh token are returned, reviving the session."}
+    ],
+    "conditions": [
+      {"kind": "authorization_role", "description": "Attacker possesses a valid pre-logout refresh token for the target account (e.g. a compromised admin/teacher/staff Hub-console session; both tokens are handed to the browser at login)."},
+      {"kind": "data_state", "description": "An admin has executed force-logout on that account; the refresh token has not yet reached its 30-day expiry."},
+      {"kind": "system_configuration", "description": "ML_SHADOW_MODE=true (project default) so the refresh risk-gate does not block; even enforce mode allows a normal-risk same-device refresh."}
+    ],
+    "execution": {
+      "attacker_perspective": "An attacker who has compromised a Hub-console account and captured its access + refresh tokens, after an admin attempts to eject them.",
+      "payloads": ["POST /auth/refresh  {\"refresh_token\":\"<pre-logout refresh token>\"}"],
+      "instructions": [
+        "Admin clicks Force Logout All on the compromised account (POST /admin/users/{id}/force-logout).",
+        "Attacker sends POST /auth/refresh with the refresh token captured before the logout.",
+        "Server rotates and returns a new access token + new 30-day refresh token; the session row's jti/refresh_id are overwritten and last_seen_at bumped, logout_at ignored.",
+        "Attacker resumes full access; repeat indefinitely as each refresh mints a fresh token."
+      ],
+      "expected_result": "A 200 response with a new valid access_token and refresh_token despite the force-logout, confirming the incident-response control is defeated."
+    },
+    "remediation": {
+      "strategy": "Revoke the refresh token during force-logout AND make the refresh endpoint honor logout_at. Mirror _revoke_all_sessions.",
+      "code_changes": [
+        {"file_name": "hub/backend/app/routers/admin.py", "fixed_code": "for s in sessions:\n    s.logout_at = now\n    if s.refresh_id:\n        refresh_token_service.revoke(s.refresh_id)   # <-- add\n    if s.jti:\n        ... revoke_jti(...)"},
+        {"file_name": "hub/backend/app/routers/auth.py", "fixed_code": "sess = db.query(LoginSession).filter(LoginSession.id == result[\"session_id\"]).first()\nif sess and sess.logout_at is not None:\n    raise HTTPException(status_code=401, detail=\"session terminated\")"}
+      ]
+    },
+    "severity": {
+      "likelihood": {"score": "high", "reason": "The refresh call is trivial and the frontend performs it automatically; no additional bug or timing is required."},
+      "impact": {"score": "high", "reason": "Defeats an incident-response control, granting persistent access to a compromised/ejected Hub-console account."},
+      "overall_severity": "high"
+    },
+    "confidence": {"score": "high", "reason": "Independently verified against source: force_logout_user has zero refresh handling (admin.py:847-859) and refresh_access_token overwrites jti/refresh_id without checking logout_at (auth.py:1476-1487)."}
+  },
+  {
+    "verdict": "confirmed",
+    "title": "Post-approval access_policy widening skips admin re-approval, enabling full user-directory harvest via the Roster API",
+    "description": "PATCH /developer/subsystems/{id} splits edits into two groups. redirect_uris, scope, and allowed_roles route through create_change_request() and require pending admin re-approval for non-admins; but access_policy and access_policy_config are in the immediate-apply group (subsystem.access_policy = norm_policy, committed instantly, gated only by the owner's own step-up). access_policy is the sole control over how much of the user directory the subsystem's Roster API exposes: policy 'all' returns every active user, and GET /api/v1/roster (X-Api-Key auth, owned by the developer) returns {user_id, email, user_type} for each. A developer therefore takes a subsystem the admin approved with a narrow policy (e.g. 'explicit' whitelist) and silently widens it to 'all', then dumps the entire ~100-user directory including which accounts are admins — the admin's approval decision (the only gate on 'should this subsystem see the whole directory') is retroactively invalidated with no re-review. The system treats scope broadening as approval-worthy but treats the higher-blast-radius audience broadening as immediate. (Found independently by two hunters.)",
+    "root_cause": "update_subsystem in hub/backend/app/routers/developer.py places access_policy/access_policy_config in the immediate-apply group instead of routing widening through create_change_request(), so a subsystem owner can enlarge the audience past the admin-approved scope without re-approval.",
+    "intended_behavior": "Changes that widen a subsystem's trust/data surface should require admin re-approval (as scope and allowed_roles already do); audience widening to 'all' exposes the whole directory and is at least as sensitive as scope.",
+    "trace": [
+      {"kind": "entrypoint", "file": "hub/backend/app/routers/developer.py", "line": 1096, "scope": "update_subsystem", "description": "Developer PATCH /developer/subsystems/{id} with {\"access_policy\":\"all\"} (require_developer + owner step-up only)."},
+      {"kind": "propagation", "file": "hub/backend/app/routers/developer.py", "line": 1176, "scope": "update_subsystem", "description": "access_policy is handled in the immediate_changes group: subsystem.access_policy = norm_policy set and committed directly, with no create_change_request / status->pending."},
+      {"kind": "propagation", "file": "hub/backend/app/services/access_policy.py", "line": 109, "scope": "list_allowed_users", "description": "Policy 'all' returns every User with status=='active' (students, staff, and admins) with no user_type filter."},
+      {"kind": "sink", "file": "hub/backend/app/routers/roster.py", "line": 46, "scope": "get_roster", "description": "GET /api/v1/roster (X-Api-Key) returns {user_id, email, user_type} for list_allowed_users — the full directory when policy is 'all'."}
+    ],
+    "conditions": [
+      {"kind": "authorization_role", "description": "Attacker holds a require_developer account (teacher/staff/admin) that owns one admin-approved (active) subsystem and its roster API key (issued at registration / rotate-api-key)."}
+    ],
+    "execution": {
+      "attacker_perspective": "A semi-trusted developer who owns an approved narrow-audience subsystem and wants the whole user directory.",
+      "payloads": ["PATCH /developer/subsystems/{id}  {\"access_policy\":\"all\"}", "GET /api/v1/roster  (header X-Api-Key: <owned key>)"],
+      "instructions": [
+        "Register a subsystem with access_policy='explicit'; get admin approval (status active).",
+        "PATCH the subsystem setting access_policy='all' — applied immediately, no admin re-review.",
+        "Call GET /api/v1/roster with the owned X-Api-Key.",
+        "Receive email + user_type for all ~100 active users, including admin accounts."
+      ],
+      "expected_result": "The roster response lists every active user's email and role, disclosing the full directory and pinpointing admin accounts, without any admin review of the widened policy."
+    },
+    "remediation": {
+      "strategy": "Route access_policy/access_policy_config WIDENING through the same create_change_request() pending-admin-approval path as scope/allowed_roles (any transition toward all/role/attribute, or broadening the config). Narrowing can stay immediate. Alternatively reset status->pending on any policy change, or restrict /api/v1/roster to explicit-whitelist subsystems.",
+      "code_changes": [
+        {"file_name": "hub/backend/app/routers/developer.py", "fixed_code": "# in update_subsystem: if the new access_policy is broader than current,\n# enqueue instead of applying immediately\nif _policy_is_broader(norm_policy, subsystem.access_policy):\n    _enqueue(\"access_policy\", {\"access_policy\": norm_policy, \"access_policy_config\": norm_cfg})\nelse:\n    subsystem.access_policy = norm_policy\n    subsystem.access_policy_config = norm_cfg"}
+      ]
+    },
+    "severity": {
+      "likelihood": {"score": "medium", "reason": "Requires a developer account and one approved subsystem, both normal workflow; no additional bug needed."},
+      "impact": {"score": "medium", "reason": "Bulk PII disclosure of all ~100 users' emails plus role labels that identify admin accounts (targeting recon), with no admin visibility of the widened policy."},
+      "overall_severity": "medium"
+    },
+    "confidence": {"score": "high", "reason": "Confirmed against source (developer.py immediate group includes access_policy; roster returns email+user_type for policy 'all') and independently reported by two separate hunters."}
+  },
+  {
+    "verdict": "confirmed",
+    "title": "Student RBAC bypass: passkey login issues a Hub-direct JWT to students, defeating the B19 student-block invariant",
+    "description": "The trust model (CLAUDE.md B19, passkey.py header) states students must never receive a Hub-direct JWT; they enter only through subsystems. The Google callback (auth.py:254) and LINE callback (auth.py:802) both enforce this with an explicit user_type=='student' -> 403 block. The passkey login path, added later, has no such check: /auth/credentials/setup deliberately allows students to enroll a passkey (needed for subsystem risk-stepup), and /auth/passkey/login/finish (and login/discoverable/finish) call create_access_token(result.user) with no user_type filter anywhere in webauthn_service, minting a hub.internal access token + rotating refresh token for a student. Downstream require_developer/require_hub_admin re-query user_type from the DB, so this does not by itself reach /developer or /admin data — but it defeats the documented layer-1 RBAC control and creates a hub.internal token for a principal the threat model assumes can never hold one (dangerous if any get_current_user-only endpoint later exposes cross-user data, or if the Next.js console treats a valid hub_token cookie as authenticated shell access).",
+    "root_cause": "login_finish / login_discoverable_finish in hub/backend/app/routers/passkey.py issue a Hub-direct access token without re-applying the user_type=='student' block that the Google and LINE callbacks enforce, so a student's (legitimately enrolled) passkey yields a Hub-direct session.",
+    "intended_behavior": "Students may enroll passkeys for subsystem risk-stepup, but every Hub-direct JWT issuance point must reject students (B19), exactly as the Google/LINE callbacks do.",
+    "trace": [
+      {"kind": "entrypoint", "file": "hub/backend/app/routers/passkey.py", "line": 850, "scope": "login_start", "description": "Unauthenticated POST /auth/passkey/login/start begins passkey assertion for the student's email."},
+      {"kind": "propagation", "file": "hub/backend/app/routers/passkey.py", "line": 866, "scope": "login_finish", "description": "POST /auth/passkey/login/finish calls webauthn_service.auth_complete(); no user_type filter exists in webauthn_service."},
+      {"kind": "sink", "file": "hub/backend/app/routers/passkey.py", "line": 928, "scope": "login_finish", "description": "create_access_token(result.user) mints a hub.internal JWT (user_type=student) with no student block; login_discoverable_finish is identical."}
+    ],
+    "conditions": [
+      {"kind": "authorization_role", "description": "Attacker is a student with a university Google account who has enrolled a passkey (permitted via /auth/credentials/setup or subsystem enroll)."}
+    ],
+    "execution": {
+      "attacker_perspective": "A student who should be confined to subsystem access.",
+      "payloads": ["POST /auth/passkey/login/start {\"email\":\"<student>@uni.ac.th\"}", "POST /auth/passkey/login/finish {<assertion>}"],
+      "instructions": [
+        "As a student, enroll a passkey via /auth/credentials/setup (allowed by design).",
+        "Call /auth/passkey/login/start then /finish with the passkey assertion.",
+        "Receive a hub.internal access token + refresh token — the Hub-direct session the student block is meant to deny."
+      ],
+      "expected_result": "A valid Hub-direct JWT (aud=hub.internal, user_type=student) is issued, violating B19; the Next.js console accepts the hub_token cookie as authenticated."
+    },
+    "remediation": {
+      "strategy": "Re-apply the student block at every Hub-direct JWT issuance point. After auth_complete/discoverable_complete in login_finish and login_discoverable_finish, reject user_type=='student' (log + 403). Keep student passkey ENROLLMENT allowed (subsystem risk-stepup needs it); only Hub-direct LOGIN must reject.",
+      "code_changes": [
+        {"file_name": "hub/backend/app/routers/passkey.py", "fixed_code": "if result.user.user_type == \"student\":\n    log_action(db, actor_id=result.user.id, action=\"hub_login_blocked_student\", target_type=\"user\", target_id=result.user.id, ip=ip)\n    db.commit()\n    raise HTTPException(status_code=403, detail={\"code\": \"student_blocked\"})\ntoken, jti = create_access_token(result.user)"}
+      ]
+    },
+    "severity": {
+      "likelihood": {"score": "high", "reason": "Any student with a university Google account can enroll a passkey and log in; the endpoints are live and reachable."},
+      "impact": {"score": "medium", "reason": "Defeats the documented layer-1 RBAC invariant and mints a hub.internal token for a student; direct data exposure is bounded by downstream require_developer/require_hub_admin re-checks."},
+      "overall_severity": "medium"
+    },
+    "confidence": {"score": "high", "reason": "Verified: passkey login_finish calls create_access_token(result.user) with no user_type/student guard (only user_type appears as a response field), unlike auth.py:254/802 which block students."}
+  },
+  {
+    "verdict": "confirmed",
+    "title": "Open redirect in Go auth-proxy SDK via return_to (// and /\\ bypass the path guard)",
+    "description": "The Go auth-proxy relying-party SDK takes an unauthenticated return_to query param on /login and /logout, stores it, and after the OAuth round-trip redirects to it. The only guard is strings.HasPrefix(target, \"/\"), which accepts protocol-relative URLs like //evil.com (starts with '/'). Go's net/http.Redirect emits //evil.com verbatim as Location (it only path-normalizes when the parsed URL has empty Scheme AND empty Host; //evil.com parses to Host=evil.com), and browsers follow it to http://evil.com. /\\evil.com is a secondary vector (browsers fold backslash to slash). An attacker sends a victim a link on the trusted proxy origin that bounces to an attacker site after the login/logout flow.",
+    "root_cause": "HandleCallback/HandleLogout in hub/sdk/auth-proxy/internal/handler/handler.go validate the redirect target only with strings.HasPrefix(target, \"/\"), which does not reject //host or /\\host, allowing an open redirect off the trusted origin.",
+    "intended_behavior": "return_to should only permit same-origin relative paths so post-login/logout redirects stay on the proxy's own origin.",
+    "trace": [
+      {"kind": "entrypoint", "file": "hub/sdk/auth-proxy/internal/handler/handler.go", "line": 77, "scope": "HandleLogin", "description": "return_to taken unauthenticated from r.URL.Query().Get(\"return_to\") and stored in the temp cookie."},
+      {"kind": "sink", "file": "hub/sdk/auth-proxy/internal/handler/handler.go", "line": 210, "scope": "HandleCallback", "description": "target guarded only by !strings.HasPrefix(target, \"/\"); //evil.com passes and is emitted verbatim by http.Redirect; HandleLogout:221 has the same guard on return_to."}
+    ],
+    "conditions": [
+      {"kind": "user_interaction", "description": "Victim clicks an attacker-crafted /login?return_to=//evil.com or /logout?return_to=//evil.com link on the proxy origin."},
+      {"kind": "third_party_dependency", "description": "Applies to apps deploying the Go auth-proxy SDK as their authenticating reverse proxy."}
+    ],
+    "execution": {
+      "attacker_perspective": "An attacker phishing users of an app fronted by the auth-proxy.",
+      "payloads": ["GET /cah-auth/logout?return_to=//evil.com", "GET /cah-auth/login?return_to=//evil.com"],
+      "instructions": ["Send the victim the crafted link on the trusted proxy origin.", "After the login/logout flow the proxy issues Location: //evil.com.", "The browser navigates to http://evil.com."],
+      "expected_result": "Location: //evil.com is returned and the browser is redirected off-origin, confirming the open redirect."
+    },
+    "remediation": {
+      "strategy": "Reject return_to values that are not strictly same-origin relative paths.",
+      "code_changes": [
+        {"file_name": "hub/sdk/auth-proxy/internal/handler/handler.go", "fixed_code": "if target == \"\" || !strings.HasPrefix(target, \"/\") ||\n   strings.HasPrefix(target, \"//\") || strings.HasPrefix(target, \"/\\\\\") {\n    target = \"/\"\n}"}
+      ]
+    },
+    "severity": {
+      "likelihood": {"score": "high", "reason": "Unauthenticated GET; the crafted link works with no prerequisites."},
+      "impact": {"score": "medium", "reason": "Phishing / redirect-based credential-theft aid on an identity boundary; no direct data access."},
+      "overall_severity": "medium"
+    },
+    "confidence": {"score": "high", "reason": "Guard logic read directly; rests on documented net/http.Redirect behavior for protocol-relative URLs. PoC not executed (no Go/Docker at audit time)."}
+  },
+  {
+    "verdict": "confirmed",
+    "title": "Grade subsystem webhook receiver does not bind events to its own client_id (cross-subsystem replay forces re-auth / mass logout)",
+    "description": "The Hub signs all subsystem back-channel webhooks with a single shared key (webhook_dispatcher.py uses settings.webhook_shared_key). dorm and library reject any webhook whose payload client_id != their own client_id; the grade receiver (hub/subsystem-grade/app/webhook.py) verifies the HMAC + timestamp but never checks client_id, so a validly-signed webhook the Hub emitted for a DIFFERENT subsystem can be replayed to grade within the 300s window and grade acts on it. Replaying access-updated/revoked with a hub_user_id forces that user to re-login on grade; replaying a subsystem-wide event (hub_user_id=null) hits set_reauth(GLOBAL_REAUTH), logging out every grade user at once. Impact is an availability nuisance (forced re-auth), self-healing (users re-login); no data access or privilege gain. It is the exact defense-in-depth boundary dorm/library enforce and grade drops (B55-pattern inconsistency).",
+    "root_cause": "The webhook handlers in hub/subsystem-grade/app/webhook.py do not verify payload client_id against settings.grade_client_id (unlike dorm/library), so shared-key-signed webhooks meant for other subsystems are accepted.",
+    "intended_behavior": "Each subsystem should only act on webhooks addressed to it; since the signing key is shared across subsystems, the receiver must check the event's client_id matches its own (as dorm and library do).",
+    "trace": [
+      {"kind": "entrypoint", "file": "hub/subsystem-grade/app/webhook.py", "line": 35, "scope": "_verify", "description": "POST /internal/access-* verifies HMAC + timestamp freshness only; no client_id check."},
+      {"kind": "sink", "file": "hub/subsystem-grade/app/webhook.py", "line": 91, "scope": "access_updated", "description": "Acts on payload hub_user_id (or GLOBAL_REAUTH when null) with no binding to grade_client_id, so a webhook signed for another subsystem is honored."}
+    ],
+    "conditions": [
+      {"kind": "authorization_role", "description": "Attacker can obtain one validly-signed Hub webhook (another subsystem that legitimately receives shared-key webhooks, or a network position on the internal webhook channel)."},
+      {"kind": "timing_dependency", "description": "Replay must occur within the 300s timestamp window."}
+    ],
+    "execution": {
+      "attacker_perspective": "An operator of another subsystem, or an attacker on the internal webhook path, who has one signed webhook.",
+      "payloads": ["POST /internal/access-updated to grade with a captured {body, X-Hub-Signature-256, X-Hub-Timestamp} and hub_user_id=null"],
+      "instructions": ["Capture one validly-signed Hub webhook.", "Replay it to grade's /internal/access-* endpoint within 300s.", "Grade sets reauth for the target user or all users."],
+      "expected_result": "Grade forces re-authentication for the specified user, or all grade users when hub_user_id is null, from a webhook not addressed to grade."
+    },
+    "remediation": {
+      "strategy": "Add the client_id-binding guard grade's siblings already have, after _verify() in each handler.",
+      "code_changes": [
+        {"file_name": "hub/subsystem-grade/app/webhook.py", "fixed_code": "payload = await _verify(request)\npcid = payload.get(\"client_id\")\nif pcid and pcid != settings.grade_client_id:\n    raise HTTPException(status_code=400, detail=\"client_id mismatch\")"}
+      ]
+    },
+    "severity": {
+      "likelihood": {"score": "low", "reason": "Requires capturing one validly-signed Hub webhook (another subsystem or internal network position)."},
+      "impact": {"score": "medium", "reason": "Forced re-auth of a targeted user or mass logout of all grade users; self-healing, no data access or privilege gain."},
+      "overall_severity": "low"
+    },
+    "confidence": {"score": "high", "reason": "grade/webhook.py has no client_id check while dorm/library reject on client_id mismatch; the Hub signs with a single shared key (webhook_dispatcher.py)."}
+  },
+  {
+    "verdict": "confirmed",
+    "title": "Webhook signature does not cover the timestamp and there is no nonce, so the freshness window is replayable",
+    "description": "The Hub signs back-channel webhooks as HMAC-SHA256(shared_key, body) and sends the timestamp as an unauthenticated X-Hub-Timestamp header (webhook_dispatcher.py). Every receiver (Go auth-proxy handler.go, Node webhookReceiver.ts, and all three FastAPI subsystems) checks timestamp freshness but computes the HMAC over the body only, so an attacker who captures one valid (body, signature) pair can replay it indefinitely by overwriting X-Hub-Timestamp with the current epoch — the signature still matches because it never covered the timestamp, and there is no nonce/idempotency tracking. Replaying access_revoked re-forces a logout; if a consumer acts on access_restored, replay could re-grant a just-revoked local session. This is a design weakness spanning the Hub and every SDK/subsystem receiver.",
+    "root_cause": "_sign in hub/backend/app/services/webhook_dispatcher.py signs only the body and the receivers verify only the body, leaving the timestamp unauthenticated and enabling replay within (and, by resetting the timestamp, beyond) the freshness window.",
+    "intended_behavior": "The freshness timestamp is meant to bound replay; to do so it must be covered by the signature, and ideally each event should be single-use via a nonce/idempotency id.",
+    "trace": [
+      {"kind": "entrypoint", "file": "hub/backend/app/services/webhook_dispatcher.py", "line": 148, "scope": "_sign", "description": "HMAC-SHA256(shared_key, body) — timestamp not included in the signed data."},
+      {"kind": "sink", "file": "hub/backend/app/services/webhook_dispatcher.py", "line": 205, "scope": "send_access_updated", "description": "Sends X-Hub-Timestamp as a separate unauthenticated header; receivers (Go/Node/subsystems) verify body-only HMAC then trust the mutable timestamp for freshness, so a captured request replays."}
+    ],
+    "conditions": [
+      {"kind": "authorization_role", "description": "Attacker has captured one validly-signed webhook (network position on the internal channel or a receiving subsystem)."}
+    ],
+    "execution": {
+      "attacker_perspective": "An attacker holding one captured signed webhook.",
+      "payloads": ["Replay {body, X-Hub-Signature-256} with X-Hub-Timestamp set to the current epoch"],
+      "instructions": ["Capture a valid webhook.", "Resend it with a refreshed X-Hub-Timestamp header; the body-only signature still verifies.", "Repeat to replay the event arbitrarily."],
+      "expected_result": "The receiver accepts the replayed event outside its intended one-shot window, confirming the freshness control is ineffective."
+    },
+    "remediation": {
+      "strategy": "Include the timestamp (and an event id/nonce) in the signed payload on the Hub and verify the same on all receivers; track recently-seen signatures/nonces for true single-use replay protection.",
+      "code_changes": [
+        {"file_name": "hub/backend/app/services/webhook_dispatcher.py", "fixed_code": "# sign timestamp.body instead of body alone\nsigned = f\"{ts}.\".encode() + body_bytes\nsig = _sign(signed)\n# receivers must recompute HMAC over f\"{X-Hub-Timestamp}.\"+body and compare"}
+      ]
+    },
+    "severity": {
+      "likelihood": {"score": "low", "reason": "Requires capturing one validly-signed webhook."},
+      "impact": {"score": "low", "reason": "Replay of idempotent access events (forced re-auth / re-applied revoke); no data disclosure or privilege gain."},
+      "overall_severity": "low"
+    },
+    "confidence": {"score": "high", "reason": "Confirmed the Hub signs body-only and receivers verify body-only across Go/Node/subsystem code."}
+  },
+  {
+    "verdict": "confirmed",
+    "title": "Go auth-proxy: unsynchronized concurrent access to the in-memory revokedAt map crashes the proxy (DoS)",
+    "description": "In the Go auth-proxy, revokedAt (map[string]int64) is written in HandleWebhook and read in HandleProxy with no mutex. Concurrent webhook POST + proxy traffic triggers Go's runtime 'fatal error: concurrent map read and map write', which is a runtime throw NOT recoverable by chi middleware.Recoverer, so the whole proxy process crashes. The revocation state is also in-memory only (lost on restart / not shared across instances).",
+    "root_cause": "HandleWebhook and HandleProxy in hub/sdk/auth-proxy/internal/handler/handler.go access the shared revokedAt map without a mutex, causing a fatal concurrent map read/write under normal concurrent load.",
+    "intended_behavior": "Shared revocation state must be safe for concurrent read/write (mutex or sync.Map), and ideally durable across restarts.",
+    "trace": [
+      {"kind": "entrypoint", "file": "hub/sdk/auth-proxy/internal/handler/handler.go", "line": 274, "scope": "HandleWebhook", "description": "Writes revokedAt[...] on webhook receipt with no lock."},
+      {"kind": "sink", "file": "hub/sdk/auth-proxy/internal/handler/handler.go", "line": 327, "scope": "HandleProxy", "description": "Reads revokedAt[...] on proxied requests with no lock; concurrent with the write this is a fatal runtime map race, crashing the process."}
+    ],
+    "conditions": [
+      {"kind": "third_party_dependency", "description": "Applies to apps deploying the Go auth-proxy SDK under concurrent traffic + webhook delivery."}
+    ],
+    "execution": {
+      "attacker_perspective": "Any client generating proxy traffic while a webhook arrives (can be induced by triggering a revocation).",
+      "payloads": ["concurrent GET (proxied) + POST /webhook"],
+      "instructions": ["Drive proxy traffic.", "Cause the Hub to send an access webhook (or send one) concurrently.", "The Go runtime aborts on concurrent map read/write."],
+      "expected_result": "fatal error: concurrent map read and map write — the proxy process crashes (availability loss)."
+    },
+    "remediation": {
+      "strategy": "Guard revokedAt with a sync.RWMutex or replace it with sync.Map; persist to shared storage if durability across restarts/instances is needed.",
+      "code_changes": [
+        {"file_name": "hub/sdk/auth-proxy/internal/handler/handler.go", "fixed_code": "var revokedMu sync.RWMutex\n// write: revokedMu.Lock(); revokedAt[k]=v; revokedMu.Unlock()\n// read:  revokedMu.RLock(); v:=revokedAt[k]; revokedMu.RUnlock()"}
+      ]
+    },
+    "severity": {
+      "likelihood": {"score": "medium", "reason": "Concurrent proxy traffic + webhook delivery is normal operation; the race triggers without special effort."},
+      "impact": {"score": "low", "reason": "Availability only — process crash; no data or auth compromise."},
+      "overall_severity": "low"
+    },
+    "confidence": {"score": "high", "reason": "Map declared and accessed read/write across two handlers with no synchronization; Go semantics make concurrent map read/write a fatal runtime throw."}
+  },
+  {
+    "verdict": "confirmed",
+    "title": "Step-up (critical-action) grant is not bound to the action it was earned for",
+    "description": "The step-up cache key is stepup:granted:{user_id}:{jti} and the gate() bypass checks only for a truthy cached grant for that user/jti; it does not compare the granted action to the requested action. One successful step-up (e.g. for the benign register_new_passkey) opens a 15-minute window in which every critical action for that same token — promote_to_admin, bulk_permission_change, rotate_oauth_secret, delete_user — passes the gate without a fresh challenge. Impact is bounded because each gated action independently enforces its primary authorization (require_hub_admin/require_developer + ownership), so the cache never authorizes something the caller couldn't already do; it only relaxes re-authentication freshness (a sudo-timestamp model). The one action needing a specific factor, change_google_account, correctly re-checks method=='passkey' separately. Residual risk: a hijacked already-authenticated admin session that triggers one low-value step-up gains a 15-min blanket over all high-value critical actions. Defense-in-depth hardening, not a boundary break.",
+    "root_cause": "gate() in hub/backend/app/services/critical_action_policy.py bypasses on any cached grant for the user/jti and stepup_cache does not store/compare the action, so a grant earned for one action satisfies all critical actions within the TTL.",
+    "intended_behavior": "A step-up grant should authorize re-authentication freshness for the specific action (or action class) it was performed for, not blanket every critical action for 15 minutes.",
+    "trace": [
+      {"kind": "entrypoint", "file": "hub/backend/app/services/stepup_cache.py", "line": 65, "scope": "set_granted", "description": "Grant stored under key stepup:granted:{user_id}:{jti} with method but no action."},
+      {"kind": "sink", "file": "hub/backend/app/services/critical_action_policy.py", "line": 142, "scope": "gate", "description": "gate() bypasses on any truthy check_cached(user_id, jti) without comparing the granted action/method to the requested one."}
+    ],
+    "conditions": [
+      {"kind": "authentication_level", "description": "Attacker controls an already-authenticated admin/developer session (e.g. hijacked) and triggers one low-value step-up."}
+    ],
+    "execution": {
+      "attacker_perspective": "An attacker on a hijacked authenticated Hub-console session.",
+      "payloads": ["step-up once for a benign action, then invoke a high-value critical action within 15 minutes"],
+      "instructions": ["Complete step-up for register_new_passkey.", "Within 15 minutes call a high-value critical action (e.g. bulk_permission_change) with the same token; gate() passes without a fresh challenge."],
+      "expected_result": "The high-value action proceeds without its own step-up, showing the grant was not bound to the earned action."
+    },
+    "remediation": {
+      "strategy": "Bind the grant to the action class (store and compare action, or an allowed set) and/or shorten TTL for the highest-impact actions. Not a boundary break; treat as defense-in-depth.",
+      "code_changes": [
+        {"file_name": "hub/backend/app/services/critical_action_policy.py", "fixed_code": "cached = check_cached(user_id, jti)\nif not cached or cached.get(\"action\") not in _allowed_for(requested_action):\n    raise stepup_required(...)"}
+      ]
+    },
+    "severity": {
+      "likelihood": {"score": "low", "reason": "Requires an already-hijacked authenticated admin/developer session."},
+      "impact": {"score": "low", "reason": "Only relaxes re-auth freshness; every action still enforces its own authorization and ownership, so no new capability is gained."},
+      "overall_severity": "low"
+    },
+    "confidence": {"score": "high", "reason": "stepup_cache stores no action and gate() compares none; verified in source."}
+  }
+]

@@ -78,6 +78,14 @@ ml-service/data/real_access.csv
 ml-service/data/simulated_month.csv
 ml-service/data/simulated_features_23.csv
 ml-service/data/simulated_4layer_results.csv
+ml-service/data/real_user_profiles.csv
+ml-service/data/user_profiles.json
+ml-service/data/user_logins.csv
+ml-service/data/user_logins_clean.csv
+ml-service/data/user_features.csv
+ml-service/data/user_anomalies_features.csv
+ml-service/models/
+ml-service/data/simulated_4layer_results.csv
 ml-service/data/shap/
 hub/frontend/tsconfig.tsbuildinfo
 
