@@ -46,7 +46,9 @@ def build_authorize_url(state: str, code_challenge: str) -> str:
 
 async def exchange_code_for_token(code: str, code_verifier: str) -> dict:
     """POST /oauth/token แลก authorization code → JWT (server-to-server)."""
-    async with httpx.AsyncClient(timeout=10.0) as client:
+    async with httpx.AsyncClient(
+        timeout=10.0, verify=settings.hub_verify_ssl
+    ) as client:
         r = await client.post(
             f"{settings.hub_internal_url}/oauth/token",
             data={
@@ -67,7 +69,9 @@ async def notify_hub_logout(hub_user_id: str) -> bool:
     Hub mark logout_at บน LoginSession ล่าสุดของ (user, subsystem นี้).
     """
     try:
-        async with httpx.AsyncClient(timeout=3.0) as client:
+        async with httpx.AsyncClient(
+            timeout=3.0, verify=settings.hub_verify_ssl
+        ) as client:
             r = await client.post(
                 f"{settings.hub_internal_url}/oauth/logout",
                 data={
@@ -86,7 +90,7 @@ async def _fetch_jwks() -> dict:
     if _jwks_cache["data"] and (now - _jwks_cache["fetched_at"]) < _JWKS_CACHE_TTL:
         return _jwks_cache["data"]
 
-    async with httpx.AsyncClient(timeout=5.0) as client:
+    async with httpx.AsyncClient(timeout=5.0, verify=settings.hub_verify_ssl) as client:
         r = await client.get(f"{settings.hub_internal_url}/.well-known/jwks.json")
         r.raise_for_status()
         jwks = r.json()

@@ -37,7 +37,7 @@ def fetch_roster() -> dict:
     """เรียก Hub GET /api/v1/roster ด้วย X-Api-Key (S2S ผ่าน internal URL)."""
     if not settings.grade_roster_api_key:
         raise RuntimeError("ยังไม่ได้ตั้ง GRADE_ROSTER_API_KEY — รัน register script ก่อน")
-    with httpx.Client(timeout=10.0) as client:
+    with httpx.Client(timeout=10.0, verify=settings.hub_verify_ssl) as client:
         r = client.get(
             f"{settings.hub_internal_url}/api/v1/roster",
             headers={"X-Api-Key": settings.grade_roster_api_key},
