@@ -28,6 +28,9 @@ class Settings(BaseSettings):
 
     # Hub URLs — internal (S2S ใน docker) / public (browser เห็น localhost)
     hub_internal_url: str = "http://hub-backend:8000"
+    hub_verify_ssl: bool = (
+        True  # prod: cert Hub flaky (self-signed intermittent) → ตั้ง false เพื่อข้าม verify
+    )
     hub_public_url: str = "http://localhost:8000"
 
     grade_public_url: str = "http://localhost:8003"
