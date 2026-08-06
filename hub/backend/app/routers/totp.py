@@ -10,7 +10,9 @@ Endpoints (mount ไม่มี prefix — full paths):
 Enroll/lifecycle = critical action (กัน session hijack วาง factor) + alert email.
 """
 
-from __future__ import annotations
+# หมายเหตุ: ห้ามใส่ `from __future__ import annotations` — ตีกับ @limiter.limit +
+# Pydantic body model (annotation กลายเป็น string → FastAPI resolve ไม่ได้ตอน wrap).
+# Python 3.11 รองรับ `X | None` โดยตรงอยู่แล้ว
 
 import logging
 
@@ -19,9 +21,11 @@ from fastapi.security import HTTPAuthorizationCredentials
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.database import get_db
 from app.deps import get_client_ip, get_current_user
 from app.models import User
+from app.rate_limiter import limiter
 from app.services import stepup_cache, totp_service
 from app.services.audit_service import log_action
 from app.services.critical_action_policy import _bearer, _extract_jti, gate
@@ -70,6 +74,7 @@ def totp_enroll_start(
 
 
 @router.post("/auth/account/totp/enroll/verify")
+@limiter.limit(settings.rate_limit_login)
 def totp_enroll_verify(
     body: TotpCodeRequest,
     request: Request,
@@ -190,6 +195,7 @@ def my_credentials(
 
 
 @router.post("/auth/stepup/totp/verify")
+@limiter.limit(settings.rate_limit_login)
 def stepup_totp_verify(
     body: TotpCodeRequest,
     request: Request,
@@ -199,6 +205,17 @@ def stepup_totp_verify(
 ):
     """ยืนยัน TOTP → grant step-up (method=totp) → critical action ผ่านได้ (ยกเว้น change_google)."""
     if not totp_service.verify_active(user.id, body.code, db):
+        # audit failure (B7) — brute-force detection + forensics · order: log→commit→raise (B6)
+        log_action(
+            db,
+            actor_id=user.id,
+            action="stepup_totp_failed",
+            target_type="user",
+            target_id=user.id,
+            ip=get_client_ip(request),
+            metadata={"method": "totp"},
+        )
+        db.commit()
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail={"code": "totp_verify_failed", "message": "รหัสไม่ถูกต้อง"},
@@ -219,6 +236,4 @@ def stepup_totp_verify(
         ip=get_client_ip(request),
     )
     db.commit()
-    from app.config import settings
-
     return {"granted": True, "ttl_sec": settings.stepup_cache_ttl_sec}

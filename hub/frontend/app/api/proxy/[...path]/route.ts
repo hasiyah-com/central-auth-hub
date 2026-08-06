@@ -77,7 +77,31 @@ function attachTokenCookies(res: NextResponse, tokens: RefreshedTokens) {
   });
 }
 
+// CSRF defense-in-depth (นอกเหนือจาก SameSite=Lax บน cookie): state-changing
+// method ที่มี Origin header ต้องตรงกับ host ของ frontend เอง — กัน cross-site
+// request (evil.com → /api/proxy/...) แม้ SameSite จะกัน cookie ข้าม site อยู่แล้ว
+// (OWASP: verify origin เป็นชั้นเสริมของ SameSite). ไม่มี Origin (non-browser) →
+// ปล่อยผ่าน (พึ่ง SameSite + Bearer; browser ส่ง Origin ทุก cross-site state-change)
+function csrfOriginOk(req: NextRequest): boolean {
+  if (req.method === "GET" || req.method === "HEAD") return true;
+  const origin = req.headers.get("origin");
+  if (!origin) return true; // ไม่มี Origin = ไม่ใช่ browser cross-site fetch
+  const host = req.headers.get("host");
+  try {
+    return new URL(origin).host === host;
+  } catch {
+    return false; // Origin garbage → ปฏิเสธ
+  }
+}
+
 async function forward(req: NextRequest, path: string[]) {
+  if (!csrfOriginOk(req)) {
+    return NextResponse.json(
+      { detail: { code: "csrf_origin_mismatch" } },
+      { status: 403 }
+    );
+  }
+
   const cookieStore = cookies();
   const token = cookieStore.get(TOKEN_COOKIE)?.value;
 

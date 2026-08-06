@@ -38,21 +38,36 @@ def _valid_ip_or_none(candidate: str | None) -> str | None:
 
 
 def get_client_ip(request: Request) -> str | None:
-    """คืน IP ของ client โดยให้ความสำคัญกับ X-Forwarded-For (เมื่ออยู่หลัง proxy).
+    """คืน IP ของ client (spoof-resistant) เมื่ออยู่หลัง reverse proxy.
 
-    ใน production ถ้าวางหลัง nginx/cloudflare ต้องการ IP ตัวจริงเพื่อ audit + ML.
-    Docker network ก็ใช้ตัวนี้กัน 172.x.x.x ไม่ตรงกับ IP จริง
+    ⚠️ ความปลอดภัย — **ห้ามใช้ X-Forwarded-For[0]** เพราะ client กำหนดค่าตัวแรกได้เอง
+    (`X-Forwarded-For: <IP ปลอม>`) → ปลอมประเทศ/เลี่ยง GeoIP risk/bypass IP blacklist/
+    ปลอม audit log. proxy ที่เชื่อถือได้จะ **append** IP จริงไว้ **ท้าย** เสมอ:
+      - nginx: `X-Real-IP $remote_addr` (ทับค่า client) + XFF `$proxy_add_x_forwarded_for`
+      - Cloudflare tunnel: append client IP จริงไว้ท้าย XFF
 
-    Validate ผลลัพธ์เป็น IP ที่ถูกต้องเสมอ (กัน INET insert crash +
-    malformed-header DoS) — ถ้าไม่ใช่ IP คืน None
+    ลำดับความน่าเชื่อถือ (topology = single trusted proxy):
+      1. X-Real-IP     — nginx set = $remote_addr (client ทับไม่ได้ผ่าน nginx)
+      2. XFF ตัวขวาสุด — IP ที่ proxy ที่เชื่อถือได้เติมล่าสุด (ไม่ใช่ตัวแรกที่ client คุม)
+      3. request.client.host — direct (dev / docker gateway 172.x)
+
+    Validate เป็น IP เสมอ (กัน INET insert crash + malformed-header DoS) — ไม่ใช่ IP คืน None
     """
+    # 1. X-Real-IP (nginx เขียนทับค่า client — authoritative ใน prod)
+    xri = _valid_ip_or_none((request.headers.get("x-real-ip") or "").strip())
+    if xri:
+        return xri
+
+    # 2. X-Forwarded-For — เอา "ตัวขวาสุด" ที่ valid (proxy ที่เชื่อถือได้เติมล่าสุด)
+    #    ไม่ใช่ตัวแรกที่ client ส่งมาเอง (ปลอมได้)
     xff = request.headers.get("x-forwarded-for")
     if xff:
-        first = xff.split(",")[0].strip()
-        validated = _valid_ip_or_none(first)
-        if validated:
-            return validated
-        # XFF ไม่ใช่ IP (ปลอม/garbage) → fallback ไป request.client.host
+        for candidate in reversed([p.strip() for p in xff.split(",") if p.strip()]):
+            validated = _valid_ip_or_none(candidate)
+            if validated:
+                return validated
+
+    # 3. direct (ไม่มี proxy) — dev / docker
     client_host = request.client.host if request.client else None
     return _valid_ip_or_none(client_host)
 
