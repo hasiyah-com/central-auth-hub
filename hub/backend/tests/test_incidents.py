@@ -194,13 +194,51 @@ def test_list_incidents_shape(db):
     r = inc.list_incidents(db, hours=2160, limit=5)
     assert set(r.keys()) >= {"items", "total", "kpis"}
     assert set(r["kpis"].keys()) == {"total", "blocked", "challenged", "attack_ip"}
-    # ทุก item ต้องเป็น flagged (decision ∈ INCIDENT_DECISIONS หรือ attack_ip)
+    # ทุก item ต้อง flagged: decision ∈ set หรือ attack_ip หรือ risk_score สูง
     for it in r["items"]:
-        assert it["decision"] in inc.INCIDENT_DECISIONS or it["is_attack_ip"]
+        assert (
+            it["decision"] in inc.INCIDENT_DECISIONS
+            or it["is_attack_ip"]
+            or (
+                it["risk_score"] is not None
+                and it["risk_score"] >= inc.INCIDENT_RISK_SCORE_MIN
+            )
+        )
 
 
 def test_incident_decisions_excludes_allow():
     assert "allow" not in inc.INCIDENT_DECISIONS
+
+
+def test_list_incidents_includes_high_risk_score_even_if_decision_allow(db):
+    """risk_score สูง (>= INCIDENT_RISK_SCORE_MIN) ต้องขึ้น Incidents แม้ decision=allow.
+
+    เคสจริง: RBA/ML ให้คะแนนสูงแต่ decision column เพี้ยน/would_warn/stale → เดิม
+    Incidents ซ่อน (filter แค่ decision) → high-risk login หลุด. ตอนนี้ต้องจับด้วย.
+    """
+    from datetime import datetime
+
+    s = LoginSession(
+        ip="203.0.113.77",
+        user_agent="pytest-incident-highscore",
+        login_method="google",
+        decision="allow",
+        risk_score=0.9,
+        anomaly_score=0.38,
+        is_attack_ip=False,
+        created_at=datetime.utcnow(),
+    )
+    db.add(s)
+    db.commit()
+    try:
+        r = inc.list_incidents(db, hours=24, limit=500)
+        ids = {it["id"] for it in r["items"]}
+        assert (
+            str(s.id) in ids
+        ), "session risk_score=0.9 ต้องขึ้น Incidents แม้ decision=allow"
+    finally:
+        db.query(LoginSession).filter(LoginSession.id == s.id).delete()
+        db.commit()
 
 
 def test_get_incident_detail_not_found(db):

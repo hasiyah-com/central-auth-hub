@@ -45,6 +45,11 @@ INCIDENT_DECISIONS = (
     "mfa_passed",
 )
 
+# นอกจาก decision แล้ว — จับ session ที่ RBA ให้ "คะแนนรวมสูง" ด้วย (>= challenge
+# threshold 0.7) แม้ decision column จะเป็น allow/would_warn/stale. กันเคส high-risk
+# login หลุดจากหน้า Incidents เพราะ decision ไม่ตรงกับ risk_score.
+INCIDENT_RISK_SCORE_MIN = 0.7
+
 # audit action ที่เกี่ยวกับ security incident — ใช้ทำ timeline ของ downstream
 _INCIDENT_AUDIT_ACTIONS = (
     "hub_login_blocked_by_ml",
@@ -427,6 +432,7 @@ def list_incidents(
             or_(
                 LoginSession.decision.in_(INCIDENT_DECISIONS),
                 LoginSession.is_attack_ip.is_(True),
+                LoginSession.risk_score >= INCIDENT_RISK_SCORE_MIN,
             ),
         )
     )
@@ -452,6 +458,7 @@ def list_incidents(
         or_(
             LoginSession.decision.in_(INCIDENT_DECISIONS),
             LoginSession.is_attack_ip.is_(True),
+            LoginSession.risk_score >= INCIDENT_RISK_SCORE_MIN,
         ),
     )
     blocked = kpi_base.filter(
@@ -624,6 +631,7 @@ def _user_stats_7d(db: Session, user_id, now: datetime) -> dict:
         or_(
             LoginSession.decision.in_(INCIDENT_DECISIONS),
             LoginSession.is_attack_ip.is_(True),
+            LoginSession.risk_score >= INCIDENT_RISK_SCORE_MIN,
         )
     ).count()
     blocked = base.filter(LoginSession.decision.in_(("block", "would_block"))).count()
@@ -665,6 +673,7 @@ def _incident_display_id(db: Session, ls: LoginSession) -> str:
             or_(
                 LoginSession.decision.in_(INCIDENT_DECISIONS),
                 LoginSession.is_attack_ip.is_(True),
+                LoginSession.risk_score >= INCIDENT_RISK_SCORE_MIN,
             ),
         )
         .scalar()
