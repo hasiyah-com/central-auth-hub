@@ -194,6 +194,33 @@ def test_stepup_totp_grants_method_totp(client, temp_user, auth_headers, db):
         stepup_cache.clear(str(temp_user.id), jti)
 
 
+def test_stepup_totp_wrong_code_audits_failure(client, temp_user, auth_headers, db):
+    """B7 — TOTP step-up ผิด ต้องบันทึก audit (brute-force detection)."""
+    secret, _ = totp_service.start_enroll(temp_user.id, db)
+    totp_service.confirm_enroll(temp_user.id, pyotp.TOTP(secret).now(), db)
+    db.commit()
+    token, jti = create_access_token(temp_user)
+    try:
+        r = client.post(
+            "/auth/stepup/totp/verify",
+            headers=auth_headers(token),
+            json={"code": "000001"},
+        )
+        assert r.status_code == 400
+        db.expire_all()
+        logged = (
+            db.query(AuditLog)
+            .filter(
+                AuditLog.actor_id == temp_user.id,
+                AuditLog.action == "stepup_totp_failed",
+            )
+            .first()
+        )
+        assert logged is not None, "TOTP step-up ผิดต้องมี audit stepup_totp_failed"
+    finally:
+        stepup_cache.clear(str(temp_user.id), jti)
+
+
 def test_change_google_still_requires_passkey_not_totp(
     client, temp_user, auth_headers, db
 ):

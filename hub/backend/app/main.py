@@ -95,10 +95,16 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
                 f"style-src 'self' 'nonce-{nonce}' https://fonts.googleapis.com; "
                 f"script-src 'self' 'nonce-{nonce}'; "
                 "font-src 'self' https://fonts.gstatic.com; "
-                "frame-ancestors 'none'; base-uri 'self'"
+                # form-action 'self' — กัน form submit ออกนอก origin (หน้า Hub-served
+                # ใช้ fetch/navigation ล้วน ไม่มี <form> จริง → ถ้ามี HTML injection
+                # ก็ post ข้อมูลออกไม่ได้). frame-ancestors กัน clickjacking
+                "form-action 'self'; frame-ancestors 'none'; base-uri 'self'"
             )
         else:
-            csp = "default-src 'self'; frame-ancestors 'none'; base-uri 'self'"
+            csp = (
+                "default-src 'self'; "
+                "form-action 'self'; frame-ancestors 'none'; base-uri 'self'"
+            )
         response.headers.setdefault("Content-Security-Policy", csp)
         return response
 
