@@ -14,6 +14,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/central-auth-hub/auth-proxy/internal/auth"
@@ -28,7 +29,19 @@ type Server struct {
 	Sessions  *session.Manager
 	Logger    func(string, ...any)
 	revokedAt map[string]int64 // hub_user_id → unix when revoked
+	revokedMu sync.RWMutex     // guards revokedAt (webhook write vs proxy read) — audit run-2 #7
 	rxIPProxy *httputil.ReverseProxy
+}
+
+// safeReturnTo กัน open redirect (audit run-2 #4): อนุญาตเฉพาะ same-origin
+// relative path. `//host` และ `/\host` เริ่มด้วย "/" แต่ browser มองเป็น
+// off-origin → ปฏิเสธ (fallback "/").
+func safeReturnTo(target string) string {
+	if target == "" || !strings.HasPrefix(target, "/") ||
+		strings.HasPrefix(target, "//") || strings.HasPrefix(target, "/\\") {
+		return "/"
+	}
+	return target
 }
 
 func New(cfg *config.Config, disc *auth.Discovery, verifier *auth.Verifier, sessions *session.Manager, logger func(string, ...any)) (*Server, error) {
@@ -208,9 +221,7 @@ func (s *Server) HandleCallback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	target := temp.ReturnTo
-	if target == "" || !strings.HasPrefix(target, "/") {
-		target = "/"
-	}
+	target = safeReturnTo(target)
 	http.Redirect(w, r, target, http.StatusFound)
 }
 
@@ -219,9 +230,7 @@ func (s *Server) HandleCallback(w http.ResponseWriter, r *http.Request) {
 func (s *Server) HandleLogout(w http.ResponseWriter, r *http.Request) {
 	s.Sessions.ClearSession(w)
 	target := r.URL.Query().Get("return_to")
-	if target == "" || !strings.HasPrefix(target, "/") {
-		target = "/"
-	}
+	target = safeReturnTo(target)
 	http.Redirect(w, r, target, http.StatusFound)
 }
 
@@ -271,7 +280,9 @@ func (s *Server) HandleWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if payload.Event == "access_revoked" && payload.HubUserID != "" {
+		s.revokedMu.Lock()
 		s.revokedAt[payload.HubUserID] = time.Now().Unix()
+		s.revokedMu.Unlock()
 		s.Logger("webhook access_revoked: user=%s", payload.HubUserID)
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -324,7 +335,10 @@ func (s *Server) HandleProxy(w http.ResponseWriter, r *http.Request) {
 	// 3. ตรวจ revocation list
 	sub, _ := sess.Claims["sub"].(string)
 	if sub != "" {
-		if revokedAt, ok := s.revokedAt[sub]; ok {
+		s.revokedMu.RLock()
+		revokedAt, ok := s.revokedAt[sub]
+		s.revokedMu.RUnlock()
+		if ok {
 			if int64(sess.IssuedAt) < revokedAt {
 				s.Sessions.ClearSession(w)
 				http.Redirect(w, r, s.Cfg.PathPrefix+"/login", http.StatusFound)

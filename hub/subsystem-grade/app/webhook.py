@@ -58,9 +58,17 @@ async def _verify(request: Request) -> dict:
         raise HTTPException(status_code=401, detail="signature mismatch")
 
     try:
-        return json.loads(raw.decode("utf-8"))
+        payload = json.loads(raw.decode("utf-8"))
     except Exception:
         raise HTTPException(status_code=400, detail="bad JSON")
+
+    # bind event → subsystem นี้ (audit run-2 #5): Hub เซ็น webhook ทุก subsystem
+    # ด้วย shared key เดียวกัน → ถ้าไม่เช็ค client_id, webhook ที่เซ็นให้ subsystem
+    # อื่นถูก replay มาที่ grade แล้วสั่ง re-auth ได้ (dorm/library เช็คอยู่แล้ว)
+    pcid = payload.get("client_id")
+    if pcid and pcid != settings.grade_client_id:
+        raise HTTPException(status_code=400, detail="client_id mismatch")
+    return payload
 
 
 @router.post("/access-revoked")
