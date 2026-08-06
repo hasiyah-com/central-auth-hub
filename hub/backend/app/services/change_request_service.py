@@ -53,6 +53,7 @@ VALID_TYPES = {
     "edit_scope",
     "edit_allowed_roles",
     "edit_redirect_uris",
+    "edit_access_policy",  # ขยาย audience (เช่น explicit→all) — admin approve (audit run-2 #2)
     "change_whitelist_role",  # เปลี่ยน role ของ user 1 คน
     "bulk_change_whitelist_roles",  # batch เปลี่ยน role
 }
@@ -382,11 +383,33 @@ def _apply_bulk_change_whitelist_roles(
     }
 
 
+def _apply_edit_access_policy(
+    db: Session, subsystem: Subsystem, payload: dict[str, Any]
+) -> dict[str, Any]:
+    """เปลี่ยน access_policy/config หลัง admin approve → kick ทุก session (re-auth)."""
+    new_policy = payload.get("access_policy") or "explicit"
+    new_cfg = payload.get("access_policy_config")
+    old = {
+        "access_policy": subsystem.access_policy,
+        "access_policy_config": subsystem.access_policy_config,
+    }
+    subsystem.access_policy = new_policy
+    subsystem.access_policy_config = new_cfg
+    closed = close_subsystem_login_sessions(db, subsystem.id)
+    return {
+        "old": old,
+        "new_access_policy": new_policy,
+        "new_access_policy_config": new_cfg,
+        **closed,
+    }
+
+
 _DISPATCH = {
     "rotate_secret": lambda db, sub, p: _apply_rotate_secret(db, sub),
     "edit_scope": _apply_edit_scope,
     "edit_allowed_roles": _apply_edit_allowed_roles,
     "edit_redirect_uris": _apply_edit_redirect_uris,
+    "edit_access_policy": _apply_edit_access_policy,
     "change_whitelist_role": _apply_change_whitelist_role,
     "bulk_change_whitelist_roles": _apply_bulk_change_whitelist_roles,
 }
@@ -407,7 +430,7 @@ def apply_approved(
 
 # request_type ที่กระทบ config ของทั้ง subsystem → kick ทุก user (re-auth)
 _CONFIG_EDIT_TYPES = frozenset(
-    {"edit_scope", "edit_redirect_uris", "edit_allowed_roles"}
+    {"edit_scope", "edit_redirect_uris", "edit_allowed_roles", "edit_access_policy"}
 )
 
 

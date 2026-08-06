@@ -13,7 +13,7 @@ from datetime import datetime, timedelta
 from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, field_validator
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -120,6 +120,42 @@ def _validate_access_policy(
 
 # ============ Schemas ============
 
+# host ที่อนุญาตให้ใช้ http (dev เท่านั้น) — host จริงบังคับ https กัน auth code
+# หลุด plaintext ระหว่างทาง
+_LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1"}
+
+
+def _validate_redirect_uris(uris: list[str]) -> list[str]:
+    """ตรวจ redirect_uris ทุกตัว — กัน open redirect / XSS scheme (REQ-SUB-02, B).
+
+    บังคับ: มีอย่างน้อย 1 ตัว · scheme = http/https เท่านั้น (กัน javascript:/data:/ftp:) ·
+    มี host จริง · http อนุญาตเฉพาะ localhost (dev) host จริงต้อง https. reject ทั้ง
+    request ถ้ามีตัวใดตัวหนึ่งเสีย (ไม่บันทึกครึ่ง ๆ). trim whitespace ก่อนตรวจ.
+    """
+    if not uris:
+        raise ValueError("ต้องมี redirect_uri อย่างน้อย 1 รายการ")
+    cleaned: list[str] = []
+    for raw in uris:
+        uri = (raw or "").strip()
+        if not uri:
+            raise ValueError("redirect_uri ห้ามว่าง")
+        try:
+            p = urlparse(uri)
+        except Exception:
+            raise ValueError(f"redirect_uri ไม่ถูกต้อง: {uri!r}")
+        if p.scheme not in ("http", "https"):
+            raise ValueError(
+                f"redirect_uri ต้องเป็น http/https เท่านั้น (กัน open redirect/XSS): {uri!r}"
+            )
+        if not p.hostname:
+            raise ValueError(f"redirect_uri ต้องระบุ host: {uri!r}")
+        if p.scheme == "http" and p.hostname not in _LOCAL_HOSTS:
+            raise ValueError(
+                f"http อนุญาตเฉพาะ localhost (dev) — host จริงต้องใช้ https: {uri!r}"
+            )
+        cleaned.append(uri)
+    return cleaned
+
 
 class SubsystemCreate(BaseModel):
     name: str
@@ -132,6 +168,11 @@ class SubsystemCreate(BaseModel):
     # Access Policy (Week 11) — explicit/all/role/attribute
     access_policy: str = "explicit"
     access_policy_config: dict | None = None
+
+    @field_validator("redirect_uris")
+    @classmethod
+    def _check_redirect_uris(cls, v: list[str]) -> list[str]:
+        return _validate_redirect_uris(v)
 
 
 class SubsystemResponse(BaseModel):
@@ -179,6 +220,12 @@ class SubsystemUpdate(BaseModel):
     access_revoke_webhook_url: str | None = None
     access_policy: str | None = None
     access_policy_config: dict | None = None
+
+    @field_validator("redirect_uris")
+    @classmethod
+    def _check_redirect_uris(cls, v: list[str] | None) -> list[str] | None:
+        # None = ไม่แก้ field นี้ → ข้าม; ถ้าส่งมาต้อง valid เหมือน Create
+        return v if v is None else _validate_redirect_uris(v)
 
 
 def _suggest_webhook_endpoints(redirect_uris: list[str] | None) -> dict | None:
@@ -1046,6 +1093,26 @@ def update_whitelist_role(
 # ============ 8. แก้ไข subsystem ============
 
 
+# audience กว้างขึ้น (เห็น user มากขึ้น) → ต้อง admin approve (audit run-2 #2).
+# rank: explicit(whitelist) < role/attribute < all(ทุกคน)
+_POLICY_RANK = {"explicit": 0, "role": 1, "attribute": 1, "all": 2}
+
+
+def _access_policy_widens(old_policy, old_cfg, new_policy, new_cfg) -> bool:
+    """True ถ้าเปลี่ยน policy แล้ว 'เปิดกว้างขึ้น' → ต้องผ่าน admin approval.
+
+    Conservative: narrowing (rank ลดลง) เท่านั้นที่ apply ทันทีได้; นอกนั้น
+    (rank เพิ่ม, สลับ type ที่ rank เท่ากัน เช่น role↔attribute, หรือแก้ config
+    ที่ rank เดิม) ถือว่าอาจเปิดกว้างขึ้น → route ผ่าน change-request.
+    """
+    old_r = _POLICY_RANK.get(old_policy or "explicit", 0)
+    new_r = _POLICY_RANK.get(new_policy or "explicit", 2)  # unknown → treat broad
+    if new_r != old_r:
+        return new_r > old_r
+    # rank เท่ากัน — caller เรียกเฉพาะตอนมีการเปลี่ยนจริง → conservative = ต้อง approve
+    return True
+
+
 @router.patch(
     "/subsystems/{subsystem_id}",
     dependencies=[Depends(_stepup_gate("subsystem_update"))],
@@ -1109,32 +1176,6 @@ def update_subsystem(
             }
             subsystem.access_revoke_webhook_url = new_webhook
 
-    # Access Policy change — apply ทันที + kick ทุก session (policy เปลี่ยน
-    # อาจตัดสิทธิ์บางคน → บังคับ re-auth ผ่าน policy ใหม่)
-    if payload.access_policy is not None or payload.access_policy_config is not None:
-        new_policy = payload.access_policy or subsystem.access_policy or "explicit"
-        new_cfg_in = (
-            payload.access_policy_config
-            if payload.access_policy_config is not None
-            else subsystem.access_policy_config
-        )
-        norm_policy, norm_cfg = _validate_access_policy(new_policy, new_cfg_in)
-        if (subsystem.access_policy != norm_policy) or (
-            (subsystem.access_policy_config or None) != (norm_cfg or None)
-        ):
-            old = {
-                "access_policy": subsystem.access_policy,
-                "access_policy_config": subsystem.access_policy_config,
-            }
-            subsystem.access_policy = norm_policy
-            subsystem.access_policy_config = norm_cfg
-            closed = close_subsystem_login_sessions(db, subsystem.id)
-            immediate_changes["access_policy"] = {
-                "old": old,
-                "new": {"access_policy": norm_policy, "access_policy_config": norm_cfg},
-                "sessions_closed": closed["closed"],
-            }
-
     # ── Pending-approval group (dev) / instant apply (admin override) ──
     auto_applied: list[dict] = []
 
@@ -1160,6 +1201,47 @@ def update_subsystem(
                 pending_requests.append(entry)
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
+
+    # Access Policy — widening (เห็น user มากขึ้น เช่น explicit→all) ต้อง admin
+    # approve เหมือน scope (audit run-2 #2); narrowing apply ทันที + kick ทุก session
+    if payload.access_policy is not None or payload.access_policy_config is not None:
+        new_policy = payload.access_policy or subsystem.access_policy or "explicit"
+        new_cfg_in = (
+            payload.access_policy_config
+            if payload.access_policy_config is not None
+            else subsystem.access_policy_config
+        )
+        norm_policy, norm_cfg = _validate_access_policy(new_policy, new_cfg_in)
+        if (subsystem.access_policy != norm_policy) or (
+            (subsystem.access_policy_config or None) != (norm_cfg or None)
+        ):
+            if _access_policy_widens(
+                subsystem.access_policy,
+                subsystem.access_policy_config,
+                norm_policy,
+                norm_cfg,
+            ):
+                _enqueue(
+                    "edit_access_policy",
+                    {"access_policy": norm_policy, "access_policy_config": norm_cfg},
+                    "Access Policy",
+                )
+            else:
+                old = {
+                    "access_policy": subsystem.access_policy,
+                    "access_policy_config": subsystem.access_policy_config,
+                }
+                subsystem.access_policy = norm_policy
+                subsystem.access_policy_config = norm_cfg
+                closed = close_subsystem_login_sessions(db, subsystem.id)
+                immediate_changes["access_policy"] = {
+                    "old": old,
+                    "new": {
+                        "access_policy": norm_policy,
+                        "access_policy_config": norm_cfg,
+                    },
+                    "sessions_closed": closed["closed"],
+                }
 
     if payload.redirect_uris is not None:
         cleaned = [u.strip() for u in payload.redirect_uris if u.strip()]
