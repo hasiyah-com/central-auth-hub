@@ -268,7 +268,7 @@ def test_login_session_populates_device_and_ml():
     assert (
         "parse_os_name" in src and "parse_browser" in src and "parse_device_type" in src
     )
-    assert "lookup_country" in src
+    assert "lookup_geo" in src  # geo lookup (country + city)
     # ML/RBA ต้องรันจริง (ไม่ hardcode 0.0)
     assert "evaluate_login_risk" in src, "ต้องรัน risk engine (ML), ห้าม hardcode 0.0"
     assert "extract_session_features" in src

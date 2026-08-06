@@ -45,7 +45,7 @@ from app.services.feature_extraction import (
     parse_device_type,
     parse_os_name,
 )
-from app.services.geoip import lookup_country
+from app.services.geoip import lookup_geo
 from app.services.ip_blacklist import is_blacklisted
 from app.services.hooks import (
     EVT_OAUTH_AUTHORIZED,
@@ -553,7 +553,7 @@ async def _finalize_subsystem_login(
 
     # ===== Hybrid RBA 4-Layer Risk Scoring =====
     # อ้างอิง: Freeman 2016, Wiefling 2022, F-RBA 2024, NIST SP 800-63B-4
-    geo_country = lookup_country(client_ip)
+    geo_country, geo_city = lookup_geo(client_ip)
     features = extract_session_features(
         db,
         user_id=user.id,
@@ -610,6 +610,7 @@ async def _finalize_subsystem_login(
             ip=client_ip,
             user_agent=user_agent,
             geo_country=geo_country,
+            geo_city=geo_city,
             os_name=parse_os_name(user_agent),
             browser=parse_browser(user_agent),
             device_type=parse_device_type(user_agent),

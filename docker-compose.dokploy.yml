@@ -74,8 +74,9 @@ services:
     volumes:
       # JWT RSA keys — persist (regenerate = invalidate token ทุกใบ)
       - hub_jwt_keys:/app/keys
-      # GeoIP DB (optional) — อัปโหลด GeoLite2-Country.mmdb เข้า volume นี้
-      # ถ้าไม่มี → geo_country = NULL (ปกติสำหรับ dev/private IP, ไม่ใช่บั๊ก)
+      # GeoIP DB — SSH เข้า server ไม่ได้ก็ได้: ตั้ง MAXMIND_LICENSE_KEY (ฟรี) ใน
+      # Dokploy env → boot จะดาวน์โหลด GeoLite2-City.mmdb (เมือง+ประเทศ) เข้า volume
+      # นี้เอง (ดู command: python -m scripts.fetch_geoip). ไม่ตั้ง → geo = NULL (ปกติ)
       - hub_data:/app/data
     networks:
       - default          # คุยกับ ml-service
@@ -88,6 +89,7 @@ services:
     #      1 worker: lifespan มี background scheduler (api_guard/subsystem_health) — หลาย worker = รันซ้ำ
     command: >
       sh -c "test -f /app/keys/jwt_private.pem || python -m scripts.generate_jwt_keys < /dev/null;
+             python -m scripts.fetch_geoip < /dev/null || true;
              alembic upgrade head;
              exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --proxy-headers --forwarded-allow-ips='*'"
 

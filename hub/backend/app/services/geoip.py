@@ -83,35 +83,56 @@ def _get_reader():
     return _reader
 
 
-def lookup_country(ip: str | None) -> str | None:
-    """คืน ISO 3166-1 alpha-2 country code (เช่น 'TH', 'US') หรือ None.
+def lookup_geo(ip: str | None) -> tuple[str | None, str | None]:
+    """คืน (country_iso, city_name) เช่น ('TH', 'Bangkok').
 
-    คืน None ในกรณี:
-      - ip ไม่ใช่ public IP (RFC1918, loopback ฯลฯ)
-      - DB ไม่พร้อม / lookup error
-      - IP ไม่อยู่ในฐานข้อมูล (เช่น IP ใหม่ที่ยังไม่ classify)
+    รองรับทั้ง GeoLite2-**City** (ได้เมือง+ประเทศ) และ GeoLite2-**Country**
+    (ได้แค่ประเทศ, เมือง=None) — ลอง .city() ก่อน ถ้า DB เป็น Country ค่อย fallback
+    .country(). ไม่ต้องรู้ล่วงหน้าว่า mmdb เป็น edition ไหน.
 
-    Fail-safe — ทุก exception ถูก catch ที่นี่ ไม่ propagate ออกไป
+    คืน (None, None) เมื่อ: ip ไม่ใช่ public / DB ไม่พร้อม / IP ไม่อยู่ในฐานข้อมูล.
+    Fail-safe — ทุก exception ถูก catch ที่นี่ ไม่ propagate (login ห้ามล้ม เพราะ geo).
     """
     if not ip:
-        return None
+        return (None, None)
     ip = ip.strip()
     if not _is_public_ip(ip):
-        return None
+        return (None, None)
 
     reader = _get_reader()
     if reader is None:
-        return None
+        return (None, None)
 
+    # 1) ลอง City edition (ได้ทั้งเมือง+ประเทศ)
     try:
-        response = reader.country(ip)
-        return response.country.iso_code  # None ถ้า MaxMind ไม่รู้
+        resp = reader.city(ip)
+        return (resp.country.iso_code, resp.city.name)
     except Exception as e:  # noqa: BLE001
-        # geoip2.errors.AddressNotFoundError + ทุกอย่าง — ห้ามให้ login ล้ม
+        if _GEOIP2_AVAILABLE:
+            import geoip2.errors
+
+            # IP ไม่อยู่ในฐานข้อมูลจริง → ไม่ต้อง fallback (Country ก็ไม่เจอ)
+            if isinstance(e, geoip2.errors.AddressNotFoundError):
+                return (None, None)
+        # อื่นๆ (เช่น DB เป็น Country edition → .city() ใช้ไม่ได้) → ลอง .country()
+
+    # 2) Fallback: Country edition (เมือง=None)
+    try:
+        resp = reader.country(ip)
+        return (resp.country.iso_code, None)
+    except Exception as e:  # noqa: BLE001
         if _GEOIP2_AVAILABLE:
             import geoip2.errors
 
             if isinstance(e, geoip2.errors.AddressNotFoundError):
-                return None
+                return (None, None)
         logger.warning(f"GeoIP lookup failed for {ip}: {type(e).__name__}: {e}")
-        return None
+        return (None, None)
+
+
+def lookup_country(ip: str | None) -> str | None:
+    """คืน ISO country code (เช่น 'TH') หรือ None — thin wrapper ของ lookup_geo.
+
+    เก็บไว้เพื่อ backward-compat กับ caller ที่ต้องการแค่ประเทศ.
+    """
+    return lookup_geo(ip)[0]

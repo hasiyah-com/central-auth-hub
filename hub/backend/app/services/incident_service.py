@@ -395,6 +395,7 @@ def _incident_row(ls, email, full_name, user_type, sub_name, now) -> dict:
         "decision": ls.decision,
         "ip": str(ls.ip) if ls.ip else None,
         "geo_country": ls.geo_country,
+        "geo_city": ls.geo_city,
         "is_attack_ip": bool(ls.is_attack_ip),
         "status": _session_status(ls, now),
         "top_reason": (ls.risk_reasons or [None])[0]
