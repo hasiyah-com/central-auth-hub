@@ -16,6 +16,7 @@ import { mutateWithStepup } from "@/lib/passkey";
 import {
   type IncidentDetail,
   type IncidentAction,
+  type TimelineEvent,
   DECISION_TONE,
   STATUS_META,
   SEVERITY_META,
@@ -53,6 +54,9 @@ export function IncidentDetailModal({ data, onClose, onActionDone }: Props) {
   const riskColor =
     risk.score >= 0.85 ? "bg-rose-500" : risk.score >= 0.7 ? "bg-amber-500" : "bg-yellow-400";
   const initial = (user.full_name || user.email || "?").charAt(0).toUpperCase();
+  // forensic timeline 2 แถบ: สิ่งที่บัญชีนี้ทำ / ระบบ·แอดมินตอบโต้
+  const acctEvents = timeline.filter((e) => e.strand === "account");
+  const respEvents = timeline.filter((e) => e.strand !== "account");
 
   // group actions by category (คงลำดับ root_cause → … → configuration)
   const CATEGORY_ORDER = [
@@ -365,18 +369,22 @@ export function IncidentDetailModal({ data, onClose, onActionDone }: Props) {
               )}
             </Card>
 
-            {/* ④ Timeline */}
+            {/* ④ Timeline — 2 แถบ forensic */}
             <Card title="4. ไทม์ไลน์เหตุการณ์ (Timeline)" icon="🕐">
               {timeline.length ? (
-                <div className="border-l-2 border-ink-200 pl-3 space-y-2">
-                  {timeline.map((e, i) => (
-                    <div key={i} className="text-xs">
-                      <span className="text-ink-400 font-mono">{fmt(e.at, false)}</span>{" "}
-                      <span className="text-ink-800 font-medium">
-                        {AUDIT_ACTION_LABEL[e.action] || e.action}
-                      </span>
-                    </div>
-                  ))}
+                <div className="space-y-4">
+                  <TimelineStrand
+                    label="🧑‍💻 สิ่งที่บัญชีนี้ทำ"
+                    hint="การกระทำสำคัญของบัญชีนี้ (ถ้าเป็นคนร้ายจะเห็นว่าทำอะไร)"
+                    events={acctEvents}
+                    tone="rose"
+                  />
+                  <TimelineStrand
+                    label="🛡 ระบบ · แอดมินตอบโต้"
+                    hint="การตัดสินความเสี่ยง + การจัดการเคสนี้"
+                    events={respEvents}
+                    tone="brand"
+                  />
                 </div>
               ) : (
                 <div className="text-xs text-ink-400">— ไม่มีเหตุการณ์ที่เกี่ยวข้อง —</div>
@@ -568,6 +576,41 @@ function Stat({ label, value }: { label: string; value: React.ReactNode }) {
     <div className="p-3 rounded-lg bg-ink-50 border border-ink-100">
       <div className="text-[10px] font-bold text-ink-400 uppercase">{label}</div>
       <div className="text-2xl font-extrabold text-ink-900 tabular-nums mt-0.5">{value}</div>
+    </div>
+  );
+}
+
+function TimelineStrand({
+  label,
+  hint,
+  events,
+  tone,
+}: {
+  label: string;
+  hint: string;
+  events: TimelineEvent[];
+  tone: "rose" | "brand";
+}) {
+  const dot = tone === "rose" ? "text-rose-400" : "text-brand-400";
+  const border = tone === "rose" ? "border-rose-200" : "border-brand-200";
+  return (
+    <div>
+      <div className="text-[11px] font-bold text-ink-600 mb-1">{label}</div>
+      {events.length ? (
+        <div className={`border-l-2 ${border} pl-3 space-y-1.5`}>
+          {events.map((e, i) => (
+            <div key={i} className="text-xs">
+              <span className="text-ink-400 font-mono">{fmt(e.at, false)}</span>{" "}
+              <span className={dot}>•</span>{" "}
+              <span className="text-ink-800 font-medium">
+                {AUDIT_ACTION_LABEL[e.action] || e.action}
+              </span>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="text-[11px] text-ink-300 pl-3">{hint} · —</div>
+      )}
     </div>
   );
 }
