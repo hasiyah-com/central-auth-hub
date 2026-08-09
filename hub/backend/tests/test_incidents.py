@@ -245,6 +245,61 @@ def test_get_incident_detail_not_found(db):
     assert inc.get_incident_detail(db, str(uuid.uuid4())) is None
 
 
+def test_incident_timeline_two_strands(db, admin_user):
+    """Forensic timeline 2 แถบ: account (บัญชีนี้ทำ) + response (แอดมินตอบโต้เคสนี้)."""
+    from datetime import datetime
+
+    from app.models import AuditLog
+
+    sess = LoginSession(
+        user_id=admin_user.id,
+        subsystem_id=None,
+        ip="203.0.113.5",
+        user_agent="pytest",
+        login_method="google",
+        decision="would_block",
+        risk_score=0.9,
+        created_at=datetime.utcnow(),
+    )
+    db.add(sess)
+    db.commit()
+    db.refresh(sess)
+    # account strand: บัญชีนี้ (admin) ลบผู้ใช้อีกคน (actor = incident user)
+    a1 = AuditLog(
+        actor_id=admin_user.id,
+        action="delete_user",
+        target_type="user",
+        target_id=uuid.uuid4(),
+        created_at=datetime.utcnow(),
+    )
+    # response strand: แอดมินคนอื่น force-logout บัญชีนี้ (target = incident user)
+    a2 = AuditLog(
+        actor_id=uuid.uuid4(),
+        action="admin_force_logout_user",
+        target_type="user",
+        target_id=admin_user.id,
+        created_at=datetime.utcnow(),
+    )
+    db.add_all([a1, a2])
+    db.commit()
+    try:
+        d = inc.get_incident_detail(db, str(sess.id))
+        strands = {e["strand"] for e in d["timeline"]}
+        actions = {e["action"] for e in d["timeline"]}
+        assert "account" in strands, "ต้องมีแถบ 'สิ่งที่บัญชีนี้ทำ'"
+        assert "response" in strands, "ต้องมีแถบ 'ระบบ/แอดมินตอบโต้'"
+        assert "delete_user" in actions  # account
+        assert "admin_force_logout_user" in actions  # response
+    finally:
+        db.query(AuditLog).filter(AuditLog.id.in_([a1.id, a2.id])).delete(
+            synchronize_session=False
+        )
+        db.query(LoginSession).filter(LoginSession.id == sess.id).delete(
+            synchronize_session=False
+        )
+        db.commit()
+
+
 def test_get_incident_detail_structure(db):
     r = inc.list_incidents(db, hours=2160, limit=1)
     if not r["items"]:

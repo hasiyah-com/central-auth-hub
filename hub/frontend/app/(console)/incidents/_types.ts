@@ -78,6 +78,7 @@ export type AttackPathNode = {
 export type TimelineEvent = {
   at: string | null;
   action: string;
+  strand?: "account" | "response"; // account = บัญชีนี้ทำ / response = ระบบ·แอดมินตอบโต้
   metadata: Record<string, unknown> | null;
 };
 
@@ -244,4 +245,35 @@ export const AUDIT_ACTION_LABEL: Record<string, string> = {
   oauth_login_failed_access_policy: "ปฏิเสธจาก Access Policy",
   user_kicked_by_deletion: "ตัดสิทธิ์ (ลบ/เปลี่ยนสถานะ user)",
   access_revoked_webhook_sent: "แจ้ง subsystem เพิกถอนสิทธิ์",
+  access_restored_webhook_sent: "แจ้ง subsystem คืนสิทธิ์",
+  user_restored_after_reactivation: "คืนสิทธิ์หลังเปิดใช้งานใหม่",
+  // ── strand "account": สิ่งที่บัญชีนี้ทำ ──
+  create_user: "สร้างผู้ใช้",
+  update_user: "แก้ไข/เปลี่ยนสถานะผู้ใช้",
+  delete_user: "ลบผู้ใช้",
+  admin_grant_user_access: "ให้สิทธิ์เข้าระบบย่อย",
+  admin_revoke_user_access: "เพิกถอนสิทธิ์ระบบย่อย",
+  admin_force_logout_user: "บังคับออกจากระบบ (force-logout)",
+  passkey_admin_reset: "รีเซ็ต Passkey ของผู้ใช้",
+  ip_blacklist_added: "เพิ่ม IP เข้า blacklist",
+  ip_blacklist_removed: "ลบ IP ออกจาก blacklist",
+  auth_policy_updated: "แก้ auth policy (วิธี login)",
+  incident_action: "ลงมือจัดการ incident",
+  subsystem_register: "ลงทะเบียนระบบย่อย",
+  subsystem_update: "แก้ไขระบบย่อย",
+  subsystem_suspended: "ระงับระบบย่อย",
+  subsystem_resumed: "เปิดระบบย่อยอีกครั้ง",
+  subsystem_approved: "อนุมัติระบบย่อย",
+  subsystem_rejected: "ปฏิเสธระบบย่อย",
+  change_request_approved: "อนุมัติคำขอเปลี่ยนแปลง",
+  change_request_rejected: "ปฏิเสธคำขอเปลี่ยนแปลง",
+  google_changed: "เปลี่ยนบัญชี Google (เปลี่ยนตัวตน)",
+  passkey_registered: "เพิ่ม Passkey",
+  passkey_deleted: "ลบ Passkey",
+  passkey_renamed: "เปลี่ยนชื่อ Passkey",
+  passkey_backup_codes_regenerated: "สร้าง backup code ใหม่",
+  totp_enrolled: "เพิ่ม Authenticator (TOTP)",
+  totp_revoked: "ลบ Authenticator (TOTP)",
+  passkey_recovery_success: "กู้บัญชีสำเร็จ (เปลี่ยน Passkey)",
+  oauth_authorized: "เข้าถึงระบบย่อย (OAuth)",
 };

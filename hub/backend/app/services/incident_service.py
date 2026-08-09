@@ -16,7 +16,7 @@ import ipaddress
 from datetime import datetime, timedelta
 from typing import Any
 
-from sqlalchemy import func, or_
+from sqlalchemy import and_, func, or_
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -63,6 +63,71 @@ _INCIDENT_AUDIT_ACTIONS = (
     "oauth_login_failed_access_policy",
     "user_kicked_by_deletion",
     "access_revoked_webhook_sent",
+)
+
+# ── Forensic timeline: 2 แถบ ─────────────────────────────────────────────────
+# แถบ 1 "account" = สิ่งที่ "บัญชีนี้ทำ" (actor = user) — เก็บเฉพาะ action อันตราย/
+# สำคัญ (ถ้าเป็นคนร้ายจะเห็นว่าเข้ามาแล้วทำอะไร). ไม่เก็บการอ่านเฉยๆ (audit ไม่ log อยู่แล้ว)
+_ACCOUNT_ACTIVITY_ACTIONS = (
+    # จัดการผู้ใช้ (ถ้าบัญชีเป็นแอดมิน)
+    "create_user",
+    "update_user",
+    "delete_user",
+    "admin_grant_user_access",
+    "admin_revoke_user_access",
+    "admin_force_logout_user",
+    "passkey_admin_reset",
+    # ความปลอดภัยระบบ
+    "ip_blacklist_added",
+    "ip_blacklist_removed",
+    "auth_policy_updated",
+    "incident_action",
+    # ระบบย่อย (developer)
+    "subsystem_register",
+    "subsystem_update",
+    "subsystem_suspended",
+    "subsystem_resumed",
+    "subsystem_approved",
+    "subsystem_rejected",
+    "change_request_approved",
+    "change_request_rejected",
+    # บัญชีตัวเอง = เปลี่ยนตัวตน/ปัจจัยยืนยัน (สัญญาณยึดบัญชี)
+    "google_changed",
+    "passkey_registered",
+    "passkey_deleted",
+    "passkey_renamed",
+    "passkey_backup_codes_regenerated",
+    "totp_enrolled",
+    "totp_revoked",
+    "passkey_recovery_success",
+    # เข้าถึงระบบย่อย
+    "oauth_authorized",
+)
+
+# แถบ 2 "response" = ระบบตัดสิน (ตอน login/refresh, actor = user) + แอดมินตอบโต้
+# เคสนี้ (target = user). แยกเป็น 2 query เพราะ actor/target ต่างกัน
+_RISK_FLOW_ACTIONS = (
+    "hub_login_blocked_by_ml",
+    "risk_mfa_required",
+    "risk_mfa_passed",
+    "risk_force_enroll_required",
+    "risk_grace_period_allowed",
+    "risk_refresh_would_stepup",
+    "risk_refresh_stepup_required",
+    "risk_refresh_blocked",
+    "oauth_login_failed_access_policy",
+)
+_ADMIN_REMEDIATION_ACTIONS = (
+    "admin_force_logout_user",
+    "delete_user",
+    "update_user",
+    "admin_grant_user_access",
+    "admin_revoke_user_access",
+    "passkey_admin_reset",
+    "user_kicked_by_deletion",
+    "access_revoked_webhook_sent",
+    "access_restored_webhook_sent",
+    "user_restored_after_reactivation",
 )
 
 
@@ -849,36 +914,63 @@ def get_incident_detail(db: Session, session_id: str) -> dict | None:
     risk = float(ls.risk_score) if ls.risk_score is not None else 0.0
     level_key, level_label = _risk_level(risk)
 
-    # timeline — audit events ของ user คนนี้ รอบเวลา session (± 10/30 นาที)
+    # timeline — forensic 2 แถบ (ครอบทั้ง session: login → logout หรือ +6 ชม.):
+    #   strand="account"  = สิ่งที่ "บัญชีนี้ทำ" (actor=user, action อันตราย) →
+    #                       ถ้าเป็นคนร้ายจะเห็นว่าเข้ามาแล้วทำอะไร
+    #   strand="response" = ระบบตัดสิน (actor=user, risk flow) + แอดมินตอบโต้เคสนี้
+    #                       (target=user, remediation) → เห็นว่าโดนจัดการยังไง
     timeline: list[dict] = []
     first_seen = ls.created_at
     last_seen = ls.created_at
     if ls.user_id and ls.created_at:
         lo = ls.created_at - timedelta(minutes=10)
-        hi = ls.created_at + timedelta(minutes=30)
-        events = (
-            db.query(AuditLog)
-            .filter(
-                AuditLog.actor_id == ls.user_id,
-                AuditLog.action.in_(_INCIDENT_AUDIT_ACTIONS),
-                AuditLog.created_at >= lo,
-                AuditLog.created_at <= hi,
+        # ขยายไปข้างหน้าให้ครอบทั้ง session — คนร้าย/แอดมินลงมือหลัง login
+        hi = ls.logout_at or (ls.created_at + timedelta(hours=6))
+
+        def _rows(where, tag: str) -> list[dict]:
+            evs = (
+                db.query(AuditLog)
+                .filter(where, AuditLog.created_at >= lo, AuditLog.created_at <= hi)
+                .order_by(AuditLog.created_at.asc())
+                .limit(40)
+                .all()
             )
-            .order_by(AuditLog.created_at.asc())
-            .limit(20)
-            .all()
+            return [
+                {
+                    "at": e.created_at.isoformat() if e.created_at else None,
+                    "action": e.action,
+                    "strand": tag,
+                    "metadata": e.metadata_json,
+                }
+                for e in evs
+            ]
+
+        account = _rows(
+            and_(
+                AuditLog.actor_id == ls.user_id,
+                AuditLog.action.in_(_ACCOUNT_ACTIVITY_ACTIONS),
+            ),
+            "account",
         )
-        timeline = [
-            {
-                "at": e.created_at.isoformat() if e.created_at else None,
-                "action": e.action,
-                "metadata": e.metadata_json,
-            }
-            for e in events
-        ]
-        if events:
-            first_seen = min(first_seen, events[0].created_at)
-            last_seen = max(last_seen, events[-1].created_at)
+        response = _rows(
+            or_(
+                and_(
+                    AuditLog.actor_id == ls.user_id,
+                    AuditLog.action.in_(_RISK_FLOW_ACTIONS),
+                ),
+                and_(
+                    AuditLog.target_id == ls.user_id,
+                    AuditLog.action.in_(_ADMIN_REMEDIATION_ACTIONS),
+                ),
+            ),
+            "response",
+        )
+        timeline = sorted(account + response, key=lambda x: x["at"] or "")
+        if timeline:
+            ats = [t["at"] for t in timeline if t["at"]]
+            if ats:
+                first_seen = min(first_seen, datetime.fromisoformat(ats[0]))
+                last_seen = max(last_seen, datetime.fromisoformat(ats[-1]))
 
     # subsystem login → OAuth scope จริง (subsystems.scope) / Hub-direct →
     # ไม่มี scope ต่อ session, แสดงสิทธิ์จริงตามบทบาท (RBAC) แทน
