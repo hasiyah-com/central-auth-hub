@@ -214,9 +214,13 @@ async def _ping(subsystem: Subsystem) -> dict:
     start = time.time()
     last_result: dict | None = None
 
+    from app.config import settings as _settings
+
     try:
         async with httpx.AsyncClient(
-            timeout=HEALTH_TIMEOUT_SEC, follow_redirects=True
+            timeout=HEALTH_TIMEOUT_SEC,
+            follow_redirects=True,
+            verify=_settings.subsystem_verify_ssl,
         ) as client:
             for candidate_url, label in candidates:
                 try:
