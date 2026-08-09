@@ -98,6 +98,9 @@ class Settings(BaseSettings):
     # ML Service
     ml_service_url: str = "http://ml-service:9000"
     ml_timeout_seconds: float = 2.0
+    # Hub → subsystem health check verify TLS ของ subsystem ไหม (pre-flight ก่อน OAuth).
+    # prod บน cert flaky (self-signed) → ตั้ง false เพื่อไม่ mark subsystem down ผิดๆ
+    subsystem_verify_ssl: bool = True
     ml_shadow_mode: bool = True  # True = log score แต่ไม่ block / False = enforce
 
     # GeoIP (MaxMind GeoLite2 offline DB) — fail-safe ถ้าไฟล์หาย
