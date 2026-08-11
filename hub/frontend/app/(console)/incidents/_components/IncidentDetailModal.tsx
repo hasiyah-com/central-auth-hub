@@ -13,6 +13,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { Badge } from "@/components/Badge";
 import { mutateWithStepup } from "@/lib/passkey";
+import { parseUTC } from "@/lib/format";
 import {
   type IncidentDetail,
   type IncidentAction,
@@ -26,12 +27,24 @@ import {
   AUDIT_ACTION_LABEL,
 } from "../_types";
 
+// Backend ส่ง timestamp เป็น naive UTC → parseUTC เติม Z แล้วแปลงเป็นเวลาไทย
+// (Asia/Bangkok) ให้ตรงกับหน้าอื่นทั้งระบบ. locale "th-TH" → วันที่แบบ พ.ศ.
+// ("11/08/2569 15:51:51") ให้ตรงกับตาราง ML/anomaly. (B53)
 function fmt(iso: string | null, withDate = true): string {
   if (!iso) return "—";
-  const d = new Date(iso);
-  return withDate
-    ? d.toISOString().slice(0, 19).replace("T", " ")
-    : d.toISOString().slice(11, 19);
+  const opts: Intl.DateTimeFormatOptions = {
+    timeZone: "Asia/Bangkok",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  };
+  if (withDate) {
+    opts.year = "numeric";
+    opts.month = "2-digit";
+    opts.day = "2-digit";
+  }
+  return parseUTC(iso).toLocaleString("th-TH", opts);
 }
 
 type Props = {
@@ -157,7 +170,7 @@ export function IncidentDetailModal({ data, onClose, onActionDone }: Props) {
             <Badge tone={DECISION_TONE[system_response.decision || ""] || "default"}>
               {(system_response.decision || "—").toUpperCase()}
             </Badge>
-            <div className="text-[10px] text-ink-400 mt-1.5 font-mono">{fmt(data.created_at)} UTC</div>
+            <div className="text-[10px] text-ink-400 mt-1.5 font-mono">{fmt(data.created_at)} น.</div>
             <div className="text-[10px] text-ink-400 font-mono">{data.incident_display_id}</div>
           </div>
         </div>
