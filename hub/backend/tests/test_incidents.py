@@ -498,3 +498,45 @@ def test_http_action_invalid_action_422(client, admin_user, auth_headers):
         json={"action": "nope"},
     )
     assert r.status_code == 422
+
+
+def test_list_incidents_includes_warn_zone_sessions(db):
+    """โซน warn (risk 0.5-0.7 / decision=would_warn) ต้องขึ้น Incidents ด้วย.
+
+    เดิม INCIDENT_RISK_SCORE_MIN=0.7 + decision list ไม่มี warn → บัญชีที่ RBA
+    flag ระดับ warn หลุดจากหน้า Incidents ทั้งหมด (เคสจริง: risk 0.600 /
+    WOULD_WARN ไม่ปรากฏ). ตอนนี้ต้องจับ "ทุกบัญชีที่เข้าเงื่อนไข".
+    """
+    from datetime import datetime
+
+    warn_sess = LoginSession(
+        ip="203.0.113.88",
+        user_agent="pytest-incident-warnzone",
+        login_method="google",
+        decision="would_warn",
+        risk_score=0.6,
+        anomaly_score=0.45,
+        is_attack_ip=False,
+        created_at=datetime.utcnow(),
+    )
+    db.add(warn_sess)
+    db.commit()
+    try:
+        r = inc.list_incidents(db, hours=24, limit=500)
+        ids = {it["id"] for it in r["items"]}
+        assert str(warn_sess.id) in ids, (
+            "session risk_score=0.6 / would_warn ต้องขึ้น Incidents "
+            "(threshold = warn 0.5)"
+        )
+    finally:
+        db.delete(warn_sess)
+        db.commit()
+
+
+def test_incident_threshold_matches_rba_warn_threshold():
+    """เกณฑ์ Incidents ต้องผูกกับ warn threshold ของ RBA (0.5) ไม่ใช่ค่าลอย."""
+    from app.security.risk_aggregator import THRESHOLDS
+
+    assert inc.INCIDENT_RISK_SCORE_MIN == THRESHOLDS["warn"]
+    # allow (คะแนนต่ำ) ยังต้องไม่ถูกนับเป็น incident
+    assert "allow" not in inc.INCIDENT_DECISIONS

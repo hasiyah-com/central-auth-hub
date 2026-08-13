@@ -2754,8 +2754,9 @@ def list_incidents(
 ):
     """Incident Summary — list login ที่ RBA flag ว่าเสี่ยง (triage view).
 
-    เฉพาะ session ที่ decision ∈ block/challenge/would_* หรือ is_attack_ip
-    (ไม่ใช่ทุก login) — admin เห็นแต่ที่ต้องจัดการ. ดู `incident_service`.
+    ครอบคลุม *ทุก* session ที่ RBA flag: decision ∈ warn/challenge/block/mfa/
+    would_* หรือ is_attack_ip หรือ risk_score >= 0.5 (warn threshold) — ไม่ใช่
+    ทุก login (allow ที่คะแนนต่ำไม่เข้า). ดู `incident_service`.
     """
     return incident_service.list_incidents(
         db,

@@ -43,12 +43,17 @@ INCIDENT_DECISIONS = (
     "mfa",
     "mfa_required",
     "mfa_passed",
+    # โซน warn (risk 0.5-0.7) — RBA flag แล้วแต่ยังไม่ถึงขั้น step-up. รวมด้วย
+    # เพื่อให้ "ทุกบัญชีที่เข้าเงื่อนไข" ปรากฏในหน้า Incidents ครบ ไม่ตกหล่น.
+    "warn",
+    "would_warn",
 )
 
-# นอกจาก decision แล้ว — จับ session ที่ RBA ให้ "คะแนนรวมสูง" ด้วย (>= challenge
-# threshold 0.7) แม้ decision column จะเป็น allow/would_warn/stale. กันเคส high-risk
-# login หลุดจากหน้า Incidents เพราะ decision ไม่ตรงกับ risk_score.
-INCIDENT_RISK_SCORE_MIN = 0.7
+# นอกจาก decision แล้ว — จับ session ที่ RBA ให้ "คะแนนรวมสูง" ด้วย แม้ decision
+# column จะเป็น allow/stale. กันเคส high-risk login หลุดจากหน้า Incidents เพราะ
+# decision ไม่ตรงกับ risk_score. ตั้งเท่า warn threshold ของ risk_aggregator
+# (THRESHOLDS["warn"] = 0.5) → ทุก session ที่ RBA มองว่าผิดปกติจะถูกจับหมด.
+INCIDENT_RISK_SCORE_MIN = 0.5
 
 # audit action ที่เกี่ยวกับ security incident — ใช้ทำ timeline ของ downstream
 _INCIDENT_AUDIT_ACTIONS = (
