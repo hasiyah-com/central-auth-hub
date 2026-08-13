@@ -25,22 +25,52 @@ router = APIRouter()
 # ============ HTML templates ============
 
 _PAGE_STYLE = """
-  body { font-family: system-ui, -apple-system, "Sarabun", sans-serif;
-         background: #f1f5f9; margin: 0; padding: 40px 16px; color: #0f172a; }
-  .box { max-width: 540px; margin: 0 auto; background: #fff; border-radius: 12px;
-         padding: 28px 32px; box-shadow: 0 1px 3px rgba(0,0,0,.1); }
-  h1 { font-size: 20px; margin: 0 0 8px; }
-  .secret { font-family: "JetBrains Mono", monospace; background: #1f2937;
-            color: #86efac; padding: 14px 16px; border-radius: 8px;
-            word-break: break-all; font-size: 14px; margin: 14px 0; }
-  .label { font-size: 12px; color: #64748b; margin-top: 12px; }
-  .mono { font-family: monospace; background: #f1f5f9; padding: 2px 6px;
-          border-radius: 4px; font-size: 13px; }
-  .warn { background: #fef2f2; border-left: 4px solid #dc2626; padding: 12px 14px;
-          border-radius: 4px; font-size: 13px; margin-top: 16px; color: #991b1b; }
-  .ok { color: #16a34a; } .err { color: #dc2626; }
-  button { background: #534ab7; color: #fff; border: 0; padding: 8px 16px;
-           border-radius: 6px; cursor: pointer; font-size: 13px; }
+  @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap');
+  * { box-sizing: border-box; }
+  body { font-family: 'Sarabun', system-ui, -apple-system, 'Segoe UI', sans-serif;
+         background: linear-gradient(160deg,#0f172a,#1e293b 55%,#312e81);
+         margin: 0; min-height: 100vh; display: grid; place-items: center;
+         padding: 40px 16px; color: #0f172a; }
+  .box { max-width: 520px; width: 100%; background: #fff; border-radius: 20px;
+         overflow: hidden; box-shadow: 0 24px 60px rgba(2,6,23,.45); }
+  .brandbar { display: flex; align-items: center; gap: 11px; padding: 16px 28px;
+              border-bottom: 1px solid #eef2ff; }
+  .mark { width: 34px; height: 34px; border-radius: 10px;
+          background: linear-gradient(135deg,#6366f1,#312e81); color: #fff;
+          display: grid; place-items: center; font-weight: 800; font-size: 16px; }
+  .brandname { font-weight: 800; font-size: 13px; color: #0f172a; line-height: 1.1; }
+  .brandsub { font-size: 9.5px; letter-spacing: .18em; color: #94a3b8;
+              font-weight: 700; text-transform: uppercase; margin-top: 2px; }
+  .hero { padding: 26px 28px 4px; text-align: center; }
+  .hicon { width: 60px; height: 60px; border-radius: 16px; margin: 0 auto 14px;
+           display: grid; place-items: center; font-size: 28px; }
+  .hicon.ok { background: #ecfdf5; border: 1px solid #a7f3d0; }
+  .hicon.err { background: #fff1f2; border: 1px solid #fecdd3; }
+  .hicon.lock { background: #f1f5f9; border: 1px solid #e2e8f0; }
+  .eyebrow { font-size: 11px; letter-spacing: .14em; text-transform: uppercase;
+             font-weight: 700; color: #64748b; }
+  h1 { font-size: 20px; margin: 8px 0 0; font-weight: 800; color: #0f172a; }
+  h1.ok { color: #047857; } h1.err { color: #be123c; }
+  .pad { padding: 14px 30px 26px; }
+  p { font-size: 14px; line-height: 1.65; color: #475569; margin: 10px 0; }
+  .label { font-size: 11px; font-weight: 700; letter-spacing: .05em;
+           text-transform: uppercase; color: #94a3b8; margin: 18px 0 6px; }
+  .secret { font-family: 'JetBrains Mono', ui-monospace, monospace; background: #0f172a;
+            color: #86efac; padding: 13px 15px; border-radius: 11px;
+            word-break: break-all; font-size: 13.5px; display: flex; gap: 10px;
+            align-items: center; justify-content: space-between; }
+  .secret.id { color: #93c5fd; }
+  .copy { background: rgba(255,255,255,.12); color: #fff; border: 0; padding: 7px 13px;
+          border-radius: 8px; cursor: pointer; font-size: 12px; font-weight: 700;
+          font-family: inherit; white-space: nowrap; flex-shrink: 0; }
+  .copy:hover { background: rgba(255,255,255,.24); }
+  .mono { font-family: 'JetBrains Mono', monospace; background: #f1f5f9;
+          padding: 2px 6px; border-radius: 4px; font-size: 13px; }
+  .warn { background: #fffbeb; border: 1px solid #fde68a; border-left: 4px solid #d97706;
+          padding: 13px 15px; border-radius: 10px; font-size: 13px; margin-top: 20px;
+          color: #92400e; line-height: 1.6; }
+  .footer { padding: 14px 30px; font-size: 11px; color: #94a3b8;
+            border-top: 1px solid #f1f5f9; text-align: center; }
 """
 
 
@@ -51,11 +81,26 @@ def _clean_url_script(target: str = "/secret/retrieved") -> str:
 
 def _error_page(title: str, message: str, status: int = 410) -> HTMLResponse:
     html = f"""<!DOCTYPE html><html lang="th"><head><meta charset="UTF-8">
-<title>{title}</title><style>{_PAGE_STYLE}</style></head><body>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{title} · Central Auth Hub</title><style>{_PAGE_STYLE}</style></head><body>
 <div class="box">
-  <h1 class="err">⚠️ {title}</h1>
-  <p>{message}</p>
-  <p class="label">หากต้องการ client_secret ใหม่ ให้ rotate key ที่ Developer Portal</p>
+  <div class="brandbar">
+    <div class="mark">H</div>
+    <div><div class="brandname">Central Auth Hub</div>
+         <div class="brandsub">Identity &amp; Access</div></div>
+  </div>
+  <div class="hero">
+    <div class="hicon err">⚠️</div>
+    <div class="eyebrow">ไม่สามารถแสดง Client Secret</div>
+    <h1 class="err">{title}</h1>
+  </div>
+  <div class="pad">
+    <p>{message}</p>
+    <p class="label" style="text-transform:none;letter-spacing:0;color:#64748b;font-weight:400;font-size:13px;margin-top:8px">
+      หากต้องการ client_secret ใหม่ ให้ rotate key ที่ Developer Portal
+    </p>
+  </div>
+  <div class="footer">Central Auth Hub · one-time secret delivery</div>
 </div>
 {_clean_url_script()}
 </body></html>"""
@@ -118,24 +163,40 @@ def retrieve_secret(
     db.commit()
 
     html = f"""<!DOCTYPE html><html lang="th"><head><meta charset="UTF-8">
-<title>Client Secret</title><style>{_PAGE_STYLE}</style></head><body>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Client Secret · Central Auth Hub</title><style>{_PAGE_STYLE}</style></head><body>
 <div class="box">
-  <h1 class="ok">✓ ลงทะเบียนสำเร็จ — {sub_name}</h1>
-  <p>นี่คือ credentials ของระบบย่อยคุณ <strong>แสดงเพียงครั้งเดียวเท่านั้น</strong></p>
-
-  <div class="label">Client ID (เปิดเผยได้)</div>
-  <div class="secret" style="color:#93c5fd">{client_id}</div>
-
-  <div class="label">Client Secret (ความลับ — เก็บให้ดี)</div>
-  <div class="secret" id="secret">{client_secret}</div>
-  <button onclick="navigator.clipboard.writeText(document.getElementById('secret').innerText)">
-    คัดลอก Client Secret
-  </button>
-
-  <div class="warn">
-    <strong>เก็บ secret นี้ทันที</strong> — ใส่ใน <span class="mono">.env</span> ของระบบย่อย
-    หากปิดหน้านี้แล้วจะดูซ้ำไม่ได้ ต้อง rotate key เพื่อสร้างใหม่
+  <div class="brandbar">
+    <div class="mark">H</div>
+    <div><div class="brandname">Central Auth Hub</div>
+         <div class="brandsub">Identity &amp; Access</div></div>
   </div>
+  <div class="hero">
+    <div class="hicon ok">🔑</div>
+    <div class="eyebrow">ลงทะเบียนระบบย่อยสำเร็จ</div>
+    <h1 class="ok">{sub_name}</h1>
+  </div>
+  <div class="pad">
+    <p style="text-align:center;margin-top:2px">นี่คือ credentials ของระบบย่อยคุณ — <strong>แสดงเพียงครั้งเดียวเท่านั้น</strong></p>
+
+    <div class="label">Client ID (เปิดเผยได้)</div>
+    <div class="secret id">
+      <span id="clientid">{client_id}</span>
+      <button class="copy" onclick="navigator.clipboard.writeText(document.getElementById('clientid').innerText);this.textContent='✓ คัดลอกแล้ว'">คัดลอก</button>
+    </div>
+
+    <div class="label">Client Secret (ความลับ — เก็บให้ดี)</div>
+    <div class="secret">
+      <span id="secretval">{client_secret}</span>
+      <button class="copy" onclick="navigator.clipboard.writeText(document.getElementById('secretval').innerText);this.textContent='✓ คัดลอกแล้ว'">คัดลอก</button>
+    </div>
+
+    <div class="warn">
+      <strong>เก็บ secret นี้ทันที</strong> — ใส่ใน <span class="mono">.env</span> ของระบบย่อย
+      หากปิดหน้านี้แล้วจะดูซ้ำไม่ได้ ต้อง rotate key เพื่อสร้างใหม่
+    </div>
+  </div>
+  <div class="footer">Central Auth Hub · one-time secret delivery · ลิงก์นี้ใช้ได้ครั้งเดียว</div>
 </div>
 {_clean_url_script()}
 </body></html>"""
@@ -149,13 +210,26 @@ def retrieve_secret(
 def secret_retrieved_landing():
     """หน้าที่ address bar ชี้ไปหลังลบ token — refresh มาที่นี่ก็ปลอดภัย."""
     html = f"""<!DOCTYPE html><html lang="th"><head><meta charset="UTF-8">
-<title>Secret Retrieved</title><style>{_PAGE_STYLE}</style></head><body>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Secret Retrieved · Central Auth Hub</title><style>{_PAGE_STYLE}</style></head><body>
 <div class="box">
-  <h1>🔒 client_secret ถูกแสดงไปแล้ว</h1>
-  <p>ด้วยเหตุผลด้านความปลอดภัย client_secret แสดงเพียงครั้งเดียว
-     และไม่สามารถเรียกดูซ้ำได้</p>
-  <p class="label">หากยังไม่ได้บันทึก secret ไว้ ให้ไปที่ Developer Portal
-     แล้วกด "Rotate Key" เพื่อสร้าง secret ใหม่</p>
+  <div class="brandbar">
+    <div class="mark">H</div>
+    <div><div class="brandname">Central Auth Hub</div>
+         <div class="brandsub">Identity &amp; Access</div></div>
+  </div>
+  <div class="hero">
+    <div class="hicon lock">🔒</div>
+    <div class="eyebrow">One-time secret · ปิดการแสดงผลแล้ว</div>
+    <h1>client_secret ถูกแสดงไปแล้ว</h1>
+  </div>
+  <div class="pad">
+    <p style="text-align:center">ด้วยเหตุผลด้านความปลอดภัย client_secret แสดงเพียงครั้งเดียว
+       และไม่สามารถเรียกดูซ้ำได้</p>
+    <p class="label" style="text-transform:none;letter-spacing:0;color:#64748b;font-weight:400;font-size:13px;text-align:center;margin-top:8px">
+       หากยังไม่ได้บันทึก secret ไว้ ให้ไปที่ Developer Portal แล้วกด &quot;Rotate Key&quot; เพื่อสร้าง secret ใหม่</p>
+  </div>
+  <div class="footer">Central Auth Hub · one-time secret delivery</div>
 </div>
 </body></html>"""
     return HTMLResponse(content=html)
