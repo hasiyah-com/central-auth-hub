@@ -2724,51 +2724,82 @@ def _maintenance_html(subsystem_name: str, health: dict) -> str:
     checked_at = html.escape((health.get("checked_at") or "").replace("T", " ")[:19])
     error = html.escape(health.get("error") or "subsystem ไม่ตอบ health check")
     return f"""<!DOCTYPE html><html lang="th"><head><meta charset="UTF-8">
-<title>{safe_name} ปิดปรับปรุง</title>
+<title>{safe_name} · ปิดปรับปรุงชั่วคราว</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
 <style>
-  body {{ font-family: 'Sarabun', system-ui, sans-serif; background: #f8fafc;
+  * {{ box-sizing: border-box; }}
+  body {{ font-family: 'Sarabun', system-ui, -apple-system, 'Segoe UI', sans-serif;
+          background: linear-gradient(160deg,#0f172a,#1e293b 55%,#312e81);
           margin: 0; min-height: 100vh; display: grid; place-items: center;
           padding: 40px 16px; color: #0f172a; }}
-  .card {{ max-width: 560px; width: 100%; background: #fff; border-radius: 16px;
-           overflow: hidden; box-shadow: 0 4px 12px rgba(15,23,42,0.08); }}
-  .hero {{ background: linear-gradient(135deg,#dc2626,#7f1d1d); padding: 32px;
-           color: #fff; text-align: center; }}
-  .icon {{ font-size: 56px; line-height: 1; }}
-  .title {{ font-size: 22px; font-weight: 800; margin-top: 12px; }}
-  .body {{ padding: 28px 32px; }}
-  .reason {{ background: #fef2f2; border: 1px solid #fecaca; border-radius: 10px;
-             padding: 12px 14px; margin: 14px 0; font-size: 12px;
-             font-family: 'JetBrains Mono', monospace; color: #991b1b;
-             word-break: break-word; }}
-  .ts {{ font-size: 11px; color: #94a3b8; margin-top: 14px;
-         font-family: monospace; }}
-  .actions {{ margin-top: 22px; }}
-  .btn {{ display: inline-block; padding: 10px 18px; background: #0f172a;
-          color: #fff; text-decoration: none; border-radius: 8px;
-          font-weight: 600; font-size: 14px; }}
+  .card {{ max-width: 500px; width: 100%; background: #fff; border-radius: 20px;
+           overflow: hidden; box-shadow: 0 24px 60px rgba(2,6,23,0.45); }}
+  .brandbar {{ display: flex; align-items: center; gap: 11px; padding: 16px 28px;
+               border-bottom: 1px solid #eef2ff; }}
+  .mark {{ width: 34px; height: 34px; border-radius: 10px;
+           background: linear-gradient(135deg,#6366f1,#312e81); color: #fff;
+           display: grid; place-items: center; font-weight: 800; font-size: 16px; }}
+  .brandname {{ font-weight: 800; font-size: 13px; color: #0f172a; line-height: 1.1; }}
+  .brandsub {{ font-size: 9.5px; letter-spacing: .18em; color: #94a3b8;
+               font-weight: 700; text-transform: uppercase; margin-top: 2px; }}
+  .hero {{ padding: 30px 32px 8px; text-align: center; }}
+  .hicon {{ width: 64px; height: 64px; border-radius: 18px; margin: 0 auto 16px;
+            display: grid; place-items: center; font-size: 30px;
+            background: #fffbeb; border: 1px solid #fde68a; }}
+  .eyebrow {{ font-size: 11px; letter-spacing: .14em; text-transform: uppercase;
+              font-weight: 700; color: #b45309; }}
+  h1 {{ font-size: 22px; font-weight: 800; margin: 8px 0 0; color: #0f172a; }}
+  .pill {{ display: inline-flex; align-items: center; gap: 6px; font-size: 12px;
+           font-weight: 700; border-radius: 999px; padding: 4px 13px; margin-top: 12px;
+           background: #fffbeb; color: #b45309; border: 1px solid #fde68a; }}
+  .body {{ padding: 20px 32px 8px; }}
+  .body p {{ font-size: 14.5px; line-height: 1.65; color: #475569; margin: 8px 0;
+             text-align: center; }}
+  .reason {{ background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px;
+             padding: 14px 16px; margin: 18px 0 0; }}
+  .reason .rlabel {{ font-size: 10.5px; font-weight: 700; letter-spacing: .05em;
+                     text-transform: uppercase; color: #94a3b8; }}
+  .reason .rtext {{ font-size: 12.5px; font-family: 'JetBrains Mono', monospace;
+                    color: #334155; word-break: break-word; margin-top: 6px;
+                    line-height: 1.5; }}
+  .ts {{ font-size: 11px; color: #94a3b8; margin-top: 10px;
+         font-family: 'JetBrains Mono', monospace; text-align: center; }}
+  .actions {{ text-align: center; padding: 22px 32px 30px; }}
+  .btn {{ display: inline-block; padding: 11px 22px; background: #0f172a;
+          color: #fff; text-decoration: none; border-radius: 11px;
+          font-weight: 700; font-size: 14px; }}
+  .btn:hover {{ background: #1e293b; }}
   .footer {{ padding: 14px 32px; font-size: 11px; color: #94a3b8;
-             border-top: 1px solid #f1f5f9; }}
+             border-top: 1px solid #f1f5f9; text-align: center; }}
 </style></head><body>
 <div class="card">
+  <div class="brandbar">
+    <div class="mark">H</div>
+    <div><div class="brandname">Central Auth Hub</div>
+         <div class="brandsub">Identity &amp; Access</div></div>
+  </div>
   <div class="hero">
-    <div class="icon">🔧</div>
-    <div class="title">{safe_name}<br>ปิดปรับปรุงชั่วคราว</div>
+    <div class="hicon">🔧</div>
+    <div class="eyebrow">บริการชั่วคราวไม่พร้อมใช้งาน</div>
+    <h1>{safe_name}</h1>
+    <span class="pill">● ปิดปรับปรุงชั่วคราว</span>
   </div>
   <div class="body">
-    <p>ระบบนี้กำลังมีปัญหาทางเทคนิค — ทีมงานได้รับแจ้งและอยู่ระหว่างแก้ไข</p>
+    <p>ระบบนี้กำลังมีปัญหาทางเทคนิค ทีมงานได้รับแจ้งและอยู่ระหว่างแก้ไข</p>
     <p>กรุณาลองอีกครั้งในอีก 5 นาที</p>
     <div class="reason">
-      <strong>เหตุผล (สำหรับ admin):</strong><br>
-      {error}
+      <div class="rlabel">รายละเอียดสำหรับผู้ดูแลระบบ</div>
+      <div class="rtext">{error}</div>
     </div>
     <div class="ts">Health check ล่าสุด: {checked_at} UTC</div>
-    <div class="actions">
-      <a href="javascript:history.back()" class="btn">← กลับหน้าก่อน</a>
-    </div>
+  </div>
+  <div class="actions">
+    <a href="javascript:history.back()" class="btn">← กลับหน้าก่อนหน้า</a>
   </div>
   <div class="footer">
-    Central Auth Hub · pre-flight check ก่อน OAuth redirect
+    Central Auth Hub · pre-flight health check ก่อน OAuth redirect
   </div>
 </div>
 </body></html>"""
