@@ -6,6 +6,7 @@ import { Topbar } from "@/components/Topbar";
 import { DataTable, type Column } from "@/components/DataTable";
 import { Badge } from "@/components/Badge";
 import { SlidePanel } from "@/components/SlidePanel";
+import { LineChart } from "@/components/LineChart";
 import { clientFetch } from "@/lib/api";
 import { mutateWithStepup, runWithStepup } from "@/lib/passkey";
 import { AccessPolicyCard } from "./_components/AccessPolicyCard";
@@ -1291,41 +1292,26 @@ export default function SubsystemDetailPage({
                 tone="danger"
               />
             </div>
-            {/* Mini daily bar chart */}
+            {/* Mini daily line chart */}
             {stats.daily.length > 0 && (() => {
               const max = Math.max(...stats.daily.map((x) => x.count), 1);
-              const BAR_AREA_PX = 80;
               return (
                 <div className="mt-4 bg-white rounded-xl border border-ink-200 p-4">
                   <div className="text-[10px] font-bold text-ink-500 uppercase tracking-wider mb-2">
                     Login ต่อวัน · max={max}
                   </div>
-                  <div className="flex items-end gap-2" style={{ height: `${BAR_AREA_PX + 20}px` }}>
-                    {stats.daily.map((d) => {
-                      const heightPx =
-                        d.count > 0
-                          ? Math.max(4, (d.count / max) * BAR_AREA_PX)
-                          : 0;
-                      return (
-                        <div
-                          key={d.date}
-                          className="flex-1 flex flex-col items-center gap-1 justify-end"
-                          title={`${d.date}: ${d.count} logins`}
-                        >
-                          <div className="text-[10px] text-ink-700 font-mono">
-                            {d.count > 0 ? d.count : ""}
-                          </div>
-                          <div
-                            className="w-full bg-brand-500 rounded-sm hover:bg-brand-600 transition"
-                            style={{ height: `${heightPx}px` }}
-                          />
-                          <div className="text-[9px] text-ink-400 font-mono">
-                            {d.date.slice(5)}
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
+                  <LineChart
+                    labels={stats.daily.map((d) => d.date.slice(5))}
+                    series={[
+                      {
+                        name: "Login",
+                        color: "#6366f1",
+                        values: stats.daily.map((d) => d.count),
+                      },
+                    ]}
+                    height={170}
+                    valueSuffix=" logins"
+                  />
                 </div>
               );
             })()}
