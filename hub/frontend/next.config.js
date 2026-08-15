@@ -62,12 +62,40 @@ const nextConfig = {
   },
   // ภายใน docker ใช้ hostname `hub-backend`; ภายนอก browser ใช้ localhost
   // หน้า client component ที่ fetch จะใช้ /api/hub/* แล้ว Next rewrite ส่งเข้า backend
+  //
+  // ── Single-domain mode ──────────────────────────────────────────────────
+  // frontend + backend อยู่ domain เดียวกัน (จำเป็นสำหรับ WebAuthn: RP ID ต้อง
+  // ตรงกับ origin ของหน้าที่รัน ceremony — และ subdomain ของ public-suffix domain
+  // เช่น *.duckdns.org แชร์ RP ID กันไม่ได้). Next proxy path ของ backend ที่
+  // browser/subsystem เรียก "ตรง" (ไม่ผ่าน /api/proxy) ให้วิ่งเข้า hub-backend:
+  //   - OAuth/OIDC ที่ subsystem + Google เรียก
+  //   - หน้า HTML ที่ Hub เสิร์ฟเอง (risk-stepup / force-enroll / confirm-identity / secret)
+  //   - Roster API (X-Api-Key จาก subsystem) + health
+  // path ที่เป็น "หน้าเว็บของ console" (/auth/passkey/stepup, /auth/passkey/recover,
+  // /account, /developer/*) ไม่ต้อง list — rewrite เป็นแบบ afterFiles จึงแพ้ page
+  // ของ Next เสมอ ส่วน API ของมันถูกเรียกผ่าน /api/proxy อยู่แล้ว
   async rewrites() {
+    const passthrough = [
+      "/oauth",
+      "/.well-known",
+      "/auth/google",
+      "/auth/account",
+      "/auth/stepup",
+      "/auth/confirm-identity",
+      "/auth/passkey/risk-stepup",
+      "/auth/passkey/force-enroll",
+      "/account/passkeys",
+      "/secret",
+      "/api/v1",
+      "/health",
+    ];
     return [
-      {
-        source: "/api/hub/:path*",
-        destination: `${HUB_INTERNAL}/:path*`,
-      },
+      { source: "/api/hub/:path*", destination: `${HUB_INTERNAL}/:path*` },
+      // exact (เช่น /health, /auth/passkey/risk-stepup) + ลูก (/:path*)
+      ...passthrough.flatMap((p) => [
+        { source: p, destination: `${HUB_INTERNAL}${p}` },
+        { source: `${p}/:path*`, destination: `${HUB_INTERNAL}${p}/:path*` },
+      ]),
     ];
   },
 };
