@@ -886,18 +886,51 @@ def _build_attack_path(
     ]
 
 
+def _summary_todo(ls: LoginSession, actions: list[dict]) -> str:
+    """เลือกคำแนะนำให้ "สอดคล้องกับความรุนแรงจริง" ของ incident.
+
+    เดิมหยิบ action แรกที่กดได้จาก playbook มาเสมอ → login ที่ระบบ *อนุญาต*
+    และคะแนนต่ำ ก็ยังขึ้นว่า "บล็อกการเข้าถึงทันที" ซึ่งขัดกับการ์ด WHAT
+    ("อนุญาต") และทำให้ดูน่าตกใจเกินจริง.
+
+    กติกา (ยึด threshold เดียวกับ risk_aggregator ผ่าน `_risk_level`):
+      - เชิงรุก (เสนอ action จาก playbook) เมื่อ *อันตรายจริง*:
+        attack IP / account takeover / ถูกบล็อก / risk >= 0.7 (high-critical)
+      - ยืนยันตัวตนผ่านแล้ว + ไม่เข้าเกณฑ์ข้างบน → ไม่ต้องทำอะไรเพิ่ม
+      - โซน warn (0.5-0.7) หรือกำลังบังคับ MFA → ให้ตรวจสอบ ไม่ใช่บล็อก
+      - ที่เหลือ (risk ต่ำ + อนุญาต) → เฝ้าดูตามปกติ
+    """
+    decision = ls.decision or ""
+    level, _ = _risk_level(float(ls.risk_score or 0))
+
+    dangerous = (
+        bool(ls.is_attack_ip)
+        or bool(getattr(ls, "is_account_takeover", False))
+        or decision in ("block", "would_block")
+        or level in ("critical", "high")
+    )
+    if dangerous:
+        for a in actions:
+            if a.get("executable") and a.get("enabled"):
+                return a["title"]
+        return "ตรวจสอบด้วยตนเอง"
+
+    if decision == "mfa_passed":
+        return "ยืนยันตัวตนผ่านแล้ว — ไม่ต้องดำเนินการเพิ่ม"
+    if decision in ("challenge", "mfa", "mfa_required", "would_mfa", "would_challenge"):
+        return "ระบบบังคับยืนยันตัวตนแล้ว — ติดตามผล ยังไม่ต้องระงับ"
+    if level == "medium":
+        return "ตรวจสอบเมื่อสะดวก — ยังไม่ถึงเกณฑ์ต้องระงับ"
+    return "ไม่ต้องดำเนินการ — เฝ้าดูตามปกติ"
+
+
 def _build_summary(ls, reasons_structured, system_response, actions) -> dict:
-    """สรุปผู้บริหาร 3 บรรทัด: Why → What → What to do."""
+    """สรุปผู้บริหาร 3 บรรทัด: Why → What → What to do (ต้องเล่าเรื่องสอดคล้องกัน)."""
     why = "ตรวจพบความผิดปกติในการเข้าสู่ระบบ"
     if reasons_structured:
         why = _humanize_reason(reasons_structured[0]["feature"])
     what = system_response["action_taken"]
-    todo = "ตรวจสอบด้วยตนเอง"
-    for a in actions:
-        if a.get("executable") and a.get("enabled"):
-            todo = a["title"]
-            break
-    return {"why": why, "what": what, "what_to_do": todo}
+    return {"why": why, "what": what, "what_to_do": _summary_todo(ls, actions)}
 
 
 def get_incident_detail(db: Session, session_id: str) -> dict | None:

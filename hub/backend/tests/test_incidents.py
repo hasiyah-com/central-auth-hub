@@ -540,3 +540,66 @@ def test_incident_threshold_matches_rba_warn_threshold():
     assert inc.INCIDENT_RISK_SCORE_MIN == THRESHOLDS["warn"]
     # allow (คะแนนต่ำ) ยังต้องไม่ถูกนับเป็น incident
     assert "allow" not in inc.INCIDENT_DECISIONS
+
+
+# ─────────────────────────────────────────────────────────────
+# Incident Summary — 3 การ์ดต้องสอดคล้องกัน (WHY → WHAT → WHAT TO DO)
+# ─────────────────────────────────────────────────────────────
+
+_FAKE_ACTIONS = [
+    {
+        "type": "block_ip",
+        "title": "บล็อกการเข้าถึงทันที",
+        "executable": True,
+        "enabled": True,
+    },
+    {
+        "type": "review",
+        "title": "ตรวจสอบผู้ใช้",
+        "executable": True,
+        "enabled": True,
+    },
+]
+
+
+def _summary_for(**kw):
+    ls = _sess(**kw)
+    sysres = inc._system_response(ls, inc._session_status(ls, ls.created_at))
+    return inc._build_summary(
+        ls,
+        [{"raw": "is_new_device", "feature": "is_new_device", "detail": ""}],
+        sysres,
+        _FAKE_ACTIONS,
+    )
+
+
+def test_summary_low_risk_allow_does_not_recommend_block():
+    """decision=allow + risk ต่ำ → ห้ามแนะนำ 'บล็อกทันที' (ขัดกับ WHAT ที่ว่าอนุญาต)."""
+    s = _summary_for(decision="allow", risk_score=0.1)
+    assert (
+        "บล็อก" not in s["what_to_do"]
+    ), f"low-risk allow ไม่ควรแนะนำให้บล็อก — ได้ {s['what_to_do']!r}"
+
+
+def test_summary_mfa_passed_does_not_recommend_block():
+    """ยืนยันตัวตนผ่านแล้ว + risk ต่ำ → ไม่ต้องบล็อก."""
+    s = _summary_for(decision="mfa_passed", risk_score=0.3)
+    assert "บล็อก" not in s["what_to_do"]
+
+
+def test_summary_high_risk_keeps_aggressive_action():
+    """เสี่ยงสูง/ถูกบล็อก → ยังต้องเสนอ action เชิงรุกจาก playbook เหมือนเดิม."""
+    s = _summary_for(decision="would_block", risk_score=0.92)
+    assert s["what_to_do"] == "บล็อกการเข้าถึงทันที"
+
+
+def test_summary_attack_ip_keeps_aggressive_action():
+    """attack IP → เชิงรุกเสมอ แม้ decision จะเป็น allow."""
+    s = _summary_for(decision="allow", risk_score=0.2, is_attack_ip=True)
+    assert s["what_to_do"] == "บล็อกการเข้าถึงทันที"
+
+
+def test_summary_medium_risk_is_review_not_block():
+    """โซน warn (0.5-0.7) → ให้ตรวจสอบ ไม่ใช่บล็อกทันที."""
+    s = _summary_for(decision="would_warn", risk_score=0.6)
+    assert "บล็อก" not in s["what_to_do"]
