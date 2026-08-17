@@ -10,7 +10,6 @@ import {
 } from "@/lib/auth";
 
 const HUB_INTERNAL = process.env.HUB_INTERNAL_URL || "http://hub-backend:8000";
-const REFRESH_COOKIE_MAX_AGE_SEC = 30 * 24 * 60 * 60; // ดู app/api/set-token/route.ts
 
 // Routes ที่จำกัดเฉพาะ hub_admin (Admin Console)
 // /account/security = passkey management — admin เท่านั้น (teacher/staff/นักศึกษา
@@ -78,6 +77,7 @@ async function tryRefresh(req: NextRequest): Promise<RefreshOutcome> {
     const payload = parseJwt(data.access_token);
     if (!payload) return { kind: "fail" };
 
+    // session cookie (ไม่มี maxAge → ลบตอนปิดเบราว์เซอร์)
     const res = NextResponse.next();
     res.cookies.set({
       name: TOKEN_COOKIE,
@@ -86,7 +86,6 @@ async function tryRefresh(req: NextRequest): Promise<RefreshOutcome> {
       sameSite: "lax",
       secure: process.env.NODE_ENV === "production",
       path: "/",
-      maxAge: data.expires_in,
     });
     res.cookies.set({
       name: REFRESH_TOKEN_COOKIE,
@@ -95,7 +94,6 @@ async function tryRefresh(req: NextRequest): Promise<RefreshOutcome> {
       sameSite: "lax",
       secure: process.env.NODE_ENV === "production",
       path: "/",
-      maxAge: REFRESH_COOKIE_MAX_AGE_SEC,
     });
     return { kind: "ok", payload, res };
   } catch {
