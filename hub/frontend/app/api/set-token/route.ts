@@ -3,9 +3,8 @@ import { cookies } from "next/headers";
 import { parseJwt, isExpired, TOKEN_COOKIE, REFRESH_TOKEN_COOKIE } from "@/lib/auth";
 
 const HUB_INTERNAL = process.env.HUB_INTERNAL_URL || "http://hub-backend:8000";
-// ต้องตรงกับ jwt_refresh_token_expire_days ฝั่ง Hub backend (config.py) — refresh
-// token เองไม่มี exp ให้ parse (opaque), เลย hardcode อายุ cookie ให้ยาวพอ
-const REFRESH_COOKIE_MAX_AGE_SEC = 30 * 24 * 60 * 60;
+// Session cookie policy: cookie ไม่มี maxAge → browser ลบตอนปิด (ปิดเบราว์เซอร์ =
+// หลุด login). Refresh token record ฝั่ง Hub ยังอายุ 30 วัน — แค่ client ไม่เก็บข้ามรอบ.
 
 /**
  * POST /api/set-token
@@ -32,8 +31,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "invalid or expired token" }, { status: 400 });
   }
 
-  // เก็บ token ใน httpOnly cookie — max-age ตาม exp
-  const maxAge = Math.max(0, payload.exp - Math.floor(Date.now() / 1000));
+  // เก็บ token ใน httpOnly session cookie (ไม่มี maxAge → ลบตอนปิดเบราว์เซอร์)
   const res = NextResponse.json({ ok: true, expires_at: payload.exp });
   res.cookies.set({
     name: TOKEN_COOKIE,
@@ -42,7 +40,6 @@ export async function POST(req: NextRequest) {
     sameSite: "lax",
     secure: process.env.NODE_ENV === "production",
     path: "/",
-    maxAge,
   });
 
   if (body.refresh_token && typeof body.refresh_token === "string") {
@@ -53,7 +50,6 @@ export async function POST(req: NextRequest) {
       sameSite: "lax",
       secure: process.env.NODE_ENV === "production",
       path: "/",
-      maxAge: REFRESH_COOKIE_MAX_AGE_SEC,
     });
   }
 

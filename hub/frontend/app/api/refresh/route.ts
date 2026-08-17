@@ -3,7 +3,6 @@ import { cookies } from "next/headers";
 import { TOKEN_COOKIE, REFRESH_TOKEN_COOKIE } from "@/lib/auth";
 
 const HUB_INTERNAL = process.env.HUB_INTERNAL_URL || "http://hub-backend:8000";
-const REFRESH_COOKIE_MAX_AGE_SEC = 30 * 24 * 60 * 60; // ดู set-token/route.ts
 
 /**
  * POST /api/refresh
@@ -53,6 +52,7 @@ export async function POST() {
     });
   }
 
+  // session cookie (ไม่มี maxAge → ลบตอนปิดเบราว์เซอร์)
   const res = NextResponse.json({ ok: true });
   res.cookies.set({
     name: TOKEN_COOKIE,
@@ -61,7 +61,6 @@ export async function POST() {
     sameSite: "lax",
     secure: process.env.NODE_ENV === "production",
     path: "/",
-    maxAge: data.expires_in,
   });
   res.cookies.set({
     name: REFRESH_TOKEN_COOKIE,
@@ -70,7 +69,6 @@ export async function POST() {
     sameSite: "lax",
     secure: process.env.NODE_ENV === "production",
     path: "/",
-    maxAge: REFRESH_COOKIE_MAX_AGE_SEC,
   });
   return res;
 }
