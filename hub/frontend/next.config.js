@@ -96,6 +96,21 @@ const nextConfig = {
         { source: p, destination: `${HUB_INTERNAL}${p}` },
         { source: `${p}/:path*`, destination: `${HUB_INTERNAL}${p}/:path*` },
       ]),
+      // ── subpath-only ── (exact `/auth/passkey/recover` = หน้า white ของ frontend
+      // → ห้าม proxy exact ไม่งั้นทับหน้านั้น). endpoint ลูกที่หน้า Hub-served (dark)
+      // ที่ subsystem flow เรียก + recovery ticket (public) ต้องวิ่งเข้า backend
+      {
+        source: "/auth/passkey/recover/:path*",
+        destination: `${HUB_INTERNAL}/auth/passkey/recover/:path*`,
+      },
+      {
+        source: "/auth/passkey/backup-codes/:path*",
+        destination: `${HUB_INTERNAL}/auth/passkey/backup-codes/:path*`,
+      },
+      {
+        source: "/auth/recovery/:path*",
+        destination: `${HUB_INTERNAL}/auth/recovery/:path*`,
+      },
     ];
   },
 };
