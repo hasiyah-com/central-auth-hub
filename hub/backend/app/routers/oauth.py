@@ -2169,6 +2169,7 @@ def _passkey_recover_html(nonce: str, return_to: str = "") -> str:
         <button class="tab active" id="tabBackup">Backup Code</button>
         <button class="tab" id="tabOtp">กู้ OTP</button>
         <button class="tab" id="tabRegen">ขอ codes ใหม่</button>
+        <button class="tab" id="tabTicket">ขอ Admin ช่วย</button>
       </div>
       <div id="err" class="msg err"></div>
       <label class="fld" for="email">อีเมล</label>
@@ -2189,6 +2190,12 @@ def _passkey_recover_html(nonce: str, return_to: str = "") -> str:
           <input type="text" id="otp" class="mono" placeholder="••••••" maxlength="6">
           <button class="btn" id="btnOtpVerify">ยืนยัน OTP</button>
         </div>
+      </div>
+
+      <div id="paneTicket" class="hide">
+        <label class="fld" for="reason">เหตุผล (อุปกรณ์หาย / เข้า email ไม่ได้ ฯลฯ)</label>
+        <input type="text" id="reason" placeholder="เช่น ทำโทรศัพท์ที่มี passkey หาย">
+        <button class="btn" id="btnTicket">ส่งคำขอให้ Admin</button>
       </div>
       <a class="back" id="backLink" href="javascript:history.back()">← กลับ</a>
     </div>
@@ -2315,15 +2322,17 @@ function done(m, codes) {{
 
 let regenMode = false;
 function setTab(active, regen) {{
-  ['tabBackup','tabOtp','tabRegen'].forEach(t => document.getElementById(t).classList.toggle('active', t===active));
+  ['tabBackup','tabOtp','tabRegen','tabTicket'].forEach(t => document.getElementById(t).classList.toggle('active', t===active));
   $('paneBackup').classList.toggle('hide', active!=='tabBackup');
-  $('paneOtp').classList.toggle('hide', active==='tabBackup');
+  $('paneOtp').classList.toggle('hide', active!=='tabOtp' && active!=='tabRegen');
+  $('paneTicket').classList.toggle('hide', active!=='tabTicket');
   $('otpStep1').classList.remove('hide'); $('otpStep2').classList.add('hide');
   regenMode = regen; clearErr();
 }}
 $('tabBackup').addEventListener('click', () => setTab('tabBackup', false));
 $('tabOtp').addEventListener('click', () => setTab('tabOtp', false));
 $('tabRegen').addEventListener('click', () => setTab('tabRegen', true));
+$('tabTicket').addEventListener('click', () => setTab('tabTicket', false));
 
 async function post(url, body) {{
   const r = await fetch(url, {{method:'POST', headers:{{'Content-Type':'application/json'}}, body:JSON.stringify(body)}});
@@ -2368,6 +2377,16 @@ $('btnOtpVerify').addEventListener('click', async () => {{
   const {{ok, data}} = await post(url, {{email:emailVal(), otp:$('otp').value.trim()}});
   if (ok) done(data.message, data.backup_codes);
   else {{ showErr(pickMsg(data, 'OTP ไม่ถูกต้อง')); $('btnOtpVerify').disabled=false; $('btnOtpVerify').textContent='ยืนยัน OTP'; }}
+}});
+
+$('btnTicket').addEventListener('click', async () => {{
+  clearErr();
+  if (!emailVal()) return showErr('กรุณากรอกอีเมล');
+  $('btnTicket').disabled = true; $('btnTicket').textContent = 'กำลังส่ง…';
+  const {{ok, data}} = await post('/auth/recovery/request', {{email:emailVal(), credential_type:'passkey', reason:($('reason').value||'').trim()}});
+  // opaque เสมอ (ไม่บอกว่า email มีจริงไหม) → ถือว่าส่งสำเร็จถ้า HTTP ok
+  if (ok) done(data.message || 'ส่งคำขอแล้ว — ผู้ดูแลระบบจะติดต่อยืนยันตัวตน');
+  else {{ showErr(pickMsg(data, 'ส่งคำขอไม่สำเร็จ')); $('btnTicket').disabled=false; $('btnTicket').textContent='ส่งคำขอให้ Admin'; }}
 }});
 </script>
 </body></html>"""
