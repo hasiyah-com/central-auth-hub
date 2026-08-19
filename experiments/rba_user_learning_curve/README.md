@@ -32,7 +32,7 @@ The two normal conditions are generated as separate isolated runs using the same
 
 ## Data flow
 
-`alias config + local mapping preflight -> raw login events -> isolated experiment database -> 23-feature snapshots -> global Isolation Forest -> four-layer predictions -> metrics`
+`alias config + local mapping preflight -> raw login events -> isolated SQLite store -> 23-feature snapshots -> global Isolation Forest -> four-layer predictions -> combined results`
 
 Raw events must not contain model scores or final decisions. Those values are produced by the real scoring pipeline and written only to prediction outputs.
 
@@ -69,6 +69,24 @@ python experiments/rba_user_learning_curve/scripts/generate_events.py \
 
 Run the same size and seed again with `normal_nat_burst` for the paired NAT comparison. Each run writes ignored `events.jsonl` and `manifest.json` files under `data/<run_id>/`. Generated outputs contain aliases only.
 
+## Build features and combined results
+
+```bash
+python experiments/rba_user_learning_curve/scripts/build_features.py
+```
+
+The command discovers every generated run, creates an isolated
+`experiment.sqlite3` and `feature_snapshots.jsonl` inside each run directory,
+then upserts one row per `run_id` into:
+
+`results/combined_run_results.csv`
+
+Rerunning a run updates its existing row instead of creating a duplicate. At
+this phase the row status is `features_ready`; model metrics remain empty until
+the training/evaluation phase writes real values. The same row later receives
+TP, FP, TN, FN, Precision, Recall, F1, ROC-AUC, PR-AUC, FPR, allow rate, and risk
+distribution values.
+
 ## Current phase
 
-This phase contains configuration, JSON Schemas, mapping preflight, the deterministic raw-event generator, and validation tests. Isolated-database loading, feature extraction, training, and evaluation runners are not implemented yet.
+This phase contains configuration, JSON Schemas, mapping preflight, the deterministic raw-event generator, isolated SQLite loading, point-in-time 23-feature extraction, combined-result upsert, and validation tests. Training and four-layer evaluation runners are not implemented yet.
