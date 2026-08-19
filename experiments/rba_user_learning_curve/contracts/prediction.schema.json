@@ -9,7 +9,7 @@
     "user_type", "split", "scenario", "label", "iforest_raw_score",
     "iforest_contribution", "rule_score", "behavior_score",
     "total_risk_score", "final_decision", "detected_warn_plus",
-    "detected_challenge_plus", "risk_reasons"
+    "detected_challenge_plus", "detected_block", "risk_reasons"
   ],
   "properties": {
     "run_id": {"type": "string"},
@@ -30,6 +30,7 @@
     "final_decision": {"type": "string", "enum": ["allow", "warn", "challenge", "block", "would_warn", "would_challenge", "would_block", "mfa_passed"]},
     "detected_warn_plus": {"type": "boolean"},
     "detected_challenge_plus": {"type": "boolean"},
+    "detected_block": {"type": "boolean"},
     "risk_reasons": {"type": "array", "items": {"type": "string"}}
   }
 }
