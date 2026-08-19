@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://central-auth-hub.local/schemas/rba-run-manifest-v1.json",
+  "title": "RBA Experiment Run Manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "experiment_id", "run_id", "git_commit_sha", "configuration_sha256",
+    "feature_contract_sha256", "local_mapping_sha256", "dataset_size",
+    "seed", "thresholds", "model"
+  ],
+  "properties": {
+    "experiment_id": {"type": "string", "minLength": 1},
+    "run_id": {"type": "string", "minLength": 1},
+    "git_commit_sha": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "configuration_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "feature_contract_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "local_mapping_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "dataset_size": {"type": "integer", "enum": [10, 50, 100, 500, 1000, 5000]},
+    "seed": {"type": "integer"},
+    "thresholds": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["warn", "challenge", "block"],
+      "properties": {
+        "warn": {"type": "number", "minimum": 0, "maximum": 1},
+        "challenge": {"type": "number", "minimum": 0, "maximum": 1},
+        "block": {"type": "number", "minimum": 0, "maximum": 1}
+      }
+    },
+    "model": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  }
+}
