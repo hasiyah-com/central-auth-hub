@@ -14,6 +14,8 @@ from .contracts import (
     validate_users,
 )
 from .generator import generate_run, write_run
+from .feature_store import build_feature_snapshots, load_run_store
+from .results import feature_ready_result, upsert_combined_result
 
 __all__ = [
     "CONFIG_DIR",
@@ -29,4 +31,8 @@ __all__ = [
     "validate_users",
     "generate_run",
     "write_run",
+    "build_feature_snapshots",
+    "load_run_store",
+    "feature_ready_result",
+    "upsert_combined_result",
 ]
