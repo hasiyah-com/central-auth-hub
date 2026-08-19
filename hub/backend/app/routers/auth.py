@@ -1397,7 +1397,10 @@ async def _refresh_risk_gate(
     # Shadow mode — log เข้า audit_logs ถ้า risk elevated (append-only, เก็บ
     # ประวัติไว้เทียบตอนพิจารณาเปิด enforce จริง) แต่ไม่ block (ออก token ต่อปกติ)
     if not enforcing:
-        if decision in ("block", "challenge", "would_block", "would_mfa"):
+        # would_challenge (ไม่ใช่ would_mfa) — aggregator emit "challenge" แล้วเติม
+        # prefix would_ ใน shadow mode. เดิมเช็ค would_mfa ที่ไม่มีใครผลิตแล้ว → shadow
+        # mode ไม่เคย log risk_refresh_would_stepup เลย (เงียบสนิท) — B58
+        if decision in ("block", "challenge", "would_block", "would_challenge"):
             log_action(
                 db,
                 actor_id=user.id,

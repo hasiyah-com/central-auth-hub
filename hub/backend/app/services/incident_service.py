@@ -291,6 +291,7 @@ def build_recommendations(
         "block",
         "challenge",
         "would_block",
+        "would_challenge",
         "would_mfa",
     ):
         recs.append(
@@ -804,7 +805,7 @@ def _build_impact(ls: LoginSession) -> dict:
                 else "ไม่มีการออก Token",
             },
         ]
-    elif decision in ("challenge", "mfa_required", "would_mfa"):
+    elif decision in ("challenge", "mfa_required", "would_mfa", "would_challenge"):
         statements = [{"ok": True, "text": "บังคับยืนยันตัวตนก่อนเข้า (MFA/Passkey)"}]
     elif decision == "mfa_passed":
         statements = [{"ok": True, "text": "ยืนยันตัวตนผ่าน → อนุญาตเข้า"}]
@@ -833,7 +834,12 @@ def _build_attack_path(
     """
     decision = ls.decision or ""
     blocked = decision in ("block", "would_block")
-    challenged = decision in ("challenge", "would_mfa", "mfa_required")
+    challenged = decision in (
+        "challenge",
+        "would_challenge",
+        "would_mfa",
+        "mfa_required",
+    )
 
     if decision == "block":
         outcome = {"label": "BLOCK", "sublabel": "ปฏิเสธการเข้าถึง", "status": "blocked"}

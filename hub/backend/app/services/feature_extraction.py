@@ -45,6 +45,27 @@ from app.models import LoginSession
 # ต้องมี history อย่างน้อยกี่ session ก่อนคำนวณ personalized features
 MIN_HISTORY_FOR_PERSONALIZATION = 5
 
+# ── Trusted history — ใช้กับ "เคยเห็นสิ่งนี้ไหม" เท่านั้น (B57) ─────────────────
+# is_new_device / is_new_user_agent_family / is_new_country เป็น **trust signal**:
+# ตอบว่า "เครื่อง/ประเทศนี้เคยผ่านการยืนยันแล้วหรือยัง" จึงต้องนับเฉพาะ session ที่
+# **พิสูจน์แล้วว่า login สำเร็จ** ไม่งั้น session ที่เพิ่งถูก flag จะ whitelist ตัวเอง
+# ในครั้งถัดไป (เห็นชัดใน shadow mode: would_block ไม่ block จริง → row ถูกบันทึก →
+# ครั้งที่สอง is_new_device=0 → score ร่วงจาก 0.9 เหลือ 0.1 ทั้งที่เครื่องเพิ่งถูกเตือน)
+#
+#   allow      — ผ่านปกติ (ไม่ถึงเกณฑ์ challenge)
+#   mfa_passed — ถูก challenge แล้ว **ยืนยันตัวตนผ่านจริง** (passkey.py เขียนทับ row เดิม)
+#   pass       — legacy alias ของ allow (ยุคก่อนมี 4-layer aggregator) — ต้องเก็บไว้
+#                ไม่งั้นประวัติเครื่องเดิมของ user ทุกคนถูกล้าง → false positive ยกแผง
+#
+# ไม่นับเป็น trusted: warn/would_warn (สำเร็จแต่ไม่ได้ยืนยันตัวตนเพิ่ม),
+#   challenge/would_challenge/mfa/would_mfa/mfa_required (ยังไม่พิสูจน์ — ถ้าผ่านจริง
+#   row จะกลายเป็น mfa_passed เอง), block/would_block, NULL
+#
+# ⚠️ ห้ามเอาไปกรอง signal ประเภท "ปริมาณ/การเคลื่อนไหว" (country_change_count_30d,
+# impossible_travel, login_count_24h, failed_logins_24h, concurrent) — attacker ที่
+# login 5 ประเทศแล้วโดน would_block ทุกครั้ง จะถูกกรองจนนับได้ 0 = ดูปลอดภัยขึ้น (ผิดทาง)
+TRUSTED_DECISIONS = ("allow", "mfa_passed", "pass")
+
 # concurrent_session_count window = JWT TTL (jwt_access_token_expire_minutes=60)
 # กัน session ที่หมดอายุแต่ไม่มี logout_at นับเป็น "active" ตลอดกาล
 CONCURRENT_WINDOW_MIN = 60
@@ -238,8 +259,12 @@ def extract_session_features(
 
     is_new_country = 0.0
     if geo_country:
-        seen = (
-            db.query(LoginSession.geo_country)
+        # ดึง (ประเทศ, decision) แบบไม่กรอง แล้วค่อยแยกใน Python — ได้ 2 อย่างจาก query
+        # เดียว: (1) เคยบันทึกประเทศไว้ไหม (cold-start guard) (2) ประเทศที่ไว้ใจได้
+        # แยกกันเพราะ geo_country เป็น NULL บ่อยมากใน deployment นี้ (private/NAT IP —
+        # ดู CLAUDE.md gotcha #4) → ถ้าใช้ has_history รวมจะกลายเป็นประเทศใหม่ผิดๆ
+        country_rows = (
+            db.query(LoginSession.geo_country, LoginSession.decision)
             .filter(
                 LoginSession.user_id == user_id,
                 LoginSession.geo_country.is_not(None),
@@ -248,8 +273,10 @@ def extract_session_features(
             .distinct()
             .all()
         )
-        seen_set = {row[0] for row in seen}
-        if seen_set and geo_country not in seen_set:
+        has_country_history = len(country_rows) > 0
+        # trusted เท่านั้น (B57) — ประเทศที่โผล่เฉพาะใน session ที่ถูก flag ไม่นับว่า "เคยเห็น"
+        seen_set = {c for c, dec in country_rows if dec in TRUSTED_DECISIONS}
+        if has_country_history and geo_country not in seen_set:
             is_new_country = 1.0
 
     # country_change_count_30d — # ประเทศต่างกันใน 30 วันล่าสุด
@@ -271,8 +298,14 @@ def extract_session_features(
     is_new_device = 0.0
     is_new_ua_family = 0.0
     if user_agent:
-        seen_ua = (
-            db.query(LoginSession.user_agent)
+        # (UA, decision) แบบไม่กรอง → แยกใน Python (เหตุผลเดียวกับ country ด้านบน):
+        #   has_ua_history  = เคยมี session ที่บันทึก UA ไหม (cold-start guard —
+        #                     user ใหม่จริงต้องไม่ถูกลงโทษ)
+        #   seen_ua_set     = UA จาก session ที่ **ไว้ใจได้** เท่านั้น (B57)
+        # ผลรวม: user ที่มีประวัติแต่ยังไม่เคยมี login ที่พิสูจน์แล้ว → ทุกเครื่องเป็นเครื่องใหม่
+        # (ไม่ใช่ตกไปเป็น cold-start neutral ซึ่งจะกลายเป็นช่องให้ attacker ได้คะแนนต่ำ)
+        ua_rows = (
+            db.query(LoginSession.user_agent, LoginSession.decision)
             .filter(
                 LoginSession.user_id == user_id,
                 LoginSession.user_agent.is_not(None),
@@ -281,19 +314,20 @@ def extract_session_features(
             .distinct()
             .all()
         )
-        seen_ua_set = {row[0] for row in seen_ua}
+        has_ua_history = len(ua_rows) > 0
+        seen_ua_set = {ua for ua, dec in ua_rows if dec in TRUSTED_DECISIONS}
 
         # is_new_device เทียบ device signature ที่เสถียร (ไม่ใช่ UA string เต็ม) —
         # กัน browser อัปเดต build number แล้วกลายเป็น "เครื่องใหม่" ทุกครั้ง (B56)
         current_sig = _device_signature(user_agent)
         seen_sigs = {_device_signature(ua) for ua in seen_ua_set}
-        if seen_sigs and current_sig not in seen_sigs:
+        if has_ua_history and current_sig not in seen_sigs:
             is_new_device = 1.0
 
         # ตรวจ browser family
         current_family = browser_family(user_agent)
         seen_families = {browser_family(ua) for ua in seen_ua_set}
-        if seen_families and current_family not in seen_families:
+        if has_ua_history and current_family not in seen_families:
             is_new_ua_family = 1.0
 
     # === Velocity ===

@@ -184,6 +184,124 @@ def test_new_device_detects_genuinely_new_device(user, db):
     assert feats[IDX["is_new_device"]] == 1.0, "OS+device+family ต่าง → เครื่องใหม่จริง"
 
 
+# ─── trusted-device history: session ที่ถูก flag ต้องไม่ whitelist ตัวเอง (B57) ──
+
+
+@pytest.mark.smoke
+def test_flagged_session_does_not_trust_its_own_device(user, db):
+    """B57: would_block ครั้งแรก → ครั้งที่สองจากเครื่องเดิมต้องยัง is_new_device=1.
+
+    เดิม seen-device query ไม่กรอง decision → row ที่เพิ่งถูก flag นับเป็น "เคยเห็น"
+    ทำให้เครื่องที่ระบบเพิ่งเตือน whitelist ตัวเองในครั้งถัดไป (score ร่วง 0.9→0.1).
+    """
+    # เครื่องที่ไว้ใจได้: Windows/Chrome (allow)
+    _add_session(
+        db,
+        user,
+        user_agent=_UA_CHROME_150,
+        decision="allow",
+        created_at=datetime.utcnow() - timedelta(days=3),
+    )
+    # เครื่องแปลกหน้าที่โดน flag — ต้องไม่ทำให้ตัวเองกลายเป็นเครื่องที่รู้จัก
+    _add_session(
+        db,
+        user,
+        user_agent=_UA_IPHONE,
+        decision="would_block",
+        created_at=datetime.utcnow() - timedelta(minutes=10),
+    )
+
+    feats = extract_session_features(db, user.id, "1.2.3.4", _UA_IPHONE, "TH")
+    assert feats[IDX["is_new_device"]] == 1.0, "would_block ต้องไม่นับเป็นประวัติที่ไว้ใจได้"
+
+
+@pytest.mark.smoke
+def test_mfa_passed_makes_device_trusted(user, db):
+    """ถูก challenge แล้วยืนยันตัวตนผ่านจริง (mfa_passed) → เครื่องนั้นเป็น trusted."""
+    _add_session(
+        db,
+        user,
+        user_agent=_UA_CHROME_150,
+        decision="allow",
+        created_at=datetime.utcnow() - timedelta(days=3),
+    )
+    _add_session(
+        db,
+        user,
+        user_agent=_UA_IPHONE,
+        decision="mfa_passed",
+        created_at=datetime.utcnow() - timedelta(minutes=10),
+    )
+
+    feats = extract_session_features(db, user.id, "1.2.3.4", _UA_IPHONE, "TH")
+    assert feats[IDX["is_new_device"]] == 0.0, "ยืนยันตัวตนผ่านแล้ว → ไว้ใจเครื่องนี้ได้"
+
+
+@pytest.mark.smoke
+def test_warn_is_not_trusted(user, db):
+    """warn = login สำเร็จแต่ไม่ได้ยืนยันตัวตนเพิ่ม → ยังไม่นับเป็น trusted (เข้มไว้ก่อน)."""
+    _add_session(
+        db,
+        user,
+        user_agent=_UA_CHROME_150,
+        decision="allow",
+        created_at=datetime.utcnow() - timedelta(days=3),
+    )
+    _add_session(
+        db,
+        user,
+        user_agent=_UA_IPHONE,
+        decision="warn",
+        created_at=datetime.utcnow() - timedelta(minutes=10),
+    )
+
+    feats = extract_session_features(db, user.id, "1.2.3.4", _UA_IPHONE, "TH")
+    assert feats[IDX["is_new_device"]] == 1.0
+
+
+@pytest.mark.smoke
+def test_legacy_pass_decision_still_trusted(user, db):
+    """legacy 'pass' (ยุคก่อน 4-layer) ต้องยังไว้ใจได้ — ไม่งั้นประวัติเดิมทุกคนถูกล้าง."""
+    _add_session(
+        db,
+        user,
+        user_agent=_UA_CHROME_150,
+        decision="pass",
+        created_at=datetime.utcnow() - timedelta(days=3),
+    )
+
+    feats = extract_session_features(db, user.id, "1.2.3.4", _UA_CHROME_151, "TH")
+    assert feats[IDX["is_new_device"]] == 0.0
+
+
+@pytest.mark.smoke
+def test_no_trusted_history_treats_every_device_as_new(user, db):
+    """มีประวัติแต่ไม่มี login ที่พิสูจน์แล้วเลย → ทุกเครื่องเป็นเครื่องใหม่.
+
+    กันช่องที่ว่า "กรอง untrusted ออกจนเซตว่าง" แล้วตกไปเป็น cold-start neutral (0)
+    ซึ่งจะกลายเป็นให้คะแนน attacker ต่ำลงแทนที่จะสูงขึ้น.
+    """
+    _add_session(
+        db,
+        user,
+        user_agent=_UA_CHROME_150,
+        decision="would_block",
+        created_at=datetime.utcnow() - timedelta(hours=2),
+    )
+
+    feats = extract_session_features(db, user.id, "1.2.3.4", _UA_IPHONE, "TH")
+    assert feats[IDX["is_new_device"]] == 1.0
+    assert feats[IDX["is_new_user_agent_family"]] == 1.0
+
+
+@pytest.mark.smoke
+def test_true_cold_start_still_neutral(user, db):
+    """user ใหม่จริง (ไม่มี session เลย) → ยัง neutral (0) ไม่ถูกลงโทษ."""
+    feats = extract_session_features(db, user.id, "1.2.3.4", _UA_CHROME_150, "TH")
+    assert feats[IDX["is_new_device"]] == 0.0
+    assert feats[IDX["is_new_user_agent_family"]] == 0.0
+
+
 # ─── concurrent + active_subsystem ──────────────────────────────────────────
 
 
