@@ -19,6 +19,7 @@ import html
 import json
 import secrets
 from datetime import datetime
+from urllib.parse import urlparse
 
 from authlib.integrations.starlette_client import OAuthError
 from fastapi import APIRouter, Depends, Form, HTTPException, Request
@@ -221,10 +222,32 @@ async def authorize_google(
     )
 
 
-def _safe_return_to(raw: str | None) -> str:
-    """รับเฉพาะ http/https URL — กัน open-redirect (javascript:, data: ฯลฯ).
+def _allowed_subsystem_origins(db: Session) -> set[str]:
+    """origin (scheme://netloc) ของ subsystem ที่ active ทุกตัว — ใช้เป็น allowlist
+    ของ return_to (login page ของ subsystem อยู่ origin เดียวกับ redirect_uri)."""
+    origins: set[str] = set()
+    rows = db.query(Subsystem.redirect_uris).filter(Subsystem.status == "active").all()
+    for (uris,) in rows:
+        for u in uris or []:
+            try:
+                p = urlparse(u)
+            except Exception:
+                continue
+            if p.scheme and p.netloc:
+                origins.add(f"{p.scheme}://{p.netloc}")
+    return origins
 
-    ไม่ผูก allowlist แน่นหนา เพราะ subsystem มีหลายตัว — ตรวจ scheme พอ
+
+def _safe_return_to(raw: str | None, allowed_origins: set[str] | None = None) -> str:
+    """กัน open-redirect ของ return_to.
+
+    - relative path (`/...` แต่ไม่ใช่ `//`) → อนุญาต (Hub-local)
+    - absolute http(s) → อนุญาต **เฉพาะ origin ที่อยู่ใน allowed_origins**
+      (origin ของ subsystem ที่ลงทะเบียน) เพื่อกันใช้โดเมน Hub เป็นจุดเด้ง phishing
+    - อื่นๆ (javascript:, data:, //, origin นอก allowlist) → ทิ้ง (คืน "")
+
+    หมายเหตุ: ถ้าไม่ส่ง allowed_origins (None) จะ fallback ตรวจแค่ scheme
+    (backward-compat) — call site ควรส่ง allowlist เสมอ
     """
     if not raw:
         return ""
@@ -232,7 +255,14 @@ def _safe_return_to(raw: str | None) -> str:
     if raw.startswith("/") and not raw.startswith("//"):
         return raw
     if raw.startswith("http://") or raw.startswith("https://"):
-        return raw
+        if allowed_origins is None:
+            return raw  # backward-compat (ไม่มี allowlist)
+        try:
+            p = urlparse(raw)
+            origin = f"{p.scheme}://{p.netloc}"
+        except Exception:
+            return ""
+        return raw if origin in allowed_origins else ""
     return ""
 
 
@@ -240,6 +270,7 @@ def _safe_return_to(raw: str | None) -> str:
 async def passkey_recover_page(
     request: Request,
     return_to: str | None = None,
+    db: Session = Depends(get_db),
 ):
     """หน้ากู้บัญชี Passkey (เสิร์ฟจาก Hub — subsystem user ใช้ได้เอง).
 
@@ -250,8 +281,9 @@ async def passkey_recover_page(
     """
     nonce = secrets.token_urlsafe(16)
     request.state.csp_nonce = nonce
+    safe_return = _safe_return_to(return_to, _allowed_subsystem_origins(db))
     return HTMLResponse(
-        content=_passkey_recover_html(nonce=nonce, return_to=_safe_return_to(return_to))
+        content=_passkey_recover_html(nonce=nonce, return_to=safe_return)
     )
 
 
