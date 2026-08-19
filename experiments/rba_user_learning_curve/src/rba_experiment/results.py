@@ -32,6 +32,16 @@ RESULT_COLUMNS = [
     "pr_auc",
     "fpr",
     "allow_rate",
+    "warn_plus_fpr",
+    "warn_plus_recall",
+    "challenge_plus_fpr",
+    "challenge_plus_recall",
+    "block_fpr",
+    "block_recall",
+    "allow_count",
+    "warn_count",
+    "challenge_count",
+    "block_count",
     "mean_risk",
     "median_risk",
     "p90_risk",
@@ -62,6 +72,16 @@ def empty_metric_fields() -> dict[str, Any]:
         "pr_auc": None,
         "fpr": None,
         "allow_rate": None,
+        "warn_plus_fpr": None,
+        "warn_plus_recall": None,
+        "challenge_plus_fpr": None,
+        "challenge_plus_recall": None,
+        "block_fpr": None,
+        "block_recall": None,
+        "allow_count": None,
+        "warn_count": None,
+        "challenge_count": None,
+        "block_count": None,
         "mean_risk": None,
         "median_risk": None,
         "p90_risk": None,
@@ -93,9 +113,18 @@ def _read_rows(path: Path) -> dict[str, dict[str, str]]:
         return {}
     with path.open(encoding="utf-8", newline="") as handle:
         reader = csv.DictReader(handle)
-        if reader.fieldnames != RESULT_COLUMNS:
-            raise ValueError("combined result CSV header does not match contract")
-        return {row["run_id"]: row for row in reader}
+        fieldnames = reader.fieldnames or []
+        unknown = set(fieldnames) - set(RESULT_COLUMNS)
+        if unknown:
+            raise ValueError(
+                f"combined result CSV has unknown columns: {sorted(unknown)}"
+            )
+        rows = {}
+        for row in reader:
+            rows[row["run_id"]] = {
+                column: row.get(column, "") for column in RESULT_COLUMNS
+            }
+        return rows
 
 
 def _merge_row(
