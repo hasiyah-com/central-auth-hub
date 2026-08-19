@@ -1,0 +1,140 @@
+{
+  "version": 2,
+  "identity_mode": "profile_alias",
+  "users": [
+    {
+      "profile_id": "student_01",
+      "user_type": "student",
+      "is_hub_admin": false,
+      "mfa_always": false,
+      "allowed_subsystems": ["dorm", "library"],
+      "owned_subsystems": [],
+      "normal_hours": [[8, 11], [13, 17]],
+      "normal_days": [0, 1, 2, 3, 4, 5, 6],
+      "devices": [{"key": "windows_chrome", "weight": 0.85}, {"key": "android_chrome", "weight": 0.15}]
+    },
+    {
+      "profile_id": "student_02",
+      "user_type": "student",
+      "is_hub_admin": false,
+      "mfa_always": false,
+      "allowed_subsystems": ["dorm", "library"],
+      "owned_subsystems": [],
+      "normal_hours": [[8, 12], [13, 17]],
+      "normal_days": [0, 1, 2, 3, 4, 5, 6],
+      "devices": [{"key": "windows_chrome", "weight": 1.0}]
+    },
+    {
+      "profile_id": "student_03",
+      "user_type": "student",
+      "is_hub_admin": false,
+      "mfa_always": false,
+      "allowed_subsystems": ["dorm", "library"],
+      "owned_subsystems": [],
+      "normal_hours": [[5, 9], [14, 17]],
+      "normal_days": [0, 1, 2, 3, 4, 5, 6],
+      "devices": [{"key": "ios_mobile", "weight": 0.8}, {"key": "ios_tablet", "weight": 0.2}]
+    },
+    {
+      "profile_id": "student_04",
+      "user_type": "student",
+      "is_hub_admin": false,
+      "mfa_always": false,
+      "allowed_subsystems": ["dorm", "library"],
+      "owned_subsystems": [],
+      "normal_hours": [[9, 12], [13, 18]],
+      "normal_days": [0, 1, 2, 3, 4, 5, 6],
+      "devices": [{"key": "windows_chrome", "weight": 1.0}]
+    },
+    {
+      "profile_id": "student_05",
+      "user_type": "student",
+      "is_hub_admin": false,
+      "mfa_always": false,
+      "allowed_subsystems": ["dorm", "library"],
+      "owned_subsystems": [],
+      "normal_hours": [[8, 12], [13, 17]],
+      "normal_days": [0, 1, 2, 3, 4, 5, 6],
+      "devices": [{"key": "windows_chrome", "weight": 1.0}]
+    },
+    {
+      "profile_id": "student_06",
+      "user_type": "student",
+      "is_hub_admin": false,
+      "mfa_always": false,
+      "allowed_subsystems": ["dorm", "library"],
+      "owned_subsystems": [],
+      "normal_hours": [[7, 12], [17, 21]],
+      "normal_days": [0, 1, 2, 3, 4, 5, 6],
+      "devices": [{"key": "android_chrome", "weight": 0.8}, {"key": "windows_chrome", "weight": 0.2}]
+    },
+    {
+      "profile_id": "teacher_library_owner",
+      "user_type": "teacher",
+      "is_hub_admin": false,
+      "mfa_always": false,
+      "allowed_subsystems": ["dorm", "library"],
+      "owned_subsystems": ["library"],
+      "normal_hours": [[8, 17]],
+      "normal_days": [0, 1, 2, 3, 4],
+      "devices": [{"key": "windows_chrome", "weight": 1.0}]
+    },
+    {
+      "profile_id": "teacher_02",
+      "user_type": "teacher",
+      "is_hub_admin": false,
+      "mfa_always": false,
+      "allowed_subsystems": ["dorm", "library"],
+      "owned_subsystems": [],
+      "normal_hours": [[8, 18]],
+      "normal_days": [0, 1, 2, 3, 4],
+      "devices": [{"key": "windows_chrome", "weight": 1.0}]
+    },
+    {
+      "profile_id": "staff_library_only",
+      "user_type": "staff",
+      "is_hub_admin": false,
+      "mfa_always": false,
+      "allowed_subsystems": ["library"],
+      "owned_subsystems": [],
+      "normal_hours": [[8, 17]],
+      "normal_days": [0, 1, 2, 3, 4],
+      "devices": [{"key": "windows_chrome", "weight": 1.0}]
+    },
+    {
+      "profile_id": "staff_dorm_only",
+      "user_type": "staff",
+      "is_hub_admin": false,
+      "mfa_always": false,
+      "allowed_subsystems": ["dorm"],
+      "owned_subsystems": [],
+      "normal_hours": [[9, 18], [19, 21]],
+      "normal_days": [0, 1, 2, 3, 4],
+      "devices": [{"key": "windows_chrome", "weight": 1.0}]
+    },
+    {
+      "profile_id": "admin_dorm_owner",
+      "user_type": "admin",
+      "is_hub_admin": true,
+      "mfa_always": true,
+      "mfa_preferred_factor": "passkey",
+      "allowed_subsystems": ["dorm"],
+      "owned_subsystems": ["dorm"],
+      "normal_hours": [[7, 22]],
+      "normal_days": [0, 1, 2, 3, 4, 5, 6],
+      "devices": [{"key": "windows_chrome", "weight": 1.0}]
+    },
+    {
+      "profile_id": "admin_hub_only",
+      "user_type": "admin",
+      "is_hub_admin": true,
+      "mfa_always": true,
+      "mfa_preferred_factor": "passkey",
+      "allowed_subsystems": [],
+      "owned_subsystems": [],
+      "normal_hours": [[8, 18], [19, 22]],
+      "normal_days": [0, 1, 2, 3, 4],
+      "devices": [{"key": "windows_chrome", "weight": 1.0}]
+    }
+  ]
+}
