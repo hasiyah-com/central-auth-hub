@@ -112,8 +112,9 @@ The final score mirrors the production contribution rules:
 
 - Rule score: new device, user-agent family, failed-login, impossible-travel,
   and shared-IP multi-account rules.
-- Per-user behavior score: 30-day hour, device, country, and weekend profile;
-  fewer than five prior events uses the production cold-start score.
+- Per-user behavior score: 30-day temporal, country, and weekend profile;
+  fewer than five prior events uses the production cold-start score. New-device
+  scoring stays only in the Rule layer, matching production fix B56.
 - Isolation Forest score: production sigmoid conversion followed by the
   0.1/0.2/0.4 contribution bands.
 - Aggregator: sum capped at 1.0 with warn/challenge/block thresholds
