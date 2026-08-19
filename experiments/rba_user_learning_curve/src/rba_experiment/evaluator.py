@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import statistics
 from collections import Counter, defaultdict, deque
 from datetime import timedelta
 from pathlib import Path
@@ -87,11 +86,7 @@ def _behavior_score(
     if len(history) < BEHAVIOR_COLD_START_COUNT:
         return 0.2, ["behavior_cold_start"]
 
-    hours = [parse_timestamp(item["created_at"]).hour for item in history]
-    typical_hour = statistics.mode(hours)
-    current_hour = parse_timestamp(event["created_at"]).hour
-    raw_diff = abs(current_hour - typical_hour)
-    hour_diff = min(raw_diff, 24 - raw_diff)
+    hour_diff = float(row["hours_from_typical_login_time"])
     weekend_rate = sum(
         parse_timestamp(item["created_at"]).weekday() >= 5 for item in history
     ) / len(history)
@@ -109,9 +104,6 @@ def _behavior_score(
     if float(row["is_new_country"]) > 0:
         score += 0.3
         reasons.append("behavior_new_country")
-    if float(row["is_new_device"]) > 0:
-        score += 0.2
-        reasons.append("behavior_new_device")
     if current_weekend != typical_weekend:
         score += 0.1
         reasons.append("behavior_weekend_mismatch")
@@ -377,7 +369,7 @@ def evaluate_run(run_dir: Path, combined_result_path: Path | None = None) -> dic
             row, distinct_profiles_last_hour
         )
         behavior_part, behavior_reasons = _behavior_score(row, event, user_history)
-        total = min(1.0, rule_part + behavior_part + iforest_part)
+        total = min(1.0, round(rule_part + behavior_part + iforest_part, 4))
         final_decision = _decision(total, hard_block)
         reasons = rule_reasons + behavior_reasons
         if iforest_part:
