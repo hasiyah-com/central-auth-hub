@@ -18,7 +18,8 @@ services:
       POSTGRES_PASSWORD: ${LIBRARY_POSTGRES_PASSWORD:-librarypass}
       POSTGRES_DB: ${LIBRARY_POSTGRES_DB:-library_db}
     ports:
-      - "5434:5432"
+      # bind localhost เท่านั้น — DB ไม่ควรเข้าถึงจาก network ภายนอก (dev hardening)
+      - "127.0.0.1:5434:5432"
     volumes:
       - postgres_library_data:/var/lib/postgresql/data
     healthcheck:

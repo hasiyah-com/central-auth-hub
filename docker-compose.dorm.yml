@@ -24,7 +24,8 @@ services:
       POSTGRES_PASSWORD: ${DORM_POSTGRES_PASSWORD:-dormpass}
       POSTGRES_DB: ${DORM_POSTGRES_DB:-dorm_db}
     ports:
-      - "5433:5432"
+      # bind localhost เท่านั้น — DB ไม่ควรเข้าถึงจาก network ภายนอก (dev hardening)
+      - "127.0.0.1:5433:5432"
     volumes:
       - postgres_dorm_data:/var/lib/postgresql/data
     healthcheck:

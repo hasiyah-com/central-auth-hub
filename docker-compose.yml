@@ -25,7 +25,9 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-devpassword}
       POSTGRES_DB: ${POSTGRES_DB:-hub_db}
     ports:
-      - "5432:5432"
+      # bind localhost เท่านั้น — DB ไม่ควรเข้าถึงจาก network ภายนอก (dev hardening;
+      # inter-container ใช้ service name `postgres:5432` ผ่าน docker network ไม่กระทบ)
+      - "127.0.0.1:5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -38,7 +40,8 @@ services:
     image: redis:7-alpine
     container_name: hub-redis
     ports:
-      - "6379:6379"
+      # bind localhost เท่านั้น — Redis ไม่ควรเข้าถึงจาก network ภายนอก (dev hardening)
+      - "127.0.0.1:6379:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -51,7 +54,9 @@ services:
       dockerfile: Dockerfile
     container_name: hub-ml
     ports:
-      - "9000:9000"
+      # bind localhost เท่านั้น — ML service ไม่มี auth/rate-limit + เป็น internal
+      # (Hub เรียกผ่าน service name) → ไม่ควร reachable จาก network (dev hardening)
+      - "127.0.0.1:9000:9000"
     volumes:
       - ./ml-service:/app
     command: uvicorn app.main:app --host 0.0.0.0 --port 9000 --reload
