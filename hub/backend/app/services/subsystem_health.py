@@ -186,6 +186,25 @@ async def _ping(subsystem: Subsystem) -> dict:
     except Exception:
         origin = url.rsplit("/", 1)[0]
 
+    # SSRF guard — redirect_uri มาจาก developer (ตอนลงทะเบียน subsystem) → กัน
+    # หลอก Hub ยิงเข้า internal host / cloud metadata (169.254.169.254) / RFC1918.
+    # reuse guard เดียวกับ webhook_dispatcher (prod: บังคับ https + block private/
+    # loopback/link-local/reserved; dev: localhost/docker เป็น target ตั้งใจ → ผ่าน).
+    # ทุก candidate ใช้ origin (host) เดียวกัน → เช็คจุดเดียวครอบคลุมหมด.
+    from app.services.webhook_dispatcher import _is_safe_webhook_url
+
+    if not _is_safe_webhook_url(origin):
+        log.warning(
+            "health check blocked (SSRF guard) — unsafe target origin=%r subsystem=%s",
+            origin,
+            subsystem.id,
+        )
+        return {
+            "status": "unknown",
+            "checked_at": datetime.now(timezone.utc).isoformat(),
+            "error": "target ไม่ปลอดภัย — ถูกบล็อกโดย SSRF guard",
+        }
+
     # ลองดึง "path prefix" ของ redirect_uri[0] เผื่อ subsystem จัด structure
     # แบบ "ทุกอย่างอยู่ใน subfolder" เช่น /subsystem/callback.php → /subsystem/health.php
     # (ใช้กับ XAMPP/PHP project ที่ไม่อยาก rewrite ออก root)
