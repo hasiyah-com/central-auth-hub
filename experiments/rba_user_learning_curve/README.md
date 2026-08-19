@@ -45,6 +45,16 @@ For each user and dataset size, events are sorted chronologically. The first 80%
 - Generated data and run results are ignored by Git.
 - Every run records commit SHA, configuration hash, feature-contract hash, local-mapping hash, seed, thresholds, and model parameters.
 
+## Local mapping preflight
+
+Copy the example to the ignored local filename, replace every example identity and subsystem UUID, then run:
+
+```bash
+python experiments/rba_user_learning_curve/scripts/preflight_mapping.py
+```
+
+The command fails on missing aliases, extra aliases, invalid or duplicate UUIDs/emails, placeholder values, and subsystem-key mismatches. Successful output contains counts and the mapping SHA-256 only.
+
 ## Current phase
 
 This commit contains configuration, JSON Schemas, and validation tests only. Event generation, database loading, training, and evaluation runners are intentionally not implemented yet.
