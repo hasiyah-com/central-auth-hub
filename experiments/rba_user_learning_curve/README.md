@@ -2,15 +2,22 @@
 
 This directory defines the reproducible contract for evaluating the Central Auth Hub's global Isolation Forest together with per-user behavior profiles.
 
+## Privacy boundary
+
+- Git-tracked files use stable, non-identifying `profile_id` aliases only.
+- Real user UUIDs, emails, names, identifiers, and subsystem UUIDs belong only in `config/local_identity_mapping.json` on the machine that runs the experiment.
+- The local mapping file is ignored by Git. Copy `config/local_identity_mapping.example.json`, replace every example value, and run mapping preflight before generation or database loading.
+- Exported events, features, predictions, metrics, and reports keep aliases; they never contain resolved identities.
+- Run manifests record only the SHA-256 hash of the canonical local mapping, so a run can be reproduced with the same mapping without exposing it.
+
 ## Scope
 
-- 12 approved user profiles: 11 existing users plus `adminxz@gmail.com`.
+- 12 approved behavior profiles: six students, two teachers, two staff, and two Hub admins.
 - One shared IP: `192.168.10.1`.
 - No GeoIP data. Production-compatible geo features are fixed to `is_thailand=1`, `is_new_country=0`, `country_change_count_30d=0`, and `impossible_travel_score=0`.
 - Students may use both subsystems.
 - Teachers are evaluated under subsystem policy.
-- `furafae@gmail.com` may use Library only.
-- `xssearo@gmail.com` may use Dorm only.
+- One staff profile is Library-only; one is Dorm-only.
 - Hub admins may use a subsystem only when they own it.
 - Every admin login requires MFA; a successful admin login ends as `mfa_passed`.
 - Trusted history contains only `allow` and `mfa_passed`.
@@ -23,7 +30,7 @@ This directory defines the reproducible contract for evaluating the Central Auth
 
 ## Data flow
 
-`config -> raw login events -> isolated experiment database -> 23-feature snapshots -> global Isolation Forest -> four-layer predictions -> metrics`
+`alias config + local mapping preflight -> raw login events -> isolated experiment database -> 23-feature snapshots -> global Isolation Forest -> four-layer predictions -> metrics`
 
 Raw events must not contain model scores or final decisions. Those values are produced by the real scoring pipeline and written only to prediction outputs.
 
@@ -36,7 +43,7 @@ For each user and dataset size, events are sorted chronologically. The first 80%
 - Never point experiment scripts at the production database.
 - Never overwrite `ml-service/models/iforest_v1.pkl`.
 - Generated data and run results are ignored by Git.
-- Every run records commit SHA, configuration hash, feature-contract hash, seed, thresholds, and model parameters.
+- Every run records commit SHA, configuration hash, feature-contract hash, local-mapping hash, seed, thresholds, and model parameters.
 
 ## Current phase
 
