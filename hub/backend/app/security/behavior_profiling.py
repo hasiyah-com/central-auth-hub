@@ -88,9 +88,9 @@ def evaluate_behavior(features: list[float], profile: dict | None) -> BehaviorRe
         reasons.append("is_new_country (+0.30)")
 
     # ── Device: new device ──
-    if features[FEAT["is_new_device"]] == 1:
-        score += 0.20
-        reasons.append("is_new_device (+0.20)")
+    # ตัดออกจาก Layer 2 โดยตั้งใจ (B56) — is_new_device ถูกให้คะแนนที่ Rule Engine
+    # (Layer 1, +0.30) อยู่แล้ว การนับซ้ำที่นี่ (+0.20) ทำให้ flag เดียวรวมเป็น 0.5 →
+    # เครื่องใหม่ (หรือแค่ browser อัปเดต build) ดัน score ถึงเกณฑ์ MFA เองโดยไม่มี signal อื่น
 
     # ── Weekend pattern mismatch ──
     # is_weekend ถูกตัดออกจาก feature vector → derive จาก day_of_week (>=5 = เสาร์/อาทิตย์)
