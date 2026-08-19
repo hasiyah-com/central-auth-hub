@@ -28,6 +28,8 @@ This directory defines the reproducible contract for evaluating the Central Auth
 2. `normal_nat_burst`: at least six distinct normal users share the IP in a rolling hour. The ground truth remains normal so any friction is counted as a false positive.
 3. `attack_test`: device, user-agent, time, velocity, session, passkey, permission, and combined-takeover scenarios. Geo attacks are excluded.
 
+The two normal conditions are generated as separate isolated runs using the same dataset size and seed. This prevents NAT-burst history from contaminating the staggered baseline. The full matrix is 2 normal conditions × 6 sizes × 5 seeds = 60 runs.
+
 ## Data flow
 
 `alias config + local mapping preflight -> raw login events -> isolated experiment database -> 23-feature snapshots -> global Isolation Forest -> four-layer predictions -> metrics`
@@ -36,7 +38,7 @@ Raw events must not contain model scores or final decisions. Those values are pr
 
 ## Split
 
-For each user and dataset size, events are sorted chronologically. The first 80% form train/profile history and the final 20% form normal test. Attack rows are a separate fixed test set. The 10-row experiment is cold-start diagnostic only.
+For each profile, normal condition, and dataset size, events are sorted chronologically. The first 80% form train/profile history and the final 20% form normal test. Attack rows are a separate fixed test set evaluated against a frozen normal snapshot and never update history. The 10-row experiment is cold-start diagnostic only.
 
 ## Safety
 
@@ -55,6 +57,18 @@ python experiments/rba_user_learning_curve/scripts/preflight_mapping.py
 
 The command fails on missing aliases, extra aliases, invalid or duplicate UUIDs/emails, placeholder values, and subsystem-key mismatches. Successful output contains counts and the mapping SHA-256 only.
 
+## Generate one run
+
+```bash
+python experiments/rba_user_learning_curve/scripts/generate_events.py \
+  --dataset-size 10 \
+  --seed 42 \
+  --normal-scenario normal_staggered \
+  --git-commit-sha <40-character-commit-sha>
+```
+
+Run the same size and seed again with `normal_nat_burst` for the paired NAT comparison. Each run writes ignored `events.jsonl` and `manifest.json` files under `data/<run_id>/`. Generated outputs contain aliases only.
+
 ## Current phase
 
-This commit contains configuration, JSON Schemas, and validation tests only. Event generation, database loading, training, and evaluation runners are intentionally not implemented yet.
+This phase contains configuration, JSON Schemas, mapping preflight, the deterministic raw-event generator, and validation tests. Isolated-database loading, feature extraction, training, and evaluation runners are not implemented yet.
