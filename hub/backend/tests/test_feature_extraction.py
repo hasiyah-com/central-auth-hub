@@ -24,6 +24,8 @@ from app.services.feature_extraction import (
 
 # index map (0-based) ตาม ml-service/app/features.py (22 features)
 IDX = {
+    "is_new_device": 6,
+    "is_new_user_agent_family": 7,
     "passkey_count": 11,
     "concurrent_session_count": 15,
     "active_subsystem_count": 16,
@@ -141,6 +143,45 @@ def test_cold_start_neutral(user, db):
     assert feats[IDX["permission_change_age"]] == PERM_AGE_CAP  # = 365
     assert feats[IDX["confirmed_incident_count"]] == 0.0
     assert feats[IDX["passkey_count"]] == 0.0
+
+
+# ─── is_new_device: device signature เสถียรข้าม browser build (B56) ──────────
+
+# เครื่อง/OS/เบราว์เซอร์เดิม ต่างแค่เลข build (Chrome auto-update)
+_UA_CHROME_150 = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36"
+_UA_CHROME_151 = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/151.0.0.0 Safari/537.36"
+_UA_IPHONE = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
+
+
+@pytest.mark.smoke
+def test_new_device_ignores_browser_build_bump(user, db):
+    """B56: Chrome อัปเดต build (150→151) บนเครื่องเดิม → ไม่ใช่ 'เครื่องใหม่'.
+
+    เดิมเทียบ UA string เต็ม → build ต่าง = is_new_device=1 (false positive สวิง).
+    ตอนนี้เทียบ device signature (OS+device+family) → 150 กับ 151 = เครื่องเดิม → 0.
+    """
+    _add_session(
+        db,
+        user,
+        user_agent=_UA_CHROME_150,
+        created_at=datetime.utcnow() - timedelta(days=2),
+    )
+    feats = extract_session_features(db, user.id, "1.2.3.4", _UA_CHROME_151, "TH")
+    assert feats[IDX["is_new_device"]] == 0.0, "Chrome build bump ไม่ควรนับเป็นเครื่องใหม่"
+    assert feats[IDX["is_new_user_agent_family"]] == 0.0, "browser family เดิม (Chrome)"
+
+
+@pytest.mark.smoke
+def test_new_device_detects_genuinely_new_device(user, db):
+    """เครื่องใหม่จริง (Windows Chrome → iPhone Safari) → is_new_device=1."""
+    _add_session(
+        db,
+        user,
+        user_agent=_UA_CHROME_150,
+        created_at=datetime.utcnow() - timedelta(days=2),
+    )
+    feats = extract_session_features(db, user.id, "1.2.3.4", _UA_IPHONE, "TH")
+    assert feats[IDX["is_new_device"]] == 1.0, "OS+device+family ต่าง → เครื่องใหม่จริง"
 
 
 # ─── concurrent + active_subsystem ──────────────────────────────────────────

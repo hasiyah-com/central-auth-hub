@@ -168,6 +168,21 @@ def parse_device_type(user_agent: str | None) -> str:
     return "desktop"
 
 
+def _device_signature(user_agent: str | None) -> str:
+    """ลายเซ็นอุปกรณ์ที่เสถียรข้ามการอัปเดต browser (ตัดเลขเวอร์ชันออก) — ใช้กับ is_new_device.
+
+    OS + device type + browser family เท่านั้น (ไม่รวมเลขเวอร์ชัน) → Chrome 150 กับ 151
+    บนเครื่องเดิม = signature เดียวกัน. เทียบ UA string เต็มไม่ได้เพราะ Chrome/Edge อัปเดต
+    build number เอง (150→151) ทำให้ string เปลี่ยนทั้งที่เป็นเครื่อง/เบราว์เซอร์เดิม → is_new_device
+    เด้ง 1 ทุกครั้งที่อัปเดต (false positive สวิง — B56).
+    """
+    return (
+        f"{parse_os_name(user_agent)}|"
+        f"{parse_device_type(user_agent)}|"
+        f"{browser_family(user_agent)}"
+    )
+
+
 # ============ Main extraction ============
 
 
@@ -267,7 +282,12 @@ def extract_session_features(
             .all()
         )
         seen_ua_set = {row[0] for row in seen_ua}
-        if seen_ua_set and user_agent not in seen_ua_set:
+
+        # is_new_device เทียบ device signature ที่เสถียร (ไม่ใช่ UA string เต็ม) —
+        # กัน browser อัปเดต build number แล้วกลายเป็น "เครื่องใหม่" ทุกครั้ง (B56)
+        current_sig = _device_signature(user_agent)
+        seen_sigs = {_device_signature(ua) for ua in seen_ua_set}
+        if seen_sigs and current_sig not in seen_sigs:
             is_new_device = 1.0
 
         # ตรวจ browser family
