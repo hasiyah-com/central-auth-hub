@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://central-auth-hub.local/schemas/rba-local-identity-mapping-v1.json",
+  "title": "RBA Experiment Local Identity Mapping",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version", "profiles", "subsystems"],
+  "properties": {
+    "version": {"const": 1},
+    "profiles": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["user_id", "email"],
+        "properties": {
+          "user_id": {"type": "string", "format": "uuid"},
+          "email": {"type": "string", "format": "email"}
+        }
+      }
+    },
+    "subsystems": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["subsystem_id"],
+        "properties": {
+          "subsystem_id": {"type": "string", "format": "uuid"}
+        }
+      }
+    }
+  }
+}
