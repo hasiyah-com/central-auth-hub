@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://central-auth-hub.local/schemas/rba-combined-run-result-v1.json",
+  "title": "RBA Experiment Combined Run Result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "run_id", "status", "git_commit_sha", "normal_scenario", "dataset_size",
+    "seed", "profile_count", "train_count", "normal_test_count",
+    "attack_count", "feature_count", "model_id", "tp", "fp", "tn", "fn",
+    "precision", "recall", "f1", "roc_auc", "pr_auc", "fpr",
+    "allow_rate", "mean_risk", "median_risk", "p90_risk", "p95_risk",
+    "error"
+  ],
+  "properties": {
+    "run_id": {"type": "string", "minLength": 1},
+    "status": {
+      "type": "string",
+      "enum": ["generated", "features_ready", "trained", "evaluated", "failed"]
+    },
+    "git_commit_sha": {"type": "string", "pattern": "^[0-9a-f]{40}$"},
+    "normal_scenario": {
+      "type": "string",
+      "enum": ["normal_staggered", "normal_nat_burst"]
+    },
+    "dataset_size": {"type": "integer", "enum": [10, 50, 100, 500, 1000, 5000]},
+    "seed": {"type": "integer"},
+    "profile_count": {"type": "integer", "minimum": 1},
+    "train_count": {"type": "integer", "minimum": 0},
+    "normal_test_count": {"type": "integer", "minimum": 0},
+    "attack_count": {"type": "integer", "minimum": 0},
+    "feature_count": {"const": 23},
+    "model_id": {"type": ["string", "null"]},
+    "tp": {"type": ["integer", "null"], "minimum": 0},
+    "fp": {"type": ["integer", "null"], "minimum": 0},
+    "tn": {"type": ["integer", "null"], "minimum": 0},
+    "fn": {"type": ["integer", "null"], "minimum": 0},
+    "precision": {"type": ["number", "null"], "minimum": 0, "maximum": 1},
+    "recall": {"type": ["number", "null"], "minimum": 0, "maximum": 1},
+    "f1": {"type": ["number", "null"], "minimum": 0, "maximum": 1},
+    "roc_auc": {"type": ["number", "null"], "minimum": 0, "maximum": 1},
+    "pr_auc": {"type": ["number", "null"], "minimum": 0, "maximum": 1},
+    "fpr": {"type": ["number", "null"], "minimum": 0, "maximum": 1},
+    "allow_rate": {"type": ["number", "null"], "minimum": 0, "maximum": 1},
+    "mean_risk": {"type": ["number", "null"], "minimum": 0, "maximum": 1},
+    "median_risk": {"type": ["number", "null"], "minimum": 0, "maximum": 1},
+    "p90_risk": {"type": ["number", "null"], "minimum": 0, "maximum": 1},
+    "p95_risk": {"type": ["number", "null"], "minimum": 0, "maximum": 1},
+    "error": {"type": "string"}
+  }
+}
