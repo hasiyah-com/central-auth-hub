@@ -1,0 +1,27 @@
+{
+  "version": 1,
+  "scenarios": {
+    "normal_staggered": {
+      "ground_truth": "normal",
+      "label": 0,
+      "max_distinct_users_per_rolling_hour": 5
+    },
+    "normal_nat_burst": {
+      "ground_truth": "normal",
+      "label": 0,
+      "min_distinct_users_per_rolling_hour": 6,
+      "expected_rule": "multi_account_ip"
+    },
+    "attack_new_device": {"ground_truth": "attack", "label": 1},
+    "attack_new_ua_family": {"ground_truth": "attack", "label": 1},
+    "attack_new_os": {"ground_truth": "attack", "label": 1},
+    "attack_off_hours": {"ground_truth": "attack", "label": 1},
+    "attack_failed_spike": {"ground_truth": "attack", "label": 1},
+    "attack_login_velocity": {"ground_truth": "attack", "label": 1},
+    "attack_concurrent_sessions": {"ground_truth": "attack", "label": 1},
+    "attack_subsystem_lateral": {"ground_truth": "attack", "label": 1},
+    "attack_new_passkey": {"ground_truth": "attack", "label": 1},
+    "attack_permission_change": {"ground_truth": "attack", "label": 1},
+    "attack_combined_ato": {"ground_truth": "attack", "label": 1}
+  }
+}
