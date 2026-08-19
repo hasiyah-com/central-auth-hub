@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://central-auth-hub.local/schemas/rba-login-event-v1.json",
+  "title": "RBA Experiment Raw Login Event",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "experiment_id", "run_id", "seed", "dataset_size", "event_id",
+    "sequence_no", "profile_id", "user_type", "created_at",
+    "local_timezone", "split", "scenario", "subsystem_key", "ip",
+    "user_agent", "os_name", "browser", "device_type", "login_method",
+    "login_successful", "mfa_required", "mfa_passed", "ground_truth",
+    "label", "attack_type"
+  ],
+  "properties": {
+    "experiment_id": {"type": "string", "minLength": 1},
+    "run_id": {"type": "string", "minLength": 1},
+    "seed": {"type": "integer"},
+    "dataset_size": {"type": "integer", "enum": [10, 50, 100, 500, 1000, 5000]},
+    "event_id": {"type": "string", "format": "uuid"},
+    "sequence_no": {"type": "integer", "minimum": 0},
+    "profile_id": {"type": "string", "pattern": "^[a-z][a-z0-9_]+$"},
+    "user_type": {"type": "string", "enum": ["student", "teacher", "staff", "admin"]},
+    "created_at": {"type": "string", "format": "date-time"},
+    "local_timezone": {"const": "Asia/Bangkok"},
+    "split": {"type": "string", "enum": ["train", "normal_test", "attack_test"]},
+    "scenario": {"type": "string", "minLength": 1},
+    "subsystem_key": {"enum": [null, "dorm", "library"]},
+    "ip": {"const": "192.168.10.1"},
+    "user_agent": {"type": "string", "minLength": 1},
+    "os_name": {"type": "string", "minLength": 1},
+    "browser": {"type": "string", "minLength": 1},
+    "device_type": {"type": "string", "enum": ["desktop", "mobile", "tablet"]},
+    "login_method": {"type": "string", "enum": ["google", "passkey"]},
+    "login_successful": {"type": "boolean"},
+    "mfa_required": {"type": "boolean"},
+    "mfa_passed": {"type": "boolean"},
+    "ground_truth": {"type": "string", "enum": ["normal", "attack"]},
+    "label": {"type": "integer", "enum": [0, 1]},
+    "attack_type": {"type": ["string", "null"]}
+  }
+}
