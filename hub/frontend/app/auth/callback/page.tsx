@@ -17,22 +17,46 @@ function CallbackInner() {
     if (ran.current) return;
     ran.current = true;
 
-    const token = params.get("token");
-    const refreshToken = params.get("refresh_token");
-    if (!token) {
-      setError("ไม่ได้รับ token จาก Hub — กรุณา login ใหม่");
+    // แบบใหม่: Hub ส่ง one-time `code` มา (ไม่มี token ใน URL) → แลกเป็น token
+    // ผ่าน POST /auth/frontend/exchange · legacy `token` ยังรองรับระหว่าง rollout
+    const code = params.get("code");
+    const legacyToken = params.get("token");
+    if (!code && !legacyToken) {
+      setError("ไม่ได้รับ code จาก Hub — กรุณา login ใหม่");
       return;
     }
 
     (async () => {
       try {
+        let token = legacyToken;
+        let refreshToken = params.get("refresh_token");
+
+        // แลก one-time code → token คู่ (token ไม่เคยโผล่ใน URL)
+        if (code) {
+          const ex = await fetch("/api/proxy/auth/frontend/exchange", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            credentials: "include",
+            body: JSON.stringify({ code }),
+          });
+          if (!ex.ok) {
+            const b = await ex.json().catch(() => ({}));
+            throw new Error(
+              b.detail || `แลกโค้ดเข้าสู่ระบบไม่สำเร็จ (${ex.status})`
+            );
+          }
+          const d = await ex.json();
+          token = d.access_token;
+          refreshToken = d.refresh_token ?? null;
+        }
+
         // 1) ลบ cookie เก่าออกก่อน (กัน admin cookie ติดมาแล้ว set ทับไม่ได้)
         await fetch("/api/set-token", {
           method: "DELETE",
           credentials: "include",
         }).catch(() => null);
 
-        // 2) Set cookie ใหม่จาก token ใน URL
+        // 2) Set cookie ใหม่จาก token ที่แลกได้
         const setRes = await fetch("/api/set-token", {
           method: "POST",
           headers: { "Content-Type": "application/json" },

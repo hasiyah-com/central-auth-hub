@@ -1441,9 +1441,16 @@ def _finalize_after_reauth(
         method=method,
         ip=client_ip,
     )
-    refresh_qs = f"&refresh_token={refresh_token}" if refresh_token else ""
     if settings.admin_frontend_url:
-        return f"{settings.admin_frontend_url}/auth/callback?token={access_token}{refresh_qs}"
+        # กัน token-in-URL — redirect พกเฉพาะ one-time code (แลกที่ /auth/frontend/exchange)
+        from app.routers.auth import mint_frontend_login_code
+
+        code = mint_frontend_login_code(
+            access_token=access_token, refresh_token=refresh_token
+        )
+        return f"{settings.admin_frontend_url}/auth/callback?code={code}"
+    # fallback (ไม่มี frontend — API/curl): คง token ใน URL สำหรับ dev เท่านั้น
+    refresh_qs = f"&refresh_token={refresh_token}" if refresh_token else ""
     return f"/auth/me?token={access_token}{refresh_qs}"
 
 
