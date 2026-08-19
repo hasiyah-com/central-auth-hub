@@ -8,6 +8,7 @@ import {
   REFRESH_TOKEN_COOKIE,
   type JwtPayload,
 } from "@/lib/auth";
+import { isPublicPath, pathMatches } from "@/lib/publicPaths";
 
 const HUB_INTERNAL = process.env.HUB_INTERNAL_URL || "http://hub-backend:8000";
 
@@ -26,22 +27,8 @@ const ADMIN_PATHS = [
 // Routes ที่ให้ teacher/staff/admin เข้าได้ (Developer Portal)
 const DEV_PATHS = ["/developer"];
 
-// Single-domain mode — prefix ที่ next.config.js rewrites ส่งตรงเข้า hub-backend.
-// ต้อง sync กับ `passthrough` ใน next.config.js (`/auth/*` ครอบด้วย rule แยกอยู่แล้ว)
-const BACKEND_PASSTHROUGH = [
-  "/oauth",
-  "/.well-known",
-  "/account/passkeys",
-  "/secret",
-  "/api/v1",
-  "/health",
-];
-
-function pathMatches(prefixes: string[], pathname: string): boolean {
-  return prefixes.some(
-    (p) => pathname === p || pathname.startsWith(p + "/")
-  );
-}
+// BACKEND_PASSTHROUGH + pathMatches + isPublicPath ย้ายไป lib/publicPaths.ts
+// (unit-test ได้ — กันบั๊ก 307→405 ตอน flow ที่ยังไม่มี token โดน redirect)
 
 /**
  * Access token อายุสั้น (15 นาที) — หมดอายุระหว่าง session ปกติ (ไม่ใช่แค่ตอน
@@ -111,24 +98,10 @@ async function tryRefresh(req: NextRequest): Promise<RefreshOutcome> {
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
-  if (
-    pathname.startsWith("/auth/") ||
-    pathname.startsWith("/api/set-token") ||
-    // Passkey login + recovery proxy — public flows (user ยังไม่มี token)
-    //   /api/proxy/auth/passkey/login/*   (Phase 2)
-    //   /api/proxy/auth/passkey/recover/* (Phase 4)
-    // แยกจาก /api/proxy/account/passkeys/* (register/manage) ที่ยังต้อง auth
-    pathname.startsWith("/api/proxy/auth/passkey/") ||
-    // Single-domain mode: path ที่ next.config rewrites ส่งตรงเข้า hub-backend
-    // (OAuth/OIDC ที่ subsystem+Google เรียก, Roster API, หน้า HTML ที่ Hub เสิร์ฟเอง).
-    // ต้องข้าม middleware เพราะเป็น server-to-server / cross-origin ที่ไม่มี cookie
-    // ของ console — เจอ redirect ไป /auth/login จะกลายเป็น 307 กลางคัน token exchange.
-    // ปลอดภัย: backend บังคับ auth เองทุก endpoint (client_secret / Bearer / X-Api-Key)
-    pathMatches(BACKEND_PASSTHROUGH, pathname) ||
-    pathname.startsWith("/_next") ||
-    pathname === "/favicon.ico"
-  ) {
-    // /auth/* รวม /auth/mfa — ปล่อยผ่านเพราะ user ยังไม่ได้ login จริง (ยัง verify OTP)
+  // public path (ไม่ต้องมี token) — นิยาม + เหตุผลอยู่ใน lib/publicPaths.ts
+  // (แยกออกไปเพื่อ unit-test ได้ · ครอบ passkey login, login-code exchange,
+  // backend passthrough ของ single-domain mode)
+  if (isPublicPath(pathname)) {
     return NextResponse.next();
   }
 
