@@ -130,6 +130,19 @@ That production layer feeds previous risk scores back into later logins, which
 would violate the experiment's frozen, memoryless comparison unless evaluated
 as a separate stateful experiment.
 
+## Run the complete 60-run matrix
+
+```bash
+python experiments/rba_user_learning_curve/scripts/run_matrix.py \
+  --git-commit-sha <40-character-commit-sha>
+```
+
+This command runs 2 normal scenarios × 6 dataset sizes × 5 seeds. It resumes
+completed runs, rebuilds a run when its manifest commit SHA differs, and keeps
+exactly one row per run in the combined CSV. Use `--force` only when every
+selected artifact must be rebuilt. For a smaller diagnostic subset, repeat
+`--dataset-size`, `--seed`, or `--normal-scenario` with the desired values.
+
 ## Current phase
 
 This phase contains configuration, JSON Schemas, mapping preflight, the
