@@ -486,6 +486,24 @@ def my_subsystems(
 
 # ============ 3. upload whitelist CSV ============
 
+# เพดานขนาดไฟล์ CSV — กัน memory DoS (developer ที่ login แล้วอัปไฟล์ใหญ่)
+# 1 MB ≈ 20k+ แถว email พอเหลือเฟือสำหรับ whitelist
+WHITELIST_CSV_MAX_BYTES = 1 * 1024 * 1024
+
+
+def _read_capped(fileobj, max_bytes: int) -> bytes:
+    """อ่านไฟล์แบบมีเพดาน — bound memory ไว้ที่ max_bytes+1 เสมอ (ไม่ดึงทั้งไฟล์).
+
+    อ่าน max_bytes+1 ไบต์: ถ้าได้เกิน max_bytes = ไฟล์ใหญ่กว่าเพดาน → 413.
+    """
+    data = fileobj.read(max_bytes + 1)
+    if len(data) > max_bytes:
+        raise HTTPException(
+            status_code=413,
+            detail=f"ไฟล์ CSV ใหญ่เกินกำหนด (สูงสุด {max_bytes // (1024 * 1024)} MB)",
+        )
+    return data
+
 
 @router.post(
     "/subsystems/{subsystem_id}/whitelist",
@@ -508,8 +526,10 @@ def upload_whitelist(
     # owner หรือ hub admin
     subsystem = _get_owned_subsystem(subsystem_id, user, db, request)
 
-    # อ่าน + parse CSV
-    content = file.file.read().decode("utf-8-sig")  # utf-8-sig รองรับ BOM จาก Excel
+    # อ่าน + parse CSV (มีเพดานขนาด — กัน memory DoS)
+    content = _read_capped(file.file, WHITELIST_CSV_MAX_BYTES).decode(
+        "utf-8-sig"  # utf-8-sig รองรับ BOM จาก Excel
+    )
     reader = csv.DictReader(io.StringIO(content))
     if "email" not in (reader.fieldnames or []):
         raise HTTPException(status_code=400, detail="CSV ต้องมี column 'email'")
