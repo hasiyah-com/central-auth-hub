@@ -13,6 +13,7 @@ from .contracts import (
     validate_schemas,
     validate_users,
 )
+from .generator import generate_run, write_run
 
 __all__ = [
     "CONFIG_DIR",
@@ -26,4 +27,6 @@ __all__ = [
     "validate_scenarios",
     "validate_schemas",
     "validate_users",
+    "generate_run",
+    "write_run",
 ]
