@@ -251,6 +251,7 @@ def validate_schemas() -> None:
     assert "profile_id" in login_schema["required"]
     assert "user_id" not in login_schema["properties"]
     assert "email" not in login_schema["properties"]
+    assert {"history_mode", "setup_actions"} <= set(login_schema["required"])
 
     prediction_schema = load_json(CONTRACT_DIR / "prediction.schema.json")
     assert "profile_id" in prediction_schema["required"]
@@ -258,6 +259,7 @@ def validate_schemas() -> None:
 
     manifest_schema = load_json(CONTRACT_DIR / "run_manifest.schema.json")
     assert "local_mapping_sha256" in manifest_schema["required"]
+    assert "normal_scenario" in manifest_schema["required"]
 
 
 def validate_all() -> None:
