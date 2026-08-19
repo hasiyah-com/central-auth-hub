@@ -1,6 +1,8 @@
 # ============ Web Framework ============
-# bump to 0.118+ → starlette > 0.40 → fix CVE-2024-47874 + CVE-2025-54121
-fastapi==0.118.0
+# fastapi 0.120.1 เปิดให้ starlette 0.49.x → fix CVE-2024-47874 + CVE-2025-54121
+# + CVE-2025-62727 (O(n^2) Range-header DoS ใน FileResponse/StaticFiles, patch 0.49.1)
+fastapi==0.120.1
+starlette==0.49.3
 uvicorn[standard]==0.32.0
 
 # ============ Database ============
@@ -38,8 +40,9 @@ python-multipart==0.0.27
 # ============ HTTP Client ============
 httpx==0.27.2
 
-# ============ Known transitive vulnerabilities (รอ upstream แก้) ============
-# starlette 0.48.0 (CVE-2025-62727, PYSEC-2026-161) — fastapi 0.118 pin <0.49
+# ============ Known transitive vulnerabilities ============
+# CVE-2025-62727 / PYSEC-2026-161 (starlette Range DoS) — แก้แล้วโดย bump เป็น
+# starlette 0.49.3 (ผ่าน fastapi 0.120.1) ดูบรรทัด fastapi ด้านบน
 # (ecdsa + pyasn1 ตัดไปแล้วหลัง migrate → PyJWT)
 
 # ============ GeoIP (MaxMind GeoLite2 offline lookup) ============
