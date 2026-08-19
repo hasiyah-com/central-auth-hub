@@ -269,11 +269,26 @@ def _normal_events(
 def _setup_actions(
     scenario: str, subsystem_key: str | None
 ) -> list[dict[str, Any]]:
+    if scenario == "attack_subsystem_lateral":
+        return [
+            {
+                "action": "open_session",
+                "count": 1,
+                "offset_minutes": 30,
+                "subsystem_key": "dorm",
+            },
+            {
+                "action": "open_session",
+                "count": 1,
+                "offset_minutes": 20,
+                "subsystem_key": "library",
+            },
+        ]
+
     action_map: dict[str, list[tuple[str, int, int]]] = {
         "attack_failed_spike": [("failed_login", 5, 60)],
         "attack_login_velocity": [("successful_login", 5, 10)],
         "attack_concurrent_sessions": [("open_session", 4, 15)],
-        "attack_subsystem_lateral": [("open_session", 2, 30)],
         "attack_new_passkey": [("add_passkey", 1, 30)],
         "attack_permission_change": [("change_permission", 1, 120)],
         "attack_combined_ato": [
@@ -285,7 +300,7 @@ def _setup_actions(
             ("confirm_incident", 1, 2880),
         ],
     }
-    return [
+    actions = [
         {
             "action": action,
             "count": count,
@@ -294,6 +309,21 @@ def _setup_actions(
         }
         for action, count, offset in action_map.get(scenario, [])
     ]
+    if scenario == "attack_combined_ato":
+        for action in actions:
+            if action["action"] == "open_session":
+                action["count"] = 2
+                action["subsystem_key"] = "dorm"
+                actions.append(
+                    {
+                        "action": "open_session",
+                        "count": 2,
+                        "offset_minutes": 12,
+                        "subsystem_key": "library",
+                    }
+                )
+                break
+    return actions
 
 
 def _attack_events(
