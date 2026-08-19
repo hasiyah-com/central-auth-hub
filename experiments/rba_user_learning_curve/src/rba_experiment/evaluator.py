@@ -4,9 +4,8 @@ from __future__ import annotations
 
 import hashlib
 import json
-import math
 import statistics
-from collections import Counter, defaultdict
+from collections import Counter, defaultdict, deque
 from datetime import timedelta
 from pathlib import Path
 from typing import Any
@@ -52,9 +51,15 @@ def _feature_matrix(rows: list[dict[str, Any]]) -> np.ndarray:
     )
 
 
-def _iforest_score(model: IsolationForest, row: dict[str, Any]) -> float:
-    decision = float(model.decision_function(_feature_matrix([row]))[0])
-    return float(1.0 / (1.0 + math.exp(decision * 5.0)))
+def _iforest_scores(
+    model: IsolationForest, rows: list[dict[str, Any]]
+) -> dict[str, float]:
+    decisions = model.decision_function(_feature_matrix(rows))
+    scores = 1.0 / (1.0 + np.exp(decisions * 5.0))
+    return {
+        row["event_id"]: float(score)
+        for row, score in zip(rows, scores, strict=True)
+    }
 
 
 def _iforest_contribution(raw_score: float) -> float:
@@ -113,25 +118,9 @@ def _behavior_score(
     return min(score, 1.0), reasons
 
 
-def _distinct_profiles_on_ip(
-    event: dict[str, Any], normal_history: list[dict[str, Any]]
-) -> int:
-    now = parse_timestamp(event["created_at"])
-    cutoff = now - timedelta(hours=1)
-    return len(
-        {
-            item["profile_id"]
-            for item in normal_history
-            if item["ip"] == event["ip"]
-            and cutoff <= parse_timestamp(item["created_at"]) < now
-        }
-    )
-
-
 def _rule_score(
     row: dict[str, Any],
-    event: dict[str, Any],
-    normal_history: list[dict[str, Any]],
+    distinct_profiles_last_hour: int,
 ) -> tuple[float, bool, list[str]]:
     failed = float(row["failed_logins_24h"])
     velocity = float(row["login_count_24h"])
@@ -166,7 +155,7 @@ def _rule_score(
     if float(row["impossible_travel_score"]) >= 0.5:
         score += 0.30
         reasons.append("rule_impossible_travel")
-    if _distinct_profiles_on_ip(event, normal_history) > 5:
+    if distinct_profiles_last_hour > 5:
         score += 0.25
         reasons.append("rule_multi_account_ip")
     return min(score, 1.0), False, reasons
@@ -342,7 +331,7 @@ def evaluate_run(run_dir: Path, combined_result_path: Path | None = None) -> dic
         key=lambda item: (item["created_at"], item["sequence_no"]),
     )
     snapshot_by_event = {item["event_id"]: item for item in evaluation}
-    sequential_history = list(train_events)
+    raw_iforest_by_event = _iforest_scores(model, evaluation)
     all_normal_by_profile: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for event in normal_events:
         all_normal_by_profile[event["profile_id"]].append(event)
@@ -350,17 +339,43 @@ def evaluate_run(run_dir: Path, combined_result_path: Path | None = None) -> dic
     for event in train_events:
         profile_history[event["profile_id"]].append(event)
 
+    ip_windows: dict[str, deque[tuple[Any, str]]] = defaultdict(deque)
+    ip_profile_counts: dict[str, Counter[str]] = defaultdict(Counter)
+
+    def add_ip_history(event: dict[str, Any]) -> None:
+        ip = event["ip"]
+        profile_id = event["profile_id"]
+        ip_windows[ip].append((parse_timestamp(event["created_at"]), profile_id))
+        ip_profile_counts[ip][profile_id] += 1
+
+    def distinct_profiles_before(event: dict[str, Any]) -> int:
+        ip = event["ip"]
+        cutoff = parse_timestamp(event["created_at"]) - timedelta(hours=1)
+        window = ip_windows[ip]
+        counts = ip_profile_counts[ip]
+        while window and window[0][0] < cutoff:
+            _, profile_id = window.popleft()
+            counts[profile_id] -= 1
+            if counts[profile_id] == 0:
+                del counts[profile_id]
+        return len(counts)
+
+    for event in train_events:
+        add_ip_history(event)
+
     predictions: list[dict[str, Any]] = []
 
     def score_event(
         event: dict[str, Any],
-        history: list[dict[str, Any]],
         user_history: list[dict[str, Any]],
+        distinct_profiles_last_hour: int,
     ) -> dict[str, Any]:
         row = snapshot_by_event[event["event_id"]]
-        raw_iforest = _iforest_score(model, row)
+        raw_iforest = raw_iforest_by_event[event["event_id"]]
         iforest_part = _iforest_contribution(raw_iforest)
-        rule_part, hard_block, rule_reasons = _rule_score(row, event, history)
+        rule_part, hard_block, rule_reasons = _rule_score(
+            row, distinct_profiles_last_hour
+        )
         behavior_part, behavior_reasons = _behavior_score(row, event, user_history)
         total = min(1.0, rule_part + behavior_part + iforest_part)
         final_decision = _decision(total, hard_block)
@@ -393,20 +408,19 @@ def evaluate_run(run_dir: Path, combined_result_path: Path | None = None) -> dic
     for event in normal_test_events:
         prediction = score_event(
             event,
-            sequential_history,
             profile_history[event["profile_id"]],
+            distinct_profiles_before(event),
         )
         predictions.append(prediction)
-        sequential_history.append(event)
         profile_history[event["profile_id"]].append(event)
+        add_ip_history(event)
 
-    frozen_normal_history = list(normal_events)
     for event in attack_events:
         predictions.append(
             score_event(
                 event,
-                frozen_normal_history,
                 all_normal_by_profile[event["profile_id"]],
+                0,
             )
         )
 
