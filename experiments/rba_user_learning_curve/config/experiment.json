@@ -1,0 +1,59 @@
+{
+  "version": 1,
+  "experiment_id": "rba_user_learning_curve_v1",
+  "timezone": "Asia/Bangkok",
+  "storage_timezone": "UTC",
+  "fixed_ip": "192.168.10.1",
+  "geo_country": null,
+  "geo_city": null,
+  "dataset_sizes_per_user": [10, 50, 100, 500, 1000, 5000],
+  "train_fraction": 0.8,
+  "attack_rows_per_user": 20,
+  "seeds": [42, 43, 44, 45, 46],
+  "trusted_decisions": ["allow", "mfa_passed"],
+  "normal_scenarios": ["normal_staggered", "normal_nat_burst"],
+  "model": {
+    "type": "IsolationForest",
+    "scope": "global",
+    "n_estimators": 100,
+    "contamination": 0.02,
+    "max_samples": 256,
+    "random_state_from_seed": true
+  },
+  "final_thresholds": {
+    "warn": 0.5,
+    "challenge": 0.7,
+    "block": 0.85
+  },
+  "feature_names": [
+    "hour_of_day",
+    "day_of_week",
+    "hours_from_typical_login_time",
+    "is_thailand",
+    "is_new_country",
+    "country_change_count_30d",
+    "is_new_device",
+    "is_new_user_agent_family",
+    "log_minutes_since_last_login",
+    "login_count_24h",
+    "failed_logins_24h",
+    "passkey_count",
+    "passkey_age_days",
+    "new_passkey_recently_added",
+    "passkey_last_used_days",
+    "concurrent_session_count",
+    "active_subsystem_count",
+    "weekday_usage_score",
+    "scope_sensitivity_score",
+    "ever_changed_permission",
+    "permission_change_age",
+    "confirmed_incident_count",
+    "impossible_travel_score"
+  ],
+  "no_geo_expected_features": {
+    "is_thailand": 1.0,
+    "is_new_country": 0.0,
+    "country_change_count_30d": 0.0,
+    "impossible_travel_score": 0.0
+  }
+}
