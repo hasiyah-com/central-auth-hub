@@ -10,7 +10,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from rba_experiment.evaluator import evaluate_run  # noqa: E402
+from rba_experiment.evaluator import _behavior_score, evaluate_run  # noqa: E402
 from rba_experiment.feature_store import load_run_store  # noqa: E402
 from rba_experiment.generator import generate_run, write_run  # noqa: E402
 from rba_experiment.results import RESULT_COLUMNS  # noqa: E402
@@ -19,6 +19,21 @@ GIT_SHA = "c" * 40
 
 
 class EvaluatorTests(unittest.TestCase):
+    def test_new_device_is_not_double_counted_in_behavior_layer(self):
+        history = [
+            {"created_at": f"2024-01-0{day}T02:00:00Z"}
+            for day in range(5, 10)
+        ]
+        event = {"created_at": "2024-01-10T02:00:00Z"}
+        row = {
+            "hours_from_typical_login_time": 0.0,
+            "is_new_country": 0.0,
+            "is_new_device": 1.0,
+        }
+        score, reasons = _behavior_score(row, event, history)
+        self.assertEqual(score, 0.0)
+        self.assertNotIn("behavior_new_device", reasons)
+
     def evaluate(self, root: Path, scenario: str):
         events, manifest = generate_run(
             dataset_size=10,
