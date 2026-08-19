@@ -6,8 +6,8 @@
   "additionalProperties": false,
   "required": [
     "experiment_id", "run_id", "git_commit_sha", "configuration_sha256",
-    "feature_contract_sha256", "local_mapping_sha256", "dataset_size",
-    "seed", "thresholds", "model"
+    "feature_contract_sha256", "local_mapping_sha256", "normal_scenario",
+    "dataset_size", "seed", "thresholds", "model"
   ],
   "properties": {
     "experiment_id": {"type": "string", "minLength": 1},
@@ -16,6 +16,10 @@
     "configuration_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
     "feature_contract_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
     "local_mapping_sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+    "normal_scenario": {
+      "type": "string",
+      "enum": ["normal_staggered", "normal_nat_burst"]
+    },
     "dataset_size": {"type": "integer", "enum": [10, 50, 100, 500, 1000, 5000]},
     "seed": {"type": "integer"},
     "thresholds": {
