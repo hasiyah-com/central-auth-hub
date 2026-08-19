@@ -156,6 +156,8 @@ def validate_users(
     assert hub_only_admin["owned_subsystems"] == []
 
     for key, subsystem in subsystems.items():
+        assert subsystem["scope"]
+        assert len(subsystem["scope"]) == len(set(subsystem["scope"]))
         owner = by_profile[subsystem["owner_profile_id"]]
         assert key in owner["owned_subsystems"]
 
@@ -223,6 +225,7 @@ def validate_scenarios(config: dict[str, Any]) -> None:
 
 def validate_schemas() -> None:
     expected = {
+        "combined_run_result.schema.json",
         "local_identity_mapping.schema.json",
         "login_event.schema.json",
         "feature_snapshot.schema.json",
