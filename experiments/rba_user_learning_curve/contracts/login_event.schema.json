@@ -10,7 +10,7 @@
     "local_timezone", "split", "scenario", "subsystem_key", "ip",
     "user_agent", "os_name", "browser", "device_type", "login_method",
     "login_successful", "mfa_required", "mfa_passed", "ground_truth",
-    "label", "attack_type"
+    "label", "attack_type", "history_mode", "setup_actions"
   ],
   "properties": {
     "experiment_id": {"type": "string", "minLength": 1},
@@ -37,6 +37,30 @@
     "mfa_passed": {"type": "boolean"},
     "ground_truth": {"type": "string", "enum": ["normal", "attack"]},
     "label": {"type": "integer", "enum": [0, 1]},
-    "attack_type": {"type": ["string", "null"]}
+    "attack_type": {"type": ["string", "null"]},
+    "history_mode": {
+      "type": "string",
+      "enum": ["sequential", "frozen_normal_snapshot"]
+    },
+    "setup_actions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["action", "count", "offset_minutes"],
+        "properties": {
+          "action": {
+            "type": "string",
+            "enum": [
+              "failed_login", "successful_login", "open_session",
+              "add_passkey", "change_permission", "confirm_incident"
+            ]
+          },
+          "count": {"type": "integer", "minimum": 1, "maximum": 100},
+          "offset_minutes": {"type": "integer", "minimum": 1, "maximum": 525600},
+          "subsystem_key": {"enum": [null, "dorm", "library"]}
+        }
+      }
+    }
   }
 }
