@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "profiles": {
+    "student_01": {"user_id": "00000000-0000-0000-0000-000000000001", "email": "student01@example.invalid"},
+    "student_02": {"user_id": "00000000-0000-0000-0000-000000000002", "email": "student02@example.invalid"},
+    "student_03": {"user_id": "00000000-0000-0000-0000-000000000003", "email": "student03@example.invalid"},
+    "student_04": {"user_id": "00000000-0000-0000-0000-000000000004", "email": "student04@example.invalid"},
+    "student_05": {"user_id": "00000000-0000-0000-0000-000000000005", "email": "student05@example.invalid"},
+    "student_06": {"user_id": "00000000-0000-0000-0000-000000000006", "email": "student06@example.invalid"},
+    "teacher_library_owner": {"user_id": "00000000-0000-0000-0000-000000000007", "email": "teacher01@example.invalid"},
+    "teacher_02": {"user_id": "00000000-0000-0000-0000-000000000008", "email": "teacher02@example.invalid"},
+    "staff_library_only": {"user_id": "00000000-0000-0000-0000-000000000009", "email": "staff01@example.invalid"},
+    "staff_dorm_only": {"user_id": "00000000-0000-0000-0000-000000000010", "email": "staff02@example.invalid"},
+    "admin_dorm_owner": {"user_id": "00000000-0000-0000-0000-000000000011", "email": "admin01@example.invalid"},
+    "admin_hub_only": {"user_id": "00000000-0000-0000-0000-000000000012", "email": "admin02@example.invalid"}
+  },
+  "subsystems": {
+    "dorm": {"subsystem_id": "00000000-0000-0000-0000-000000000101"},
+    "library": {"subsystem_id": "00000000-0000-0000-0000-000000000102"}
+  }
+}
