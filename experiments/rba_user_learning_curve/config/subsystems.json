@@ -4,11 +4,13 @@
   "subsystems": {
     "dorm": {
       "owner_profile_id": "admin_dorm_owner",
-      "access_policy": "all"
+      "access_policy": "all",
+      "scope": ["email", "name", "student_id"]
     },
     "library": {
       "owner_profile_id": "teacher_library_owner",
       "access_policy": "attribute",
+      "scope": ["email", "name", "student_id", "faculty"],
       "access_policy_config": {
         "faculty": ["วิศวกรรมศาสตร์", "วิศวกรรมศาตร์"]
       }
