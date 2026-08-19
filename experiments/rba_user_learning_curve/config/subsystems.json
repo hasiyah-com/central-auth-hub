@@ -1,0 +1,17 @@
+{
+  "version": 2,
+  "identity_mode": "profile_alias",
+  "subsystems": {
+    "dorm": {
+      "owner_profile_id": "admin_dorm_owner",
+      "access_policy": "all"
+    },
+    "library": {
+      "owner_profile_id": "teacher_library_owner",
+      "access_policy": "attribute",
+      "access_policy_config": {
+        "faculty": ["วิศวกรรมศาสตร์", "วิศวกรรมศาตร์"]
+      }
+    }
+  }
+}
