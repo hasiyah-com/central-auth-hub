@@ -16,6 +16,7 @@ from .contracts import (
 from .generator import generate_run, write_run
 from .feature_store import build_feature_snapshots, load_run_store
 from .results import feature_ready_result, upsert_combined_result
+from .evaluator import evaluate_run
 
 __all__ = [
     "CONFIG_DIR",
@@ -35,4 +36,5 @@ __all__ = [
     "load_run_store",
     "feature_ready_result",
     "upsert_combined_result",
+    "evaluate_run",
 ]
