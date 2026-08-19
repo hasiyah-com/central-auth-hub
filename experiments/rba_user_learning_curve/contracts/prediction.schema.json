@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://central-auth-hub.local/schemas/rba-prediction-v1.json",
+  "title": "RBA Experiment Prediction",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "run_id", "model_id", "dataset_size", "seed", "event_id", "profile_id",
+    "user_type", "split", "scenario", "label", "iforest_raw_score",
+    "iforest_contribution", "rule_score", "behavior_score",
+    "total_risk_score", "final_decision", "detected_warn_plus",
+    "detected_challenge_plus", "risk_reasons"
+  ],
+  "properties": {
+    "run_id": {"type": "string"},
+    "model_id": {"type": "string"},
+    "dataset_size": {"type": "integer"},
+    "seed": {"type": "integer"},
+    "event_id": {"type": "string", "format": "uuid"},
+    "profile_id": {"type": "string", "pattern": "^[a-z][a-z0-9_]+$"},
+    "user_type": {"type": "string", "enum": ["student", "teacher", "staff", "admin"]},
+    "split": {"type": "string"},
+    "scenario": {"type": "string"},
+    "label": {"type": "integer", "enum": [0, 1]},
+    "iforest_raw_score": {"type": "number", "minimum": 0, "maximum": 1},
+    "iforest_contribution": {"type": "number", "minimum": 0, "maximum": 0.4},
+    "rule_score": {"type": "number", "minimum": 0, "maximum": 1},
+    "behavior_score": {"type": "number", "minimum": 0, "maximum": 1},
+    "total_risk_score": {"type": "number", "minimum": 0, "maximum": 1},
+    "final_decision": {"type": "string", "enum": ["allow", "warn", "challenge", "block", "would_warn", "would_challenge", "would_block", "mfa_passed"]},
+    "detected_warn_plus": {"type": "boolean"},
+    "detected_challenge_plus": {"type": "boolean"},
+    "risk_reasons": {"type": "array", "items": {"type": "string"}}
+  }
+}
