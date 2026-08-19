@@ -12,7 +12,7 @@ import secrets
 
 import httpx
 from authlib.integrations.starlette_client import OAuth, OAuthError
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import or_
@@ -52,6 +52,62 @@ from app.services import mfa_policy
 from app.redis_client import redis_client
 
 router = APIRouter()
+
+# ============ Frontend login code exchange (กัน token-in-URL) ============
+# แทนที่จะ redirect `/auth/callback?token=...&refresh_token=...` (token รั่วผ่าน
+# browser history / Referer / proxy/access log) → เก็บ token คู่ใน Redis ใต้ code
+# สุ่ม one-time แล้ว redirect พกเฉพาะ `?code=...` · frontend แลก code ผ่าน
+# POST /auth/frontend/exchange (getdel atomic single-use ตาม B9) → ได้ token คืน
+# code หมดค่าทันทีหลังใช้ + อายุสั้น → หลุดไปก็ใช้ไม่ได้
+FRONTEND_LOGIN_CODE_PREFIX = "frontend_login_code:"
+FRONTEND_LOGIN_CODE_TTL_SECONDS = 60
+
+
+def mint_frontend_login_code(*, access_token: str, refresh_token: str | None) -> str:
+    """เก็บ token คู่ใน Redis ใต้ code สุ่ม → คืน code (ไม่ใส่ token ใน URL)."""
+    code = secrets.token_urlsafe(32)  # 43 อักขระ url-safe
+    payload = json.dumps(
+        {
+            "access_token": access_token,
+            "refresh_token": refresh_token,
+            "expires_in": settings.jwt_access_token_expire_minutes * 60,
+            "refresh_expires_in": settings.jwt_refresh_token_expire_days * 86400,
+        }
+    )
+    redis_client.setex(
+        f"{FRONTEND_LOGIN_CODE_PREFIX}{code}",
+        FRONTEND_LOGIN_CODE_TTL_SECONDS,
+        payload,
+    )
+    return code
+
+
+class FrontendExchangeBody(BaseModel):
+    code: str = Field(..., min_length=1, max_length=128)
+
+
+@router.post("/frontend/exchange")
+def frontend_exchange(body: FrontendExchangeBody, response: Response):
+    """แลก one-time login code → token คู่ (ย้าย token ออกจาก URL).
+
+    - getdel = atomic single-use → replay/ไม่รู้จัก/หมดอายุ = 400
+    - payload เสีย = 400
+    - redis ล่ม = 503 (fail closed — ไม่ปล่อยผ่านโดยไม่มี token)
+    """
+    key = f"{FRONTEND_LOGIN_CODE_PREFIX}{body.code}"
+    try:
+        raw = redis_client.getdel(key)
+    except Exception:
+        raise HTTPException(status_code=503, detail="ระบบไม่พร้อมชั่วคราว กรุณาลองใหม่")
+    if not raw:
+        raise HTTPException(status_code=400, detail="โค้ดเข้าสู่ระบบถูกใช้แล้วหรือหมดอายุ")
+    try:
+        data = json.loads(raw)
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=400, detail="โค้ดเข้าสู่ระบบไม่ถูกต้อง")
+    response.headers["Cache-Control"] = "no-store"
+    return data
+
 
 # ============ ตั้งค่า OAuth client (Authlib) ============
 oauth = OAuth()
@@ -638,9 +694,11 @@ async def google_callback(request: Request, db: Session = Depends(get_db)):
     # ใช้ query ?api=1 ถ้าต้องการ JSON response สำหรับ API client / curl test
     wants_json = request.query_params.get("api") == "1"
     if settings.admin_frontend_url and not wants_json:
+        code = mint_frontend_login_code(
+            access_token=access_token, refresh_token=refresh_token
+        )
         return RedirectResponse(
-            f"{settings.admin_frontend_url}/auth/callback"
-            f"?token={access_token}&refresh_token={refresh_token}",
+            f"{settings.admin_frontend_url}/auth/callback?code={code}",
             status_code=302,
         )
 
@@ -1147,9 +1205,11 @@ async def line_callback(request: Request, db: Session = Depends(get_db)):
     # ใช้ query ?api=1 ถ้าต้องการ JSON response สำหรับ API client / curl test
     wants_json = request.query_params.get("api") == "1"
     if settings.admin_frontend_url and not wants_json:
+        code = mint_frontend_login_code(
+            access_token=access_token, refresh_token=refresh_token
+        )
         return RedirectResponse(
-            f"{settings.admin_frontend_url}/auth/callback"
-            f"?token={access_token}&refresh_token={refresh_token}",
+            f"{settings.admin_frontend_url}/auth/callback?code={code}",
             status_code=302,
         )
 
