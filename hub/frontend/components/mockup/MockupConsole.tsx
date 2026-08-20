@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { usePathname } from "next/navigation";
 
 export const MOCKUP_SCREENS: Record<string, { label: string; endpoint?: string }> = {
+  login: { label: "เข้าสู่ระบบ / Login" },
   dashboard: { label: "ภาพรวม / Dashboard", endpoint: "/api/proxy/admin/overview" },
   users: { label: "ผู้ใช้งาน / Users", endpoint: "/api/proxy/admin/users/?limit=200" },
   "user-detail": { label: "รายละเอียดผู้ใช้ / User Detail", endpoint: "/api/proxy/admin/users/?limit=1" },
@@ -47,6 +48,7 @@ function text(value: unknown): string {
 }
 
 export function MockupConsole({ screen }: { screen: string }) {
+  if (screen === "login") return <LoginMockup />;
   const config = MOCKUP_SCREENS[screen];
   const [data, setData] = useState<Json>(null);
   const [loading, setLoading] = useState(Boolean(config.endpoint));
@@ -86,6 +88,32 @@ export function MockupConsole({ screen }: { screen: string }) {
         </div>
       </div>
     </div>
+  );
+}
+
+function LoginMockup() {
+  return (
+    <main className="grid min-h-screen bg-white lg:grid-cols-2">
+      <section className="relative hidden overflow-hidden bg-[#061a43] p-16 text-white lg:flex lg:flex-col lg:justify-center">
+        <div className="absolute inset-0 opacity-20 [background-image:radial-gradient(circle_at_center,#38bdf8_1px,transparent_1px)] [background-size:38px_38px]" />
+        <div className="relative">
+          <div className="flex items-center gap-5">
+            <div className="grid h-24 w-24 place-items-center rounded-[28px] border-2 border-cyan-300 bg-blue-600/30 text-4xl font-black">H</div>
+            <div><h1 className="text-4xl font-black">Central Auth Hub</h1><p className="mt-2 text-lg text-slate-300">ระบบจัดการตัวตนและสิทธิ์แบบศูนย์กลาง<br />Identity & Access Management</p></div>
+          </div>
+          <div className="mt-14 space-y-6 text-lg"><p>✓ เข้าสู่ระบบครั้งเดียว / Centralized Login</p><p>✓ ปกป้องด้วย PKCE / Protected by PKCE</p><p>✓ ตรวจจับความเสี่ยง / Risk Detection</p></div>
+        </div>
+      </section>
+      <section className="grid place-items-center p-8">
+        <div className="w-full max-w-xl rounded-3xl border bg-white p-10 shadow-xl">
+          <h2 className="text-center text-3xl font-black">ยินดีต้อนรับ / Welcome Back</h2>
+          <p className="mt-4 text-center text-slate-500">เข้าสู่ระบบด้วยบัญชีมหาวิทยาลัย</p>
+          <Link href="/auth/login" className="mt-10 flex w-full items-center justify-center gap-3 rounded-xl bg-blue-600 px-5 py-4 font-bold text-white hover:bg-blue-700"><span className="grid h-8 w-8 place-items-center rounded-full bg-white font-black text-blue-600">G</span>เข้าสู่ระบบด้วย Google / Continue with Google</Link>
+          <div className="mt-8 text-center text-sm text-slate-400">OAuth 2.0 • OIDC • PKCE</div>
+          <Notice tone="amber">หน้า Mockup ใช้ปุ่มเข้าสู่ระบบเดิมของระบบจริง และไม่จำลอง token หรือ session</Notice>
+        </div>
+      </section>
+    </main>
   );
 }
 
