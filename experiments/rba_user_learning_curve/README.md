@@ -150,3 +150,30 @@ This phase contains configuration, JSON Schemas, mapping preflight, the
 deterministic raw-event generator, isolated SQLite loading, point-in-time
 23-feature extraction, production-shaped Isolation Forest training, four-layer
 evaluation, combined-result upsert, and validation tests.
+
+## Feature Contract V2 experiment
+
+The V2 runner is an isolated follow-up; it does not replace the production-
+shaped V1 replay or train a production model. It adds varied normal timing,
+browser-version drift, session duration, benign retries, and rare benign
+overlap while preserving the 12 alias profiles, fixed `192.168.10.1` private
+IP, no Geo, chronological 80:20 split, five seeds, and frozen attacks.
+
+```bash
+python experiments/rba_user_learning_curve/scripts/run_feature_contract_v2.py
+```
+
+It writes one combined result set under
+`results/feature_contract_v2/` for six stages: diverse V1, disjoint V2, full
+V2, Rule-only, Behavior-only, and ML-only. Feature ownership is exclusive at
+the scored-feature level:
+
+- Rule: deterministic security and policy facts.
+- Behavior: user-relative rarity and sequence deviation from trusted normal
+  history.
+- ML: continuous residual and multivariate features only.
+
+The reportable metrics include standard challenge recall/FPR, warn/block FPR,
+ROC-AUC, PR-AUC, and severity-aware policy success. Contextual off-hours and OS
+changes require at least a warning; combined ATO requires a block; the other
+simulations require challenge or block.
