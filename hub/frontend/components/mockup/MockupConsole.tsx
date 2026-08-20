@@ -6,15 +6,15 @@ import { usePathname } from "next/navigation";
 
 export const MOCKUP_SCREENS: Record<string, { label: string; endpoint?: string }> = {
   dashboard: { label: "ภาพรวม / Dashboard", endpoint: "/api/proxy/admin/overview" },
-  users: { label: "ผู้ใช้งาน / Users", endpoint: "/api/proxy/admin/users" },
-  "user-detail": { label: "รายละเอียดผู้ใช้ / User Detail", endpoint: "/api/proxy/admin/users" },
+  users: { label: "ผู้ใช้งาน / Users", endpoint: "/api/proxy/admin/users/?limit=200" },
+  "user-detail": { label: "รายละเอียดผู้ใช้ / User Detail", endpoint: "/api/proxy/admin/users/?limit=1" },
   subsystems: { label: "ระบบย่อย / Subsystems", endpoint: "/api/proxy/admin/subsystems" },
   "subsystem-detail": { label: "รายละเอียดระบบ / Subsystem Detail", endpoint: "/api/proxy/admin/subsystems" },
-  requests: { label: "คำขอสิทธิ์ / Access Requests", endpoint: "/api/proxy/admin/access-requests" },
+  requests: { label: "คำขอสิทธิ์ / Access Requests", endpoint: "/api/proxy/admin/change-requests?status=pending&limit=100" },
   permissions: { label: "สิทธิ์และขอบเขต / Permissions", endpoint: "/api/proxy/admin/subsystems" },
-  risk: { label: "ความเสี่ยง / Risk & Security", endpoint: "/api/proxy/admin/ml/anomalies" },
-  "risk-detail": { label: "รายละเอียดความเสี่ยง / Risk Detail", endpoint: "/api/proxy/admin/ml/anomalies" },
-  audit: { label: "บันทึกกิจกรรม / Audit Logs", endpoint: "/api/proxy/admin/audit-logs" },
+  risk: { label: "ความเสี่ยง / Risk & Security", endpoint: "/api/proxy/admin/ml/overview?days=7&sort=recent&limit=50" },
+  "risk-detail": { label: "รายละเอียดความเสี่ยง / Risk Detail", endpoint: "/api/proxy/admin/ml/overview?days=7&sort=score&limit=1" },
+  audit: { label: "บันทึกกิจกรรม / Audit Logs", endpoint: "/api/proxy/admin/audit?skip=0&limit=50" },
   settings: { label: "ตั้งค่า / Settings" },
 };
 
@@ -28,6 +28,13 @@ function rowsFrom(value: Json): Record<string, unknown>[] {
   for (const key of ["items", "users", "subsystems", "requests", "logs", "events", "anomalies", "results", "data"]) {
     const candidate = (value as Record<string, unknown>)[key];
     if (Array.isArray(candidate)) return candidate.filter((x): x is Record<string, unknown> => !!x && typeof x === "object");
+  }
+  const nestedData = (value as Record<string, unknown>).data;
+  if (nestedData && typeof nestedData === "object" && !Array.isArray(nestedData)) {
+    for (const key of ["top_anomalies", "items", "events"]) {
+      const candidate = (nestedData as Record<string, unknown>)[key];
+      if (Array.isArray(candidate)) return candidate.filter((x): x is Record<string, unknown> => !!x && typeof x === "object");
+    }
   }
   return [];
 }
