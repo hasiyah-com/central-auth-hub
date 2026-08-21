@@ -37,7 +37,7 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.database import get_db
 from app.deps import get_client_ip, get_current_user, require_developer
-from app.models import AccessList, LoginSession, User
+from app.models import LoginSession, Subsystem, User
 from app.rate_limiter import limiter
 from app.redis_client import redis_client
 from app.services import (
@@ -48,6 +48,7 @@ from app.services import (
     totp_service,
     webauthn_service,
 )
+from app.services.access_policy import evaluate_access_policy
 from app.services.audit_service import log_action
 from app.services.auth_policy import get_auth_policy
 from app.services.critical_action_policy import _bearer, _extract_jti, gate
@@ -1349,16 +1350,30 @@ def _finalize_after_reauth(
             raise HTTPException(
                 status_code=410, detail="OAuth session หมดอายุ — login ใหม่"
             )
-        access = (
-            db.query(AccessList)
-            .filter(
-                AccessList.user_id == user.id,
-                AccessList.subsystem_id == authreq["subsystem_id"],
-                AccessList.revoked_at.is_(None),
-            )
-            .first()
+        # เช็คสิทธิ์ด้วย policy engine ตัวเดียวกับ OAuth entry (_check_access_policy_or_raise)
+        # — honor ทุก policy (all/role/attribute/explicit + deny-list). เดิมใช้ raw AccessList
+        # lookup ต้องมี allow row → subsystem policy ที่ไม่มี row (all/role/attribute) โดน 403
+        # ผิดทั้งที่มีสิทธิ์ (user ผ่านด่านแรกมาแล้ว แต่มาโดนเด้งตอน finalize passkey) — B59
+        subsystem_obj = (
+            db.query(Subsystem).filter(Subsystem.id == authreq["subsystem_id"]).first()
         )
-        if not access:
+        allowed, policy_reason = evaluate_access_policy(db, user, subsystem_obj)
+        if not allowed:
+            log_action(
+                db,
+                actor_id=user.id,
+                action="oauth_login_failed_access_policy",
+                target_type="subsystem",
+                target_id=authreq["subsystem_id"],
+                ip=client_ip,
+                metadata={
+                    "email": user.email,
+                    "client_id": authreq["client_id"],
+                    "reason": policy_reason,
+                    "stage": "passkey_finalize",
+                },
+            )
+            db.commit()
             raise HTTPException(status_code=403, detail="ไม่มีสิทธิ์เข้า subsystem นี้")
 
         auth_code = secrets.token_urlsafe(32)
@@ -1373,7 +1388,7 @@ def _finalize_after_reauth(
                     "subsystem_id": authreq["subsystem_id"],
                     "code_challenge": authreq["code_challenge"],
                     "scope": authreq["scope"],
-                    "role_in_sub": access.role_in_sub,
+                    "role_in_sub": user.user_type,
                 }
             ),
         )
