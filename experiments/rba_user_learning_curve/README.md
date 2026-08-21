@@ -177,3 +177,105 @@ The reportable metrics include standard challenge recall/FPR, warn/block FPR,
 ROC-AUC, PR-AUC, and severity-aware policy success. Contextual off-hours and OS
 changes require at least a warning; combined ATO requires a block; the other
 simulations require challenge or block.
+
+## Production-readiness V3 experiment
+
+V3 is the next isolated shadow-readiness phase. It does not replace the
+production model or enable enforcement. It adds near-threshold and unknown-
+pattern attacks, cohort fallback for low-confidence personal profiles, a
+subsystem transition graph, active-session provenance, an executable trusted-
+history allowlist, and machine-readable release gates.
+
+```bash
+python experiments/rba_user_learning_curve/scripts/run_production_readiness_v3.py
+```
+
+Outputs are written under `results/production_readiness_v3/`. The
+`release_gate.json` file evaluates normal friction, known-attack policy,
+evasive recall, cold start, lateral movement, and NAT robustness. Even when
+all synthetic shadow gates pass, `ready_for_enforcement` remains `false` until
+an anonymized production-log replay and a controlled canary are completed.
+
+## Adversarial V4 experiment
+
+V4 tests the failure mode that an event-by-event benchmark misses: a malicious
+objective can be split across several individually ordinary-looking sessions.
+The generator creates six held-out, four-phase campaigns: behavioral mimicry,
+slow credential probing, session replay, gradual exfiltration, distributed
+lateral drift through permitted subsystems, and attempted profile poisoning.
+Every phase reuses a trusted device/UA/OS, stays within the user's subsystem
+permissions, and remains below the deterministic Rule action floors.
+Lateral-drift campaigns are created only for profiles that are legitimately
+authorized for at least two subsystems; the generator does not invent an
+impossible cross-system objective for single-subsystem or hub-only users.
+
+```bash
+python experiments/rba_user_learning_curve/scripts/run_adversarial_v4.py
+```
+
+Outputs are written under `results/adversarial_v4/`. The benchmark compares
+the frozen event-oriented V3 scorer with a V4 evidence ledger that has separate
+short- and long-window decay. Results include event recall, any-phase sequence
+detection, detection before the objective phase, objective-phase detection,
+median phase-to-detect, normal Challenge/Warn FPR, NAT scenario gap, attack
+mimicry distance, and rejection of flagged profile-poisoning rows.
+
+This is a red-team benchmark, not a claim of production readiness. Attack
+seeds are held out from the normal generator, attacks never update the frozen
+trusted profile, and only `allow` or `mfa_passed` decisions may update trusted
+history. `release_gate.json` can permit adversarial shadow evaluation but can
+never enable enforcement.
+
+## Sequence model V5 experiment
+
+V5 replaces the V4 additive evidence prototype with a normal-only one-class
+sequence model. It learns rolling four-event derivatives such as cadence,
+credential accumulation, session-duration trend, scope growth, browser-version
+drift, and subsystem switching. Thresholds are calibrated exclusively from a
+held-out normal subset; attack rows and attack labels are never used to select
+the boundary.
+
+```bash
+python experiments/rba_user_learning_curve/scripts/run_sequence_model_v5.py
+```
+
+The output under `results/sequence_model_v5/` includes per-run and aggregate
+metrics, per-attack sequence metrics, prediction scores for ROC/PR analysis,
+the executable sequence contract, and a machine-readable integration gate.
+Passing that gate permits only isolated shadow integration. Enforcement stays
+disabled until anonymized production replay, serialization/latency validation,
+monitoring, rollback, and a controlled canary are complete.
+
+## Supervised sequence V6 experiment
+
+V6 keeps the V3 event scorer and adds a supervised Random Forest over the V5
+rolling sequence features. Synthetic campaigns are separated into three seed
+partitions: fitting, threshold calibration, and final test. The final test
+labels never select the threshold. Threshold calibration is constrained to at
+most 0.3% normal Challenge FPR.
+
+```bash
+python experiments/rba_user_learning_curve/scripts/run_supervised_sequence_v6.py
+```
+
+The `release_gate.json` output can approve isolated system integration in
+shadow mode only. It checks normal friction, per-family minimum detection,
+pre-objective detection, cold start, NAT robustness, poisoning resistance,
+and validation FPR. Enforcement is always false in the experiment contract.
+
+## Deployable shadow bundle V7
+
+V7 packages the V6 classifier, robust scaling parameters, threshold, exact
+feature order, and enforcement-disabled flag into a loadable joblib bundle. A
+self-contained runtime validates the four-event payload contract and emits only
+`observe` or `would_challenge`; it cannot enforce a decision.
+
+```bash
+python experiments/rba_user_learning_curve/scripts/export_shadow_bundle_v7.py
+```
+
+The V7 gate requires the V6 synthetic gate, exact serialization parity,
+feature-contract equality, bundle SHA-256, p95/p99 single-score latency, and a
+runtime proof that enforcement remains disabled. Passing permits loading the
+candidate in the system's shadow path only. The bundle remains a synthetic
+candidate until anonymized production replay and controlled canary approval.

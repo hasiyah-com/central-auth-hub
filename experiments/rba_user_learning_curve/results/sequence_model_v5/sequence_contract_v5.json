@@ -1,0 +1,32 @@
+{
+  "version": 5,
+  "mode": "isolated_sequence_model_shadow",
+  "fixed_ip": "192.168.10.1",
+  "geo": null,
+  "normal_train_fraction": 0.8,
+  "normal_fit_fraction_within_train": 0.75,
+  "window_size": 4,
+  "training_labels": "trusted normal only",
+  "attack_threshold_tuning": false,
+  "attack_seed_offset": 50000,
+  "sequence_features": [
+    "gap_log_mean",
+    "gap_log_range",
+    "rapid_gap_count",
+    "failed_sum",
+    "success_sum",
+    "concurrent_sum",
+    "duration_log_slope",
+    "duration_log_range",
+    "scope_slope",
+    "scope_duration_growth",
+    "browser_version_slope",
+    "subsystem_switch_rate",
+    "hour_circular_spread"
+  ],
+  "trusted_decisions": [
+    "allow",
+    "mfa_passed"
+  ],
+  "ready_for_enforcement": false
+}

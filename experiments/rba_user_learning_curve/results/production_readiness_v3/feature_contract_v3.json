@@ -1,0 +1,77 @@
+{
+  "version": 3,
+  "mode": "isolated_shadow_readiness",
+  "fixed_ip": "192.168.10.1",
+  "geo": null,
+  "train_fraction": 0.8,
+  "trusted_decisions": [
+    "allow",
+    "mfa_passed"
+  ],
+  "admin_normal_decision": "mfa_passed",
+  "known_attacks": [
+    "attack_new_device",
+    "attack_new_ua_family",
+    "attack_new_os",
+    "attack_off_hours",
+    "attack_failed_spike",
+    "attack_login_velocity",
+    "attack_concurrent_sessions",
+    "attack_subsystem_lateral",
+    "attack_new_passkey",
+    "attack_permission_change",
+    "attack_combined_ato"
+  ],
+  "evasive_attacks": [
+    "attack_failed_near_threshold",
+    "attack_velocity_near_threshold",
+    "attack_concurrent_near_threshold",
+    "attack_session_exfiltration",
+    "attack_lateral_known_path",
+    "attack_low_slow_ato"
+  ],
+  "rule_features": [
+    "new_device_fact",
+    "new_ua_family_fact",
+    "failed_threshold_hit",
+    "velocity_threshold_hit",
+    "concurrent_threshold_hit",
+    "multi_subsystem_fact",
+    "new_passkey_fact",
+    "recent_permission_fact",
+    "confirmed_incident_fact",
+    "subsystem_policy_violation",
+    "active_session_provenance"
+  ],
+  "behavior_features": [
+    "hour_rarity",
+    "weekday_rarity",
+    "subsystem_rarity",
+    "transition_surprise",
+    "cadence_tail_probability",
+    "cohort_hour_rarity",
+    "os_rarity",
+    "cohort_os_rarity",
+    "transition_graph_risk"
+  ],
+  "ml_features": [
+    "hour_sin_residual",
+    "hour_cos_residual",
+    "log_minutes_since_last",
+    "login_count_7d",
+    "session_duration_minutes",
+    "device_switch_rate_7d",
+    "subsystem_entropy_30",
+    "scope_sensitivity",
+    "passkey_usage_gap_days",
+    "duration_log_residual",
+    "cohort_duration_log_residual",
+    "scope_duration_interaction",
+    "failed_count_residual",
+    "success_count_residual",
+    "concurrent_count_residual",
+    "permission_recency_residual",
+    "browser_version_residual"
+  ],
+  "overlap": []
+}

@@ -1,0 +1,25 @@
+{
+  "ready_for_production_shadow": true,
+  "ready_for_enforcement": false,
+  "checks": {
+    "challenge_fpr_le_0_003": true,
+    "warn_fpr_le_0_01": true,
+    "known_policy_ge_0_90": true,
+    "evasive_recall_ge_0_70": true,
+    "cold_start_policy_ge_0_90": true,
+    "lateral_policy_ge_0_90": true,
+    "nat_recall_gap_le_0_02": true,
+    "trusted_history_allowlist": true,
+    "admin_always_mfa": true
+  },
+  "observed": {
+    "challenge_fpr": 0.0012694444444444444,
+    "warn_fpr": 0.004820833333333334,
+    "known_policy_success": 0.9916666666666667,
+    "evasive_challenge_recall": 0.9662037037037038,
+    "cold_start_policy_success": 0.9262820512820511,
+    "lateral_policy_success": 1.0,
+    "nat_recall_gap": 0.0017094017094017033
+  },
+  "note": "Synthetic gates permit shadow evaluation only; anonymized production replay is still required."
+}

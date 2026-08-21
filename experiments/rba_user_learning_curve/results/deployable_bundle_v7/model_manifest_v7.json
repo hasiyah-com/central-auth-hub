@@ -1,0 +1,8 @@
+{
+  "files": {
+    "sequence_model_v7.joblib": "656e4ca05e8b11efde962ad9714ef5c0c519169154105eb58cf4cbaeafdeab78",
+    "runtime_contract_v7.json": "56657866387499994ebeaad8669a7f66112fb79f8f40fe542ae8afbc9f252235",
+    "serialization_parity.json": "65235bacedea2df0e7de130063341568b39f0e207b1cf0d6f400a3f972aa0390",
+    "latency_results.csv": "0874482fe65e9db1357bf8558ca526f3fdac38665775db61aab44c336a96cad3"
+  }
+}

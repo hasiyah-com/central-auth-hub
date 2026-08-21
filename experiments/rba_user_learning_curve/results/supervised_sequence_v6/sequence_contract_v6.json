@@ -1,0 +1,43 @@
+{
+  "version": 6,
+  "mode": "isolated_supervised_sequence_shadow",
+  "fixed_ip": "192.168.10.1",
+  "geo": null,
+  "window_size": 4,
+  "sequence_features": [
+    "gap_log_mean",
+    "gap_log_range",
+    "rapid_gap_count",
+    "failed_sum",
+    "success_sum",
+    "concurrent_sum",
+    "duration_log_slope",
+    "duration_log_range",
+    "scope_slope",
+    "scope_duration_growth",
+    "browser_version_slope",
+    "subsystem_switch_rate",
+    "hour_circular_spread"
+  ],
+  "classifier": "RandomForestClassifier",
+  "train_attack_seed_offset": 10000,
+  "calibration_attack_seed_offset": 20000,
+  "test_attack_seed_offset": 50000,
+  "normal_calibration_seed_offsets": [
+    1000,
+    2000,
+    3000
+  ],
+  "normal_train_seed_offsets": [
+    100,
+    200,
+    300
+  ],
+  "calibration_fpr_target": 0.001,
+  "test_labels_select_threshold": false,
+  "trusted_decisions": [
+    "allow",
+    "mfa_passed"
+  ],
+  "ready_for_enforcement": false
+}

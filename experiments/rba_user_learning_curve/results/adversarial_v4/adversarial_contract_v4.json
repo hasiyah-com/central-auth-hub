@@ -1,0 +1,37 @@
+{
+  "version": 4,
+  "mode": "isolated_adversarial_shadow",
+  "fixed_ip": "192.168.10.1",
+  "geo": null,
+  "train_fraction": 0.8,
+  "stages": [
+    "hardened_v3_event",
+    "sequence_v4"
+  ],
+  "attack_sequences": [
+    "stealth_mimicry_ato",
+    "slow_credential_probe",
+    "session_replay_chain",
+    "gradual_exfiltration",
+    "distributed_lateral_drift",
+    "profile_poisoning_chain"
+  ],
+  "lateral_eligibility": "at least two allowed subsystems",
+  "phases_per_sequence": 4,
+  "attack_seed_offset": 50000,
+  "trusted_decisions": [
+    "allow",
+    "mfa_passed"
+  ],
+  "profile_update_policy": "only allow and mfa_passed update trusted history",
+  "deterministic_floor_constraints": {
+    "new_device": 0,
+    "new_ua_family": 0,
+    "failed_1h_max": 2,
+    "success_10m_max": 4,
+    "concurrent_sessions_max": 1,
+    "active_subsystems_max": 1,
+    "new_passkey": 0,
+    "confirmed_incident": 0
+  }
+}

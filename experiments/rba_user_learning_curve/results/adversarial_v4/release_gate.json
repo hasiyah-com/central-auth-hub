@@ -1,0 +1,29 @@
+{
+  "ready_for_adversarial_shadow": false,
+  "ready_for_enforcement": false,
+  "checks": {
+    "challenge_fpr_le_0_003": false,
+    "warn_fpr_le_0_01": false,
+    "sequence_detection_ge_0_90": false,
+    "preobjective_detection_ge_0_70": false,
+    "median_time_to_detect_le_2": false,
+    "cold_sequence_detection_ge_0_85": false,
+    "nat_detection_gap_le_0_02": false,
+    "flagged_poison_rejection_eq_1": true,
+    "trusted_history_allowlist": true
+  },
+  "observed": {
+    "event_challenge_recall": 0.07291666666666667,
+    "sequence_detection_rate": 0.21397058823529408,
+    "preobjective_detection_rate": 0.07990196078431375,
+    "objective_detection_rate": 0.20857843137254897,
+    "median_time_to_detect_phase": 5.0,
+    "challenge_fpr": 0.05410833333333334,
+    "warn_fpr": 0.057627777777777785,
+    "cold_sequence_detection_rate": 0.1970588235294118,
+    "nat_detection_gap": 0.0338235294117647,
+    "mean_attack_mimicry_distance": 0.30930093054075575,
+    "flagged_poison_rejection_rate": 1.0
+  },
+  "note": "Synthetic adversarial gates permit shadow evaluation only; production replay and canary remain mandatory."
+}

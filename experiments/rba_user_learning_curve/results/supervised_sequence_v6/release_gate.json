@@ -1,0 +1,37 @@
+{
+  "ready_for_system_integration_shadow": true,
+  "ready_for_enforcement": false,
+  "checks": {
+    "challenge_fpr_le_0_003": true,
+    "warn_fpr_le_0_01": true,
+    "sequence_detection_ge_0_90": true,
+    "minimum_attack_family_detection_ge_0_80": true,
+    "preobjective_detection_ge_0_70": true,
+    "median_time_to_detect_le_2": true,
+    "cold_sequence_detection_ge_0_85": true,
+    "nat_detection_gap_le_0_02": true,
+    "flagged_poison_rejection_eq_1": true,
+    "validation_fpr_le_0_001": true
+  },
+  "observed": {
+    "precision": 0.9779741681305577,
+    "event_challenge_recall": 0.9090073529411764,
+    "f1": 0.9416309446611693,
+    "roc_auc": 0.9975360957924837,
+    "pr_auc": 0.9888341302768358,
+    "challenge_fpr": 0.0025166666666666666,
+    "warn_fpr": 0.006068055555555555,
+    "sequence_detection_rate": 0.9995098039215686,
+    "minimum_attack_family_detection": 0.9972222222222222,
+    "preobjective_detection_rate": 0.9985294117647058,
+    "objective_detection_rate": 0.9879901960784314,
+    "median_time_to_detect_phase": 1.0,
+    "cold_sequence_detection_rate": 1.0,
+    "nat_detection_gap": 0.0009803921568628526,
+    "flagged_poison_rejection_rate": 1.0,
+    "validation_fpr": 0.0007873207550652598,
+    "validation_sequence_detection": 0.9995098039215686,
+    "validation_preobjective_detection": 0.9985294117647058
+  },
+  "note": "Passing permits isolated shadow integration only. Anonymized production replay, latency/serialization validation, monitoring, rollback, and canary are mandatory before enforcement."
+}

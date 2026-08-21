@@ -1,0 +1,37 @@
+{
+  "version": 7,
+  "runtime_version": "7.0.0-shadow",
+  "mode": "shadow_only",
+  "window_size": 4,
+  "required_event_fields": [
+    "browser_version",
+    "concurrent_sessions",
+    "failed_1h",
+    "scope_sensitivity",
+    "session_duration",
+    "subsystem",
+    "success_10m",
+    "timestamp"
+  ],
+  "sequence_features": [
+    "gap_log_mean",
+    "gap_log_range",
+    "rapid_gap_count",
+    "failed_sum",
+    "success_sum",
+    "concurrent_sum",
+    "duration_log_slope",
+    "duration_log_range",
+    "scope_slope",
+    "scope_duration_growth",
+    "browser_version_slope",
+    "subsystem_switch_rate",
+    "hour_circular_spread"
+  ],
+  "challenge_threshold": 0.5824263629602476,
+  "bundle_sha256": "656e4ca05e8b11efde962ad9714ef5c0c519169154105eb58cf4cbaeafdeab78",
+  "enforcement_enabled": false,
+  "training_dataset_size": 5000,
+  "training_seed": 42,
+  "training_scenario": "normal_staggered"
+}
