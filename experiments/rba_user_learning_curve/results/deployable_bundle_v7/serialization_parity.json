@@ -1,6 +1,6 @@
 {
   "sample_count": 24,
-  "max_absolute_error": 2.220446049250313e-16,
-  "mean_absolute_error": 3.700743415417188e-17,
+  "max_absolute_error": 1.6653345369377348e-15,
+  "mean_absolute_error": 5.767955557622884e-16,
   "passed": true
 }

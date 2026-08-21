@@ -1,5 +1,10 @@
 #!/usr/bin/env python3
-"""Self-contained runtime for the V7 RBA sequence shadow bundle."""
+"""Self-contained runtime for the portable V7 RBA shadow bundle.
+
+The shipped artifact deliberately contains no scikit-learn estimator.  This
+keeps request-path inference independent from the scikit-learn version used to
+train the forest.
+"""
 
 from __future__ import annotations
 
@@ -39,6 +44,7 @@ REQUIRED_EVENT_FIELDS = frozenset(
         "subsystem",
     }
 )
+PORTABLE_MODEL_FORMAT = "portable-random-forest-v1"
 
 
 def _timestamp(value: Any) -> datetime:
@@ -99,6 +105,45 @@ def sequence_features(events: list[dict[str, Any]]) -> dict[str, float]:
     }
 
 
+def _validate_portable_forest(forest: Any) -> None:
+    if not isinstance(forest, dict) or not isinstance(forest.get("trees"), list):
+        raise ValueError("bundle does not contain a portable random forest")
+    if not forest["trees"]:
+        raise ValueError("portable random forest contains no trees")
+    required = {
+        "children_left",
+        "children_right",
+        "feature",
+        "threshold",
+        "probability_class_1",
+    }
+    for index, tree in enumerate(forest["trees"]):
+        if not isinstance(tree, dict) or required - set(tree):
+            raise ValueError(f"portable tree {index} is incomplete")
+        lengths = {len(tree[name]) for name in required}
+        if len(lengths) != 1 or next(iter(lengths)) == 0:
+            raise ValueError(f"portable tree {index} has inconsistent arrays")
+
+
+def _portable_probability(forest: dict[str, Any], row: list[float]) -> float:
+    # sklearn's tree traversal casts inputs to float32 before comparing them to
+    # the stored float64 thresholds.  Matching that cast is required for exact
+    # leaf parity when a normalized feature lies extremely close to a split.
+    row = np.asarray(row, dtype=np.float32).astype(float).tolist()
+    total = 0.0
+    for tree in forest["trees"]:
+        node = 0
+        while tree["children_left"][node] != -1:
+            feature = tree["feature"][node]
+            node = (
+                tree["children_left"][node]
+                if row[feature] <= tree["threshold"][node]
+                else tree["children_right"][node]
+            )
+        total += tree["probability_class_1"][node]
+    return total / len(forest["trees"])
+
+
 class ShadowSequenceRuntime:
     """Load a signed-off experiment bundle and emit shadow labels only."""
 
@@ -108,11 +153,12 @@ class ShadowSequenceRuntime:
             raise ValueError("bundle feature contract does not match V7 runtime")
         if bundle.get("enforcement_enabled") is not False:
             raise ValueError("V7 runtime refuses enforcement-enabled bundles")
-        self.model = bundle["model"]
-        # Parallel tree traversal is useful for large offline batches but adds
-        # substantial thread-launch overhead for one login at a time.
-        if hasattr(self.model, "n_jobs"):
-            self.model.n_jobs = 1
+        if bundle.get("model_format") != PORTABLE_MODEL_FORMAT:
+            raise ValueError("V7 runtime refuses non-portable sklearn bundles")
+        if bundle.get("runtime_sklearn_required") is not False:
+            raise ValueError("portable V7 bundle must not require sklearn at runtime")
+        self.forest = bundle["portable_model"]
+        _validate_portable_forest(self.forest)
         self.median = np.asarray(bundle["median"], dtype=float)
         self.iqr = np.asarray(bundle["iqr"], dtype=float)
         self.threshold = float(bundle["challenge_threshold"])
@@ -122,7 +168,7 @@ class ShadowSequenceRuntime:
         features = sequence_features(events)
         matrix = np.asarray([[features[name] for name in SEQUENCE_FEATURES]], dtype=float)
         scaled = (matrix - self.median) / self.iqr
-        return float(self.model.predict_proba(scaled)[0, 1])
+        return float(_portable_probability(self.forest, scaled[0].tolist()))
 
     def evaluate(self, events: list[dict[str, Any]]) -> dict[str, Any]:
         probability = self.score(events)

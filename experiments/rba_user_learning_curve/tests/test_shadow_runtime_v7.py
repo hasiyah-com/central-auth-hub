@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import importlib.util
+import hashlib
+import json
 import sys
 from pathlib import Path
 
 import joblib
 import numpy as np
-from sklearn.ensemble import RandomForestClassifier
 
 
 SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "shadow_sequence_runtime_v7.py"
@@ -34,17 +35,24 @@ def _events():
 
 
 def _bundle(path: Path, enforcement=False):
-    matrix = np.asarray([[0.0] * len(MODULE.SEQUENCE_FEATURES), [1.0] * len(MODULE.SEQUENCE_FEATURES)])
-    model = RandomForestClassifier(n_estimators=4, random_state=42).fit(matrix, [0, 1])
+    tree = {
+        "children_left": [1, -1, -1],
+        "children_right": [2, -1, -1],
+        "feature": [0, -2, -2],
+        "threshold": [0.5, -2.0, -2.0],
+        "probability_class_1": [0.5, 0.1, 0.9],
+    }
     joblib.dump(
         {
             "version": "7-test",
-            "model": model,
-            "median": np.zeros(len(MODULE.SEQUENCE_FEATURES)),
-            "iqr": np.ones(len(MODULE.SEQUENCE_FEATURES)),
+            "model_format": MODULE.PORTABLE_MODEL_FORMAT,
+            "portable_model": {"n_features": len(MODULE.SEQUENCE_FEATURES), "n_classes": 2, "trees": [tree]},
+            "median": [0.0] * len(MODULE.SEQUENCE_FEATURES),
+            "iqr": [1.0] * len(MODULE.SEQUENCE_FEATURES),
             "challenge_threshold": 0.5,
             "feature_names": MODULE.SEQUENCE_FEATURES,
             "enforcement_enabled": enforcement,
+            "runtime_sklearn_required": False,
         },
         path,
     )
@@ -88,3 +96,39 @@ def test_runtime_emits_shadow_only_decision(tmp_path):
 
 def test_feature_contract_is_exact():
     assert set(MODULE.sequence_features(_events())) == set(MODULE.SEQUENCE_FEATURES)
+
+
+def test_committed_artifact_matches_manifest_and_loads():
+    root = Path(__file__).resolve().parents[1]
+    artifact_dir = root / "results" / "deployable_bundle_v7"
+    manifest = json.loads((artifact_dir / "model_manifest_v7.json").read_text())
+    for filename, expected_sha in manifest["files"].items():
+        path = artifact_dir / filename
+        assert path.stat().st_size == manifest["file_sizes"][filename]
+        assert hashlib.sha256(path.read_bytes()).hexdigest() == expected_sha
+    bundle = joblib.load(artifact_dir / "sequence_model_v7.joblib")
+    assert bundle["model_format"] == MODULE.PORTABLE_MODEL_FORMAT
+    assert bundle["runtime_sklearn_required"] is False
+    assert "model" not in bundle
+    MODULE.ShadowSequenceRuntime(artifact_dir / "sequence_model_v7.joblib")
+
+
+def test_runtime_refuses_legacy_sklearn_bundle(tmp_path):
+    path = tmp_path / "legacy.joblib"
+    joblib.dump(
+        {
+            "version": "7-legacy",
+            "model": object(),
+            "median": [0.0] * len(MODULE.SEQUENCE_FEATURES),
+            "iqr": [1.0] * len(MODULE.SEQUENCE_FEATURES),
+            "challenge_threshold": 0.5,
+            "feature_names": MODULE.SEQUENCE_FEATURES,
+            "enforcement_enabled": False,
+        },
+        path,
+    )
+    try:
+        MODULE.ShadowSequenceRuntime(path)
+    except ValueError:
+        return
+    raise AssertionError("runtime accepted a legacy sklearn pickle bundle")

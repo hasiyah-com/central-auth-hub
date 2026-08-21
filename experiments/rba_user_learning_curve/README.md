@@ -265,17 +265,21 @@ and validation FPR. Enforcement is always false in the experiment contract.
 
 ## Deployable shadow bundle V7
 
-V7 packages the V6 classifier, robust scaling parameters, threshold, exact
-feature order, and enforcement-disabled flag into a loadable joblib bundle. A
-self-contained runtime validates the four-event payload contract and emits only
-`observe` or `would_challenge`; it cannot enforce a decision.
+V7 packages the V6 forest as `portable-random-forest-v1`: primitive tree arrays,
+robust scaling parameters, threshold, exact feature order, and an
+enforcement-disabled flag.  No scikit-learn estimator is persisted, so the
+request-path runtime is independent from the scikit-learn version used for
+training.  The self-contained runtime validates the four-event payload contract
+and emits only `observe` or `would_challenge`; it cannot enforce a decision.
 
 ```bash
 python experiments/rba_user_learning_curve/scripts/export_shadow_bundle_v7.py
 ```
 
 The V7 gate requires the V6 synthetic gate, exact serialization parity,
-feature-contract equality, bundle SHA-256, p95/p99 single-score latency, and a
-runtime proof that enforcement remains disabled. Passing permits loading the
-candidate in the system's shadow path only. The bundle remains a synthetic
+feature-contract equality, bundle SHA-256, portable-model format, no runtime
+scikit-learn dependency, p95/p99 single-score latency, and a runtime proof that
+enforcement remains disabled.  The committed-artifact test also checks every
+manifest SHA/size and loads the actual shipped bundle. Passing permits loading
+the candidate in the system's shadow path only. The bundle remains a synthetic
 candidate until anonymized production replay and controlled canary approval.

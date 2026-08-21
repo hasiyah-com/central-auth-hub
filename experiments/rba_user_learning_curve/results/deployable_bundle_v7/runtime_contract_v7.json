@@ -1,6 +1,6 @@
 {
   "version": 7,
-  "runtime_version": "7.0.0-shadow",
+  "runtime_version": "7.1.0-shadow-portable",
   "mode": "shadow_only",
   "window_size": 4,
   "required_event_fields": [
@@ -28,9 +28,12 @@
     "subsystem_switch_rate",
     "hour_circular_spread"
   ],
-  "challenge_threshold": 0.5824263629602476,
-  "bundle_sha256": "656e4ca05e8b11efde962ad9714ef5c0c519169154105eb58cf4cbaeafdeab78",
+  "challenge_threshold": 0.5824263629602477,
+  "bundle_sha256": "1e80678de397d2fda38873b48d225018fbc0f135ed8d7ee61aaf4ce282ba4a16",
   "enforcement_enabled": false,
+  "model_format": "portable-random-forest-v1",
+  "training_sklearn_version": "1.8.0",
+  "runtime_sklearn_required": false,
   "training_dataset_size": 5000,
   "training_seed": 42,
   "training_scenario": "normal_staggered"

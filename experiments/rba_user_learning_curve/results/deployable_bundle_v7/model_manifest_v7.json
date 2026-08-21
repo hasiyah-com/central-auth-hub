@@ -1,8 +1,17 @@
 {
+  "artifact_format": "portable-random-forest-v1",
+  "training_sklearn_version": "1.8.0",
+  "runtime_sklearn_required": false,
   "files": {
-    "sequence_model_v7.joblib": "656e4ca05e8b11efde962ad9714ef5c0c519169154105eb58cf4cbaeafdeab78",
-    "runtime_contract_v7.json": "56657866387499994ebeaad8669a7f66112fb79f8f40fe542ae8afbc9f252235",
-    "serialization_parity.json": "65235bacedea2df0e7de130063341568b39f0e207b1cf0d6f400a3f972aa0390",
-    "latency_results.csv": "0874482fe65e9db1357bf8558ca526f3fdac38665775db61aab44c336a96cad3"
+    "sequence_model_v7.joblib": "1e80678de397d2fda38873b48d225018fbc0f135ed8d7ee61aaf4ce282ba4a16",
+    "runtime_contract_v7.json": "f65b4ff2ba7d74a5fd17b52b367022587e5271ecbc43733131992e3dfccdf1c8",
+    "serialization_parity.json": "b5f200b722f93eb89d6552398d8f5cf9f88ec5ee2565c03afc8bcb84f26c088f",
+    "latency_results.csv": "24117edacc7aadd3bd983519d7d14aeadbc4833a563f03636b4e3af91148d1a2"
+  },
+  "file_sizes": {
+    "sequence_model_v7.joblib": 303608,
+    "runtime_contract_v7.json": 1036,
+    "serialization_parity.json": 139,
+    "latency_results.csv": 103
   }
 }

@@ -17,6 +17,7 @@ from typing import Any
 import joblib
 import numpy as np
 import pandas as pd
+import sklearn
 
 ROOT = Path(__file__).resolve().parents[1]
 V6_PATH = ROOT / "scripts" / "run_supervised_sequence_v6.py"
@@ -59,6 +60,38 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _portable_forest(model: Any) -> dict[str, Any]:
+    """Export sklearn's fitted forest without persisting sklearn objects."""
+    classes = [int(value) for value in model.classes_]
+    if classes != [0, 1]:
+        raise ValueError(f"expected binary classes [0, 1], got {classes}")
+    trees: list[dict[str, Any]] = []
+    for estimator in model.estimators_:
+        tree = estimator.tree_
+        values = tree.value[:, 0, :]
+        denominators = values.sum(axis=1)
+        class_one = np.divide(
+            values[:, 1],
+            denominators,
+            out=np.zeros_like(denominators, dtype=float),
+            where=denominators != 0,
+        )
+        trees.append(
+            {
+                "children_left": tree.children_left.astype(int).tolist(),
+                "children_right": tree.children_right.astype(int).tolist(),
+                "feature": tree.feature.astype(int).tolist(),
+                "threshold": tree.threshold.astype(float).tolist(),
+                "probability_class_1": class_one.astype(float).tolist(),
+            }
+        )
+    return {
+        "n_features": int(model.n_features_in_),
+        "n_classes": 2,
+        "trees": trees,
+    }
+
+
 def export(output: Path, dataset_size: int, seed: int, scenario: str, latency_iterations: int) -> None:
     users = V6.V3.V2._load_users()
     normal = V6.V3.generate_normal(users, dataset_size, seed, scenario)
@@ -66,15 +99,18 @@ def export(output: Path, dataset_size: int, seed: int, scenario: str, latency_it
     output.mkdir(parents=True, exist_ok=True)
     bundle_path = output / "sequence_model_v7.joblib"
     bundle = {
-        "version": "7.0.0-shadow",
-        "model": fitted.model,
-        "median": fitted.median,
-        "iqr": fitted.iqr,
+        "version": "7.1.0-shadow-portable",
+        "model_format": RUNTIME.PORTABLE_MODEL_FORMAT,
+        "portable_model": _portable_forest(fitted.model),
+        "median": fitted.median.tolist(),
+        "iqr": fitted.iqr.tolist(),
         "challenge_threshold": fitted.challenge_threshold,
         "feature_names": V6.V5.SEQUENCE_FEATURES,
         "window_size": V6.V5.WINDOW,
         "enforcement_enabled": False,
         "training_mode": "synthetic_candidate",
+        "training_sklearn_version": sklearn.__version__,
+        "runtime_sklearn_required": False,
     }
     joblib.dump(bundle, bundle_path, compress=3)
     runtime = RUNTIME.ShadowSequenceRuntime(bundle_path)
@@ -149,6 +185,8 @@ def export(output: Path, dataset_size: int, seed: int, scenario: str, latency_it
         "runtime_enforcement_disabled": runtime.evaluate(benchmark_payload)["enforcement_applied"] is False,
         "feature_contract_exact": tuple(bundle["feature_names"]) == RUNTIME.SEQUENCE_FEATURES,
         "bundle_sha256_present": len(_sha256(bundle_path)) == 64,
+        "portable_model_format": bundle["model_format"] == RUNTIME.PORTABLE_MODEL_FORMAT,
+        "runtime_sklearn_not_required": bundle["runtime_sklearn_required"] is False,
     }
     gate = {
         "ready_for_system_shadow_load": all(checks.values()),
@@ -175,6 +213,9 @@ def export(output: Path, dataset_size: int, seed: int, scenario: str, latency_it
         "challenge_threshold": fitted.challenge_threshold,
         "bundle_sha256": _sha256(bundle_path),
         "enforcement_enabled": False,
+        "model_format": bundle["model_format"],
+        "training_sklearn_version": bundle["training_sklearn_version"],
+        "runtime_sklearn_required": False,
         "training_dataset_size": dataset_size,
         "training_seed": seed,
         "training_scenario": scenario,
@@ -182,13 +223,20 @@ def export(output: Path, dataset_size: int, seed: int, scenario: str, latency_it
     (output / "runtime_contract_v7.json").write_text(
         json.dumps(contract, indent=2) + "\n", encoding="utf-8"
     )
+    manifest_files = {
+        "sequence_model_v7.joblib": _sha256(bundle_path),
+        "runtime_contract_v7.json": _sha256(output / "runtime_contract_v7.json"),
+        "serialization_parity.json": _sha256(output / "serialization_parity.json"),
+        "latency_results.csv": _sha256(output / "latency_results.csv"),
+    }
     manifest = {
-        "files": {
-            "sequence_model_v7.joblib": _sha256(bundle_path),
-            "runtime_contract_v7.json": _sha256(output / "runtime_contract_v7.json"),
-            "serialization_parity.json": _sha256(output / "serialization_parity.json"),
-            "latency_results.csv": _sha256(output / "latency_results.csv"),
-        }
+        "artifact_format": bundle["model_format"],
+        "training_sklearn_version": bundle["training_sklearn_version"],
+        "runtime_sklearn_required": False,
+        "files": manifest_files,
+        "file_sizes": {
+            filename: (output / filename).stat().st_size for filename in manifest_files
+        },
     }
     (output / "model_manifest_v7.json").write_text(
         json.dumps(manifest, indent=2) + "\n", encoding="utf-8"

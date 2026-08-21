@@ -8,7 +8,9 @@
     "single_score_p99_le_35ms": true,
     "runtime_enforcement_disabled": true,
     "feature_contract_exact": true,
-    "bundle_sha256_present": true
+    "bundle_sha256_present": true,
+    "portable_model_format": true,
+    "runtime_sklearn_not_required": true
   },
   "observed": {
     "precision": 0.9779741681305577,
@@ -30,13 +32,13 @@
     "validation_sequence_detection": 0.9995098039215686,
     "validation_preobjective_detection": 0.9985294117647058,
     "iterations": 1000,
-    "p50_ms": 8.651171999999999,
-    "p95_ms": 10.2669065,
-    "p99_ms": 13.71759275,
-    "mean_ms": 8.904554115,
-    "max_ms": 20.591239,
-    "serialization_max_absolute_error": 2.220446049250313e-16,
-    "bundle_size_bytes": 898818
+    "p50_ms": 0.49994,
+    "p95_ms": 0.58903125,
+    "p99_ms": 0.70010616,
+    "mean_ms": 0.515854565,
+    "max_ms": 3.093118,
+    "serialization_max_absolute_error": 1.6653345369377348e-15,
+    "bundle_size_bytes": 303608
   },
   "note": "This bundle can be loaded only in shadow mode. It is trained on synthetic data; anonymized production replay and canary approval are mandatory before any enforcement."
 }
