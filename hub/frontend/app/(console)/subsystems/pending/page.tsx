@@ -25,7 +25,7 @@ type PendingSubsystem = {
   whitelist_count: number;
   owner_email?: string;
   created_at?: string;
-  redirect_uris?: string;
+  redirect_uris?: string | string[];
   [k: string]: unknown;
 };
 
@@ -45,13 +45,15 @@ function formatTime(iso?: string): string {
   }
 }
 
-/** redirect_uris is stored as a newline- or comma-separated string. */
-function splitUris(raw?: string): string[] {
+/**
+ * Backend คืน redirect_uris เป็น **array** (`list(s.redirect_uris or [])`) แต่ข้อมูล
+ * เก่าบาง path เคยเก็บเป็น string คั่นด้วย newline/comma — รองรับทั้งสองแบบ.
+ * (เดิมรับ string อย่างเดียว → `raw.split is not a function` ตอน render หน้า pending)
+ */
+function splitUris(raw?: string | string[]): string[] {
   if (!raw) return [];
-  return raw
-    .split(/[\n,]+/)
-    .map((s) => s.trim())
-    .filter(Boolean);
+  const parts = Array.isArray(raw) ? raw : raw.split(/[\n,]+/);
+  return parts.map((s) => String(s).trim()).filter(Boolean);
 }
 
 export default function PendingSubsystemsPage() {
