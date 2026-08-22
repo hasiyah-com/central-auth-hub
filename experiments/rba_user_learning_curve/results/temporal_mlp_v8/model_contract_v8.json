@@ -1,0 +1,77 @@
+{
+  "version": 8,
+  "mode": "standalone_temporal_mlp_shadow",
+  "generated_at_utc": "2026-08-22T16:01:02.378290+00:00",
+  "pipeline_sha256": "bbd7cb199be1883c5b490bc7bbaf29a5cc0496e2aca16156ab6ffa681c1f16f6",
+  "fixed_ip": "192.168.10.1",
+  "geo": null,
+  "normal_train_test_split": "80:20 chronological per profile",
+  "normal_only_cohort_prior_size_per_scenario": 200,
+  "normal_only_cohort_prior_seed_offsets": [
+    31000,
+    32000
+  ],
+  "model": "NumPy Temporal MLP 64-32-12-1",
+  "random_forest": false,
+  "imports_previous_experiment_code": false,
+  "window_size": 6,
+  "rule_features": [
+    "new_device",
+    "new_ua_family",
+    "failed_1h",
+    "success_10m",
+    "concurrent_sessions",
+    "active_subsystems",
+    "new_passkey",
+    "permission_age_hours",
+    "confirmed_incident",
+    "permission_violation",
+    "mfa_always"
+  ],
+  "behavior_features": [
+    "hour_rarity",
+    "weekday_rarity",
+    "subsystem_rarity",
+    "device_signature_rarity",
+    "cadence_tail_probability"
+  ],
+  "neural_event_features": [
+    "gap_log_z",
+    "duration_log_z",
+    "scope_z",
+    "browser_version_window_relative",
+    "gap_delta",
+    "duration_delta",
+    "scope_delta",
+    "browser_version_delta"
+  ],
+  "neural_input_size": 64,
+  "attack_families": [
+    "stealth_mimicry_ato",
+    "slow_credential_probe",
+    "session_replay_jitter",
+    "gradual_exfiltration",
+    "distributed_lateral_drift",
+    "profile_poisoning_chain",
+    "cookie_hijack_blend",
+    "distributed_password_spray"
+  ],
+  "attack_seed_offsets": {
+    "train": 10000,
+    "validation": 20000,
+    "test": 50000
+  },
+  "test_attack_subtlety": 0.72,
+  "challenge_tail_ratio": 0.6,
+  "shadow_minimum_trusted_events": 1000,
+  "cold_profile_action": "abstain_from_temporal_mlp",
+  "ready_for_enforcement": false,
+  "artifact": {
+    "path": "temporal_mlp_v8.npz",
+    "format": "numpy_npz_temporal_mlp_v8",
+    "sha256": "b1cc254f10afa25859fc45de8ff26bd8b0a228920c6549e71db672a9c050d419",
+    "size_bytes": 22146,
+    "requires_sklearn_runtime": false,
+    "random_forest": false
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "artifact_sha256": "b1cc254f10afa25859fc45de8ff26bd8b0a228920c6549e71db672a9c050d419",
+  "portable_npz_allow_pickle_false": true,
+  "sklearn_runtime_required": false,
+  "random_forest": false,
+  "enforcement_disabled": true,
+  "cold_profile_abstention_verified": true,
+  "parity": {
+    "sample_count": 256,
+    "max_absolute_error": 2.9976021664879227e-15,
+    "passed_le_1e_12": true
+  },
+  "latency_ms": {
+    "iterations": 2000,
+    "p50": 0.0136705,
+    "p95": 0.02185635,
+    "p99": 0.08938210999999989,
+    "mean": 0.025400699500000002,
+    "max": 11.603156
+  }
+}

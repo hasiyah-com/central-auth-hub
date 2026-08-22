@@ -283,3 +283,28 @@ enforcement remains disabled.  The committed-artifact test also checks every
 manifest SHA/size and loads the actual shipped bundle. Passing permits loading
 the candidate in the system's shadow path only. The bundle remains a synthetic
 candidate until anonymized production replay and controlled canary approval.
+
+## Standalone Temporal MLP V8
+
+V8 deliberately starts the experiment again from the user contract. The
+single `run_temporal_mlp_v8.py` runner regenerates normal staggered/NAT-burst
+timelines, creates disjoint train/validation/test attack campaigns, extracts
+features, fits a NumPy temporal MLP, calibrates thresholds from normal-only
+data, evaluates every learning-curve cell, and exports a portable `.npz`
+artifact. It does not import V2-V7 experiment code and does not use Random
+Forest, Isolation Forest, pickle, or joblib.
+
+Feature ownership remains disjoint: deterministic Rule facts, user-relative
+Behavior rarity, and continuous temporal Neural features have separate input
+contracts. The runtime verifies SHA-256, loads arrays with
+`allow_pickle=False`, never imports scikit-learn, and can emit only `would_*`
+shadow decisions. Profiles below 1,000 trusted real events explicitly abstain
+from the V8 model and retain the existing Rule/Behavior/MFA policy. Generated
+rows are synthetic experiment data and must never be counted as a production
+user's trusted history.
+
+Run the full fresh matrix with:
+
+```bash
+python experiments/rba_user_learning_curve/scripts/run_temporal_mlp_v8.py
+```

@@ -1,0 +1,50 @@
+{
+  "ready_for_system_shadow_load": true,
+  "ready_for_enforcement": false,
+  "checks": {
+    "eligible_history_results_available": true,
+    "eligible_history_unexpected_challenge_fpr_le_0_003": true,
+    "eligible_history_warn_or_higher_rate_total_le_0_20": true,
+    "eligible_history_sequence_detection_ge_0_90": true,
+    "minimum_attack_family_detection_ge_0_80": true,
+    "eligible_history_preobjective_detection_ge_0_70": true,
+    "eligible_history_median_time_to_detect_le_2": true,
+    "nat_detection_gap_le_0_02": true,
+    "generator_one_sided_shortcut_absent": true,
+    "cold_profiles_abstain_from_ml": true,
+    "random_forest_absent": true,
+    "standalone_pipeline": true
+  },
+  "observed": {
+    "precision": 0.9635713207533512,
+    "event_challenge_recall": 0.6890217391304347,
+    "f1": 0.79641734882386,
+    "roc_auc": 0.9976107880434784,
+    "pr_auc": 0.9610812509547262,
+    "challenge_fpr_total": 0.16834166666666667,
+    "unexpected_challenge_fpr": 0.00201,
+    "warn_or_higher_rate_total": 0.18446666666666664,
+    "sequence_detection_rate": 0.9684782608695652,
+    "minimum_attack_family_detection": 0.9208333333333334,
+    "preobjective_detection_rate": 0.892391304347826,
+    "objective_detection_rate": 0.9152173913043479,
+    "median_time_to_detect_phase": 1.5,
+    "nat_detection_gap": 0.015217391304347627,
+    "cold_start_sequence_detection_rate_diagnostic": 0.9872282608695653,
+    "all_sizes_unexpected_challenge_fpr_diagnostic": 0.011403333333333333
+  },
+  "shadow_activation": {
+    "minimum_trusted_events": 1000,
+    "below_minimum_action": "abstain; retain existing Rule/Behavior/MFA policy"
+  },
+  "note": "Synthetic V8 may load only in shadow for profiles meeting the history guard. Cold-start learning-curve failures remain diagnostic and are not hidden. Production replay, drift monitoring, rollback, and canary approval are mandatory before enforcement.",
+  "artifact": {
+    "path": "temporal_mlp_v8.npz",
+    "format": "numpy_npz_temporal_mlp_v8",
+    "sha256": "b1cc254f10afa25859fc45de8ff26bd8b0a228920c6549e71db672a9c050d419",
+    "size_bytes": 22146,
+    "requires_sklearn_runtime": false,
+    "random_forest": false
+  },
+  "pipeline_sha256": "bbd7cb199be1883c5b490bc7bbaf29a5cc0496e2aca16156ab6ffa681c1f16f6"
+}
