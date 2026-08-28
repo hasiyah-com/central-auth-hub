@@ -118,7 +118,20 @@ L3 = surfacing channel (ยกได้สูงสุด `warn` ห้ามแ
 ## 5. Freeze commit
 
 <!-- FREEZE_COMMIT -->
-_(เติมหลัง commit — ดู `git log --oneline -1` หรือ tag `rba-freeze-2026-08-29`)_
+| รายการ | ค่า |
+|---|---|
+| **freeze commit SHA** | `a42cf794c782603d6071862e4bbe935431937aa6` |
+| **freeze commit (สั้น)** | `a42cf79` |
+| **tag** | `rba-freeze-2026-08-29` |
+| ข้อความ commit | `feat(rba): freeze ผลการทดลอง 4-Layer RBA + ย้าย L3 numeric core ไป ml-service (B61)` |
+
+Hash ใน §4 คำนวณจากไฟล์ **ก่อน** commit นี้เพียงเสี้ยววินาที (เนื้อหาเดียวกันทุกไฟล์
+ยกเว้นเอกสารนี้เอง ซึ่งเพิ่มเฉพาะตารางนี้หลัง commit) — ตรวจซ้ำด้วย:
+
+```bash
+git checkout a42cf79
+python scripts/build_evidence_manifest.py --verify
+```
 
 ## 6. ข้อมูลที่ไม่อยู่ใน git (โดยตั้งใจ)
 
