@@ -17,11 +17,11 @@ python scripts/build_evidence_manifest.py --verify
 
 | รายการ | ค่า |
 |---|---|
-| commit SHA (เต็ม) | `1adf05bcac15c015a5956ed0a73ad69a28a81fe7` |
-| commit SHA (สั้น) | `1adf05b` |
+| commit SHA (เต็ม) | `f1aea03f3fe14a5e663b8621e560ae222b170212` |
+| commit SHA (สั้น) | `f1aea03` |
 | branch | `main` |
 | working tree ตอนสร้าง manifest | มีไฟล์ที่ยังไม่ commit (ดู §5) |
-| จำนวนไฟล์หลักฐาน | 43 |
+| จำนวนไฟล์หลักฐาน | 47 |
 
 > ⚠️ commit SHA ด้านบนคือ **commit ก่อนหน้า** ตอน generate — SHA ของ freeze commit เอง
 > บันทึกไว้ที่ §5 (เขียนเพิ่มหลัง commit เสร็จ เพราะ SHA คำนวณจากเนื้อหาไฟล์รวมทั้ง manifest)
@@ -91,6 +91,8 @@ L3 = surfacing channel (ยกได้สูงสุด `warn` ห้ามแ
 | `exp_final_synthetic_2026-08-26.md` | 10,751 | `6a27674da6fcdcf1ed54e77a4d61d3c7e9099a7ff705fc50f370a42018408004` |
 | `exp_final_gate_2026-08-26.md` | 7,531 | `66312e5594fae9406993b9dc1452019ef9fb10d0b1d77326e2c29b55c7bf8871` |
 | `l3_service_split_2026-08-29.md` | 15,423 | `8a2d15b36964d042b0c77ab1582e7ed20c4e1462de617516121f39930cbdeed2` |
+| `l3_stability_2026-08-29.md` | 15,572 | `372a37c678e9db245fd95376e3107448de7245cc271d7ae8ca67706583b9f25e` |
+| `l3_shadow_replay_2026-08-29.md` | 8,299 | `6f0c6afb14b499be5502e09d04e2d7bf958256d9132ca4dbd0d873662ea909c0` |
 
 ### 4.2 โค้ดที่ผลิตตัวเลข (harness ทดลอง + production ที่ถูกวัด)
 
@@ -107,31 +109,20 @@ L3 = surfacing channel (ยกได้สูงสุด `warn` ห้ามแ
 | `ml-service/scripts/lc_l3_sequence.py` | 12,210 | `081509b30d317f48e6883815b12efde8dcbf5681920c01f2559f64376fd1ee98` |
 | `ml-service/scripts/lc_l3_ownership.py` | 14,856 | `4729d9caf92a30fe8df9d9c22cd69573520b23504f0031a90050161464ae8cef` |
 | `ml-service/scripts/lc_run_4layer.py` | 19,744 | `b971f84e83f69c1350aae18eb6b48ca9172b5a0ec66583c464f1b6a47bc26c32` |
-| `ml-service/app/sequence.py` | 10,507 | `16506488ed2573ac199e868ac491b581b877557c82e9dd2adf307b4578703968` |
+| `ml-service/app/sequence.py` | 15,202 | `f90b146fe67e477f1a432b92adffd4d0b1a1c57fbe1e86f4187912a3b9a4973c` |
 | `hub/backend/app/security/l3_sequence.py` | 21,620 | `dff1d1b093ad9546dd22ba82e0895dc39d09d8ef96d692f812edc448649e0d92` |
 | `hub/backend/app/security/rule_engine.py` | 13,750 | `a905bfc396d742b59a76c2717cce8900accc98bb220a387faf136f7eb6ac7498` |
 | `hub/backend/app/security/behavior_profiling.py` | 15,813 | `278a9373b020a663ad2fc9f7e43e85bfcc0a6102b1d9469fdc6e020e19d27d0e` |
 | `hub/backend/app/security/risk_aggregator.py` | 4,040 | `51c2a61257481a07b6818ad5be6eb90e6aaa0e5fd036f91e6aa67ca9fd957b22` |
 | `hub/backend/app/security/risk_engine.py` | 8,353 | `96defe1d3ea1c91513cff2fe7e2ac5b55e0e0da6ee25d467867a4bacc1b6d6ca` |
-| `hub/backend/app/services/l3_sequence_client.py` | 3,511 | `054fcccab0172a98567539054131f7c57751cd85546a20bdf1ca9e9ddab917ae` |
+| `hub/backend/app/services/l3_sequence_client.py` | 3,511 | `05112f9a8ab8e22a29ebf9032dab631d7918f4c43532b3f47b1e20d41f069352` |
+| `hub/backend/scripts/l3_shadow_replay.py` | 19,109 | `794c684fd3b599791b871509a62ff73a589ec4d5c401b829807c8c685c7cc31d` |
+| `hub/backend/tests/test_l3_stability.py` | 24,093 | `54a8aa42bde6efbda3203e12f06f3f2d20653c0fcb5ef14b637feeeff55e038c` |
 
 ## 5. Freeze commit
 
 <!-- FREEZE_COMMIT -->
-| รายการ | ค่า |
-|---|---|
-| **freeze commit SHA** | `a42cf794c782603d6071862e4bbe935431937aa6` |
-| **freeze commit (สั้น)** | `a42cf79` |
-| **tag** | `rba-freeze-2026-08-29` |
-| ข้อความ commit | `feat(rba): freeze ผลการทดลอง 4-Layer RBA + ย้าย L3 numeric core ไป ml-service (B61)` |
-
-Hash ใน §4 คำนวณจากไฟล์ **ก่อน** commit นี้เพียงเสี้ยววินาที (เนื้อหาเดียวกันทุกไฟล์
-ยกเว้นเอกสารนี้เอง ซึ่งเพิ่มเฉพาะตารางนี้หลัง commit) — ตรวจซ้ำด้วย:
-
-```bash
-git checkout a42cf79
-python scripts/build_evidence_manifest.py --verify
-```
+_(เติมหลัง commit — ดู `git log --oneline -1` หรือ tag `rba-freeze-2026-08-29`)_
 
 ## 6. ข้อมูลที่ไม่อยู่ใน git (โดยตั้งใจ)
 

@@ -52,6 +52,8 @@ EVIDENCE_REPORTS = [
     "exp_final_synthetic_2026-08-26.md",
     "exp_final_gate_2026-08-26.md",
     "l3_service_split_2026-08-29.md",
+    "l3_stability_2026-08-29.md",
+    "l3_shadow_replay_2026-08-29.md",
 ]
 
 # ── โค้ดที่ผลิตตัวเลข (harness ทดลอง + production ที่ถูกวัด) ──
@@ -74,6 +76,8 @@ EVIDENCE_CODE = [
     "hub/backend/app/security/risk_aggregator.py",
     "hub/backend/app/security/risk_engine.py",
     "hub/backend/app/services/l3_sequence_client.py",
+    "hub/backend/scripts/l3_shadow_replay.py",
+    "hub/backend/tests/test_l3_stability.py",
 ]
 
 # ── configuration ที่ล็อกไว้: ดึงจาก source จริง ไม่ hardcode ในเอกสาร ──
