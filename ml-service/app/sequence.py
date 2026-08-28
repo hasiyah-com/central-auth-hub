@@ -23,6 +23,7 @@ from __future__ import annotations
 import json
 import logging
 import math
+import threading
 import time
 from dataclasses import dataclass, field
 from typing import Any
@@ -45,7 +46,10 @@ TIER_CHALLENGE = 2000  # 2000+: บันทึก would_challenge (shadow)
 
 REDIS_KEY = "l3resid:{user_id}"
 CACHE_TTL_SEC = 3600
-_MODEL_CACHE: dict[str, tuple[float, int, Any]] = {}
+# user -> (ts, n_raw ตอน fit, model, n_parsed)
+_MODEL_CACHE: dict[str, tuple[float, int, Any, int]] = {}
+_LOCKS: dict[str, threading.Lock] = {}  # fit ครั้งเดียวต่อคน (B63)
+_LOCKS_GUARD = threading.Lock()
 
 QUIET = {
     "fired": False,
@@ -200,35 +204,86 @@ def evaluate_window(model: L3Model | None, window_raw: list[list[float]]) -> dic
 
 
 # ═══════════════ Redis adapter (อ่านอย่างเดียว — hub เป็นคนเขียน history) ═══════════════
-def load_history(redis, user_id: str) -> list[list[float]]:
-    """residual ดิบล่าสุดของผู้ใช้ (เก่า->ใหม่) — hub เขียนไว้ด้วย record_residual()."""
-    raw = redis.lrange(REDIS_KEY.format(user_id=user_id), -MAX_HISTORY, -1)
+def _parse_rows(raw) -> list[list[float]]:
+    """แปลงแถวดิบเป็น residual — ข้ามแถวเสียเงียบๆ (history อาจมีขยะปน)."""
     out = []
     for item in raw:
         try:
             v = json.loads(item)
             if isinstance(v, list) and len(v) == DIMS:
-                out.append([float(x) for x in v])
+                row = [float(x) for x in v]
+                if all(math.isfinite(x) for x in row):
+                    out.append(row)
         except Exception:  # noqa: BLE001,S112
             continue
     return out
 
 
-def get_model(user_id: str, history: list[list[float]]) -> L3Model | None:
-    """โมเดลรายคนจาก cache — refit เมื่อหมดอายุ หรือ history โต >10% (fit ~50-150ms)."""
-    now = time.time()
+def load_history(redis, user_id: str) -> list[list[float]]:
+    """residual ดิบล่าสุดของผู้ใช้ (เก่า->ใหม่) — hub เขียนไว้ด้วย record_residual()."""
+    return _parse_rows(
+        redis.lrange(REDIS_KEY.format(user_id=user_id), -MAX_HISTORY, -1)
+    )
+
+
+def _load_tail(redis, key: str) -> list[list[float]] | None:
+    """ดึงเฉพาะท้าย window (WINDOW-1 แถว) — ใช้เมื่อ cache อุ่นแล้ว.
+
+    เหตุผลด้านความจุ (B63): ทาง warm ไม่ควรอ่าน+parse history 2000 แถวทุก request
+    (วัดแล้วเป็นคอขวดจริงเมื่อมี request พร้อมกันหลายอัน จน L3 timeout ทั้งชุด)
+    ดึงเผื่อ 4 เท่าเพื่อกันกรณีท้ายลิสต์มีแถวเสียปน · ไม่พอค่อย fallback ไปอ่านเต็ม
+    """
+    need = WINDOW - 1
+    rows = _parse_rows(redis.lrange(key, -(WINDOW * 4), -1))
+    return rows[-need:] if len(rows) >= need else None
+
+
+def _cache_hit(user_id: str, n: int):
+    """คืน entry ที่ยังใช้ได้ หรือ None — แยก "ไม่มี cache" ออกจาก "cache เป็น None" (abstain).
+
+    ต้องเช็คขนาดทั้งสองทิศทาง: โต >=10% (มีข้อมูลใหม่พอให้โมเดลดีขึ้น) **และ** หด (B62) —
+    history หดได้จาก Redis eviction / key ถูกลบ / รีเซ็ตผู้ใช้ ถ้าไม่ refit โมเดลเก่า
+    จะค้างพร้อม n_history เดิมนานถึง 1 ชม. ซึ่ง n_history เป็นตัวกำหนด eligibility
+    -> ผู้ใช้ที่ประวัติหายไปแล้วยังถูกตัดสินด้วย tier สูงเกินจริง
+    """
     hit = _MODEL_CACHE.get(user_id)
-    if hit and now - hit[0] < CACHE_TTL_SEC and len(history) < hit[1] * 1.1:
-        return hit[2]
-    model = fit_user_model(history, n_history=len(history))
-    _MODEL_CACHE[user_id] = (now, len(history), model)
-    return model
+    if hit and time.time() - hit[0] < CACHE_TTL_SEC and hit[1] <= n < hit[1] * 1.1:
+        return hit
+    return None
+
+
+def _user_lock(user_id: str) -> threading.Lock:
+    with _LOCKS_GUARD:
+        return _LOCKS.setdefault(user_id, threading.Lock())
+
+
+def get_model(redis, user_id: str, key: str, n_raw: int) -> tuple[L3Model | None, int]:
+    """โมเดลรายคนจาก cache — fit ครั้งเดียวต่อคนแม้มี request พร้อมกันหลายอัน (B63).
+
+    fit ใช้เวลา ~270ms ที่ history 2000 แถว · uvicorn รัน endpoint แบบ sync ใน
+    threadpool -> ถ้าไม่ล็อก request ที่มาพร้อมกัน N อันจะ fit ซ้ำ N ครั้ง กิน CPU
+    จนเกิน timeout ของ login path (วัดได้จริง: 20 request พร้อมกัน -> timeout ทุกอัน)
+
+    คืน (model, n_parsed) — n_parsed คือจำนวนแถวที่ใช้ได้จริง (ต่างจาก n_raw ถ้ามีขยะปน)
+    """
+    with _user_lock(user_id):
+        hit = _cache_hit(user_id, n_raw)  # double-check: อาจมีคนอื่น fit เสร็จระหว่างรอ
+        if hit is not None:
+            return hit[2], hit[3]
+        history = load_history(redis, user_id)
+        model = fit_user_model(history, n_history=len(history))
+        _MODEL_CACHE[user_id] = (time.time(), n_raw, model, len(history))
+        return model, len(history)
 
 
 def score(redis, user_id: str, residual: list[float]) -> dict:
-    """จุดเข้าหลัก — อ่าน history, fit/cache, ให้คะแนน window ที่จบด้วย residual นี้.
+    """จุดเข้าหลัก — ให้คะแนน window ที่จบด้วย residual นี้.
 
     residual ตัวปัจจุบัน **ยังไม่อยู่ใน history** (hub บันทึกหลังตัดสิน) จึงต่อท้ายเอง
+
+    ทางเดินสองแบบ (B63):
+      warm — cache อุ่น: llen (O(1)) + อ่านท้าย window ~20 แถว   -> ~2-5ms
+      cold — cache miss: อ่าน+parse history เต็ม แล้ว fit         -> ~300ms (ล็อกต่อคน)
     """
     try:
         if (
@@ -237,15 +292,28 @@ def score(redis, user_id: str, residual: list[float]) -> dict:
             or not all(math.isfinite(x) for x in residual)
         ):
             return dict(QUIET)
-        history = load_history(redis, user_id)
-        elig = eligibility(len(history))
-        if elig == "abstain":
-            return {**QUIET, "eligibility": elig, "n_history": len(history)}
-        model = get_model(user_id, history)
+        key = REDIS_KEY.format(user_id=user_id)
+        n_raw = int(redis.llen(key) or 0)
+        # ตัดจบเร็วสุดสำหรับผู้ใช้ใหม่ — parsed <= raw เสมอ จึง abstain แน่นอน
+        if eligibility(n_raw) == "abstain":
+            return {**QUIET, "eligibility": "abstain", "n_history": n_raw}
+
+        hit = _cache_hit(user_id, n_raw)
+        if hit is not None:
+            model, n_parsed = hit[2], hit[3]
+            tail = _load_tail(redis, key) if model is not None else None
+        else:
+            model, n_parsed = get_model(redis, user_id, key, n_raw)
+            tail = None
         if model is None:
-            return {**QUIET, "eligibility": elig, "n_history": len(history)}
-        window = history[-(WINDOW - 1) :] + [list(residual)]
-        return evaluate_window(model, window)
+            return {
+                **QUIET,
+                "eligibility": eligibility(n_parsed),
+                "n_history": n_parsed,
+            }
+        if tail is None:  # cold path หรือท้ายลิสต์มีแถวเสียจนไม่ครบ window
+            tail = load_history(redis, user_id)[-(WINDOW - 1) :]
+        return evaluate_window(model, tail + [list(residual)])
     except Exception as e:  # noqa: BLE001
         logger.warning("[sequence] score error: %s", e)
         return dict(QUIET)
