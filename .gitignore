@@ -69,6 +69,11 @@ hub/backend/tmp_*.py
 hub/backend/data/*.mmdb
 
 # ============ Benchmark dataset (generated from external RBA dataset — reproducible via scripts) ============
+# กันข้อมูลรั่วแบบครอบคลุม (ข้อมูลจริงห้ามขึ้น git เด็ดขาด) — deny ทั้งโฟลเดอร์
+# ยกเว้น template ที่เป็น placeholder ล้วน · รายการเจาะจงด้านล่างเก็บไว้เป็นเอกสาร
+ml-service/data/*
+!ml-service/data/*.example.json
+
 ml-service/data/benchmark_rba.csv
 ml-service/data/rba_base_sample.csv
 ml-service/data/real_only_rba.csv
@@ -84,6 +89,14 @@ ml-service/data/user_logins.csv
 ml-service/data/user_logins_clean.csv
 ml-service/data/user_features.csv
 ml-service/data/user_anomalies_features.csv
+# Feature Contract V2 profiles — มี email/user_id จริง (PII) ห้าม commit
+ml-service/data/profiles_v2.json
+ml-service/data/logins_v2.csv
+ml-service/data/attacks_v2.csv
+ml-service/data/features_v2.csv
+ml-service/data/scored_v2.csv
+ml-service/data/results_v2.json
+ml-service/data/roster_v2.json
 ml-service/models/
 ml-service/data/simulated_4layer_results.csv
 ml-service/data/shap/
@@ -146,3 +159,11 @@ docs/diagrams/thesis/diagram-*.png
 
 # Benchmark report .docx render >500KB — .md source committed alongside
 hub/backend/tests/reports/*.docx
+
+# PII redaction map — email จริง ห้าม commit
+.pii-redaction-map.json
+
+# ไฟล์ช่วย rewrite history — เก็บ "สคริปต์" ไว้ แต่กันไฟล์ที่มีอีเมลจริง
+scripts/pii/replacements.txt
+scripts/pii/mailmap.txt
+scripts/pii/*.docx

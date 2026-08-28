@@ -9,7 +9,7 @@
 
 ## 1. ปัญหาที่พบ
 
-เคสจริงจากหน้า ML/anomaly: session `6660506018@pnu.ac.th` → `risk_score = 0.600`,
+เคสจริงจากหน้า ML/anomaly: session `<U08>` → `risk_score = 0.600`,
 `decision = WOULD_WARN` **ไม่ปรากฏ**ในหน้า Incidents
 
 **สาเหตุ (2 ชั้นพร้อมกัน):**

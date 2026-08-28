@@ -602,6 +602,7 @@ async def _finalize_subsystem_login(
         db=db,
         shadow_mode=settings.ml_shadow_mode,
         subsystem_id=authreq["subsystem_id"],  # cross-subsystem risk propagation
+        user_agent=user_agent,
     )
     risk_score = risk["score"]
     actual_decision = risk["decision"]

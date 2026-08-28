@@ -46,6 +46,13 @@ repos:
         pass_filenames: true
         always_run: false
 
+      - id: block-real-pii
+        name: Block real user PII (emails of real people)
+        entry: python scripts/hooks/check_pii.py
+        language: system
+        pass_filenames: true
+        always_run: false
+
   # ---------- Python lint + format ----------
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.8.4

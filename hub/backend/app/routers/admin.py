@@ -55,6 +55,7 @@ from app.services.webhook_dispatcher import (
 from app.services.subsystem_health import (
     get_status as get_health_status,
     clear_status as clear_health_status,
+    get_history as get_health_history,
 )
 from app.redis_client import redis_client
 
@@ -1163,6 +1164,43 @@ def list_active_sessions(
 
 
 # ============ Subsystem activity stats ============
+
+
+@router.get("/subsystems/{subsystem_id}/health-history")
+def subsystem_health_history(
+    subsystem_id: str,
+    limit: int = Query(288, ge=1, le=288, description="จำนวนจุดล่าสุด (5 นาที/จุด)"),
+    admin: User = Depends(require_hub_admin),
+    db: Session = Depends(get_db),
+):
+    """ประวัติ health ของ subsystem — ใช้วาดกราฟ latency ย้อนหลัง.
+
+    ข้อมูลมาจาก Redis list ที่ health loop เขียนทุกครั้งที่ ping (ทุก 5 นาที,
+    เก็บสูงสุด 288 จุด ≈ 24 ชม.) — ยังไม่เคยเช็ค/Redis ล่ม → คืน list ว่าง
+    (fail-safe: หน้า UI แสดง "ยังไม่มีข้อมูล" แทน error)
+
+    ใช้ที่: หน้า admin /subsystems/{id} แท็บ Health
+    """
+    subsystem = db.query(Subsystem).filter(Subsystem.id == subsystem_id).first()
+    if not subsystem:
+        raise HTTPException(status_code=404, detail="ไม่พบ subsystem")
+
+    points = get_health_history(str(subsystem.id), limit=limit)
+    latencies = [
+        p["latency_ms"] for p in points if isinstance(p.get("latency_ms"), (int, float))
+    ]
+    up = sum(1 for p in points if p.get("status") == "healthy")
+    return {
+        "points": points,
+        "count": len(points),
+        "avg_latency_ms": round(sum(latencies) / len(latencies), 1)
+        if latencies
+        else None,
+        "max_latency_ms": max(latencies) if latencies else None,
+        # สัดส่วนรอบที่ healthy จากจุดที่เก็บได้จริง (ไม่ใช่ SLA uptime ทางการ)
+        "healthy_ratio": round(up / len(points), 4) if points else None,
+        "interval_sec": 300,
+    }
 
 
 @router.get("/subsystems/{subsystem_id}/stats")

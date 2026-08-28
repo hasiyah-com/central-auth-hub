@@ -143,3 +143,22 @@ def auth_headers():
         return {"Authorization": f"Bearer {token}"}
 
     return _make
+
+
+@pytest.fixture(autouse=True)
+def _reset_rate_limits():
+    """ล้างตัวนับ rate-limit ก่อนทุกเทสต์.
+
+    ทั้ง suite ยิงจาก IP เดียว ("testclient") จึงใช้โควตาร่วมกัน — endpoint ที่จำกัดเข้ม
+    (เช่น /auth/google/login 10/นาที, change-google 1/ชม.) จะถูกใช้หมดกลางรัน ทำให้เทสต์
+    ที่มาทีหลัง fail แบบสุ่มตามลำดับ (ไม่ใช่บั๊กของโค้ด) — ล้างก่อนทุกเทสต์ให้ผลคงที่
+    """
+    try:
+        from app.redis_client import redis_client
+
+        keys = list(redis_client.scan_iter(match="LIMITS:*", count=500))
+        if keys:
+            redis_client.delete(*keys)
+    except Exception:  # noqa: BLE001 — ไม่มี Redis ก็ให้เทสต์เดินต่อ
+        pass
+    yield

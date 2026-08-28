@@ -51,7 +51,7 @@
 # ส่วนที่ 1 — กรณี "ปกติ" (ผลลัพธ์: ALLOW)
 
 ## 1.1 ข้อมูลดิบ (request_logs — เส้นทางการล็อกอินจริง)
-ผู้ใช้ `6660506018@pnu.ac.th` กดล็อกอินผ่าน Google เข้า "ระบบหอพัก" เวลา 2026-07-20 15:25:
+ผู้ใช้ `<U08>` กดล็อกอินผ่าน Google เข้า "ระบบหอพัก" เวลา 2026-07-20 15:25:
 
 ```
 15:25:22  GET  /oauth/authorize          200   13ms   ← subsystem ส่งมาที่ Hub
@@ -66,7 +66,7 @@
 ## 1.2 ข้อมูลดิบ (login_sessions ที่บันทึก)
 ```
 created_at   : 2026-07-20 15:25:40
-user         : 6660506018@pnu.ac.th (student, คณะวิศวกรรมศาสตร์)
+user         : <U08> (student, คณะวิศวกรรมศาสตร์)
 subsystem    : ระบบหอพัก
 ip           : 172.18.0.1        geo_country : NULL (dev/private IP)
 os / browser : Windows 10 / Chrome 150.0.0.0    device_type : desktop
@@ -123,10 +123,10 @@ Layer 4 (รวม)      : 0.0+0.1+0.1 = 0.2
 # ส่วนที่ 2 — กรณี "ผิดปกติ" (ผลลัพธ์: CHALLENGE → MFA)
 
 ## 2.1 ข้อมูลดิบ (login_sessions)
-ผู้ใช้ `hasiyahdama5@gmail.com` (admin) login เวลา 2026-07-20 15:07 — **จากเครื่องใหม่**:
+ผู้ใช้ `<U01>` (admin) login เวลา 2026-07-20 15:07 — **จากเครื่องใหม่**:
 ```
 created_at   : 2026-07-20 15:07:11
-user         : hasiyahdama5@gmail.com (admin)
+user         : <U01> (admin)
 os / browser : Windows 10 / Chrome 150.0.0.0    device_type : desktop
 login_method : google
 decision     : mfa_passed  (คือ challenge ที่ผู้ใช้ผ่าน MFA แล้ว)

@@ -13,6 +13,7 @@ import logging
 
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.security.behavior_profiling import evaluate_behavior, get_user_profile
 from app.security.iforest_scorer import IForestResult, map_score
 from app.security.risk_aggregator import aggregate
@@ -30,6 +31,7 @@ async def evaluate_login_risk(
     db: Session,
     shadow_mode: bool = False,
     subsystem_id=None,
+    user_agent: str | None = None,
 ) -> dict:
     """ประเมินความเสี่ยงของ login 4 ชั้น.
 
@@ -70,7 +72,9 @@ async def evaluate_login_risk(
 
     # ── Layer 2: Behavior Profiling ──
     profile = get_user_profile(db, user_id)
-    behavior_result = evaluate_behavior(features, profile)
+    behavior_result = evaluate_behavior(
+        features, profile, subsystem_id=subsystem_id, user_agent=user_agent
+    )
 
     # ── Layer 3: Isolation Forest (fail-safe ตาม B21) ──
     # SHAP explanation is passed through from ML service. If ML service is
@@ -89,6 +93,55 @@ async def evaluate_login_risk(
     # ── Layer 4: Risk Aggregation ──
     decision = aggregate(rule_result, behavior_result, iforest_result, shadow_mode)
 
+    # ── L3 sequence channel — "ธงเฝ้าระวัง" (ยกได้สูงสุดแค่ warn, ไม่แตะ challenge/block) ──
+    # แยกจาก aggregate โดยตั้งใจ: joint-residual ของ stealth campaign มีคะแนนรวมต่ำเกินกว่า
+    # การบวกคะแนนจะดันถึง warn ได้ (ดู reports/l3_sequence_channel_2026-08-26.md) จึงยกระดับ
+    # ตรงๆ แทน · fail-safe ตาม B21 — พังแล้วไม่กระทบ decision เดิม
+    l3_seq_reason: str | None = None
+    l3_contract: dict | None = None
+    if settings.l3_sequence_enabled:
+        try:
+            from app.redis_client import redis_client
+            from app.security import l3_sequence
+
+            # numeric core อยู่ที่ ml-service (hub image ไม่มี numpy/sklearn โดยตั้งใจ)
+            # hub คำนวณ residual เอง (pure python) → ml-service fit/score → คืน contract
+            seq, resid = await l3_sequence.evaluate_login_remote(
+                redis_client, user_id, features, profile, subsystem_id
+            )
+            l3_contract = l3_sequence.to_contract(seq, None)
+            if seq.fired:
+                raised = l3_sequence.apply_channel(decision.decision, seq)
+                if raised != decision.decision:
+                    decision.decision = f"would_{raised}" if shadow_mode else raised
+                    decision.reasons = [
+                        *decision.reasons,
+                        f"{seq.reason} ({seq.score:.2f})",
+                    ]
+                    # ตั้งเมื่อ "ทำให้ decision เปลี่ยนจริง" เท่านั้น (effective unique)
+                    l3_seq_reason = seq.reason
+                # log ครบตาม data contract — ใช้วัด raw vs effective ตอน production replay
+                logger.info(
+                    "[risk_engine] l3_sequence user=%s tier=%s pct=%.3f raw=%.3f elig=%s shadow=%s",
+                    user_id,
+                    seq.tier,
+                    seq.percentile,
+                    seq.raw_score,
+                    seq.eligibility,
+                    seq.shadow_decision,
+                )
+            # บันทึกหลังตัดสิน — เป็น history ของครั้งถัดไป (ไม่ปนเข้า window ที่เพิ่งใช้)
+            l3_sequence.record_residual(redis_client, user_id, resid)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("[risk_engine] l3_sequence error: %s", e)
+
+    # เก็บ contract ลง breakdown (LoginSession.risk_breakdown เป็น JSON — ไม่ต้อง migration)
+    # ทำที่นี่จุดเดียวครอบคลุมทุก call site (auth ×3, oauth, passkey)
+    # จำเป็นสำหรับ production replay: ถ้าเก็บแค่ decision จะแยก raw (L3 ยิง) ออกจาก
+    # effective (decision เปลี่ยน) ไม่ได้ — การทดลองพบว่าสองค่านี้ต่างกันมาก (16.3% vs 0.2%)
+    if l3_contract is not None:
+        decision.breakdown = {**decision.breakdown, "l3_sequence": l3_contract}
+
     logger.info(
         "[risk_engine] user=%s score=%.3f decision=%s breakdown=%s",
         user_id,
@@ -105,4 +158,9 @@ async def evaluate_login_risk(
         # SHAP top-k features from Layer 3 — UI uses this in SessionDetailPanel,
         # audit log includes when score is high.
         "iforest_explanation": iforest_result.explanation,
+        # L3 sequence channel — ตั้งค่าเมื่อยิงเท่านั้น (audit/SOC ใช้แยกแยะที่มาของ warn)
+        "l3_sequence_reason": l3_seq_reason,
+        # data contract ต่อ login (raw_score/percentile/tier/eligibility/model_version)
+        # -> เก็บลง log/audit เพื่อวัด raw vs effective unique ตอน production replay
+        "l3_sequence": l3_contract,
     }

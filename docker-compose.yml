@@ -53,6 +53,10 @@ services:
       context: ./ml-service
       dockerfile: Dockerfile
     container_name: hub-ml
+    environment:
+      # L3 sequence channel — ml-service อ่าน residual history เอง
+      # (hub เขียน key l3resid:{user_id} หลังตัดสิน แต่คำนวณเองไม่ได้ ไม่มี numpy/sklearn)
+      REDIS_URL: redis://redis:6379/0
     ports:
       # bind localhost เท่านั้น — ML service ไม่มี auth/rate-limit + เป็น internal
       # (Hub เรียกผ่าน service name) → ไม่ควร reachable จาก network (dev hardening)

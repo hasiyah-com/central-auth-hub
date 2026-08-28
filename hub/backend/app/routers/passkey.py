@@ -156,6 +156,7 @@ async def _build_login_session(result, request, jti, db, method: str) -> LoginSe
         geo_country=geo_country,
         db=db,
         shadow_mode=settings.ml_shadow_mode,
+        user_agent=user_agent,
     )
     risk_score = risk["score"]
     risk_breakdown = risk["breakdown"]

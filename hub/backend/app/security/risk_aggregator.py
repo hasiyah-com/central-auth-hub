@@ -22,6 +22,14 @@ THRESHOLDS = {
     "warn": 0.5,
 }
 
+# ลำดับความเข้มของ decision (ใช้บังคับ policy floor)
+_ACTION_ORDER = ["allow", "warn", "challenge", "block"]
+
+
+def _max_action(a: str, b: str) -> str:
+    """คืน action ที่เข้มกว่าระหว่าง a, b."""
+    return a if _ACTION_ORDER.index(a) >= _ACTION_ORDER.index(b) else b
+
 
 @dataclass
 class RiskDecision:
@@ -69,6 +77,16 @@ def aggregate(
         raw_decision = "warn"
     else:
         raw_decision = "allow"
+
+    # ── Policy floor (B60) ──
+    # deterministic security event (เครื่องใหม่, passkey ใหม่, สิทธิ์เพิ่งเปลี่ยน,
+    # concurrent, velocity) ต้องได้ min action เสมอ แม้คะแนนรวมไม่ถึง threshold —
+    # ไม่งั้นเหตุการณ์ที่ควร step-up ถูกลดเหลือ allow เพราะขาดคะแนนจากชั้นอื่น
+    if getattr(rule, "min_action", None):
+        raw_decision = _max_action(raw_decision, rule.min_action)
+    # behavior layer ก็ตั้ง floor ได้ (subsystem ที่ไม่เคยใช้ = deterministic fact, Tier 1)
+    if getattr(behavior, "min_action", None):
+        raw_decision = _max_action(raw_decision, behavior.min_action)
 
     # Shadow mode prefix
     if shadow_mode and raw_decision != "allow":

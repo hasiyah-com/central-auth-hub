@@ -97,7 +97,7 @@ Tests (`tests/test_refresh_token.py`):
 ## Manual E2E verification (ผ่าน real running stack — ไม่ mock)
 
 รันกับ hub-stack ที่ localhost:3000 (Next.js) + localhost:8000 (Hub backend) จริง
-โดย mint token pair ให้ user จริง (`hasiyahdama5@gmail.com`, admin) ตรงจาก
+โดย mint token pair ให้ user จริง (`<U01>`, admin) ตรงจาก
 `create_access_token` + `refresh_token_service.issue` (แทนการ login ผ่าน Google
 OAuth ที่ automate ไม่ได้ในสภาพแวดล้อมนี้ — ไม่มีเบราว์เซอร์จริงให้กรอก credentials):
 

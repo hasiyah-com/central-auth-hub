@@ -476,6 +476,7 @@ async def google_callback(request: Request, db: Session = Depends(get_db)):
         geo_country=geo_country,
         db=db,
         shadow_mode=settings.ml_shadow_mode,
+        user_agent=user_agent,
     )
     risk_score = risk["score"]
     actual_decision = risk["decision"]
@@ -986,6 +987,7 @@ async def line_callback(request: Request, db: Session = Depends(get_db)):
         geo_country=geo_country,
         db=db,
         shadow_mode=settings.ml_shadow_mode,
+        user_agent=user_agent,
     )
     risk_score = risk["score"]
     actual_decision = risk["decision"]
@@ -1375,6 +1377,7 @@ async def _refresh_risk_gate(
         geo_country=geo_country,
         db=db,
         shadow_mode=settings.ml_shadow_mode,
+        user_agent=user_agent,
     )
     risk_score = risk["score"]
     decision = risk["decision"]

@@ -81,7 +81,8 @@ kids.push(new Paragraph({ alignment: AlignmentType.CENTER, spacing: { after: 400
 kids.push(new Paragraph({ alignment: AlignmentType.CENTER, spacing: { after: 40 },
   children: [new TextRun({ text: "Central Auth Hub — Senior Project", size: 24 })] }));
 kids.push(new Paragraph({ alignment: AlignmentType.CENTER, spacing: { after: 40 },
-  children: [new TextRun({ text: "ผู้จัดทำ: hasiyahdama5@gmail.com", size: 22 })] }));
+  // ผู้จัดทำ: ตั้งผ่าน env REPORT_AUTHOR (ไม่ hardcode อีเมลจริง — นโยบาย PII)
+  children: [new TextRun({ text: `ผู้จัดทำ: ${process.env.REPORT_AUTHOR || "Central Auth Hub"}`, size: 22 })] }));
 kids.push(new Paragraph({ alignment: AlignmentType.CENTER,
   children: [new TextRun({ text: "วันที่ 15 มิถุนายน 2026", size: 22 })] }));
 kids.push(new Paragraph({ children: [new PageBreak()] }));

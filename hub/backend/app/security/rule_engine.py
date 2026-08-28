@@ -17,8 +17,13 @@ from datetime import datetime, timedelta
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.models import LoginSession
 from app.services.ip_blacklist import is_blacklisted
+
+# policy floor ranking (ใช้แปลง min action <-> อันดับ)
+_ACTION_RANK = {"warn": 1, "challenge": 2, "block": 3}
+_RANK_ACTION = {v: k for k, v in _ACTION_RANK.items()}
 
 # ============ Feature index mapping (ต้องตรงกับ feature_extraction.py + features.py) ============
 # ⚠️ B27: ลำดับนี้คือ contract — แก้ feature order ที่ feature_extraction.py แล้ว
@@ -58,15 +63,32 @@ HARD_BLOCK_RULES = [
     ("country_change_count_30d", ">=", 8),
 ]
 
+# (feature, op, threshold, weight) — op รองรับ ">=", "==", "<="
+# floor = min action ที่บังคับเมื่อกฎนี้ยิง (deterministic security event) —
+#   "challenge" = ต้อง step-up เสมอ, None = แค่เพิ่มคะแนน (ปล่อยให้ aggregator ตัดสิน)
 SCORE_RULES = [
-    ("is_new_device", "==", 1, 0.30),
-    ("is_new_country", "==", 1, 0.30),
-    ("is_new_user_agent_family", "==", 1, 0.20),
-    ("failed_logins_24h", ">=", 3, 0.20),
-    ("is_thailand", "==", 0, 0.10),
-    # Geo (เพิ่ม): เปลี่ยนประเทศเร็ว (graded) จาก feature impossible_travel_score (idx 22)
-    # 1.0 = เพิ่งเปลี่ยนประเทศเดี๋ยวนี้, 0.5 = ภายใน ~12 ชม. — เสริม hard-block ที่ใช้ DB
-    ("impossible_travel_score", ">=", 0.5, 0.30),
+    # ── Device (มี floor เพราะเป็น deterministic takeover sign) ──
+    ("is_new_device", "==", 1, 0.30, "challenge"),
+    ("is_new_user_agent_family", "==", 1, 0.20, "challenge"),
+    # ── Geo (คงไว้เพื่อ portability — ไม่ยิงเมื่อไม่มี geo) ──
+    ("is_new_country", "==", 1, 0.30, "challenge"),
+    ("is_thailand", "==", 0, 0.10, None),
+    ("impossible_travel_score", ">=", 0.5, 0.30, "challenge"),
+    # ── Brute force ──
+    ("failed_logins_24h", ">=", 5, 0.30, "challenge"),
+    ("failed_logins_24h", ">=", 3, 0.20, None),  # graded: 3-4 ครั้ง = แค่คะแนน
+    # ── Velocity / burst (B60: ฟีเจอร์ที่เดิมไม่มีชั้นไหนให้คะแนน) ──
+    ("login_count_24h", ">=", 15, 0.20, None),
+    # ── Session — concurrent + lateral movement ──
+    ("concurrent_session_count", ">=", 3, 0.25, "challenge"),
+    ("active_subsystem_count", ">=", 2, 0.20, "challenge"),
+    # ── Credential — passkey เพิ่งลงทะเบียน (takeover sign) ──
+    ("new_passkey_recently_added", "==", 1, 0.30, "challenge"),
+    # ── Privilege — สิทธิ์เพิ่งเปลี่ยน ──
+    ("permission_change_age", "<=", 1, 0.25, "challenge"),
+    ("permission_change_age", "<=", 7, 0.10, None),  # graded: 2-7 วัน = แค่คะแนน
+    # ── History — เคยมี incident จริง (ground-truth) ──
+    ("confirmed_incident_count", ">=", 1, 0.40, "challenge"),
 ]
 
 # Multiple accounts from same IP
@@ -89,6 +111,9 @@ class RuleResult:
     blocked: bool
     score: float
     reasons: list[str] = field(default_factory=list)
+    # policy floor — min action ที่บังคับแม้คะแนนรวมไม่ถึง threshold (deterministic
+    # security event เช่น เครื่องใหม่/passkey ใหม่/สิทธิ์เพิ่งเปลี่ยน). None = ไม่บังคับ.
+    min_action: str | None = None
 
 
 def evaluate_rules(
@@ -136,13 +161,30 @@ def evaluate_rules(
     # ── Risk Score rules ──
     score = 0.0
     reasons: list[str] = []
+    floor_rank = 0  # policy floor: 0=none 1=warn 2=challenge 3=block
 
-    for feat_name, op, threshold, weight in SCORE_RULES:
+    for feat_name, op, threshold, weight, min_act in SCORE_RULES:
         value = features[FEAT[feat_name]]
-        hit = (op == ">=" and value >= threshold) or (op == "==" and value == threshold)
+        hit = (
+            (op == ">=" and value >= threshold)
+            or (op == "==" and value == threshold)
+            or (op == "<=" and value <= threshold)
+        )
         if hit:
             score += weight
             reasons.append(f"{feat_name} (+{weight})")
+            if min_act:
+                floor_rank = max(floor_rank, _ACTION_RANK[min_act])
+
+    # ── Velocity compound (B60): ล็อกอินถี่มาก + จำนวนสูง = credential stuffing/replay ──
+    # ต้องเป็น compound (2 ฟีเจอร์) จึงอยู่นอก SCORE_RULES ที่เป็น single-feature
+    if (
+        features[FEAT["log_minutes_since_last_login"]] <= 2.0
+        and features[FEAT["login_count_24h"]] >= 5
+    ):
+        score += 0.25
+        reasons.append("login_velocity (+0.25)")
+        floor_rank = max(floor_rank, _ACTION_RANK["challenge"])
 
     # ── Geo (เพิ่ม): login จาก "ประเทศใหม่ที่เป็นต่างประเทศ" (ไม่ใช่แค่ domestic ใหม่) ──
     # is_new_country(0.3)+is_thailand=0(0.1)+new_foreign(0.3) = 0.7 → ถึงเกณฑ์ challenge (step-up MFA)
@@ -162,7 +204,9 @@ def evaluate_rules(
             reasons.append(reason)
 
     # ── Multiple accounts from same IP ──
-    if ip:
+    # ⚠️ ปิดเมื่ออยู่หลัง campus/office NAT ร่วม (settings.shared_nat) — ทุกคนใช้ IP
+    # เดียวกัน กฎนี้จะยิงใส่ login ปกติ ~26% โดยไม่ได้บ่งชี้ attack จริง (B60)
+    if ip and not settings.shared_nat:
         multi = _check_multi_account_ip(db, ip)
         if multi > MULTI_ACCOUNT_THRESHOLD:
             score += MULTI_ACCOUNT_SCORE
@@ -170,7 +214,10 @@ def evaluate_rules(
                 f"multi_account_ip={multi} > {MULTI_ACCOUNT_THRESHOLD} (+{MULTI_ACCOUNT_SCORE})"
             )
 
-    return RuleResult(blocked=False, score=min(score, 1.0), reasons=reasons)
+    min_action = _RANK_ACTION.get(floor_rank)
+    return RuleResult(
+        blocked=False, score=min(score, 1.0), reasons=reasons, min_action=min_action
+    )
 
 
 # ============ Helpers ============

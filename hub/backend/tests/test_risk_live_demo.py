@@ -269,6 +269,15 @@ async def test_03_unusual_time(demo_user, db):
 @pytest.mark.asyncio
 async def test_04_new_device(demo_user, db):
     """อุปกรณ์ใหม่ (Windows Chrome → iPhone Safari) — admin ควรเห็น device/browser เปลี่ยน."""
+    # เคสนี้ทดสอบ "เครื่องใหม่" ล้วน — ต้องตัดสัญญาณเดินทางออกก่อน ไม่งั้น login ต่างประเทศ
+    # ของ test_02 ทำให้ impossible_travel hard-block (ประเมินความเสี่ยงใช้เวลาจริง utcnow
+    # ไม่ใช่ created_at ที่ส่งเข้าไป -> เลื่อนวันไม่ช่วย) แล้วข้าม L2/L3 จนไม่มีเหตุผล device
+    db.query(LoginSession).filter(
+        LoginSession.user_id == demo_user.id,
+        LoginSession.geo_country.is_not(None),
+        LoginSession.geo_country != "TH",
+    ).delete(synchronize_session=False)
+    db.commit()
     now = datetime.utcnow().replace(hour=USUAL_HOUR, minute=45)
     print("\n=== [4] อุปกรณ์ใหม่ (iPhone) ===")
     s = await _login(

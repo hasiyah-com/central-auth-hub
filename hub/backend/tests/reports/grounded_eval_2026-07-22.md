@@ -36,13 +36,13 @@ anomaly ในชุด test สร้างจาก normal base ฝั่ง t
 
 | user | weight | typical_hour | มี TH |
 |---|---|---|---|
-| hasiyahdama5@gmail.com | 120 | 09:00 | ✓ |
-| 6660506018@pnu.ac.th | 120 | 18:00 | · |
-| searozxcv@gmail.com | 84 | 16:00 | · |
-| furafae@gmail.com | 18 | 18:00 | · |
+| <U01> | 120 | 09:00 | ✓ |
+| <U08> | 120 | 18:00 | · |
+| <U03> | 84 | 16:00 | · |
+| <U06> | 18 | 18:00 | · |
 | risk-demo@uni.ac.th | 14 | 09:00 | ✓ |
-| jkfurakook@gmail.com | 7 | 10:00 | · |
-| xssearo@gmail.com | 5 | 09:00 | · |
+| <U13> | 7 | 10:00 | · |
+| <U14> | 5 | 09:00 | · |
 
 > weight = จำนวน session จริง (cap 120 กันไม่ให้ user ที่มี test burst เยอะครอบงำ)
 > typical_hour ต่างกันจริง (9/16/18/...) = persona มีความหลากหลายตามพฤติกรรมจริง

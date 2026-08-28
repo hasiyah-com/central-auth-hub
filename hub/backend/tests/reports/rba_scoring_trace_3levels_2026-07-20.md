@@ -31,9 +31,9 @@
 
 | ระดับ | User | เวลา | risk_score | decision |
 |---|---|---|---|---|
-| **Allow** | jkfurakook@gmail.com | 2026-07-19 10:10:45 | **0.30** | allow |
-| **Warn** | searozxcv@gmail.com | 2026-07-19 06:09:08 | **0.50** | would_warn |
-| **Challenge** | jkfurakook@gmail.com | 2026-07-19 10:04:26 | **0.70** | would_challenge |
+| **Allow** | <U13> | 2026-07-19 10:10:45 | **0.30** | allow |
+| **Warn** | <U03> | 2026-07-19 06:09:08 | **0.50** | would_warn |
+| **Challenge** | <U13> | 2026-07-19 10:04:26 | **0.70** | would_challenge |
 
 (ระบบรันโหมด `ML_SHADOW_MODE=true` → prefix `would_` หมายถึง "ถ้าไม่ shadow จะบังคับจริง" แต่คะแนน/เหตุผลคำนวณเหมือนโหมดจริงทุกอย่าง)
 
@@ -41,7 +41,7 @@
 
 # ระดับที่ 1 — CHALLENGE (risk_score = 0.70) — ตัวอย่างละเอียดที่สุด
 
-**User:** jkfurakook@gmail.com · **Subsystem:** ระบบหอพัก (`e84415ae-…`) · **เวลา:** 2026-07-19 10:04:26.166315
+**User:** <U13> · **Subsystem:** ระบบหอพัก (`e84415ae-…`) · **เวลา:** 2026-07-19 10:04:26.166315
 
 ## ① กดล็อกอิน → ② request_logs (HTTP trail จริง)
 
@@ -182,7 +182,7 @@ risk_breakdown = {"rule":0.3, "behavior":0.2, "iforest":0.2, "iforest_raw":0.516
 
 # ระดับที่ 2 — WARN (risk_score = 0.50)
 
-**User:** searozxcv@gmail.com · **Subsystem:** Hub-direct (ไม่มี subsystem_id) · **เวลา:** 2026-07-19 06:09:08.868331
+**User:** <U03> · **Subsystem:** Hub-direct (ไม่มี subsystem_id) · **เวลา:** 2026-07-19 06:09:08.868331
 
 ## ① → ② request_logs
 ```
@@ -250,7 +250,7 @@ risk_breakdown={"rule":0.0,"behavior":0.4,"iforest":0.1,"iforest_raw":0.4292}
 
 # ระดับที่ 3 — ALLOW (risk_score = 0.30)
 
-**User:** jkfurakook@gmail.com (คนเดียวกับเคส challenge) · **Subsystem:** ระบบหอพัก · **เวลา:** 2026-07-19 10:10:45.694022 (**6 นาทีถัดจากเคส challenge**)
+**User:** <U13> (คนเดียวกับเคส challenge) · **Subsystem:** ระบบหอพัก · **เวลา:** 2026-07-19 10:10:45.694022 (**6 นาทีถัดจากเคส challenge**)
 
 ## ① → ② request_logs
 ```
