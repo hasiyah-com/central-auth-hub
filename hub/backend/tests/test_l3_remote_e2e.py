@@ -13,6 +13,7 @@ Run: docker compose exec hub-backend pytest tests/test_l3_remote_e2e.py -v -s
 
 from __future__ import annotations
 
+import asyncio
 import json
 import random
 
@@ -23,6 +24,21 @@ from app.services.l3_sequence_client import get_sequence_score
 
 USER = "pytest-l3-e2e"
 KEY = L3._REDIS_KEY.format(user_id=USER)
+
+
+async def _ok(uid: str, resid: list[float], tries: int = 4) -> dict:
+    """เรียกจนสำเร็จ — call แรกที่ cache ยังเย็นอาจ timeout ตามที่ออกแบบไว้ (B63).
+
+    ไม่ใช่การกลบปัญหา: พฤติกรรมจริงคือ login แรกหลัง cache miss จะ abstain
+    แล้ว login ถัดไปได้ผลจาก cache — ที่นี่จำลองพฤติกรรมนั้นก่อนค่อยตรวจผล
+    """
+    for i in range(tries):
+        out = await get_sequence_score(uid, resid)
+        if out["error"] is None:
+            return out
+        assert out["error"] == "l3_timeout", f"ml-service ไม่พร้อม: {out['error']}"
+        await asyncio.sleep(0.5 * (i + 1))
+    raise AssertionError(f"ml-service ยัง warm ไม่เสร็จหลัง {tries} ครั้ง")
 
 
 def _redis():
@@ -70,8 +86,7 @@ def test_record_residual_writes_redis(seeded):
 @pytest.mark.asyncio
 async def test_normal_residual_does_not_fire(seeded):
     """login ปกติ (ใกล้ค่ากลางของคนนี้) -> ไม่ยิง แต่ต้องได้ eligibility=warn จริง."""
-    out = await get_sequence_score(USER, [4.0, 0.3, 3.0, 0.8, 0.5, 0.2])
-    assert out["error"] is None, out["error"]
+    out = await _ok(USER, [4.0, 0.3, 3.0, 0.8, 0.5, 0.2])
     assert out["eligibility"] == "warn"
     assert out["n_history"] >= L3.TIER_WARN
     assert out["fired"] is False
@@ -80,8 +95,7 @@ async def test_normal_residual_does_not_fire(seeded):
 @pytest.mark.asyncio
 async def test_extreme_drift_fires_and_raises_to_warn(seeded):
     """residual เบี่ยงหลายมิติพร้อมกัน -> ยิง + channel ยก allow เป็น warn (ไม่เกิน warn)."""
-    out = await get_sequence_score(USER, [12.0, 1.0, 8.0, 0.0, 9.0, 0.99])
-    assert out["error"] is None, out["error"]
+    out = await _ok(USER, [12.0, 1.0, 8.0, 0.0, 9.0, 0.99])
     res = L3.result_from_payload(out)
     print(f"\n  raw={res.raw_score:.3f} pct={res.percentile:.3f} tier={res.tier}")
     assert res.fired is True
@@ -95,7 +109,7 @@ async def test_extreme_drift_fires_and_raises_to_warn(seeded):
 @pytest.mark.asyncio
 async def test_contract_complete_for_replay(seeded):
     """contract ที่ลง risk_breakdown ต้องครบ + JSON ได้ + n_history ไม่เป็น 0."""
-    out = await get_sequence_score(USER, [12.0, 1.0, 8.0, 0.0, 9.0, 0.99])
+    out = await _ok(USER, [12.0, 1.0, 8.0, 0.0, 9.0, 0.99])
     c = L3.to_contract(L3.result_from_payload(out), None)
     json.dumps(c)
     assert c["eligible"] is True
@@ -111,7 +125,7 @@ async def test_abstain_for_fresh_user():
     if r is None:
         pytest.skip("Redis ไม่พร้อม")
     r.delete(L3._REDIS_KEY.format(user_id="pytest-l3-fresh"))
-    out = await get_sequence_score("pytest-l3-fresh", [0.0] * L3.DIMS)
+    out = await _ok("pytest-l3-fresh", [0.0] * L3.DIMS)
     assert out["eligibility"] == "abstain"
     assert out["fired"] is False
     assert L3.apply_channel("allow", L3.result_from_payload(out)) == "allow"
