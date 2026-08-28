@@ -114,6 +114,12 @@ class Settings(BaseSettings):
     # (ดู hub/backend/tests/reports/l3_sequence_channel_2026-08-26.md)
     l3_sequence_enabled: bool = False
 
+    # timeout ของ L3 แยกจาก ml_timeout_seconds โดยตั้งใจ (B63):
+    # L3 เป็นช่องเฝ้าระวัง ไม่ใช่ผู้ตัดสินสิทธิ์ -> ห้ามถ่วง login path เท่ากับ IForest หลัก
+    # ถ้า ml-service ยัง fit โมเดลรายคนอยู่ (cache miss, ~0.4-0.9 วิ ที่ history 2000)
+    # ให้ปล่อยผ่านไปเลย แล้วรอบถัดไปค่อยได้ผลจาก cache — เสีย 1 เหตุการณ์ ดีกว่าถ่วงทุก login
+    l3_timeout_seconds: float = 0.5
+
     # GeoIP (MaxMind GeoLite2 offline DB) — fail-safe ถ้าไฟล์หาย
     # ดาวน์โหลดฟรีที่ https://www.maxmind.com/en/geolite2/signup
     geoip_db_path: str = "/app/data/GeoLite2-Country.mmdb"

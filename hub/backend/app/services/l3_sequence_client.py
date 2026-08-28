@@ -73,7 +73,7 @@ async def get_sequence_score(user_id: str, residual: list[float] | None) -> dict
     if not user_id or not residual or len(residual) != DIMS:
         return _quiet("invalid_residual")
     try:
-        async with httpx.AsyncClient(timeout=settings.ml_timeout_seconds) as client:
+        async with httpx.AsyncClient(timeout=settings.l3_timeout_seconds) as client:
             r = await client.post(
                 f"{settings.ml_service_url}/v1/sequence-score",
                 json={

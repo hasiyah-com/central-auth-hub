@@ -366,6 +366,24 @@
 - **กฎเสริม (constant drift):** ค่าคงที่ที่กำหนดพฤติกรรมโมเดล (`DIMS`, `WINDOW`, `CAL_FPR`, `EXTREME_FPR`, `TIER_*`, `MODEL_VERSION`) อยู่สองไฟล์คนละ service — ต้องมี parity test บังคับให้ตรงกัน มิฉะนั้นกลายเป็นคนละโมเดลโดยไม่รู้ตัว (บทเรียนเดียวกับ B49 feature order)
 - **Verify:** `tests/test_l3_sequence_client.py::test_evaluate_login_remote_without_numpy` (บังคับ `_numeric()` คืน `None` → เส้นทาง production ต้องยังได้ผลครบ) · `test_constants_parity_hub_vs_ml_service` · `tests/test_l3_remote_e2e.py` (integration ข้ามคอนเทนเนอร์จริง ไม่ mock: เขียน residual 1,500 แถว → ml-service fit/score → ยืนยันยก `allow`→`warn` และ **ไม่แตะ** `challenge`/`block`) · รายงาน `hub/backend/tests/reports/l3_service_split_2026-08-29.md`
 
+**B62. Model cache refit เฉพาะตอนข้อมูล "โต" → history หดแล้วโมเดลเก่าค้างพร้อม n_history ผิด**
+- อาการ: ลบ/รีเซ็ต history ของผู้ใช้จาก 2,000 เหลือ 400 แถว แต่ L3 ยังรายงาน `n_history=2000` และ `eligibility=challenge` — คือยังใช้โมเดลเดิมตัดสินอยู่ นานได้ถึง 1 ชั่วโมง (TTL ของ cache)
+- สาเหตุ: เงื่อนไข cache เขียนไว้ว่า `len(history) < cached_n * 1.1` ซึ่งเป็นการถามว่า "ข้อมูลโตพอจะ refit หรือยัง" ทางเดียว — history ที่ **หด** (Redis eviction / key ถูกลบ / รีเซ็ตผู้ใช้ / เปลี่ยน retention) ผ่านเงื่อนไขนี้สบายๆ เพราะเลขน้อยลง. ปัญหาไม่ใช่แค่คะแนนเก่า: `n_history` เป็นตัวกำหนด **eligibility** (abstain/diagnostic/warn/challenge) → ผู้ใช้ที่ประวัติหายไปแล้วยังถูกตัดสินด้วย tier สูงเกินจริง
+- **กฎ:** cache ที่ใช้ "ขนาดข้อมูล" เป็น invalidation key ต้องเช็ค**ทั้งสองทิศทาง** — `cached_n <= now_n < cached_n * 1.1` ไม่ใช่ `now_n < cached_n * 1.1`. โดยเฉพาะเมื่อขนาดข้อมูลไม่ได้เป็นแค่ตัวชี้วัดความสดของโมเดล แต่ถูกใช้เป็น **input ของการตัดสินใจ** ด้วย
+- **Verify:** `tests/test_l3_stability.py::test_concurrent_requests_multi_user_no_crosstalk` (user ที่ history หด 2000→400 ต้องได้ `n_history=400`)
+
+**B63. fit โมเดลรายคนอยู่บน login path → cache-miss storm ทำ L3 timeout ทั้งชุด**
+- อาการ: ยิง 20 request พร้อมกันของผู้ใช้ที่ cache ยังว่าง → **timeout ทุกอัน** (L3 เงียบทั้งหมด). และแม้ cache อุ่นแล้ว request ที่มาพร้อมกันก็ยังช้าผิดปกติ
+- สาเหตุ (สองชั้น):
+  1. **fit ซ้ำซ้อน** — uvicorn รัน endpoint แบบ sync ใน threadpool → request ที่มาพร้อมกัน N อันเข้า `get_model()` พร้อมกัน เห็น cache ว่างเหมือนกันหมด แล้ว fit ซ้ำ N ครั้ง (fit วัดได้ ~270ms ที่ history 2,000 → 20 อัน = ~5.4 วิ)
+  2. **อ่าน history เต็มทุก request** — ทาง warm ก็ยัง `lrange -2000 -1` + `json.loads` 2,000 แถวทุกครั้ง ทั้งที่ต้องการแค่ท้าย window 4 แถว (คอขวดจริงที่ทำให้แม้ cache อุ่นก็ยังหน่วง)
+  3. L3 ใช้ `ml_timeout_seconds` (2 วิ) ร่วมกับ IForest หลัก → กรณีแย่สุด L3 ถ่วง login ได้ถึง 2 วินาที ทั้งที่เป็นแค่ช่องเฝ้าระวังที่ยกได้สูงสุด warn
+- **กฎ:** (1) งานหนักที่ cache ได้ ต้องมี **ล็อกต่อคีย์** + double-check หลังได้ล็อก ไม่ใช่ปล่อยให้ทุก request แข่งกันคำนวณ. (2) ทาง warm ต้องไม่จ่ายราคาของทาง cold — ใช้ `llen` (O(1)) ตรวจขนาดแทนการโหลดทั้งก้อนมานับ. (3) **ส่วนประกอบที่เป็น "monitoring" ต้องมี timeout ของตัวเอง แยกจากส่วนที่เป็น "ตัวตัดสิน"** — ไม่มีสิทธิ์ถ่วง critical path เท่ากัน
+- **Fix:** `_user_lock()` ต่อ user + double-check ใน `get_model()` · `_load_tail()` อ่านแค่ท้าย window ตอน cache อุ่น (fallback ไปอ่านเต็มถ้าท้ายลิสต์มีแถวเสีย) · เพิ่ม `settings.l3_timeout_seconds = 0.5` แยกจาก `ml_timeout_seconds`
+- **ผลที่วัดได้:** p95 latency **44ms** (จากเดิม timeout) · 20 request พร้อมกัน = สำเร็จ 20/20 ใน 586ms · ผู้ใช้ cold 8 คนพร้อมกันกลับมาปกติภายในไม่กี่วินาที
+- **ข้อแลกเปลี่ยนที่ยอมรับ:** หลัง ml-service restart มีช่วง warm-up สั้นๆ ที่ L3 abstain — ยอมเสียการเฝ้าระวัง 1-2 เหตุการณ์ ดีกว่าถ่วงทุก login
+- **Verify:** `tests/test_l3_stability.py` — `test_cache_miss_storm_degrades_gracefully`, `test_cold_capacity_many_distinct_users`, `test_latency_within_login_budget`
+
 ---
 
 ## วิธีเพิ่ม bug ใหม่
