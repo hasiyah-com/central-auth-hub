@@ -92,10 +92,19 @@ def seeded():
         r.delete(_key(uid))
 
 
-async def _ok(uid: str, resid: list[float]) -> dict:
-    out = await get_sequence_score(uid, resid)
-    assert out["error"] is None, f"ml-service ไม่พร้อม: {out['error']}"
-    return out
+async def _ok(uid: str, resid: list[float], tries: int = 4) -> dict:
+    """เรียกจนสำเร็จ — call แรกที่ cache ยังเย็นอาจ timeout ตามที่ออกแบบไว้ (B63).
+
+    ไม่ใช่การกลบปัญหา: พฤติกรรมจริงคือ login แรกหลัง cache miss จะ abstain
+    แล้ว login ถัดไปได้ผลจาก cache — ที่นี่จำลองพฤติกรรมนั้นก่อนค่อยตรวจผล
+    """
+    for i in range(tries):
+        out = await get_sequence_score(uid, resid)
+        if out["error"] is None:
+            return out
+        assert out["error"] == "l3_timeout", f"ml-service ไม่พร้อม: {out['error']}"
+        await asyncio.sleep(0.5 * (i + 1))
+    raise AssertionError(f"ml-service ยัง warm ไม่เสร็จหลัง {tries} ครั้ง")
 
 
 # ══════════════ 1. Cold profile — ประวัติน้อยต้องเงียบ ══════════════
@@ -317,7 +326,7 @@ async def test_cold_capacity_many_distinct_users(seeded):
     # (สะท้อนของจริง: หลัง restart มีช่วง warm-up ที่ L3 ยังเงียบอยู่)
     await asyncio.sleep(3.0)
     t0 = time.perf_counter()
-    outs2 = await asyncio.gather(*[get_sequence_score(u, DRIFT) for u in uids])
+    outs2 = await asyncio.gather(*[_ok(u, DRIFT) for u in uids])
     warm_ms = (time.perf_counter() - t0) * 1000
     for uid in uids:
         seeded.delete(_key(uid))

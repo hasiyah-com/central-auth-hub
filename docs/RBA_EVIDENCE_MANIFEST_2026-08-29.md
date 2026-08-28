@@ -17,8 +17,8 @@ python scripts/build_evidence_manifest.py --verify
 
 | รายการ | ค่า |
 |---|---|
-| commit SHA (เต็ม) | `f1aea03f3fe14a5e663b8621e560ae222b170212` |
-| commit SHA (สั้น) | `f1aea03` |
+| commit SHA (เต็ม) | `639eefbb402835a560dda782704d086ec19ad7a6` |
+| commit SHA (สั้น) | `639eefb` |
 | branch | `main` |
 | working tree ตอนสร้าง manifest | มีไฟล์ที่ยังไม่ commit (ดู §5) |
 | จำนวนไฟล์หลักฐาน | 47 |
@@ -117,7 +117,7 @@ L3 = surfacing channel (ยกได้สูงสุด `warn` ห้ามแ
 | `hub/backend/app/security/risk_engine.py` | 8,353 | `96defe1d3ea1c91513cff2fe7e2ac5b55e0e0da6ee25d467867a4bacc1b6d6ca` |
 | `hub/backend/app/services/l3_sequence_client.py` | 3,511 | `05112f9a8ab8e22a29ebf9032dab631d7918f4c43532b3f47b1e20d41f069352` |
 | `hub/backend/scripts/l3_shadow_replay.py` | 19,109 | `794c684fd3b599791b871509a62ff73a589ec4d5c401b829807c8c685c7cc31d` |
-| `hub/backend/tests/test_l3_stability.py` | 24,093 | `54a8aa42bde6efbda3203e12f06f3f2d20653c0fcb5ef14b637feeeff55e038c` |
+| `hub/backend/tests/test_l3_stability.py` | 24,870 | `3c368bdeefb2897002d3d4edb19c64c45b9b93a6215b6aa27e635ed5a07eff24` |
 
 ## 5. Freeze commit
 
