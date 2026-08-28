@@ -1,0 +1,91 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="440" viewBox="0 0 760 440" font-family="Segoe UI,Arial,sans-serif">
+<rect width="760" height="440" fill="white"/>
+<text x="70" y="24" font-size="16" font-weight="bold">Learning Curve — Contract V2+ (mean of 5 seeds)</text>
+<line x1="70" y1="385.0" x2="620" y2="385.0" stroke="#eee" stroke-width="1"/>
+<text x="62" y="389.0" font-size="11" text-anchor="end" fill="#666">0%</text>
+<line x1="70" y1="316.0" x2="620" y2="316.0" stroke="#eee" stroke-width="1"/>
+<text x="62" y="320.0" font-size="11" text-anchor="end" fill="#666">20%</text>
+<line x1="70" y1="247.0" x2="620" y2="247.0" stroke="#eee" stroke-width="1"/>
+<text x="62" y="251.0" font-size="11" text-anchor="end" fill="#666">40%</text>
+<line x1="70" y1="178.0" x2="620" y2="178.0" stroke="#eee" stroke-width="1"/>
+<text x="62" y="182.0" font-size="11" text-anchor="end" fill="#666">60%</text>
+<line x1="70" y1="109.0" x2="620" y2="109.0" stroke="#eee" stroke-width="1"/>
+<text x="62" y="113.0" font-size="11" text-anchor="end" fill="#666">80%</text>
+<line x1="70" y1="40.0" x2="620" y2="40.0" stroke="#eee" stroke-width="1"/>
+<text x="62" y="44.0" font-size="11" text-anchor="end" fill="#666">100%</text>
+<line x1="70.0" y1="40" x2="70.0" y2="385" stroke="#f4f4f4" stroke-width="1"/>
+<text x="70.0" y="403" font-size="11" text-anchor="middle" fill="#666">10</text>
+<line x1="212.4" y1="40" x2="212.4" y2="385" stroke="#f4f4f4" stroke-width="1"/>
+<text x="212.4" y="403" font-size="11" text-anchor="middle" fill="#666">50</text>
+<line x1="273.8" y1="40" x2="273.8" y2="385" stroke="#f4f4f4" stroke-width="1"/>
+<text x="273.8" y="403" font-size="11" text-anchor="middle" fill="#666">100</text>
+<line x1="416.2" y1="40" x2="416.2" y2="385" stroke="#f4f4f4" stroke-width="1"/>
+<text x="416.2" y="403" font-size="11" text-anchor="middle" fill="#666">500</text>
+<line x1="477.6" y1="40" x2="477.6" y2="385" stroke="#f4f4f4" stroke-width="1"/>
+<text x="477.6" y="403" font-size="11" text-anchor="middle" fill="#666">1000</text>
+<line x1="620.0" y1="40" x2="620.0" y2="385" stroke="#f4f4f4" stroke-width="1"/>
+<text x="620.0" y="403" font-size="11" text-anchor="middle" fill="#666">5000</text>
+<text x="345" y="432" font-size="12" text-anchor="middle">login history / user (log scale)</text>
+<path d="M70.0,84.8 L212.4,78.2 L273.8,79.4 L416.2,78.8 L477.6,76.5 L620.0,78.2" fill="none" stroke="#2563eb" stroke-width="2.5"/>
+<line x1="70.0" y1="88.3" x2="70.0" y2="81.4" stroke="#2563eb" stroke-width="1" opacity="0.5"/>
+<circle cx="70.0" cy="84.8" r="3.5" fill="#2563eb"/>
+<line x1="212.4" y1="79.4" x2="212.4" y2="77.1" stroke="#2563eb" stroke-width="1" opacity="0.5"/>
+<circle cx="212.4" cy="78.2" r="3.5" fill="#2563eb"/>
+<line x1="273.8" y1="81.9" x2="273.8" y2="76.9" stroke="#2563eb" stroke-width="1" opacity="0.5"/>
+<circle cx="273.8" cy="79.4" r="3.5" fill="#2563eb"/>
+<line x1="416.2" y1="82.0" x2="416.2" y2="75.7" stroke="#2563eb" stroke-width="1" opacity="0.5"/>
+<circle cx="416.2" cy="78.8" r="3.5" fill="#2563eb"/>
+<line x1="477.6" y1="77.2" x2="477.6" y2="75.8" stroke="#2563eb" stroke-width="1" opacity="0.5"/>
+<circle cx="477.6" cy="76.5" r="3.5" fill="#2563eb"/>
+<line x1="620.0" y1="80.2" x2="620.0" y2="76.3" stroke="#2563eb" stroke-width="1" opacity="0.5"/>
+<circle cx="620.0" cy="78.2" r="3.5" fill="#2563eb"/>
+<path d="M70.0,71.6 L212.4,58.1 L273.8,57.5 L416.2,60.4 L477.6,58.7 L620.0,59.3" fill="none" stroke="#16a34a" stroke-width="2.5"/>
+<line x1="70.0" y1="75.9" x2="70.0" y2="67.4" stroke="#16a34a" stroke-width="1" opacity="0.5"/>
+<circle cx="70.0" cy="71.6" r="3.5" fill="#16a34a"/>
+<line x1="212.4" y1="60.8" x2="212.4" y2="55.4" stroke="#16a34a" stroke-width="1" opacity="0.5"/>
+<circle cx="212.4" cy="58.1" r="3.5" fill="#16a34a"/>
+<line x1="273.8" y1="61.3" x2="273.8" y2="53.7" stroke="#16a34a" stroke-width="1" opacity="0.5"/>
+<circle cx="273.8" cy="57.5" r="3.5" fill="#16a34a"/>
+<line x1="416.2" y1="65.6" x2="416.2" y2="55.2" stroke="#16a34a" stroke-width="1" opacity="0.5"/>
+<circle cx="416.2" cy="60.4" r="3.5" fill="#16a34a"/>
+<line x1="477.6" y1="61.3" x2="477.6" y2="56.1" stroke="#16a34a" stroke-width="1" opacity="0.5"/>
+<circle cx="477.6" cy="58.7" r="3.5" fill="#16a34a"/>
+<line x1="620.0" y1="62.1" x2="620.0" y2="56.4" stroke="#16a34a" stroke-width="1" opacity="0.5"/>
+<circle cx="620.0" cy="59.3" r="3.5" fill="#16a34a"/>
+<path d="M70.0,42.2 L212.4,44.7 L273.8,48.3 L416.2,66.1 L477.6,104.5 L620.0,178.8" fill="none" stroke="#9333ea" stroke-width="2.5"/>
+<circle cx="70.0" cy="42.2" r="3.5" fill="#9333ea"/>
+<line x1="212.4" y1="46.0" x2="212.4" y2="43.3" stroke="#9333ea" stroke-width="1" opacity="0.5"/>
+<circle cx="212.4" cy="44.7" r="3.5" fill="#9333ea"/>
+<line x1="273.8" y1="51.1" x2="273.8" y2="45.5" stroke="#9333ea" stroke-width="1" opacity="0.5"/>
+<circle cx="273.8" cy="48.3" r="3.5" fill="#9333ea"/>
+<line x1="416.2" y1="69.8" x2="416.2" y2="62.4" stroke="#9333ea" stroke-width="1" opacity="0.5"/>
+<circle cx="416.2" cy="66.1" r="3.5" fill="#9333ea"/>
+<line x1="477.6" y1="109.7" x2="477.6" y2="99.3" stroke="#9333ea" stroke-width="1" opacity="0.5"/>
+<circle cx="477.6" cy="104.5" r="3.5" fill="#9333ea"/>
+<line x1="620.0" y1="185.4" x2="620.0" y2="172.2" stroke="#9333ea" stroke-width="1" opacity="0.5"/>
+<circle cx="620.0" cy="178.8" r="3.5" fill="#9333ea"/>
+<path d="M70.0,373.5 L212.4,381.0 L273.8,378.7 L416.2,379.1 L477.6,379.4 L620.0,379.6" fill="none" stroke="#dc2626" stroke-width="2.5"/>
+<line x1="70.0" y1="379.2" x2="70.0" y2="367.8" stroke="#dc2626" stroke-width="1" opacity="0.5"/>
+<circle cx="70.0" cy="373.5" r="3.5" fill="#dc2626"/>
+<line x1="212.4" y1="382.4" x2="212.4" y2="379.6" stroke="#dc2626" stroke-width="1" opacity="0.5"/>
+<circle cx="212.4" cy="381.0" r="3.5" fill="#dc2626"/>
+<line x1="273.8" y1="381.8" x2="273.8" y2="375.6" stroke="#dc2626" stroke-width="1" opacity="0.5"/>
+<circle cx="273.8" cy="378.7" r="3.5" fill="#dc2626"/>
+<line x1="416.2" y1="380.1" x2="416.2" y2="378.0" stroke="#dc2626" stroke-width="1" opacity="0.5"/>
+<circle cx="416.2" cy="379.1" r="3.5" fill="#dc2626"/>
+<line x1="477.6" y1="380.5" x2="477.6" y2="378.4" stroke="#dc2626" stroke-width="1" opacity="0.5"/>
+<circle cx="477.6" cy="379.4" r="3.5" fill="#dc2626"/>
+<circle cx="620.0" cy="379.6" r="3.5" fill="#dc2626"/>
+<rect x="636" y="41" width="12" height="12" fill="#2563eb"/>
+<text x="652" y="51" font-size="12">Recall</text>
+<text x="652" y="65" font-size="10" fill="#888">@5000: 88.9%</text>
+<rect x="636" y="75" width="12" height="12" fill="#16a34a"/>
+<text x="652" y="85" font-size="12">Policy success</text>
+<text x="652" y="99" font-size="10" fill="#888">@5000: 94.4%</text>
+<rect x="636" y="109" width="12" height="12" fill="#9333ea"/>
+<text x="652" y="119" font-size="12">PR-AUC</text>
+<text x="652" y="133" font-size="10" fill="#888">@5000: 59.8%</text>
+<rect x="636" y="143" width="12" height="12" fill="#dc2626"/>
+<text x="652" y="153" font-size="12">Challenge FPR</text>
+<text x="652" y="167" font-size="10" fill="#888">@5000: 1.6%</text>
+</svg>

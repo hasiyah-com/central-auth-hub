@@ -13,6 +13,7 @@ Run: py ml-service/scripts/simulate_month.py
 """
 
 import csv
+import os
 import random
 from collections import Counter
 from datetime import datetime, timedelta
@@ -25,7 +26,13 @@ START = datetime(2026, 5, 18)
 DAYS = 30
 CLONES = {"student": 115, "teacher": 24, "staff": 16, "admin": 7}
 # 2 บัญชีจริงที่โดนโจมตีจริง (admin สิทธิ์สูง + นศ. active สุด)
-ATTACKED = {"U01@example.invalid", "U08@example.invalid"}
+# ⚠️ อีเมลจริงไม่ hardcode (นโยบาย PII) — ตั้งผ่าน env ก่อนรัน:
+#     ATTACKED_EMAILS="a@example.com,b@example.com" py ml-service/scripts/simulate_month.py
+ATTACKED = {e.strip() for e in os.getenv("ATTACKED_EMAILS", "").split(",") if e.strip()}
+if not ATTACKED:
+    raise SystemExit(
+        "❌ ต้องตั้ง ATTACKED_EMAILS (คั่นด้วย ,) — อีเมลจริงไม่เก็บในไฟล์นี้ตามนโยบาย PII"
+    )
 COMPROMISE_DAY = 12  # โดน takeover ตั้งแต่วันที่ 12
 ATTACK_PER_DAY = (10, 17)  # login มุ่งร้ายต่อวัน (ช่วงโดน) — ให้ได้ ~4%
 

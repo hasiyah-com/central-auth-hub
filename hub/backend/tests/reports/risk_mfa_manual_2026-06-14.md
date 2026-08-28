@@ -50,8 +50,8 @@
 **Test data:**
 | User | Email | สถานะ |
 |---|---|---|
-| REAUTH_USER | `U08@example.invalid` | มี passkey (2 ตัวในระบบ) |
-| ENROLL_USER | `U06@example.invalid` | ไม่มี passkey |
+| REAUTH_USER | `<U08>` | มี passkey (2 ตัวในระบบ) |
+| ENROLL_USER | `<U06>` | ไม่มี passkey |
 
 **เทคนิคพิเศษ — OTP verify success:** อ่าน OTP จาก email ไม่ได้ใน automated test → set Redis key `force_enroll_otp:{cid}` เป็น `hash_otp("246810")` โดยตรง แล้ว verify ด้วย plaintext ที่รู้ (จำลอง user ได้ OTP จริงจาก email)
 

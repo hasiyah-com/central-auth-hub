@@ -523,7 +523,7 @@ Subsystem ตรวจ JWT ผ่าน JWKS ของ Hub (cache 10 นาท�
 ```bash
 docker compose exec hub-backend python -m app.seeds.seed_users
 # Type 'y' when prompted — deletes only @uni.ac.th and @hub.local users
-# Custom Gmail admin (e.g. U01@example.invalid) is preserved
+# Custom Gmail admin (บัญชี Gmail ที่ผูกไว้กับ Hub) is preserved
 ```
 
 ### Nuke everything and start fresh
@@ -635,6 +635,9 @@ docker compose exec ml-service python -m scripts.train_model
 
 **B52. Action ที่ Hub ทำ ต้องแจ้ง subsystem ข้าม trust domain ด้วย webhook** — force-logout/revoke ที่ Hub ทำแล้วหยุดแค่ Hub เอง = subsystem cookie ยังใช้ต่อได้ (ไม่ใช่ SSO, Hub เอื้อมไปลบ session subsystem ไม่ได้)
 → **กฎ:** ทุก action ที่ควรตัดสิทธิ์ทันที (force-logout, revoke, ban) ต้อง loop ยิง `send_access_updated`/`send_access_revoked` ให้ subsystem ที่ user มี session ค้างอยู่เสมอ — fail-safe (ยิงไม่สำเร็จ = log ไม่ raise, ตาม B21)
+
+**B61. fail-safe ที่ "เงียบ" ต้องมีเทสยืนยันเส้นทางสำเร็จในสภาพแวดล้อมจริง** — L3 import numpy แบบ lazy อยู่ใน `hub-backend` ที่ไม่มี numpy → abstain 100% ตลอดกาล ผ่านเทสบน host แต่ไม่เคยทำงานจริง และไม่มี error log เพราะ fail-safe ทำงาน "ถูกต้อง"
+→ **กฎ:** abstain 100% กับ fail-safe ที่ทำงานถูกต้อง ให้ผลลัพธ์ภายนอกเหมือนกันเป๊ะ — ต้องมีเทสที่พิสูจน์ว่า**เส้นทางสำเร็จ**ทำงานได้ในคอนเทนเนอร์จริง ไม่ใช่แค่ "พังแล้วไม่ระเบิด" · โค้ดที่ต้องใช้ ML dep ต้องอยู่ใน service ที่มี dep นั้น (ห้าม lazy import เพื่อแชร์ไฟล์ข้าม service) · ค่าคงที่ของโมเดลที่อยู่สอง service ต้องมี parity test
 
 ### หมวดบั๊กเพิ่มเติม (ดูรายละเอียดใน `docs/bugs-encountered.md`)
 
@@ -826,6 +829,6 @@ docker compose exec hub-backend pytest . -v -s
 ## Contact / Owner
 
 - Repository: `https://github.com/hasiyah-com/central-auth-hub`
-- Owner: U01@example.invalid (Gmail admin in DB)
+- Owner: บัญชี Gmail admin ใน DB (ไม่ระบุอีเมลในไฟล์นี้ — นโยบาย PII)
 - Project type: Senior Project (Bachelor's degree)
 - Timeline: 4 months (16 weeks)

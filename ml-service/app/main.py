@@ -14,6 +14,7 @@ Endpoints:
   POST /v1/score                -> scoring login session
 """
 
+import os
 import uuid
 from datetime import datetime, timezone
 
@@ -21,6 +22,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, field_validator
 
+from app import sequence as SEQ
 from app.features import FEATURE_COUNT, FEATURE_NAMES, FEATURE_RANGES
 from app.model import (
     explainer_status,
@@ -49,6 +51,29 @@ def startup():
         print("✅ Model loaded")
     except FileNotFoundError as e:
         print(f"⚠️  {e}")
+
+
+# ── Redis (L3 sequence history) — lazy + fail-safe ตาม B21 ──
+# ml-service อ่าน history เอง เพราะ hub ไม่มี numpy จะคำนวณให้ไม่ได้
+# ถ้าไม่ได้ตั้ง REDIS_URL หรือ redis ล่ม -> L3 abstain เงียบๆ ไม่ทำ /v1/score พัง
+_REDIS = None
+
+
+def _redis():
+    global _REDIS
+    if _REDIS is not None:
+        return _REDIS
+    try:
+        import redis as _r
+
+        _REDIS = _r.from_url(
+            os.getenv("REDIS_URL", "redis://redis:6379/0"), decode_responses=True
+        )
+        _REDIS.ping()
+    except Exception as e:  # noqa: BLE001
+        print(f"⚠️  redis unavailable — L3 sequence abstains: {e}")
+        _REDIS = None
+    return _REDIS
 
 
 # ============ Standard Error Handler ============
@@ -202,6 +227,44 @@ def score(req: ScoreRequest, request: Request):
             "explainer": explainer_status(),
         },
     )
+
+
+# ============ L3 sequence channel (per-user residual window) ============
+
+
+class SequenceRequest(BaseModel):
+    """residual 6 มิติของ login ปัจจุบัน — hub คำนวณให้ (pure python ไม่ต้องใช้ numpy)."""
+
+    user_id: str = Field(..., min_length=1, max_length=128)
+    residual: list[float] = Field(
+        ..., description=f"ต้องมี {SEQ.DIMS} ค่า ตามลำดับใน sequence.py"
+    )
+
+    @field_validator("residual")
+    @classmethod
+    def check_dims(cls, v):
+        if len(v) != SEQ.DIMS:
+            raise ValueError(f"residual ต้องมี {SEQ.DIMS} ค่า (ได้ {len(v)})")
+        return v
+
+
+@app.post("/v1/sequence-score")
+def sequence_score(req: SequenceRequest):
+    """L3 sequence channel — ให้คะแนน window ล่าสุดของผู้ใช้คนนี้.
+
+    อ่าน history จาก Redis เอง (key `l3resid:{user_id}` ที่ hub เขียนไว้หลังตัดสิน)
+    fail-safe: Redis ล่ม/ไม่มี history -> คืน abstain เงียบๆ (hub ก็ fail-safe ซ้ำอีกชั้น B21)
+    """
+    r = _redis()
+    data = SEQ.score(r, req.user_id, req.residual) if r else dict(SEQ.QUIET)
+    return {
+        "data": data,
+        "meta": {
+            "version": "v1",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "redis": "ok" if r else "unavailable",
+        },
+    }
 
 
 # ============ Backward-compatible (Week 5 old paths) ============

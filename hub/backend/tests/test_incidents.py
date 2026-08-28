@@ -264,6 +264,14 @@ def test_incident_timeline_two_strands(db, admin_user):
     db.add(sess)
     db.commit()
     db.refresh(sess)
+    # timeline ใช้ order_by(created_at.asc()).limit(40) = เก็บ "40 แถวเก่าสุด" ในหน้าต่างเวลา
+    # -> ถ้า audit ของบัญชีนี้สะสมจากเทสต์อื่นจนเต็มโควตา แถวที่เทสต์นี้เพิ่งใส่จะถูกตัดทิ้ง
+    # ล้าง noise ของบัญชีนี้ก่อน เพื่อให้เทสต์ hermetic (ไม่ขึ้นกับลำดับ/จำนวนรอบที่รันมา)
+    db.query(AuditLog).filter(
+        (AuditLog.actor_id == admin_user.id) | (AuditLog.target_id == admin_user.id)
+    ).delete(synchronize_session=False)
+    db.commit()
+
     # account strand: บัญชีนี้ (admin) ลบผู้ใช้อีกคน (actor = incident user)
     a1 = AuditLog(
         actor_id=admin_user.id,

@@ -37,6 +37,13 @@ HEALTH_TIMEOUT_SEC = 3.0
 HEALTH_REDIS_TTL = 30 * 60  # cache ผล 30 นาที (เผื่อ scheduler หยุด)
 HEALTH_KEY_PREFIX = "subsystem:health:"
 
+# ── History (สำหรับกราฟ latency ย้อนหลัง) ────────────────────────────────
+# เก็บเป็น Redis list ต่อ subsystem — push ทุกครั้งที่ ping (ทุก 5 นาที)
+# แล้ว trim ให้เหลือ HEALTH_HISTORY_MAX จุด. ping ทุก 5 นาที × 288 จุด = 24 ชม.
+HEALTH_HISTORY_PREFIX = "subsystem:health:history:"
+HEALTH_HISTORY_MAX = 288
+HEALTH_HISTORY_TTL = 48 * 3600  # กันค้างถ้า subsystem ถูกลบ/ระงับ
+
 # Summary slots (Bangkok ICT = UTC+7)
 #   เช้า 08:00 · บ่าย 13:00 · เย็น 18:00
 # ระบบจะเอา snapshot รวบรวมสถานะทุก subsystem 1 ครั้งต่อ slot ต่อวัน
@@ -54,6 +61,48 @@ _task: asyncio.Task | None = None
 
 def _redis_key(subsystem_id: str) -> str:
     return f"{HEALTH_KEY_PREFIX}{subsystem_id}"
+
+
+def _history_key(subsystem_id: str) -> str:
+    return f"{HEALTH_HISTORY_PREFIX}{subsystem_id}"
+
+
+def _append_history(subsystem_id: str, res: dict) -> None:
+    """เก็บจุดข้อมูล health ลง history list (เก่าสุดอยู่หัว, ใหม่สุดอยู่ท้าย).
+
+    เก็บเฉพาะ field ที่กราฟใช้ (เล็ก + ไม่ซ้ำข้อมูล) — fail-safe ตาม B21:
+    เขียนไม่สำเร็จ = log แล้วข้าม ไม่กระทบ health loop
+    """
+    try:
+        point = {
+            "at": res.get("checked_at"),
+            "status": res.get("status"),
+            "latency_ms": res.get("latency_ms"),
+        }
+        key = _history_key(subsystem_id)
+        pipe = redis_client.pipeline()
+        pipe.rpush(key, json.dumps(point))
+        pipe.ltrim(key, -HEALTH_HISTORY_MAX, -1)
+        pipe.expire(key, HEALTH_HISTORY_TTL)
+        pipe.execute()
+    except Exception as e:
+        log.warning("[health] history append failed for %s: %r", subsystem_id, e)
+
+
+def get_history(subsystem_id: str, limit: int = HEALTH_HISTORY_MAX) -> list[dict]:
+    """อ่าน health history (เรียงเก่า→ใหม่). คืน [] ถ้ายังไม่มี/Redis มีปัญหา."""
+    try:
+        raw = redis_client.lrange(_history_key(subsystem_id), -limit, -1)
+        out: list[dict] = []
+        for item in raw or []:
+            try:
+                out.append(json.loads(item))
+            except (ValueError, TypeError):
+                continue
+        return out
+    except Exception as e:
+        log.warning("[health] history read failed for %s: %r", subsystem_id, e)
+        return []
 
 
 def _resolve_health_url(subsystem: Subsystem) -> str | None:
@@ -613,6 +662,9 @@ async def _loop():
                                 "[health] redis store failed for %s: %r", sub.id, e
                             )
 
+                        # 1.5) เก็บจุดข้อมูลลง history (กราฟ latency ย้อนหลัง)
+                        _append_history(str(sub.id), res)
+
                         # 2) ตรวจ transition → fire alert
                         try:
                             _detect_transition(sub, old_states.get(str(sub.id)), res)
@@ -684,6 +736,7 @@ def clear_status(subsystem_id: str) -> None:
                preflight ไม่ block จนกว่า health loop รอบถัดไปจะ refresh ค่าจริง
     """
     try:
-        redis_client.delete(_redis_key(subsystem_id))
+        # ลบทั้งสถานะล่าสุดและ history (กันกราฟค้างค่าเก่าหลัง suspend/resume)
+        redis_client.delete(_redis_key(subsystem_id), _history_key(subsystem_id))
     except Exception as e:
         log.warning("[health] redis clear failed for %s: %r", subsystem_id, e)

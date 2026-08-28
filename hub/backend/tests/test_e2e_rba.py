@@ -61,6 +61,10 @@ def _features(**over):
     f[FEAT["is_thailand"]] = 1.0
     f[FEAT["hour_of_day"]] = 10.0
     f[FEAT["day_of_week"]] = 1.0
+    # neutral = "ไม่เคยเปลี่ยนสิทธิ์" (PERM_AGE_CAP) — feature_extraction ส่งค่านี้จริง
+    # ถ้าปล่อยเป็น 0 จะแปลว่า "สิทธิ์เพิ่งเปลี่ยนวันนี้" -> กฎ Phase 1 ยิงถูกต้อง แต่ทำให้
+    # เคส "login ปกติ" ในเทสต์ไม่ปกติจริง
+    f[FEAT["permission_change_age"]] = 365.0
     for k, v in over.items():
         f[FEAT[k]] = v
     return f

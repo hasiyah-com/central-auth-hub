@@ -103,6 +103,17 @@ class Settings(BaseSettings):
     subsystem_verify_ssl: bool = True
     ml_shadow_mode: bool = True  # True = log score แต่ไม่ block / False = enforce
 
+    # Deployment อยู่หลัง NAT ร่วม (campus/office) — ผู้ใช้ทุกคนใช้ public IP เดียวกัน
+    # -> ปิดกฎ multi_account_ip ที่จะยิงใส่ login ปกติ ~26% โดยไม่มีข้อมูลจริง
+    # (ตั้ง SHARED_NAT=true ใน .env สำหรับ deployment หลัง campus NAT)
+    shared_nat: bool = False
+
+    # L3 sequence channel — per-user joint-residual anomaly เป็น "ธงเฝ้าระวัง" (warn เท่านั้น)
+    # ยกได้สูงสุดแค่ warn ห้ามแตะ challenge/block -> ไม่กระทบ UX (challenge FPR ไม่ขยับ)
+    # ปิดไว้เป็น default: ยังพิสูจน์บนข้อมูลจำลองเท่านั้น ต้อง production replay ก่อนเปิดจริง
+    # (ดู hub/backend/tests/reports/l3_sequence_channel_2026-08-26.md)
+    l3_sequence_enabled: bool = False
+
     # GeoIP (MaxMind GeoLite2 offline DB) — fail-safe ถ้าไฟล์หาย
     # ดาวน์โหลดฟรีที่ https://www.maxmind.com/en/geolite2/signup
     geoip_db_path: str = "/app/data/GeoLite2-Country.mmdb"

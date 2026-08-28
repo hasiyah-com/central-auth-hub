@@ -11,3 +11,7 @@ joblib==1.4.2
 
 # Interpretability — TreeExplainer for IsolationForest (Wiefling 2022 pattern)
 shap==0.46.0
+
+# L3 sequence channel — อ่าน residual history ที่ hub เขียนไว้ (key l3resid:{user_id})
+# pin ตรงกับ hub/backend/requirements.txt
+redis==5.2.0
