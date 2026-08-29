@@ -83,10 +83,10 @@ export default function UserTimelinePage({ params }: { params: { id: string } })
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-white/10 bg-white/10 sm:grid-cols-4">
-                  <DarkMetric label="Sessions" value={String(sessions.length)} />
-                  <DarkMetric label="Avg risk" value={summary.average.toFixed(3)} tone={riskTone(summary.average)} />
-                  <DarkMetric label="Flagged" value={String(summary.flagged)} tone={summary.flagged ? "text-amber-300" : "text-brand-500"} />
-                  <DarkMetric label="Peak risk" value={summary.peak.toFixed(3)} tone={riskTone(summary.peak)} />
+                  <DarkMetric label="Sessions" value={String(sessions.length)} sub={`${days} วันล่าสุด`} />
+                  <DarkMetric label="Avg risk" value={summary.average.toFixed(3)} sub="ค่าเฉลี่ย anomaly score" tone={riskTone(summary.average)} />
+                  <DarkMetric label="Flagged" value={String(summary.flagged)} sub="score >= 0.4" tone={summary.flagged ? "text-amber-300" : "text-brand-500"} />
+                  <DarkMetric label="Peak risk" value={summary.peak.toFixed(3)} sub="สูงสุดในช่วงนี้" tone={riskTone(summary.peak)} />
                 </div>
               </div>
             </section>
@@ -117,6 +117,7 @@ export default function UserTimelinePage({ params }: { params: { id: string } })
                   ))}
                 </div>
               </div>
+              <h3 className="mb-3 text-[11px] font-semibold uppercase tracking-[.12em] text-ink-500">Sessions · {sessions.length} รายการ</h3>
               <AnomalyTable rows={sessions} onRowClick={setSelected} showUser={false} showFeedback emptyMessage="ไม่มี session ในช่วงเวลานี้" />
             </section>
           </>
@@ -134,8 +135,8 @@ function SectionTitle({ eyebrow, title, detail }: { eyebrow: string; title: stri
   return <div><div className="font-mono text-[9px] font-semibold uppercase tracking-[.18em] text-ink-400">{eyebrow}</div><h3 className="mt-1 font-display text-lg font-bold text-ink-900">{title}</h3>{detail && <p className="mt-1 text-xs text-ink-500">{detail}</p>}</div>;
 }
 
-function DarkMetric({ label, value, tone = "text-white" }: { label: string; value: string; tone?: string }) {
-  return <div className="bg-ink-800/75 px-4 py-4"><dt className="font-mono text-[8px] uppercase tracking-[.16em] text-ink-500">{label}</dt><dd className={`mt-2 font-display text-2xl font-extrabold tabular-nums ${tone}`}>{value}</dd></div>;
+function DarkMetric({ label, value, sub, tone = "text-white" }: { label: string; value: string; sub?: string; tone?: string }) {
+  return <div className="bg-ink-800/75 px-4 py-4"><dt className="font-mono text-[8px] uppercase tracking-[.16em] text-ink-500">{label}</dt><dd className={`mt-2 font-display text-2xl font-extrabold tabular-nums ${tone}`}>{value}</dd>{sub && <dd className="mt-1 text-[10px] leading-snug text-ink-400">{sub}</dd>}</div>;
 }
 
 function BaselineRow({ label, value }: { label: string; value: string }) {
