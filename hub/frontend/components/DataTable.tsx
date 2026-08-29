@@ -23,7 +23,7 @@ export function DataTable<T extends Record<string, unknown>>({ columns, rows, em
           <thead className="sticky top-0 z-[1] bg-ink-50/95 backdrop-blur">
             <tr className="border-b border-ink-200">
               {columns.map((col) => (
-                <th key={col.key} style={col.width ? { width: col.width } : undefined} className={`px-4 py-3 font-mono text-[9px] font-semibold uppercase tracking-[.13em] text-ink-500 ${align(col.align)}`}>
+                <th key={col.key} style={col.width ? { width: col.width } : undefined} className={`px-4 py-3 text-[10px] font-semibold uppercase tracking-[.12em] text-ink-500 ${align(col.align)}`}>
                   {col.header}
                 </th>
               ))}
