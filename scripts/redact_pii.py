@@ -7,7 +7,7 @@
 แทน 3 รูปแบบ (จาก mapping เดียวกัน จึงสาวกลับได้ด้วย roster ถ้าจำเป็น):
     อีเมลเต็ม        someone@<โดเมนจริง>   -> U03@example.invalid
     local-part เดี่ยว someone              -> U03
-    รหัสตัวเลขยาว     U08           -> U07   (รวมที่ฝังใน hostname)
+    รหัสตัวเลขยาว     66xxxxxxxx           -> U07   (รวมที่ฝังใน hostname)
 
 `.invalid` เป็น TLD ที่ RFC 2606 สงวนไว้ — ส่งอีเมลไปไม่ถึงใครแน่นอน
 
@@ -87,7 +87,7 @@ def load_rules() -> list[tuple[re.Pattern, str, str]]:
     rules = []
     for val, rep in sorted(emails, key=lambda x: -len(x[0])):
         rules.append((re.compile(re.escape(val), re.I), rep, "อีเมล"))
-    # รหัสตัวเลข: substring ล้วน เพราะถูกฝังใน hostname (s6660...db-postgres)
+    # รหัสตัวเลข: substring ล้วน เพราะถูกฝังใน hostname (s<รหัส>db-postgres)
     for val, rep in sorted(ids, key=lambda x: -len(x[0])):
         rules.append((re.compile(re.escape(val)), rep, "รหัสตัวเลข"))
     for val, rep in sorted(locals_, key=lambda x: -len(x[0])):

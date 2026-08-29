@@ -108,7 +108,8 @@ def looks_fake(num: str) -> bool:
     if len(set(body)) <= 3:  # 0810000000, 0811111111
         return True
     digits = [int(c) for c in body]
-    if all(b - a == 1 for a, b in zip(digits, digits[1:])):  # 0812345678
+    # ลำดับต่อเนื่อง รวมที่วนกลับหลัก 0 (0834567890 -> ...789 0)
+    if all((b - a) % 10 == 1 for a, b in zip(digits, digits[1:])):
         return True
     return False
 
@@ -281,6 +282,26 @@ def scan_text(
     return out
 
 
+def current_hits(path: str, roster: set[str]) -> set[tuple[str, str]]:
+    """hit ที่อยู่ใน blob **ของ HEAD** จริงๆ.
+
+    ต้องแยกระดับ hit ไม่ใช่ระดับไฟล์ — ไฟล์เดียวอาจมี PII เก่าในประวัติ (ล้างแล้ว)
+    ปนกับ PII ที่ยังเหลือ ถ้าจัดกลุ่มทั้งไฟล์ จะรายงานของที่ล้างแล้วว่ายังอยู่
+    """
+    raw = subprocess.run(
+        ["git", "cat-file", "blob", f"HEAD:{path}"], cwd=ROOT, capture_output=True
+    )
+    if raw.returncode != 0:
+        return set()
+    ext = Path(path).suffix.lower()
+    body = (
+        office_text(raw.stdout)
+        if ext in OFFICE_EXT
+        else raw.stdout.decode("utf-8", "ignore")
+    )
+    return set(scan_text(body, roster))
+
+
 def in_current_tree(path: str, roster: set[str]) -> bool:
     """blob **ที่ HEAD** ยังมีปัญหาไหม.
 
@@ -404,7 +425,12 @@ def main() -> int:
     L += ["", "## 2. เนื้อหาที่เข้าข่าย PII / ความลับ", ""]
     now, hist = {}, {}
     for path in sorted(content_hits):
-        (now if in_current_tree(path, roster) else hist)[path] = content_hits[path]
+        cur = current_hits(path, roster)
+        old = [h for h in dict.fromkeys(content_hits[path]) if h not in cur]
+        if cur:
+            now[path] = sorted(cur)
+        if old:
+            hist[path] = old
 
     def _rows(d: dict) -> list[str]:
         out = ["| ไฟล์ | ชนิด | ค่า (mask) |", "|---|---|---|"]
