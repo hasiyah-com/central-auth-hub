@@ -123,7 +123,21 @@ L3 = แกน monitoring ล้วน (`normal` / `l3_investigate`) — ไม�
 ## 5. Freeze commit
 
 <!-- FREEZE_COMMIT -->
-_(เติมหลัง commit — ดู `git log --oneline -1` หรือ tag `rba-freeze-2026-08-29`)_
+| tag | commit | คืออะไร |
+|---|---|---|
+| `rba-freeze-2026-08-29` | `a07b868ecb9f435d7cf2511163281c871d050117` | จุดที่ **ผลการทดลอง** ถูก freeze — ตัวเลข recall/FPR ทั้งหมดมาจากจุดนี้ |
+| `rba-expert-review-2026-08-29` | `700c05ef9616abd950814a6c79ac759d365ed78c` | จุดที่ **ส่งตรวจ** = freeze + stability fixes (B62/B63) + แยก access/monitoring |
+
+การแก้หลัง freeze เป็น**เชิงปฏิบัติการล้วน** (cache invalidation · ล็อกต่อ user · timeout
+แยก · ชื่อฟิลด์) ไม่แตะฟังก์ชันตัดสินใจของโมเดล — ค่าคงที่ใน §2 จึงเท่ากันทั้งสอง tag
+
+**ตรวจสอบชุดที่ส่งตรวจ:**
+
+```bash
+git checkout rba-expert-review-2026-08-29   # = 700c05e
+python scripts/build_evidence_manifest.py --verify
+```
+
 
 ## 6. ข้อมูลที่ไม่อยู่ใน git (โดยตั้งใจ)
 
