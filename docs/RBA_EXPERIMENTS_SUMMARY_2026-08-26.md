@@ -3,12 +3,25 @@
 **วันที่:** 26 ส.ค. 2026 · **แก้ไขล่าสุด:** 29 ส.ค. 2026 (final gate + service split)
 **ขอบเขต:** การทดลองทั้งหมดตั้งแต่การสร้างชุดข้อมูลจำลอง → เลือกสถาปัตยกรรมโมเดล →
 ปรับปรุงแต่ละชั้น → นำเข้า production
-**ข้อจำกัดที่ยึดตลอด:** ข้อมูลจริงห้ามขึ้น git · deployment หลัง campus NAT (ไม่มี geo) ·
-ทุกตัวเลขบน**ข้อมูลจำลองที่ anchor จากผู้ใช้จริง 12 คน** ยังไม่ผ่าน production replay
+**ข้อจำกัดที่ยึดตลอด:** ข้อมูลจริงห้ามขึ้น git · deployment หลัง campus NAT (ไม่มี geo)
+**ที่มาของตัวเลข:** ตัวเลข**ประสิทธิภาพโมเดล**ทุกตัวมาจากข้อมูลจำลองที่ anchor จากผู้ใช้จริง 12 คน ·
+ส่วนตัวเลขที่มาจาก **traffic จริง** มีเพียง อัตรา login (1.65 ครั้ง/วัน/คน) และ replay 18 เหตุการณ์
 
 > 📌 **ผลการทดลองถูก freeze แล้ว** — commit SHA · configuration · seeds · SHA-256 ของทุกรายงาน
 > บันทึกไว้ที่ [`RBA_EVIDENCE_MANIFEST_2026-08-29.md`](RBA_EVIDENCE_MANIFEST_2026-08-29.md)
 > ตัวเลขในเอกสารนี้จะไม่ถูกปรับจากการ tuning เพิ่ม — การเปลี่ยนแปลงใดๆ ต้องเป็นการทดลองรอบใหม่
+
+> **สองแกนของการตัดสินใจ** (แยกขาดตั้งแต่ 29 ส.ค. 2026):
+>
+> ```text
+> access_decision     = L1/L2/L4 -> allow | challenge | block   (ตัดสินสิทธิ์ผู้ใช้)
+> monitoring_decision = L3        -> normal | l3_investigate    (ธงให้ SOC ดู)
+> ```
+>
+> **L3 ไม่แตะ `access_decision` ทุกกรณี** — รวมถึงไม่ทำ `allow → warn`
+> (เดิม L3 ยก decision เป็น `warn` ซึ่งอยู่ field เดียวกับ allow/challenge/block
+> ทำให้ข้อความ "L3 ไม่เปลี่ยน access decision" ขัดกับพฤติกรรมจริง — แก้แล้ว
+> บังคับด้วย `tests/test_l3_access_monitoring_split.py`)
 
 ---
 
@@ -18,18 +31,21 @@
 |---|---|
 | **ประสิทธิภาพบนชุดพัฒนา** (V2, ใช้ปรับจูน) | Recall **95.8%** · Precision **98.3%** · F1 **0.970** · Challenge FPR **2.11%** · Policy success **99.6%** |
 | **ชั้นที่ขับเคลื่อนจริง** | L1 Rule + L2 Behavior (สถิติรายคน) — ไม่ใช่ ML |
-| **สถานะ ML (L3)** | มีสัญญาณจริง (raw 16.3% บน campaign) แต่ต้อง integrate แบบ channel · **shadow-only** |
+| **สถานะ ML (L3)** | มีสัญญาณจริง (raw 16.3% บน campaign) · ออกทาง `monitoring_decision` เท่านั้น · **shadow-only** |
 | **ผลบนชุดที่โมเดลไม่เคยเห็น** (final gate, seeds 101–105) | Recall **61.9%** · Precision **69.1%** · Challenge FPR **1.5%** · L3 FPR **0.7%** |
 | **ความพร้อมใช้งาน** | ✅ Shadow Mode พร้อม + **เปิดใช้จริงแล้ว 29 ส.ค. 2026** · ⏳ Enforcement ต้องผ่าน production replay ก่อน |
-| **การทดสอบ** | 772 passed / 53 skipped / 0 failed (full pytest, Docker) |
+| **การทดสอบ** | 808 passed / 53 skipped / 0 failed (full pytest, Docker) |
 
 **ข้อค้นพบสำคัญที่สุด 3 ข้อ:**
 1. **โมเดล supervised ที่ดูดีที่สุด (90.9% recall) เป็น artifact ทั้งหมด** — เรียน shortcut จาก generator
 2. **สถิติรายคน (per-user rarity) เอาชนะ neural network** บนข้อมูลจริง — 95.8% vs FPR พุ่ง 8 เท่า
 3. **L3 ไม่ได้ไร้ค่า แต่ถูกกลไกรวมคะแนนปิดกั้น** — raw 16.3% แต่ effective 0.2% จนแก้ integration
 4. **SHAP พิสูจน์ว่า L3 บน 23 ฟีเจอร์ ซ้ำซ้อน** — unique 0.0% + DuplicateRatio 79.1% (สองวิธีตรงกัน)
-5. **ชั้นที่ overfit คือ L1/L2 ไม่ใช่ L3** — บน campaign ที่ไม่เคยเห็น L1/L2 ตก 38.8% → 20.7%
-   ขณะที่ L3 (Config F) ขึ้น 3.6% → 5.1% · ตัวเลขชุดพัฒนา (95.8%) จึงเป็นเพดานบน ไม่ใช่ค่าที่คาดหวังจริง
+5. **Generalization gap พบชัดกว่าใน L1/L2** — บน campaign family ที่ไม่เคยเห็น L1/L2 ตก
+   38.8% → 20.7% ขณะที่ L3 (Config F) ขึ้น 3.6% → 5.1% · ตัวเลขชุดพัฒนา (95.8%) จึงเป็น
+   เพดานบน ไม่ใช่ค่าที่คาดหวังจริง
+   ⚠️ **ไม่ได้แปลว่า L3 ไม่ overfit** — ส่วนต่าง 3.6%→5.1% เล็กเกินกว่าจะสรุปอะไรได้
+   สรุปได้แค่ว่า *วัด gap ได้ชัดในฝั่ง L1/L2* เท่านั้น
 
 > ⚠️ **อ่านตัวเลขให้ถูก:** 95.8%/98.3% มาจากชุดที่ใช้ปรับจูน (V2) — ค่าที่ควรอ้างอิงเมื่อพูดถึง
 > "ประสิทธิภาพที่คาดหวัง" คือ **final gate บน seeds 101–105 ที่โมเดลไม่เคยเห็น: recall 61.9% ·
@@ -356,7 +372,8 @@ new_passkey, confirmed_incident) คงที่ในข้อมูล normal 
 - per-user IForest บน residual 6 มิติ × window 5 → 18 มิติ
 - **abstention tiers:** abstain <100 · diagnostic 100–999 (log อย่างเดียว) · warn ≥1000 · challenge ≥2000
 - **two-tier threshold:** 99th → anomaly · 99.9th → extreme
-- **ยกได้สูงสุดแค่ warn** — `would_challenge` เก็บวิเคราะห์เท่านั้น
+- **ไม่แตะ access decision เลย** — ออกทาง `monitoring_decision` (`normal` / `l3_investigate`)
+  · `would_*` ใน `shadow_decision` เก็บวิเคราะห์เท่านั้น
 - **data contract ต่อ login:** `eligible/eligibility/raw_score/percentile/decision/tier/score/model_version/n_history`
 - history เก็บใน Redis (ไม่แตะ schema) · cache โมเดลรายคน TTL 1 ชม.
 - fail-safe ตาม B21 — ML deps ไม่มี = abstain เงียบๆ
@@ -458,7 +475,7 @@ docker compose exec hub-backend pytest . -q \
 |---|---|
 | data leakage (eval ซ้ำ train, เทียบ 11 ฟิลด์) | **0 / 63,230** ✅ |
 | generator shortcut (feature AUC>0.99 หรือ support<5%) | **0 feature** ✅ |
-| L3 เปลี่ยน allow/challenge/block | **0 ครั้ง** ✅ |
+| L3 แตะ access decision (allow/challenge/block) | **0 ครั้ง** ✅ |
 
 **ผลตามขนาดข้อมูลต่อคน** (Wilson CI95)
 

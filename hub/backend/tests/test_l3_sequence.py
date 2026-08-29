@@ -111,17 +111,15 @@ def test_never_escalates_beyond_warn():
     rng = random.Random(5)
     model, _ = fitted(rng)
     res = L3.evaluate_window(model, campaign_window(rng))
-    assert L3.apply_channel("allow", res) == "warn"
-    assert L3.apply_channel("warn", res) == "warn"
-    assert L3.apply_channel("challenge", res) == "challenge"  # ไม่ลด ไม่เพิ่ม
-    assert L3.apply_channel("block", res) == "block"
+    # L3 ตั้งได้แค่ธง monitoring — ไม่มี API ให้แตะ access decision อีกแล้ว
+    assert L3.monitoring_decision(res) == L3.MONITORING_INVESTIGATE
 
 
 # ── ไม่ยิง → decision เดิมไม่เปลี่ยน ──
 def test_no_fire_keeps_decision():
     quiet = L3.L3Result(fired=False, score=0.0, reason=None)
     for d in ("allow", "warn", "challenge", "block"):
-        assert L3.apply_channel(d, quiet) == d
+        assert L3.monitoring_decision(quiet) == L3.MONITORING_NORMAL
 
 
 # ── fail-safe (B21): input พัง ต้องไม่ raise ──
@@ -181,7 +179,7 @@ def test_diagnostic_tier_does_not_change_decision():
     model = L3.fit_user_model(normal_raw(rng, 2000), n_history=L3.TIER_DIAGNOSTIC)
     res = L3.evaluate_window(model, campaign_window(rng))
     assert res.fired  # ยังคำนวณ/บันทึกได้
-    assert L3.apply_channel("allow", res) == "allow"  # แต่ไม่มีผล
+    assert L3.monitoring_decision(res) == L3.MONITORING_NORMAL  # tier ต่ำ -> ไม่ขึ้นธง
 
 
 # ── §4 two-tier threshold: extreme (99.9th) แยกจาก anomaly (99th) ──
@@ -203,8 +201,10 @@ def test_extreme_still_capped_at_warn_in_production():
     rng = random.Random(13)
     model, _ = fitted(rng)
     res = L3.evaluate_window(model, campaign_window(rng))
-    assert L3.apply_channel("allow", res) in ("allow", "warn")
-    assert L3.apply_channel("challenge", res) == "challenge"
+    assert L3.monitoring_decision(res) in (
+        L3.MONITORING_NORMAL,
+        L3.MONITORING_INVESTIGATE,
+    )
 
 
 # ── §9 data contract: มีฟิลด์ครบสำหรับ log/replay ──
@@ -232,7 +232,7 @@ def test_contract_fields_present():
 # ── contract ตอน abstain (ไม่มีโมเดล) ต้องไม่พัง ──
 def test_contract_when_abstain():
     c = L3.to_contract(L3.L3Result(fired=False, score=0.0), None)
-    assert c["eligible"] is False and c["decision"] is None
+    assert c["eligible"] is False and c["monitoring_decision"] == L3.MONITORING_NORMAL
 
 
 if __name__ == "__main__":

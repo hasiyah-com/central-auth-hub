@@ -62,7 +62,11 @@ def eligibility(n_history: int) -> str:
     return "abstain"
 
 
-_ACTION_ORDER = ["allow", "warn", "challenge", "block"]
+# ── คำศัพท์ของแกน monitoring — ต้องไม่ทับกับ access decision vocab โดยเด็ดขาด ──
+# access_decision     = L1/L2/L4 -> allow | challenge | block  (+ would_* ใน shadow mode)
+# monitoring_decision = L3        -> normal | l3_investigate
+MONITORING_NORMAL = "normal"
+MONITORING_INVESTIGATE = "l3_investigate"
 
 
 def _numeric():
@@ -267,23 +271,25 @@ def evaluate_window(model: L3Model | None, window_raw: list[list[float]]) -> L3R
         return quiet
 
 
-def apply_channel(decision: str, result: L3Result) -> str:
-    """surfacing channel: ยกได้สูงสุดแค่ warn — ห้ามแตะ challenge/block.
+def monitoring_decision(result: L3Result) -> str:
+    """ธงเฝ้าระวังของ L3 — **คนละแกนกับ access decision โดยสิ้นเชิง**.
 
-    L3 เป็น "ธงเฝ้าระวัง" (monitoring) ไม่ใช่ผู้ตัดสิน friction ของผู้ใช้ —
-    ค่าที่วัดได้คือ campaign surfaced +16.4pp โดย challenge FPR ไม่ขยับเลย
+        access_decision     = L1/L2/L4 -> allow | challenge | block   (ตัดสินสิทธิ์ผู้ใช้)
+        monitoring_decision = L3        -> normal | l3_investigate    (ธงให้ SOC ดู)
+
+    เดิมฟังก์ชันนี้คือ `apply_channel(decision, result)` ที่ยก access decision เป็น `warn`
+    ซึ่งขัดกับข้อความที่รายงานว่า "L3 ไม่เปลี่ยน access decision" (warn อยู่ field เดียวกับ
+    allow/challenge/block) — แยกเป็นสองแกนแทน การตรวจจับเหมือนเดิมทุกประการ
+    เปลี่ยนแค่ว่าผลถูกบันทึกไว้ที่ field ไหน
+
+    ไม่รับ access decision เข้ามาเป็นพารามิเตอร์เลย — ป้องกันการเผลอเอาไปแก้ค่านั้น
     """
-    if not result.fired or decision not in _ACTION_ORDER:
-        return decision
-    # tier diagnostic/abstain: ให้คะแนน+log ได้ แต่ห้ามเปลี่ยน decision (แผน §5)
+    if not result.fired:
+        return MONITORING_NORMAL
+    # tier diagnostic/abstain: ให้คะแนน+log ได้ แต่ยังไม่น่าเชื่อพอจะรบกวน SOC (แผน §5)
     if result.eligibility not in ("warn", "challenge"):
-        return decision
-    # แม้ tier=extreme ก็ยกได้แค่ warn — challenge ต้องผ่าน production replay ก่อน (แผน §10)
-    return (
-        "warn"
-        if _ACTION_ORDER.index(decision) < _ACTION_ORDER.index("warn")
-        else decision
-    )
+        return MONITORING_NORMAL
+    return MONITORING_INVESTIGATE
 
 
 def to_contract(result: L3Result, model: L3Model | None) -> dict:
@@ -298,7 +304,10 @@ def to_contract(result: L3Result, model: L3Model | None) -> dict:
         "eligibility": result.eligibility,
         "raw_score": round(result.raw_score, 4),
         "percentile": round(result.percentile, 4),
-        "decision": result.shadow_decision,
+        # แกนของ L3 เท่านั้น — ไม่ใช่ access decision (ตั้งชื่อให้อ่านแล้วไม่สับสน)
+        "monitoring_decision": monitoring_decision(result),
+        # would_* = "ถ้าวันหนึ่งอนุญาตให้ enforce จะทำอะไร" — เก็บไว้วิเคราะห์เท่านั้น
+        "shadow_decision": result.shadow_decision,
         "tier": result.tier,
         "score": round(result.score, 4),
         "model_version": MODEL_VERSION,

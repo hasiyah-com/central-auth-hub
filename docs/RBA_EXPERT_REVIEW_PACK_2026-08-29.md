@@ -1,7 +1,8 @@
 # ชุดหลักฐานสำหรับผู้เชี่ยวชาญตรวจ — 4-Layer RBA
 
-**วันที่:** 29 ส.ค. 2026 · **สถานะ:** ผลการทดลอง freeze แล้ว (tag `rba-freeze-2026-08-29`)
-**ผู้จัดทำ:** เจ้าของโปรเจค (Senior Project)
+**วันที่:** 29 ส.ค. 2026 · **ผู้จัดทำ:** เจ้าของโปรเจค (Senior Project)
+**ส่งตรวจในฐานะ:** ระบบ **Shadow เท่านั้น** — L3 ยังไม่พร้อม enforcement
+**tag ที่ส่งตรวจ:** `rba-expert-review-2026-08-29` (ผลการทดลอง freeze ที่ `rba-freeze-2026-08-29`)
 
 เอกสารนี้เป็น **ทางเข้า** ของชุดหลักฐานทั้งหมด — ออกแบบให้ผู้ตรวจอ่านตามลำดับแล้ว
 ตัดสินได้เองว่าข้อสรุปเชื่อถือได้แค่ไหน โดยไม่ต้องเชื่อคำอธิบายของผู้จัดทำ
@@ -30,10 +31,27 @@
 | L1 Rule Engine | กฎ deterministic (เครื่องใหม่ · ประเทศใหม่ · failed login ฯลฯ) + policy floor | ✅ ใช้งานจริง |
 | L2 Behavior Profiling | สถิติรายคน (rarity ของชั่วโมง/subsystem/อุปกรณ์ · cadence z-score) | ✅ ใช้งานจริง |
 | L3 IsolationForest (sequence) | per-user anomaly บน residual 6 มิติ × window 5 | ⚙️ **shadow เท่านั้น** |
-| L4 Aggregation | รวมคะแนน + บังคับ policy floor → allow/warn/challenge/block | ✅ ใช้งานจริง |
+| L4 Aggregation | รวมคะแนน + บังคับ policy floor → `access_decision` | ✅ ใช้งานจริง |
 
-**L3 ถูกจำกัดอำนาจโดยตั้งใจ:** ยก decision ได้สูงสุดแค่ `warn` — ห้ามแตะ `challenge`/`block`
-(ตรวจครบ 288 กรณี + วัดบน 63,230 เหตุการณ์: เปลี่ยน access decision **0 ครั้ง**)
+### สองแกนของการตัดสินใจ (สำคัญต่อการอ่านทุกตัวเลขในเอกสารนี้)
+
+```text
+access_decision     = L1/L2/L4 -> allow | challenge | block   (ตัดสินสิทธิ์ผู้ใช้)
+monitoring_decision = L3        -> normal | l3_investigate    (ธงให้ SOC ดู)
+```
+
+**L3 ไม่แตะ `access_decision` ทุกกรณี — รวมถึงไม่ทำ `allow → warn`**
+
+คำศัพท์สองแกนไม่ทับกันเลย และ `monitoring_decision(result)` รับเฉพาะผลของ L3
+ไม่รับ access decision เข้ามาเป็นพารามิเตอร์ตั้งแต่ signature จึงไม่มีทางเผลอไปแก้ค่านั้น
+
+> **หมายเหตุความซื่อตรง:** จนถึง 29 ส.ค. 2026 (ก่อนรีวิวรอบนี้) L3 ยก `allow → warn`
+> ในฟิลด์ access decision จริง ขณะที่เอกสารเขียนว่า "ไม่เปลี่ยน access decision" —
+> สองข้อความนี้ขัดกัน แก้แล้วโดยแยกเป็นสองแกน **การตรวจจับไม่เปลี่ยน**
+> เปลี่ยนแค่ว่าผลถูกบันทึกไว้ที่ฟิลด์ไหน · บังคับด้วย `tests/test_l3_access_monitoring_split.py`
+
+ตรวจแล้ว: สแกนครบทุกชุดค่าที่เป็นไปได้ + วัดบน 63,230 เหตุการณ์ (final gate) +
+traffic จริง → L3 แตะ access decision **0 ครั้ง**
 
 ---
 
@@ -63,15 +81,24 @@
 
 (ตัวเลขชุดพัฒนา — ดู §4 เรื่อง optimism bias)
 
-### 3.4 ชั้นที่ overfit คือ L1/L2 ไม่ใช่ L3
+### 3.4 Generalization gap พบชัดกว่าใน L1/L2
 
 บน campaign family ที่ไม่เคยเห็น: L1/L2 ตก **38.8% → 20.7%** ขณะที่ L3 (Config F)
-ขึ้น 3.6% → 5.1% — ทิศทางตรงข้ามกับที่คาด
+ขึ้น 3.6% → 5.1%
+
+⚠️ **ข้อความนี้ไม่ได้อ้างว่า L3 ไม่ overfit** — ส่วนต่าง 3.6% → 5.1% เล็กเกินกว่าจะสรุป
+อะไรได้ในทางสถิติ สิ่งที่สรุปได้คือ **วัด generalization gap ได้ชัดเจนในฝั่ง L1/L2**
+ส่วนของ L3 ยังไม่มีหลักฐานพอจะสรุปทั้งทางบวกและทางลบ
 
 ### 3.5 🔑 L3 ไปไม่ถึงเกณฑ์ที่จะมีประโยชน์ใน deployment จริง
 
-จาก traffic จริง: **อัตรา login มัธยฐาน 1.65 ครั้ง/วัน/คน**
-→ ต้องใช้ **~1.7 ปี** จึงจะสะสม history ครบ 1,000 เหตุการณ์ (เกณฑ์ที่ L3 เริ่มเปลี่ยน decision ได้)
+> **ขอบเขตของ production replay รอบนี้:** มีเพียง **18 เหตุการณ์** และ **eligible 0/18**
+> (ผู้ใช้ทุกคนยังมี history ต่ำกว่าเกณฑ์ `diagnostic`) จึงเป็น **functional smoke test**
+> ที่ยืนยันว่า pipeline ทำงานและไม่กระทบ access decision — **ยังใช้วัด recall/FPR
+> ของ traffic จริงไม่ได้** ตัวเลขประสิทธิภาพทุกตัวในเอกสารนี้จึงมาจากข้อมูลจำลองเท่านั้น
+
+จาก traffic จริง: **อัตรา login มัธยฐาน 1.65 ครั้ง/วัน/คน** (7 ผู้ใช้, ช่วง 18 พ.ค.–29 ส.ค. 2026)
+→ ต้องใช้ **~1.7 ปี** จึงจะสะสม history ครบ 1,000 เหตุการณ์ (เกณฑ์แรกที่ L3 ขึ้นธง `l3_investigate` ได้)
 → **ในทางปฏิบัติ L3 จะอยู่ในสถานะ abstain/diagnostic แทบตลอดอายุการใช้งาน**
 
 ข้อนี้ไม่ได้แปลว่าโมเดลผิด แต่แปลว่า **สมมติฐานเรื่องปริมาณข้อมูลต่อคน
@@ -91,14 +118,25 @@
 | **CI ที่คำนึงถึง clustering** | Wilson (สัดส่วน) · cluster bootstrap (เหตุการณ์สัมพันธ์กัน) · hierarchical bootstrap (user→seed→instance) |
 | **Episode-based generation** | 50 เหตุการณ์/25 วัน · reset rolling state · window ไม่ข้าม episode |
 | **ไม่ปรับโมเดลจาก final holdout** | ผล freeze แล้ว — การเปลี่ยนใดๆ ต้องเป็นการทดลองรอบใหม่ |
-| **Freeze ตรวจสอบได้** | SHA-256 ของหลักฐาน 43 ไฟล์ + commit SHA + tag |
+| **Freeze ตรวจสอบได้** | SHA-256 ของหลักฐาน 47 ไฟล์ + commit SHA + tag |
 
 **ตรวจว่าหลักฐานไม่ถูกแก้ย้อนหลัง:**
 
 ```bash
-git checkout rba-freeze-2026-08-29
+# ชุดที่ส่งตรวจรอบนี้ (รวม stability fixes + การแยกสองแกน)
+git checkout rba-expert-review-2026-08-29
 python scripts/build_evidence_manifest.py --verify
 ```
+
+**tag สองตัว — ต่างกันโดยตั้งใจ:**
+
+| tag | คืออะไร |
+|---|---|
+| `rba-freeze-2026-08-29` | จุดที่ **ผลการทดลอง** ถูก freeze (ตัวเลข recall/FPR ทั้งหมดมาจากจุดนี้) |
+| `rba-expert-review-2026-08-29` | จุดที่ **ส่งตรวจ** = freeze + stability fixes (B62/B63) + แยกสองแกน |
+
+การแก้หลัง freeze เป็น**เชิงปฏิบัติการล้วน** (cache invalidation, ล็อก, timeout,
+ชื่อฟิลด์) — ไม่แตะฟังก์ชันตัดสินใจของโมเดล ตัวเลขที่ freeze ไว้จึงยังใช้ได้
 
 ---
 
@@ -106,7 +144,7 @@ python scripts/build_evidence_manifest.py --verify
 
 | # | ข้อจำกัด | ผลกระทบ |
 |---|---|---|
-| 1 | **ทุกตัวเลขบนข้อมูลจำลอง** (anchor จากผู้ใช้จริง 12 คน แต่ generate เอง) | ยังไม่มีตัวเลขจาก traffic จริง — replay เพิ่งเริ่ม |
+| 1 | **ตัวเลขประสิทธิภาพโมเดลทั้งหมดมาจากข้อมูลจำลอง** (anchor จากผู้ใช้จริง 12 คน แต่ generate เอง) · จาก traffic จริงมีเพียง **อัตรา login 1.65 ครั้ง/วัน/คน** และ **replay 18 เหตุการณ์ (eligible 0)** | recall/FPR/precision ยังไม่เคยวัดบน traffic จริงเลย |
 | 2 | **campaign attack ออกแบบเอง** | L3 จับได้เพราะเป็น joint-drift ที่ผู้จัดทำใส่เข้าไปเอง — circular ในระดับหนึ่ง |
 | 3 | **Geo layer ใช้ไม่ได้** (campus NAT) | 5/23 ฟีเจอร์เป็นค่าคงที่ · ระบบทำงานบน 18 ฟีเจอร์ |
 | 4 | **ช่องว่างระหว่างชุดพัฒนากับ final gate ใหญ่มาก** | 95.8% → 61.9% — ขนาดของ optimism bias ที่วัดได้ |
@@ -121,7 +159,7 @@ python scripts/build_evidence_manifest.py --verify
 1. **§3.5 (tier reachability)** — ควรเดินทางไหน?
    | ทางเลือก | ผลที่ตามมา |
    |---|---|
-   | คง L3 เป็น diagnostic อย่างเดียว | ซื่อตรงที่สุด · L3 ไม่มีผลต่อ decision เลย |
+   | คง L3 เป็น diagnostic อย่างเดียว | ซื่อตรงที่สุด · L3 ไม่ขึ้นธงเลยในทางปฏิบัติ |
    | ลดเกณฑ์ tier ลง | ต้องทดลองใหม่ทั้งชุด (ที่ history ต่ำเคยวัดได้ 4.7%) |
    | รวม history ข้ามผู้ใช้ (population model) | เปลี่ยนสถาปัตยกรรม ไม่ใช่ per-user อีกต่อไป |
    | ตัด L3 ออก ยอมรับว่า L1+L2 พอ | สอดคล้องกับ final gate (L3-only 0.7%) |
@@ -176,8 +214,11 @@ docker compose exec hub-backend pytest \
   tests/test_rule_engine_v2_signals.py tests/test_behavior_*.py \
   tests/test_tier2_catches_evasive.py tests/test_l3_*.py -q
 
-# ความทนทานปฏิบัติการ (23 tests, ใช้ Redis + ml-service จริง)
+# ความทนทานปฏิบัติการ (22 tests, ใช้ Redis + ml-service จริง)
 docker compose exec hub-backend pytest tests/test_l3_stability.py -v -s
+
+# การแยกสองแกน access/monitoring (12 tests)
+docker compose exec hub-backend pytest tests/test_l3_access_monitoring_split.py -v
 
 # restart resilience (รันบน host)
 py hub/backend/tests/manual_l3_restart_driver.py
@@ -187,7 +228,7 @@ docker compose exec hub-backend pytest . -q \
   --ignore=tests/test_e2e_full_stack.py --ignore=tests/test_l1_oidc.py
 ```
 
-ผลล่าสุด: **795 passed / 53 skipped / 0 failed**
+ผลล่าสุด: **808 passed / 53 skipped / 0 failed**
 
 ### 7.4 ข้อมูลที่ไม่ได้ส่งไปด้วย (โดยตั้งใจ)
 
@@ -202,7 +243,11 @@ docker compose exec hub-backend pytest . -q \
 | คำถาม | คำตอบ |
 |---|---|
 | L1+L2+L4 พร้อมใช้งานจริงไหม | ✅ ใช้งานอยู่แล้ว |
-| L3 พร้อม shadow ไหม | ✅ เปิดใช้แล้ว 29 ส.ค. 2026 · เก็บ contract ทุก login |
+| L3 พร้อม shadow ไหม | ✅ เปิดใช้แล้ว 29 ส.ค. 2026 · เก็บ contract ทุก login · ออกทาง `monitoring_decision` เท่านั้น |
 | L3 พร้อม enforcement ไหม | ❌ **ไม่** — ไม่ผ่านเกณฑ์ unique ≥3% และติดข้อจำกัด §3.5 |
-| ผลการทดลอง freeze แล้วไหม | ✅ tag `rba-freeze-2026-08-29` · ตรวจซ้ำได้ด้วย `--verify` |
+| ผลการทดลอง freeze แล้วไหม | ✅ tag `rba-freeze-2026-08-29` (ผล) · `rba-expert-review-2026-08-29` (ชุดส่งตรวจ) |
 | ยังปรับโมเดลอยู่ไหม | ❌ **หยุดแล้ว** — การเปลี่ยนใดๆ ต้องเป็นการทดลองรอบใหม่ |
+| production replay ใช้สรุปประสิทธิภาพได้ไหม | ❌ **ยังไม่ได้** — 18 เหตุการณ์ · eligible 0 · เป็น smoke test |
+
+> **ส่งตรวจในฐานะ: ระบบ Shadow เท่านั้น** — L1/L2/L4 ใช้งานจริงและตัดสินสิทธิ์อยู่แล้ว ·
+> L3 เก็บข้อมูลอย่างเดียว ยังไม่พร้อม enforcement

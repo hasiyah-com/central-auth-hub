@@ -22,7 +22,10 @@ CONTRACT_FIELDS = {
     "eligibility",
     "raw_score",
     "percentile",
-    "decision",
+    # แกน monitoring ของ L3 — ไม่ใช่ access decision
+    # (ดู tests/test_l3_access_monitoring_split.py)
+    "monitoring_decision",
+    "shadow_decision",
     "tier",
     "score",
     "model_version",

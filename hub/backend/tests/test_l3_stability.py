@@ -8,9 +8,9 @@
   4. concurrency  — ยิงพร้อมกันหลาย request ต้องไม่เพี้ยน/ไม่ race
   5. latency      — อยู่ในงบเวลาของ login path
   6. fail-safe    — ml-service ล่ม/ช้า ต้องไม่ลาก login ล่มตาม (B21)
-  7. **L3 ห้ามเปลี่ยน access decision** — ยกได้แค่ allow→warn เท่านั้น
+  7. **L3 ห้ามแตะ access decision** — ตั้งได้แค่ monitoring_decision
 
-เกณฑ์ข้อ 7 สำคัญที่สุด: L3 อยู่ในสถานะ shadow — ถ้ามันเปลี่ยน challenge/block ได้
+เกณฑ์ข้อ 7 สำคัญที่สุด: L3 อยู่ในสถานะ shadow — ถ้ามันแตะ access decision ได้
 แปลว่าโมเดลที่ยังไม่ผ่าน production replay กำลังตัดสินสิทธิ์ผู้ใช้จริง
 
 skip เองถ้า Redis / ml-service ไม่พร้อม (เป็น integration test)
@@ -115,8 +115,7 @@ async def test_cold_profile_user_abstains(seeded):
     out = await _ok(f"{USER}-cold", DRIFT)
     assert out["eligibility"] == "abstain"
     assert out["fired"] is False
-    for a in ACTIONS:
-        assert L3.apply_channel(a, L3.result_from_payload(out)) == a
+    assert L3.monitoring_decision(L3.result_from_payload(out)) == L3.MONITORING_NORMAL
 
 
 @pytest.mark.asyncio
@@ -136,8 +135,9 @@ async def test_diagnostic_tier_scores_but_cannot_change_decision(seeded):
     res = L3.result_from_payload(out)
     assert res.eligibility == "diagnostic"
     assert res.shadow_decision is None, "diagnostic ห้ามเสนอ shadow decision"
-    for a in ACTIONS:
-        assert L3.apply_channel(a, res) == a, f"diagnostic ห้ามแตะ {a}"
+    assert (
+        L3.monitoring_decision(res) == L3.MONITORING_NORMAL
+    ), "tier diagnostic ยังไม่น่าเชื่อพอจะรบกวน SOC"
 
 
 # ══════════════ 2. History เสีย/หาย — ต้อง degrade ไม่ crash ══════════════
@@ -377,8 +377,7 @@ async def test_ml_service_down_fails_safe(seeded, monkeypatch):
     out = await get_sequence_score(USER, DRIFT)
     assert out["fired"] is False
     assert out["error"] and "unreachable" in out["error"]
-    for a in ACTIONS:
-        assert L3.apply_channel(a, L3.result_from_payload(out)) == a
+    assert L3.monitoring_decision(L3.result_from_payload(out)) == L3.MONITORING_NORMAL
 
 
 @pytest.mark.asyncio
@@ -427,51 +426,42 @@ async def test_risk_engine_survives_l3_failure(monkeypatch):
 
 
 # ══════════════ 7. L3 ห้ามเปลี่ยน access decision (เกณฑ์สำคัญที่สุด) ══════════════
-def test_channel_never_lowers_or_exceeds_warn():
-    """สแกนทุกชุดค่าที่เป็นไปได้ — L3 ยกได้แค่ allow→warn เท่านั้น."""
-    changed = []
+def test_monitoring_decision_exhaustive():
+    """สแกนทุกชุดค่า — L3 คืนได้เฉพาะคำในแกน monitoring เท่านั้น.
+
+    เทสนี้แทนของเดิมที่สแกน `apply_channel(access_decision, result)` — API นั้นถูกลบแล้ว
+    เพราะรับ/คืนค่าในแกน access ซึ่งขัดกับหลักการที่รายงานไว้ (ดู test_l3_access_monitoring_split.py)
+    """
+    seen = set()
     for elig in ("abstain", "diagnostic", "warn", "challenge"):
         for tier in ("none", "anomaly", "extreme"):
             for fired in (True, False):
                 for score in (0.0, 0.5, 1.0):
-                    res = L3.L3Result(
-                        fired=fired,
-                        score=score,
-                        tier=tier,
-                        eligibility=elig,
-                        n_history=5000,
+                    got = L3.monitoring_decision(
+                        L3.L3Result(
+                            fired=fired,
+                            score=score,
+                            tier=tier,
+                            eligibility=elig,
+                            n_history=5000,
+                        )
                     )
-                    for a in ACTIONS:
-                        got = L3.apply_channel(a, res)
-                        assert got in ACTIONS
-                        assert ACTIONS.index(got) >= ACTIONS.index(a), "ห้ามลด friction"
-                        assert (
-                            ACTIONS.index(got) <= ACTIONS.index("warn") or got == a
-                        ), f"ยกเกิน warn: {a} -> {got}"
-                        if got != a:
-                            changed.append((a, got, elig, tier))
-    assert {(c[0], c[1]) for c in changed} <= {
-        ("allow", "warn")
-    }, f"เปลี่ยน decision นอกเหนือ allow→warn: {set((c[0], c[1]) for c in changed)}"
-
-
-def test_channel_ignores_unknown_decision():
-    """decision ที่ไม่รู้จัก (would_*, mfa_passed ฯลฯ) ต้องคืนค่าเดิม ไม่แปลงมั่ว."""
-    res = L3.L3Result(fired=True, score=1.0, tier="extreme", eligibility="challenge")
-    for d in ("would_block", "would_challenge", "mfa_passed", "", "PASS"):
-        assert L3.apply_channel(d, res) == d
+                    assert got in (L3.MONITORING_NORMAL, L3.MONITORING_INVESTIGATE)
+                    assert got not in ACTIONS, f"L3 คืนคำในแกน access: {got}"
+                    seen.add(got)
+    assert seen == {L3.MONITORING_NORMAL, L3.MONITORING_INVESTIGATE}
 
 
 @pytest.mark.asyncio
-async def test_live_extreme_score_still_only_raises_to_warn(seeded):
-    """ของจริง: residual สุดโต่ง + history 2200 (tier challenge) -> ยังยกได้แค่ warn."""
+async def test_live_extreme_score_only_sets_monitoring_flag(seeded):
+    """ของจริง: residual สุดโต่ง + tier challenge -> ขึ้นธง monitoring เท่านั้น."""
     out = await _ok(USER, DRIFT)
     res = L3.result_from_payload(out)
     assert res.fired is True and res.eligibility == "challenge"
     print(
         f"\n  live: tier={res.tier} shadow={res.shadow_decision} raw={res.raw_score:.3f}"
     )
-    assert L3.apply_channel("allow", res) == "warn"
-    assert L3.apply_channel("warn", res) == "warn"
-    assert L3.apply_channel("challenge", res) == "challenge"
-    assert L3.apply_channel("block", res) == "block"
+    assert L3.monitoring_decision(res) == L3.MONITORING_INVESTIGATE
+    # would_challenge เก็บไว้วิเคราะห์เท่านั้น — ไม่มีเส้นทางไหนทำให้มันไป enforce ได้
+    assert res.shadow_decision == "would_challenge"
+    assert L3.to_contract(res, None)["monitoring_decision"] == L3.MONITORING_INVESTIGATE

@@ -78,6 +78,7 @@ EVIDENCE_CODE = [
     "hub/backend/app/services/l3_sequence_client.py",
     "hub/backend/scripts/l3_shadow_replay.py",
     "hub/backend/tests/test_l3_stability.py",
+    "hub/backend/tests/test_l3_access_monitoring_split.py",
 ]
 
 # ── configuration ที่ล็อกไว้: ดึงจาก source จริง ไม่ hardcode ในเอกสาร ──
@@ -199,8 +200,8 @@ def build() -> None:
         "CAL_FPR": "threshold anomaly = quantile(1 − ค่านี้) → p99.9",
         "EXTREME_FPR": "threshold extreme → p99.97",
         "TIER_DIAGNOSTIC": "history ขั้นต่ำที่เริ่มให้คะแนน (log อย่างเดียว)",
-        "TIER_WARN": "history ขั้นต่ำที่ยก decision เป็น warn ได้",
-        "TIER_CHALLENGE": "history ขั้นต่ำที่บันทึก would_challenge (shadow)",
+        "TIER_WARN": "history ขั้นต่ำที่ขึ้นธง monitoring l3_investigate ได้",
+        "TIER_CHALLENGE": "history ขั้นต่ำที่บันทึก shadow_decision=would_challenge",
         "MODEL_VERSION": "รหัสเวอร์ชันโมเดลที่เขียนลงทุก contract",
     }
     for k in CONFIG_KEYS:
@@ -209,7 +210,7 @@ def build() -> None:
         "",
         "**สถาปัตยกรรมที่ล็อกคู่กัน:** residual 6 มิติ × [mean, slope, ptp] = 18 อินพุต ·",
         "per-user IsolationForest (`n_estimators=100`, `contamination=0.02`) ·",
-        "L3 = surfacing channel (ยกได้สูงสุด `warn` ห้ามแตะ `challenge`/`block`)",
+        "L3 = แกน monitoring ล้วน (`normal` / `l3_investigate`) — ไม่แตะ access decision",
         "",
         "ค่าคงที่ชุดเดียวกันนี้ต้องตรงกับ `ml-service/app/sequence.py` —",
         "บังคับด้วย `tests/test_l3_sequence_client.py::test_constants_parity_hub_vs_ml_service`",
