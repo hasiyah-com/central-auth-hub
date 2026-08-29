@@ -776,7 +776,7 @@ function HourlyChart({
 }
 
 function parseUtcTime(value: string): number {
-  const hasTimezone = /[+-]\\d{2}:?\\d{2}$|Z$/i.test(value);
+  const hasTimezone = /[+-]\d{2}:?\d{2}$|Z$/i.test(value);
   return new Date(hasTimezone ? value : value + "Z").getTime();
 }
 
