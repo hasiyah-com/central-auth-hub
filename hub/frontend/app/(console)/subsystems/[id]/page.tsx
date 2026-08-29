@@ -34,6 +34,22 @@ type HealthStatus = {
   error?: string;
 };
 
+// ประวัติ health — health loop เก็บทุก 5 นาที (สูงสุด 288 จุด ≈ 24 ชม.)
+type HealthPoint = {
+  at?: string | null;
+  status?: string | null;
+  latency_ms?: number | null;
+};
+
+type HealthHistoryResponse = {
+  points: HealthPoint[];
+  count: number;
+  avg_latency_ms: number | null;
+  max_latency_ms: number | null;
+  healthy_ratio: number | null;
+  interval_sec: number;
+};
+
 type Subsystem = {
   id: string;
   name: string;
@@ -240,6 +256,9 @@ export default function SubsystemDetailPage({
   const [active, setActive] = useState<ActiveSessionsResponse | null>(null);
   // Stats
   const [stats, setStats] = useState<StatsResponse | null>(null);
+  const [healthHist, setHealthHist] = useState<HealthHistoryResponse | null>(
+    null
+  );
   // Inline role editing
   const [editingRoleFor, setEditingRoleFor] = useState<string | null>(null);
   const [editingRoleValue, setEditingRoleValue] = useState("");
@@ -370,13 +389,27 @@ export default function SubsystemDetailPage({
       .catch(() => setStats(null));
   }, [id]);
 
+  const loadHealthHistory = useCallback(() => {
+    clientFetch<HealthHistoryResponse>(`/admin/subsystems/${id}/health-history`)
+      .then(setHealthHist)
+      .catch(() => setHealthHist(null));
+  }, [id]);
+
   useEffect(() => {
     loadSubsystem();
     loadWhitelist();
     loadAudit();
     loadActive();
     loadStats();
-  }, [loadSubsystem, loadWhitelist, loadAudit, loadActive, loadStats]);
+    loadHealthHistory();
+  }, [
+    loadSubsystem,
+    loadWhitelist,
+    loadAudit,
+    loadActive,
+    loadStats,
+    loadHealthHistory,
+  ]);
 
   // Sync default role-to-add กับ allowed_roles ของ subsystem
   useEffect(() => {
@@ -1317,6 +1350,163 @@ export default function SubsystemDetailPage({
             })()}
           </section>
         )}
+
+        {/* ── Section 0.5: Health — สถานะ + กราฟ latency ย้อนหลัง ── */}
+        <section>
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-xs font-bold text-ink-500 uppercase tracking-wider">
+              สถานะและความพร้อมใช้งาน · Health
+              <span className="hidden lg:inline normal-case font-normal text-ink-400 text-[10px]">
+                {" "}
+                · Hub ping /health ของ subsystem ทุก 5 นาที
+              </span>
+            </h3>
+            <button
+              onClick={loadHealthHistory}
+              className="text-[11px] text-ink-500 hover:text-brand-600 underline"
+            >
+              ⟳ refresh
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
+            {/* สถานะปัจจุบัน */}
+            <div className="bg-white rounded-xl border border-ink-200 shadow-sm p-5">
+              <FieldLabel>สถานะปัจจุบัน</FieldLabel>
+              {sub.health ? (
+                <>
+                  <div className="flex items-center gap-2 mt-1">
+                    <span className="text-2xl">
+                      {HEALTH_TONE[sub.health.status]?.emoji}
+                    </span>
+                    <span
+                      className={`text-lg font-extrabold ${
+                        HEALTH_TONE[sub.health.status]?.color
+                      }`}
+                    >
+                      {HEALTH_TONE[sub.health.status]?.label}
+                    </span>
+                  </div>
+                  <div className="mt-3 space-y-1 text-xs text-ink-500">
+                    <div>
+                      latency ล่าสุด:{" "}
+                      <span className="font-mono text-ink-700">
+                        {sub.health.latency_ms != null
+                          ? `${sub.health.latency_ms} ms`
+                          : "—"}
+                      </span>
+                    </div>
+                    <div>
+                      ตรวจล่าสุด:{" "}
+                      <span className="font-mono text-ink-700">
+                        {sub.health.checked_at
+                          ? parseUTC(sub.health.checked_at).toLocaleString(
+                              "th-TH",
+                              {
+                                timeZone: "Asia/Bangkok",
+                                dateStyle: "short",
+                                timeStyle: "medium",
+                              }
+                            )
+                          : "—"}
+                      </span>
+                    </div>
+                    {sub.health.url && (
+                      <div className="font-mono break-all text-ink-400">
+                        {sub.health.url}
+                      </div>
+                    )}
+                    {sub.health.error && (
+                      <div className="text-rose-600">{sub.health.error}</div>
+                    )}
+                  </div>
+                </>
+              ) : (
+                <div className="text-sm text-ink-400 mt-2">
+                  ยังไม่เคยตรวจ
+                </div>
+              )}
+            </div>
+
+            {/* สรุปจากประวัติจริง */}
+            <div className="bg-white rounded-xl border border-ink-200 shadow-sm p-5 lg:col-span-2 grid grid-cols-3 gap-4">
+              <div>
+                <FieldLabel>latency เฉลี่ย</FieldLabel>
+                <div className="text-2xl font-extrabold text-ink-900 tabular-nums">
+                  {healthHist?.avg_latency_ms != null
+                    ? healthHist.avg_latency_ms
+                    : "—"}
+                  <span className="ml-1 text-xs font-normal text-ink-400">
+                    ms
+                  </span>
+                </div>
+              </div>
+              <div>
+                <FieldLabel>latency สูงสุด</FieldLabel>
+                <div className="text-2xl font-extrabold text-ink-900 tabular-nums">
+                  {healthHist?.max_latency_ms != null
+                    ? healthHist.max_latency_ms
+                    : "—"}
+                  <span className="ml-1 text-xs font-normal text-ink-400">
+                    ms
+                  </span>
+                </div>
+              </div>
+              <div>
+                <FieldLabel>รอบที่ healthy</FieldLabel>
+                <div className="text-2xl font-extrabold text-emerald-600 tabular-nums">
+                  {healthHist?.healthy_ratio != null
+                    ? `${Math.round(healthHist.healthy_ratio * 1000) / 10}%`
+                    : "—"}
+                </div>
+                <div className="text-[11px] text-ink-400">
+                  จาก {healthHist?.count ?? 0} รอบที่บันทึกไว้
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* กราฟ latency — ข้อมูลจริงจาก health loop */}
+          <div className="mt-3 bg-white rounded-xl border border-ink-200 p-4">
+            <div className="text-[10px] font-bold text-ink-500 uppercase tracking-wider mb-2">
+              Response time (ms) · ทุก 5 นาที
+            </div>
+            {healthHist && healthHist.points.length > 0 ? (
+              <LineChart
+                labels={healthHist.points.map((p) =>
+                  p.at
+                    ? parseUTC(p.at).toLocaleTimeString("th-TH", {
+                        timeZone: "Asia/Bangkok",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                        hour12: false,
+                      })
+                    : "—"
+                )}
+                series={[
+                  {
+                    name: "latency (ms)",
+                    color: "#6366f1",
+                    values: healthHist.points.map((p) =>
+                      typeof p.latency_ms === "number" ? p.latency_ms : null
+                    ),
+                  },
+                ]}
+                height={200}
+                showValues={false}
+                valueSuffix=" ms"
+              />
+            ) : (
+              <div className="text-sm text-ink-400 text-center py-8">
+                ยังไม่มีประวัติ — health loop บันทึกทุก 5 นาที
+              </div>
+            )}
+            <div className="mt-2 text-[11px] text-ink-400">
+              เก็บสูงสุด 288 จุด (~24 ชม.) — จุดที่ขาดคือรอบที่ ping ไม่สำเร็จ
+              (เส้นขาดช่วง ไม่ลากข้าม)
+            </div>
+          </div>
+        </section>
 
         {/* ── Section 1: Identity card ───────────────────── */}
         <section>
