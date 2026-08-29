@@ -23,7 +23,11 @@ export function StatsCard({ label, value, sub, icon, tone = "default" }: Props) 
       <span className={clsx("absolute inset-y-0 left-0 w-[3px]", t.edge)} />
       <div className="flex items-start justify-between gap-3">
         <div className="font-mono text-[10px] font-semibold uppercase tracking-[.13em] text-ink-500">{label}</div>
-        {icon && <div className="font-mono text-[10px] text-ink-400" aria-hidden="true">{icon}</div>}
+        {icon && (
+          <div className="grid h-7 w-7 place-items-center rounded-full border border-ink-200 bg-white" aria-hidden="true">
+            <span className="h-1.5 w-1.5 rounded-full bg-current opacity-60" />
+          </div>
+        )}
       </div>
       <div className={clsx("mt-4 font-display text-[30px] font-extrabold leading-none tabular-nums", t.value)}>{value}</div>
       {sub && <div className="mt-2 truncate font-mono text-[10px] text-ink-500">{sub}</div>}
