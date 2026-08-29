@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { Badge } from "@/components/Badge";
 import type { Anomaly, UserSession } from "../_types";
 import { DECISION_TONE, DEVICE_ICON } from "../_types";
@@ -213,14 +214,26 @@ function SubsystemCell({ row }: { row: Anomaly }) {
 }
 
 function UserCell({ row }: { row: BaseRow & Record<string, unknown> }) {
-  const email = (row as Anomaly).user_email;
-  const sessionId = (row as Anomaly).session_id || (row as UserSession).id;
+  const anomaly = row as Anomaly;
+  const email = anomaly.user_email;
+  const userId = anomaly.user_id;
+  const sessionId = anomaly.session_id || (row as UserSession).id;
   if (!email) return <span className="text-ink-400">—</span>;
   return (
     <div>
-      <div className="font-semibold text-ink-900">{email}</div>
+      {userId ? (
+        <Link
+          href={`/ml/users/${userId}`}
+          onClick={(event) => event.stopPropagation()}
+          className="font-semibold text-ink-900 underline decoration-ink-300 underline-offset-4 hover:text-brand-700 hover:decoration-brand-500"
+        >
+          {email}
+        </Link>
+      ) : (
+        <div className="font-semibold text-ink-900">{email}</div>
+      )}
       {sessionId && (
-        <div className="text-[10px] text-ink-400 font-mono mt-0.5">
+        <div className="mt-0.5 font-mono text-[10px] text-ink-400">
           sess {String(sessionId).slice(0, 8)}…
         </div>
       )}

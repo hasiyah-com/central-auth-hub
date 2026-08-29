@@ -4,39 +4,141 @@
 
 :root {
   color-scheme: light;
+  --canvas-deep: #0a0e17;
+  --canvas-panel: #111726;
+  --paper: #f5f7fa;
+  --paper-card: #ffffff;
+  --signal: #34e8c4;
+  --signal-2: #13b89a;
+  --risk-low: #10b981;
+  --risk-mid: #f59e0b;
+  --risk-high: #f97316;
+  --risk-crit: #e11d48;
+  --line: #dfe5ed;
+  --muted: #68778c;
 }
+
+* { box-sizing: border-box; }
 
 html,
-body {
-  height: 100%;
-}
+body { min-height: 100%; }
 
 body {
-  background: #f8fafc; /* slate-50 */
-  color: #0f172a; /* slate-900 */
-  font-family: "Sarabun", system-ui, sans-serif;
+  margin: 0;
+  background: var(--paper);
+  color: #111827;
+  font-family: "IBM Plex Sans Thai", "Noto Sans Thai", system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
-/* Sarabun via Google Fonts — loaded in layout.tsx */
+h1, h2, h3, h4 {
+  font-family: "Anuphan", "IBM Plex Sans Thai", system-ui, sans-serif;
+  letter-spacing: -0.025em;
+}
 
-/* Staggered reveal — ใช้ในหน้า /auth/setup (reduced-motion safe) */
+code, pre, kbd, samp, .font-mono {
+  font-family: "IBM Plex Mono", ui-monospace, monospace !important;
+  font-variant-numeric: tabular-nums;
+}
+
+::selection { background: rgba(52, 232, 196, .28); }
+
+:focus-visible {
+  outline: 2px solid var(--signal-2);
+  outline-offset: 2px;
+}
+
+button, a, input, select, textarea { -webkit-tap-highlight-color: transparent; }
+
+.signal-shell {
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at 100% 0%, rgba(52, 232, 196, .07), transparent 28rem),
+    var(--paper);
+}
+
+.signal-content { min-width: 0; }
+
+.signal-shell main {
+  animation: signal-reveal .45s cubic-bezier(.16, 1, .3, 1) both;
+}
+
+.signal-shell main > section,
+.signal-shell main > div { scroll-margin-top: 5.5rem; }
+
+.signal-shell input,
+.signal-shell select,
+.signal-shell textarea {
+  border-color: var(--line);
+  transition: border-color .16s ease, box-shadow .16s ease, background .16s ease;
+}
+
+.signal-shell input:focus,
+.signal-shell select:focus,
+.signal-shell textarea:focus {
+  border-color: var(--signal-2);
+  box-shadow: 0 0 0 3px rgba(52, 232, 196, .14);
+  outline: none;
+}
+
+.signal-shell button,
+.signal-shell a { transition-duration: 160ms; }
+
+.signal-rule {
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(148, 163, 184, .5), transparent);
+}
+
+.signal-dot {
+  position: relative;
+  display: inline-block;
+  width: .55rem;
+  height: .55rem;
+  border-radius: 999px;
+  background: var(--signal);
+  box-shadow: 0 0 0 3px rgba(52, 232, 196, .12), 0 0 14px rgba(52, 232, 196, .55);
+}
+
+.signal-dot::after {
+  content: "";
+  position: absolute;
+  inset: -5px;
+  border: 1px solid rgba(52, 232, 196, .5);
+  border-radius: inherit;
+  animation: signal-ping 2s ease-out infinite;
+}
+
+@keyframes signal-reveal {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes signal-ping {
+  0% { opacity: .8; transform: scale(.55); }
+  70%, 100% { opacity: 0; transform: scale(1.35); }
+}
+
 @keyframes fadeUp {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
 }
+
 .reveal {
   opacity: 0;
-  animation: fadeUp 0.55s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: fadeUp .55s cubic-bezier(.16, 1, .3, 1) forwards;
 }
+
+@media (max-width: 1023px) {
+  .signal-content { padding-left: 0; }
+  .signal-shell main { padding: 1.25rem; padding-bottom: 5rem; }
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .reveal {
-    animation: none;
-    opacity: 1;
+  *, *::before, *::after {
+    scroll-behavior: auto !important;
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
   }
+  .reveal { opacity: 1; }
 }
