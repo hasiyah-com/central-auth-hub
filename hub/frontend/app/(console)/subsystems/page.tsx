@@ -16,6 +16,12 @@ type Subsystem = {
   scope?: string;
   access_policy?: string;
   whitelist_count: number;
+  health?: {
+    status: "online" | "healthy" | "degraded" | "down" | "unknown";
+    latency_ms?: number;
+    checked_at?: string;
+    error?: string;
+  } | null;
   owner_email?: string;
   created_at?: string;
   approved_at?: string;
@@ -35,6 +41,35 @@ const POLICY_META: Record<string, { label: string; cls: string }> = {
   role: { label: "👥 บทบาท", cls: "bg-violet-100 text-violet-700" },
   attribute: { label: "🎯 คุณสมบัติ", cls: "bg-amber-100 text-amber-800" },
 };
+
+/** ป้ายสถานะ health ล่าสุด — backend ping /health ของ subsystem ทุก 5 นาที */
+const HEALTH_META: Record<string, { label: string; cls: string; dot: string }> = {
+  online: { label: "ปกติ", cls: "text-emerald-700", dot: "bg-emerald-500" },
+  healthy: { label: "ปกติ", cls: "text-emerald-700", dot: "bg-emerald-500" },
+  degraded: { label: "ช้า", cls: "text-amber-700", dot: "bg-amber-500" },
+  down: { label: "ล่ม", cls: "text-rose-700", dot: "bg-rose-500" },
+  unknown: { label: "ยังไม่ตรวจ", cls: "text-ink-400", dot: "bg-ink-300" },
+};
+
+function HealthCell({ s }: { s: Subsystem }) {
+  const h = s.health;
+  if (!h) return <span className="text-xs text-ink-400">ยังไม่ตรวจ</span>;
+  const m = HEALTH_META[h.status] || HEALTH_META.unknown;
+  return (
+    <span
+      className={`inline-flex items-center gap-1.5 text-xs font-semibold ${m.cls}`}
+      title={h.error || (h.checked_at ? `ตรวจล่าสุด ${h.checked_at}` : undefined)}
+    >
+      <span className={`h-1.5 w-1.5 rounded-full ${m.dot}`} />
+      {m.label}
+      {h.latency_ms != null && (
+        <span className="font-mono text-[11px] font-normal text-ink-400">
+          {h.latency_ms}ms
+        </span>
+      )}
+    </span>
+  );
+}
 
 function policyOf(s: Subsystem) {
   return POLICY_META[s.access_policy || "explicit"] || POLICY_META.explicit;
@@ -195,6 +230,11 @@ export default function SubsystemsPage() {
       render: (s) => (
         <span className="font-mono text-sm">{s.whitelist_count}</span>
       ),
+    },
+    {
+      key: "health",
+      header: "Health ล่าสุด",
+      render: (s) => <HealthCell s={s} />,
     },
     {
       key: "owner_email",
@@ -431,6 +471,10 @@ export default function SubsystemsPage() {
                         <span className="text-xs font-mono font-semibold text-ink-900">
                           {s.whitelist_count} คน
                         </span>
+                      </div>
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="text-xs text-ink-400">Health ล่าสุด</span>
+                        <HealthCell s={s} />
                       </div>
                     </div>
 
