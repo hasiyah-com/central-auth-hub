@@ -126,7 +126,12 @@ L3 = แกน monitoring ล้วน (`normal` / `l3_investigate`) — ไม�
 | tag | commit | คืออะไร |
 |---|---|---|
 | `rba-freeze-2026-08-29` | `a07b868ecb9f435d7cf2511163281c871d050117` | จุดที่ **ผลการทดลอง** ถูก freeze — ตัวเลข recall/FPR ทั้งหมดมาจากจุดนี้ |
-| `rba-expert-review-2026-08-29` | `700c05ef9616abd950814a6c79ac759d365ed78c` | จุดที่ **ส่งตรวจ** = freeze + stability fixes (B62/B63) + แยก access/monitoring |
+| `rba-expert-review-2026-08-29` | (ดู `git rev-list -n 1 rba-expert-review-2026-08-29`) | จุดที่ **ส่งตรวจ** = freeze + stability fixes (B62/B63) + แยก access/monitoring |
+
+> **ทำไม tag ส่งตรวจไม่ระบุ SHA ตายตัวในเอกสารนี้:** เอกสารนี้เองอยู่ใน commit นั้น —
+> SHA คำนวณจากเนื้อหาไฟล์ทั้งหมดรวมทั้งไฟล์นี้ จึงเขียน SHA ของตัวเองลงไปไม่ได้
+> (ไก่กับไข่) **ตัว tag คือหลักฐานที่ถือเป็นทางการ** ส่วน SHA ของ `rba-freeze` ระบุได้
+> เพราะเป็น commit ในอดีตแล้ว
 
 การแก้หลัง freeze เป็น**เชิงปฏิบัติการล้วน** (cache invalidation · ล็อกต่อ user · timeout
 แยก · ชื่อฟิลด์) ไม่แตะฟังก์ชันตัดสินใจของโมเดล — ค่าคงที่ใน §2 จึงเท่ากันทั้งสอง tag
@@ -134,8 +139,9 @@ L3 = แกน monitoring ล้วน (`normal` / `l3_investigate`) — ไม�
 **ตรวจสอบชุดที่ส่งตรวจ:**
 
 ```bash
-git checkout rba-expert-review-2026-08-29   # = 700c05e
+git checkout rba-expert-review-2026-08-29
 python scripts/build_evidence_manifest.py --verify
+git rev-list -n 1 rba-expert-review-2026-08-29    # SHA ที่แท้จริงของชุดส่งตรวจ
 ```
 
 
