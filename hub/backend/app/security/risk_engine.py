@@ -68,6 +68,9 @@ async def evaluate_login_risk(
             "score": decision.total_score,
             "reasons": decision.reasons,
             "breakdown": decision.breakdown,
+            # hard block ข้าม L3 ไปเลย — คง shape ของ response ให้เท่ากันทุกเส้นทาง
+            "monitoring_decision": "normal",
+            "l3_sequence": None,
         }
 
     # ── Layer 2: Behavior Profiling ──
@@ -97,7 +100,7 @@ async def evaluate_login_risk(
     # แยกจาก aggregate โดยตั้งใจ: joint-residual ของ stealth campaign มีคะแนนรวมต่ำเกินกว่า
     # การบวกคะแนนจะดันถึง warn ได้ (ดู reports/l3_sequence_channel_2026-08-26.md) จึงยกระดับ
     # ตรงๆ แทน · fail-safe ตาม B21 — พังแล้วไม่กระทบ decision เดิม
-    l3_seq_reason: str | None = None
+    l3_monitoring: str = "normal"
     l3_contract: dict | None = None
     if settings.l3_sequence_enabled:
         try:
@@ -110,24 +113,18 @@ async def evaluate_login_risk(
                 redis_client, user_id, features, profile, subsystem_id
             )
             l3_contract = l3_sequence.to_contract(seq, None)
+            l3_monitoring = l3_contract["monitoring_decision"]
             if seq.fired:
-                raised = l3_sequence.apply_channel(decision.decision, seq)
-                if raised != decision.decision:
-                    decision.decision = f"would_{raised}" if shadow_mode else raised
-                    decision.reasons = [
-                        *decision.reasons,
-                        f"{seq.reason} ({seq.score:.2f})",
-                    ]
-                    # ตั้งเมื่อ "ทำให้ decision เปลี่ยนจริง" เท่านั้น (effective unique)
-                    l3_seq_reason = seq.reason
                 # log ครบตาม data contract — ใช้วัด raw vs effective ตอน production replay
                 logger.info(
-                    "[risk_engine] l3_sequence user=%s tier=%s pct=%.3f raw=%.3f elig=%s shadow=%s",
+                    "[risk_engine] l3_sequence user=%s tier=%s pct=%.3f raw=%.3f "
+                    "elig=%s monitoring=%s shadow=%s",
                     user_id,
                     seq.tier,
                     seq.percentile,
                     seq.raw_score,
                     seq.eligibility,
+                    l3_monitoring,
                     seq.shadow_decision,
                 )
             # บันทึกหลังตัดสิน — เป็น history ของครั้งถัดไป (ไม่ปนเข้า window ที่เพิ่งใช้)
@@ -158,8 +155,11 @@ async def evaluate_login_risk(
         # SHAP top-k features from Layer 3 — UI uses this in SessionDetailPanel,
         # audit log includes when score is high.
         "iforest_explanation": iforest_result.explanation,
-        # L3 sequence channel — ตั้งค่าเมื่อยิงเท่านั้น (audit/SOC ใช้แยกแยะที่มาของ warn)
-        "l3_sequence_reason": l3_seq_reason,
+        # ── แกนที่สองของระบบ: monitoring ไม่ใช่ access ──
+        # L3 มีอำนาจแค่ตั้งค่าใน field นี้ ("normal" | "l3_investigate") เท่านั้น
+        # ห้ามให้ L3 ไปแตะ "decision"/"score"/"reasons" ข้างบนเด็ดขาด
+        # (บังคับด้วย tests/test_l3_access_monitoring_split.py)
+        "monitoring_decision": l3_monitoring,
         # data contract ต่อ login (raw_score/percentile/tier/eligibility/model_version)
         # -> เก็บลง log/audit เพื่อวัด raw vs effective unique ตอน production replay
         "l3_sequence": l3_contract,

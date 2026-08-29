@@ -3,10 +3,11 @@
 อ่าน `login_sessions.risk_breakdown.l3_sequence` (data contract ที่ risk_engine เขียนทุก login)
 แล้วตอบคำถามที่การทดลอง offline ตอบไม่ได้:
 
-  1. raw vs effective   — L3 "ยิง" บ่อยแค่ไหน vs "เปลี่ยน decision จริง" บ่อยแค่ไหน
-                          (offline พบว่าสองค่านี้ต่างกันมาก 16.3% vs 0.2%)
+  1. raw vs alert       — L3 "ยิง" บ่อยแค่ไหน vs "ขึ้นธงให้ SOC" บ่อยแค่ไหน
+                          (tier diagnostic ยิงได้แต่ยังไม่ขึ้นธง)
   2. ภาระ SOC           — alert ต่อวันที่ L3 เพิ่มเข้ามาจริง
-  3. ความปลอดภัย        — ยืนยันว่า L3 ไม่เคยเปลี่ยน challenge/block บน traffic จริง
+  3. ความปลอดภัย        — ยืนยันว่า L3 **ไม่แตะ access decision เลย** บน traffic จริง
+                          (สองแกนแยกกัน: access = L1/L2/L4 · monitoring = L3)
   4. **tier reachability** — ผู้ใช้จริงสะสม history ถึงเกณฑ์ที่ L3 ทำงานได้จริงไหม
                           (ข้อนี้สำคัญที่สุด: ถ้าไม่ถึง ตัวเลข offline ก็ไม่มีความหมาย)
 
@@ -62,24 +63,27 @@ def analyse(rows) -> dict:
 
     elig_dist = Counter(c.get("eligibility") for _, c in with_contract)
     tier_dist = Counter(c.get("tier") for _, c in eligible)
-    shadow_dist = Counter(c.get("decision") for _, c in eligible)
+    shadow_dist = Counter(c.get("shadow_decision") for _, c in eligible)
     fired = [(s, c) for s, c in eligible if c.get("tier") in ("anomaly", "extreme")]
+    alerts = [
+        (s, c)
+        for s, c in eligible
+        if c.get("monitoring_decision") == L3.MONITORING_INVESTIGATE
+    ]
 
-    # effective = L3 ทำให้ decision เปลี่ยนจริง (risk_engine ใส่ reason ไว้เมื่อเปลี่ยนเท่านั้น)
-    def changed(s) -> bool:
-        rs = s.risk_reasons or []
-        return any(L3.REASON in str(r) for r in rs)
-
-    effective = [(s, c) for s, c in eligible if changed(s)]
-    # ความปลอดภัย: L3 ต้องไม่เคยอยู่บน session ที่ตัดสินแรงกว่า warn
+    # ความปลอดภัย: L3 ต้องไม่ปรากฏในแกน access เลย — ตรวจสองทาง
+    #   (1) เหตุผลของ L3 ต้องไม่เคยโผล่ใน risk_reasons (แกนอธิบาย access decision)
+    #   (2) ค่าในช่อง decision ต้องไม่ใช่คำจากคำศัพท์ของแกน monitoring
+    monitoring_vocab = {L3.MONITORING_NORMAL, L3.MONITORING_INVESTIGATE}
     violations = [
         (s, c)
-        for s, c in effective
-        if str(s.decision).replace("would_", "") not in ("warn",)
+        for s, c in with_contract
+        if any(L3.REASON in str(r) for r in (s.risk_reasons or []))
+        or str(s.decision) in monitoring_vocab
     ]
 
     per_day = Counter()
-    for s, _ in fired:
+    for s, _ in alerts:
         per_day[s.created_at.date()] += 1
 
     # tier reachability: อัตรา login ต่อคน -> เวลาที่ต้องใช้ถึงแต่ละ tier
@@ -101,7 +105,7 @@ def analyse(rows) -> dict:
         "tier_dist": tier_dist,
         "shadow_dist": shadow_dist,
         "fired": len(fired),
-        "effective": len(effective),
+        "alerts": len(alerts),
         "violations": violations,
         "per_day": per_day,
         "rates": rates,
@@ -157,15 +161,15 @@ def render(a: dict, days: int | None) -> str:
 
     L += [
         "",
-        "## 2. Raw vs Effective",
+        "## 2. Raw vs Alert",
         "",
-        "> คำถามหลักของ replay — offline พบว่า L3 **ยิง** 16.3% แต่ **เปลี่ยน decision จริง**",
-        "> แค่ 0.2% ถ้าเก็บแค่ decision จะสรุปผิดว่า L3 ไม่ทำอะไรเลย",
+        '> L3 อยู่คนละแกนกับ access decision — ไม่มีตัวชี้วัด "เปลี่ยน decision" อีกต่อไป',
+        "> เพราะโดยโครงสร้างแล้ว L3 ทำไม่ได้ (ดู §3) สิ่งที่วัดคือ ยิง vs ขึ้นธงให้ SOC",
         "",
         "| ตัวชี้วัด | จำนวน | สัดส่วนของ eligible |",
         "|---|---|---|",
         f"| **raw** — L3 ยิง (tier anomaly/extreme) | {a['fired']:,} | {_pct(a['fired'], a['eligible'])} |",
-        f"| **effective** — L3 ทำให้ decision เปลี่ยน | {a['effective']:,} | {_pct(a['effective'], a['eligible'])} |",
+        f"| **alert** — ขึ้นธง `l3_investigate` | {a['alerts']:,} | {_pct(a['alerts'], a['eligible'])} |",
         "",
         "| tier | จำนวน |",
         "|---|---|",
@@ -178,12 +182,17 @@ def render(a: dict, days: int | None) -> str:
 
     L += [
         "",
-        "## 3. ความปลอดภัย — L3 เปลี่ยน access decision หรือไม่",
+        "## 3. ความปลอดภัย — สองแกนแยกกันจริงไหม",
+        "",
+        "```text",
+        "access_decision     = L1/L2/L4 -> allow | challenge | block",
+        "monitoring_decision = L3        -> normal | l3_investigate",
+        "```",
         "",
         "| การตรวจ | ผล |",
         "|---|---|",
-        f"| session ที่ L3 เปลี่ยน decision เป็นอย่างอื่นนอกจาก warn | "
-        f"**{len(a['violations'])}** {'✅' if not a['violations'] else '❌ ต้องสอบสวนทันที'} |",
+        f"| session ที่ L3 รั่วเข้าแกน access (reason หรือค่าใน decision) | "
+        f"**{len(a['violations'])}** {'✅ ไม่มี' if not a['violations'] else '❌ ต้องสอบสวนทันที'} |",
     ]
 
     L += ["", "## 4. ภาระ SOC (alert ที่ L3 เพิ่ม)", ""]
@@ -267,14 +276,26 @@ def render(a: dict, days: int | None) -> str:
     # ── ข้อสรุปคำนวณจากข้อมูล ไม่ใช่เขียนตายตัว ──
     if a["eligible"] == 0:
         L += [
-            "**ยังสรุปประสิทธิภาพของ L3 บน traffic จริงไม่ได้** — ไม่มีเหตุการณ์ที่ eligible เลย",
-            "(ผู้ใช้ทุกคนยังมี residual history ต่ำกว่าเกณฑ์ `diagnostic`)",
+            "### 🔬 รอบนี้เป็น **functional smoke test** ไม่ใช่การวัดประสิทธิภาพ",
             "",
-            "สิ่งที่ยืนยันได้แล้วจากรอบนี้:",
+            f"Production replay รอบนี้มีเพียง **{a['with_contract']:,} เหตุการณ์** และ "
+            f"**eligible {a['eligible']}/{a['with_contract']}** "
+            "(ผู้ใช้ทุกคนยังมี residual history ต่ำกว่าเกณฑ์ `diagnostic` = "
+            f"{L3.TIER_DIAGNOSTIC})",
+            "",
+            "**สิ่งที่รอบนี้ยืนยันได้:**",
             "",
             "- pipeline ทำงานครบวงจรบน traffic จริง — contract ถูกเขียนลง `risk_breakdown` ทุก login",
-            "- L3 ไม่เปลี่ยน access decision แม้แต่ครั้งเดียว (ตามที่ออกแบบไว้)",
+            "- L3 ไม่แตะแกน access decision แม้แต่ครั้งเดียว",
             "- ระบบ abstain อย่างถูกต้องเมื่อ history ไม่พอ (ไม่เดามั่ว)",
+            "",
+            "**สิ่งที่รอบนี้ยืนยัน _ไม่ได้_:**",
+            "",
+            "- ❌ recall / FPR / precision ของ L3 บน traffic จริง",
+            "- ❌ ภาระ alert ที่ SOC จะได้รับจริง",
+            "- ❌ ว่า L3 เห็นสิ่งที่ L1/L2 ไม่เห็นหรือไม่",
+            "",
+            "ตัวเลขประสิทธิภาพทุกตัวที่อ้างอิงได้ตอนนี้ **มาจากข้อมูลจำลองเท่านั้น**",
             "",
         ]
     else:

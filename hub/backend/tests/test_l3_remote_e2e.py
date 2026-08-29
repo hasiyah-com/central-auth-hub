@@ -4,7 +4,7 @@
 
     hub          residual_raw() (pure python)  ->  record_residual() เขียน Redis
     ml-service   อ่าน Redis -> fit IForest รายคน -> score window -> คืน contract
-    hub          result_from_payload() -> apply_channel() -> to_contract()
+    hub          result_from_payload() -> monitoring_decision() -> to_contract()
 
 ทดสอบด้วยของจริงทั้งหมด (ไม่ mock) — skip เองถ้า Redis/ml-service ไม่พร้อม
 
@@ -94,16 +94,14 @@ async def test_normal_residual_does_not_fire(seeded):
 
 @pytest.mark.asyncio
 async def test_extreme_drift_fires_and_raises_to_warn(seeded):
-    """residual เบี่ยงหลายมิติพร้อมกัน -> ยิง + channel ยก allow เป็น warn (ไม่เกิน warn)."""
+    """residual เบี่ยงหลายมิติพร้อมกัน -> ยิง + ขึ้นธง monitoring."""
     out = await _ok(USER, [12.0, 1.0, 8.0, 0.0, 9.0, 0.99])
     res = L3.result_from_payload(out)
     print(f"\n  raw={res.raw_score:.3f} pct={res.percentile:.3f} tier={res.tier}")
     assert res.fired is True
     assert res.reason == L3.REASON
-    assert L3.apply_channel("allow", res) == "warn"
-    # ห้ามลด friction ที่ L1/L2 ตั้งไว้แล้ว และห้ามยกเกิน warn
-    assert L3.apply_channel("challenge", res) == "challenge"
-    assert L3.apply_channel("block", res) == "block"
+    # L3 ตั้งได้แค่ธง monitoring — access decision เป็นแกนของ L1/L2/L4 เท่านั้น
+    assert L3.monitoring_decision(res) == L3.MONITORING_INVESTIGATE
 
 
 @pytest.mark.asyncio
@@ -115,7 +113,8 @@ async def test_contract_complete_for_replay(seeded):
     assert c["eligible"] is True
     assert c["n_history"] >= L3.TIER_WARN
     assert c["model_version"] == L3.MODEL_VERSION
-    assert c["decision"] in ("would_warn", "would_challenge", None)
+    assert c["monitoring_decision"] == L3.MONITORING_INVESTIGATE
+    assert c["shadow_decision"] in ("would_warn", "would_challenge", None)
 
 
 @pytest.mark.asyncio
@@ -128,4 +127,4 @@ async def test_abstain_for_fresh_user():
     out = await _ok("pytest-l3-fresh", [0.0] * L3.DIMS)
     assert out["eligibility"] == "abstain"
     assert out["fired"] is False
-    assert L3.apply_channel("allow", L3.result_from_payload(out)) == "allow"
+    assert L3.monitoring_decision(L3.result_from_payload(out)) == L3.MONITORING_NORMAL

@@ -2,8 +2,9 @@
 
 **วันที่:** 29 ส.ค. 2026
 **ขอบเขต:** restart · cold profile · model หาย/เสีย · concurrency · latency · fail-safe ·
-**ยืนยันว่า L3 ไม่เปลี่ยน access decision**
-**สถานะ:** ✅ ผ่านทั้งหมด — 23 tests + restart driver 6/6 · full suite 795 passed / 0 failed
+**ยืนยันว่า L3 ไม่แตะ access decision**
+**สถานะ:** ✅ ผ่านทั้งหมด — 22 tests + restart driver 6/6 · full suite 808 passed / 0 failed
+**อัปเดต 29 ส.ค. (หลังรีวิว):** แยก access/monitoring เป็นสองแกน — §6 เขียนใหม่
 **ทดสอบกับของจริงทั้งหมด** (Redis + ml-service ในคอนเทนเนอร์จริง ไม่ mock)
 
 > การทดลอง offline (`exp_final_gate_2026-08-26.md`) ตอบว่า *"โมเดลนี้ตรวจจับได้ดีแค่ไหน"*
@@ -21,7 +22,7 @@
 | 4. Concurrency | ไม่ race · ไม่ปนกัน | ✅ 5/5 |
 | 5. Latency | p95 ต่ำกว่าครึ่งของ timeout | ✅ p95 **44ms** / budget 250ms |
 | 6. Fail-safe (B21) | ml ล่ม/ช้า → login ไม่พัง | ✅ 4/4 |
-| 7. **L3 ไม่เปลี่ยน access decision** | ยกได้แค่ allow→warn | ✅ **3/3 (สแกนครบทุกชุดค่า)** |
+| 7. **L3 ไม่แตะ access decision** | ตั้งได้แค่ `monitoring_decision` | ✅ **12/12 (สแกนครบทุกชุดค่า)** |
 
 **พบปัญหาจริง 2 ข้อระหว่างทดสอบ — แก้แล้วทั้งคู่ (B62, B63)** ทั้งสองเป็นปัญหา
 **เชิงปฏิบัติการ ไม่ใช่การปรับโมเดล** — ฟังก์ชันตัดสินใจ (residual 6 มิติ · W=5 · p99.9 ·
@@ -58,7 +59,7 @@ if cached and now - ts < TTL and cached_n <= n < cached_n * 1.1:
 |---|---|---|
 | fit ซ้ำซ้อน | request N อันเห็น cache ว่างพร้อมกัน → fit ซ้ำ N ครั้ง (270ms × 20 = 5.4 วิ) | ล็อกต่อ user + double-check หลังได้ล็อก |
 | อ่าน history เต็มทุกครั้ง | ทาง warm ก็ยัง `lrange -2000 -1` + parse 2,000 แถว ทั้งที่ต้องการ 4 แถว | `llen` (O(1)) + `_load_tail()` อ่านแค่ท้าย window |
-| timeout ร่วมกับ ML หลัก | L3 ถ่วง login ได้ถึง 2 วิ ทั้งที่ยกได้สูงสุดแค่ warn | `l3_timeout_seconds = 0.5` แยกออกมา |
+| timeout ร่วมกับ ML หลัก | L3 ถ่วง login ได้ถึง 2 วิ ทั้งที่เป็นแค่ช่องเฝ้าระวัง | `l3_timeout_seconds = 0.5` แยกออกมา |
 
 **หลักการที่ได้:** ส่วนประกอบที่เป็น *monitoring* ต้องมี timeout ของตัวเอง แยกจากส่วนที่เป็น
 *ตัวตัดสิน* — ไม่มีสิทธิ์ถ่วง critical path เท่ากัน
@@ -134,9 +135,9 @@ pytest รันในคอนเทนเนอร์จึง restart คอ�
 
 | สถานการณ์ | ผลที่ต้องได้ | ผล |
 |---|---|---|
-| ผู้ใช้ไม่มีประวัติเลย | abstain · ไม่แตะ decision ทั้ง 4 ค่า | ✅ |
+| ผู้ใช้ไม่มีประวัติเลย | abstain · `monitoring_decision=normal` | ✅ |
 | ประวัติ 99 แถว (< 100) | abstain แม้ residual สุดโต่ง | ✅ |
-| ประวัติ 300 แถว (diagnostic) | ให้คะแนน+log ได้ แต่ **ห้ามเปลี่ยน decision** และ `shadow_decision=None` | ✅ |
+| ประวัติ 300 แถว (diagnostic) | ให้คะแนน+log ได้ แต่ **ห้ามขึ้นธง** และ `shadow_decision=None` | ✅ |
 | แถวขยะปนใน history | ข้ามเฉพาะแถวเสีย ที่เหลือใช้ได้ | ✅ |
 | history เสียทั้งหมด (500 แถว) | abstain เงียบ ไม่ throw | ✅ |
 | Redis ถูกล้างระหว่างใช้งาน | กลับไป abstain · `n_history=0` | ✅ |
@@ -152,34 +153,44 @@ pytest รันในคอนเทนเนอร์จึง restart คอ�
 
 | ชั้น | สถานการณ์ | ผล |
 |---|---|---|
-| client | ml-service ล่ม (พอร์ตตาย) | `l3_unreachable: *` · `fired=False` · decision ไม่ขยับทั้ง 4 ค่า |
+| client | ml-service ล่ม (พอร์ตตาย) | `l3_unreachable: *` · `fired=False` · `monitoring_decision=normal` |
 | client | ml-service ช้า (timeout 1ms) | `l3_timeout` · ไม่ค้าง (< 1 วิ) |
 | hub | Redis ไม่พร้อม (`redis=None`) | `record_residual()` ไม่ raise |
 | risk_engine | L3 โยน exception ทั้งชั้น | decision ปกติ · `l3_sequence=None` |
 
 ---
 
-## 6. 🔒 L3 ไม่เปลี่ยน access decision (เกณฑ์สำคัญที่สุด)
+## 6. 🔒 L3 อยู่คนละแกนกับ access decision (เกณฑ์สำคัญที่สุด)
 
-L3 อยู่ในสถานะ shadow — ถ้ามันเปลี่ยน `challenge`/`block` ได้ แปลว่าโมเดลที่ยังไม่ผ่าน
+```text
+access_decision     = L1/L2/L4 -> allow | challenge | block   (ตัดสินสิทธิ์ผู้ใช้)
+monitoring_decision = L3        -> normal | l3_investigate    (ธงให้ SOC ดู)
+```
+
+L3 อยู่ในสถานะ shadow — ถ้ามันแตะ `access_decision` ได้ แปลว่าโมเดลที่ยังไม่ผ่าน
 production replay กำลังตัดสินสิทธิ์ผู้ใช้จริง
 
-**สแกนครบทุกชุดค่าที่เป็นไปได้** (4 eligibility × 3 tier × 2 fired × 3 score × 4 decision
-= 288 กรณี):
+> **สิ่งที่แก้ในรอบนี้:** เดิม L3 ยก `allow → warn` ในฟิลด์ access decision จริง
+> ขณะที่รายงานเขียนว่า "ไม่เปลี่ยน access decision" — สองข้อความขัดกัน
+> แยกเป็นสองแกนแล้ว **การตรวจจับไม่เปลี่ยน** เปลี่ยนแค่ฟิลด์ที่บันทึกผล
 
-| กฎ | ผล |
+| กฎที่บังคับด้วยเทส | ผล |
 |---|---|
-| ห้ามลด friction (`ACTIONS.index(out) >= ACTIONS.index(in)`) | ✅ ไม่มีกรณีใดลด |
-| การเปลี่ยนที่เกิดขึ้นได้ มีเพียง | **`allow → warn`** เท่านั้น |
-| `challenge` / `block` ถูกแตะ | ❌ ไม่มี |
-| tier `diagnostic`/`abstain` เปลี่ยน decision | ❌ ไม่มี |
-| decision นอก vocab (`would_*`, `mfa_passed`, `""`) | คืนค่าเดิม ไม่แปลงมั่ว |
+| `apply_channel(decision, result)` (API เดิมที่ผสมสองแกน) ต้องไม่มีอีก | ✅ ลบแล้ว + มีเทสกันกลับมา |
+| `monitoring_decision(result)` รับเฉพาะผล L3 — ไม่รับ access decision | ✅ ตรวจจาก signature |
+| คำศัพท์สองแกนต้องไม่ทับกันเลย (รวม `would_*`) | ✅ disjoint |
+| สแกนทุกชุดค่า (eligibility × tier × fired × score) → คืนได้เฉพาะคำในแกน monitoring | ✅ |
+| เปิด L3 แล้ว `decision` / `score` / `reasons` ต้องเท่ากับตอนปิดเป๊ะ | ✅ |
+| `tier diagnostic`/`abstain` ต้องไม่ขึ้นธง | ✅ |
+| contract ต้องไม่มี key ชื่อ `decision` (กำกวม) | ✅ ใช้ `monitoring_decision` + `shadow_decision` |
 
-**ยืนยันซ้ำด้วยของจริง:** ผู้ใช้ history 2,000 (tier สูงสุด) + residual สุดโต่ง →
-`tier=extreme`, `shadow_decision=would_challenge` แต่ `apply_channel()` ยังยกได้แค่ `warn`
-— `would_challenge` ถูกบันทึกไว้วิเคราะห์เท่านั้น **ไม่ enforce**
+**ยืนยันด้วยของจริง:** ผู้ใช้ history 2,000 (tier สูงสุด) + residual สุดโต่ง →
+`tier=extreme`, `shadow_decision=would_challenge` แต่ผลลัพธ์ที่ออกสู่ระบบคือ
+`monitoring_decision=l3_investigate` เท่านั้น — `would_challenge` เก็บไว้วิเคราะห์
+ไม่มีเส้นทางใดพามันไป enforce
 
-สอดคล้องกับ final gate ที่วัดได้ **L3 เปลี่ยน allow/challenge/block = 0 ครั้ง** จาก 63,230 เหตุการณ์
+สอดคล้องกับ final gate ที่วัดได้ **L3 แตะ access decision = 0 ครั้ง** จาก 63,230 เหตุการณ์
+และกับ production replay (18 เหตุการณ์) ที่ตรวจแล้ว **0 การรั่วข้ามแกน**
 
 ---
 
@@ -193,7 +204,7 @@ tests/test_l3_stability.py
   latency (n=30, history=2000): p50=24.5ms p95=44.2ms max=61.4ms mean=25.9ms
   live: tier=extreme shadow=would_challenge raw=0.743
 
-============================= 23 passed in 18.66s ==============================
+============================= 22 passed in 17.08s ==============================
 ```
 
 **Full system suite (Docker)**
@@ -201,10 +212,10 @@ tests/test_l3_stability.py
 ```
 docker compose exec hub-backend pytest . -q \
   --ignore=tests/test_e2e_full_stack.py --ignore=tests/test_l1_oidc.py
-================= 795 passed, 53 skipped in 156.40s (0:02:36) ==================
+================= 808 passed, 53 skipped in 140.81s (0:02:20) ==================
 ```
 
-(เพิ่มจาก 772 → 795 = stability suite 23 ตัว · ไม่มี regression)
+(772 → 795 = stability suite · 795 → 808 = ชุดแยกสองแกน 12 ตัว + ปรับ · ไม่มี regression)
 
 ---
 
@@ -213,8 +224,8 @@ docker compose exec hub-backend pytest . -q \
 | หัวข้อ | สถานะ |
 |---|---|
 | L3 ไม่ขยาย attack surface | endpoint รับแค่ `user_id` + residual 6 ตัวเลข · ยัง bind `127.0.0.1:9000` |
-| L3 ไม่ลด friction | พิสูจน์ครบ 288 กรณี — ไม่มีเส้นทางใดทำให้ decision ต่ำลง |
-| L3 ไม่ยกระดับเกินอำนาจ | เพดาน `warn` แข็ง · `would_challenge` เป็น log เท่านั้น |
+| L3 ไม่แตะ access decision | พิสูจน์ครบทุกชุดค่า + เทียบผล risk_engine ตอนเปิด/ปิด L3 |
+| L3 ไม่ยกระดับเกินอำนาจ | ออกได้แค่ `l3_investigate` · `would_challenge` เป็น log เท่านั้น |
 | ล็อกไม่ทำ deadlock | ล็อกต่อ user ชั้นเดียว ไม่ซ้อน · guard lock แยกและปล่อยทันที |
 | DoS ผ่าน L3 | fit ครั้งเดียวต่อคน + timeout 0.5 วิ + `MAX_HISTORY` คุมหน่วยความจำ |
 | ข้อมูล | ทดสอบด้วย residual สังเคราะห์ล้วน · ไม่มี PII ในเอกสารนี้ |
@@ -238,6 +249,7 @@ docker compose exec hub-backend pytest . -q \
 
 ```bash
 docker compose exec hub-backend pytest tests/test_l3_stability.py -v -s
+docker compose exec hub-backend pytest tests/test_l3_access_monitoring_split.py -v
 ```
 
 ```bash

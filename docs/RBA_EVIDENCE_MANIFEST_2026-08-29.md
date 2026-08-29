@@ -17,11 +17,11 @@ python scripts/build_evidence_manifest.py --verify
 
 | รายการ | ค่า |
 |---|---|
-| commit SHA (เต็ม) | `639eefbb402835a560dda782704d086ec19ad7a6` |
-| commit SHA (สั้น) | `639eefb` |
+| commit SHA (เต็ม) | `2f46ae1685faa13eda1ab173143b86ed70e49e2d` |
+| commit SHA (สั้น) | `2f46ae1` |
 | branch | `main` |
 | working tree ตอนสร้าง manifest | มีไฟล์ที่ยังไม่ commit (ดู §5) |
-| จำนวนไฟล์หลักฐาน | 47 |
+| จำนวนไฟล์หลักฐาน | 48 |
 
 > ⚠️ commit SHA ด้านบนคือ **commit ก่อนหน้า** ตอน generate — SHA ของ freeze commit เอง
 > บันทึกไว้ที่ §5 (เขียนเพิ่มหลัง commit เสร็จ เพราะ SHA คำนวณจากเนื้อหาไฟล์รวมทั้ง manifest)
@@ -38,13 +38,13 @@ python scripts/build_evidence_manifest.py --verify
 | `CAL_FPR` | `0.001` | threshold anomaly = quantile(1 − ค่านี้) → p99.9 |
 | `EXTREME_FPR` | `0.0003` | threshold extreme → p99.97 |
 | `TIER_DIAGNOSTIC` | `100` | history ขั้นต่ำที่เริ่มให้คะแนน (log อย่างเดียว) |
-| `TIER_WARN` | `1000` | history ขั้นต่ำที่ยก decision เป็น warn ได้ |
-| `TIER_CHALLENGE` | `2000` | history ขั้นต่ำที่บันทึก would_challenge (shadow) |
+| `TIER_WARN` | `1000` | history ขั้นต่ำที่ขึ้นธง monitoring l3_investigate ได้ |
+| `TIER_CHALLENGE` | `2000` | history ขั้นต่ำที่บันทึก shadow_decision=would_challenge |
 | `MODEL_VERSION` | `"iforest-l3-seq-v1"` | รหัสเวอร์ชันโมเดลที่เขียนลงทุก contract |
 
 **สถาปัตยกรรมที่ล็อกคู่กัน:** residual 6 มิติ × [mean, slope, ptp] = 18 อินพุต ·
 per-user IsolationForest (`n_estimators=100`, `contamination=0.02`) ·
-L3 = surfacing channel (ยกได้สูงสุด `warn` ห้ามแตะ `challenge`/`block`)
+L3 = แกน monitoring ล้วน (`normal` / `l3_investigate`) — ไม่แตะ access decision
 
 ค่าคงที่ชุดเดียวกันนี้ต้องตรงกับ `ml-service/app/sequence.py` —
 บังคับด้วย `tests/test_l3_sequence_client.py::test_constants_parity_hub_vs_ml_service`
@@ -91,8 +91,8 @@ L3 = surfacing channel (ยกได้สูงสุด `warn` ห้ามแ
 | `exp_final_synthetic_2026-08-26.md` | 10,751 | `6a27674da6fcdcf1ed54e77a4d61d3c7e9099a7ff705fc50f370a42018408004` |
 | `exp_final_gate_2026-08-26.md` | 7,531 | `66312e5594fae9406993b9dc1452019ef9fb10d0b1d77326e2c29b55c7bf8871` |
 | `l3_service_split_2026-08-29.md` | 15,423 | `8a2d15b36964d042b0c77ab1582e7ed20c4e1462de617516121f39930cbdeed2` |
-| `l3_stability_2026-08-29.md` | 15,572 | `372a37c678e9db245fd95376e3107448de7245cc271d7ae8ca67706583b9f25e` |
-| `l3_shadow_replay_2026-08-29.md` | 8,299 | `6f0c6afb14b499be5502e09d04e2d7bf958256d9132ca4dbd0d873662ea909c0` |
+| `l3_stability_2026-08-29.md` | 17,341 | `471333b6cc6d599345cab6277c64d779dc4b46f96d45eeed971b604c075b56ca` |
+| `l3_shadow_replay_2026-08-29.md` | 9,030 | `17b7e349c7422ffea810a82eb0a838dba2ef82c9ac04c8b75e535d1130f7def8` |
 
 ### 4.2 โค้ดที่ผลิตตัวเลข (harness ทดลอง + production ที่ถูกวัด)
 
@@ -110,14 +110,15 @@ L3 = surfacing channel (ยกได้สูงสุด `warn` ห้ามแ
 | `ml-service/scripts/lc_l3_ownership.py` | 14,856 | `4729d9caf92a30fe8df9d9c22cd69573520b23504f0031a90050161464ae8cef` |
 | `ml-service/scripts/lc_run_4layer.py` | 19,744 | `b971f84e83f69c1350aae18eb6b48ca9172b5a0ec66583c464f1b6a47bc26c32` |
 | `ml-service/app/sequence.py` | 15,202 | `f90b146fe67e477f1a432b92adffd4d0b1a1c57fbe1e86f4187912a3b9a4973c` |
-| `hub/backend/app/security/l3_sequence.py` | 21,620 | `dff1d1b093ad9546dd22ba82e0895dc39d09d8ef96d692f812edc448649e0d92` |
+| `hub/backend/app/security/l3_sequence.py` | 22,954 | `a468dd46968fd5802bae1498c6f3b4556df62e324e5c71c43244aee0faf681cc` |
 | `hub/backend/app/security/rule_engine.py` | 13,750 | `a905bfc396d742b59a76c2717cce8900accc98bb220a387faf136f7eb6ac7498` |
 | `hub/backend/app/security/behavior_profiling.py` | 15,813 | `278a9373b020a663ad2fc9f7e43e85bfcc0a6102b1d9469fdc6e020e19d27d0e` |
 | `hub/backend/app/security/risk_aggregator.py` | 4,040 | `51c2a61257481a07b6818ad5be6eb90e6aaa0e5fd036f91e6aa67ca9fd957b22` |
-| `hub/backend/app/security/risk_engine.py` | 8,353 | `96defe1d3ea1c91513cff2fe7e2ac5b55e0e0da6ee25d467867a4bacc1b6d6ca` |
+| `hub/backend/app/security/risk_engine.py` | 8,427 | `45446d58f2d001f97d151e59bbfade4e165b1694c956fe9f1fb3aa4f0e324096` |
 | `hub/backend/app/services/l3_sequence_client.py` | 3,511 | `05112f9a8ab8e22a29ebf9032dab631d7918f4c43532b3f47b1e20d41f069352` |
-| `hub/backend/scripts/l3_shadow_replay.py` | 19,109 | `794c684fd3b599791b871509a62ff73a589ec4d5c401b829807c8c685c7cc31d` |
-| `hub/backend/tests/test_l3_stability.py` | 24,870 | `3c368bdeefb2897002d3d4edb19c64c45b9b93a6215b6aa27e635ed5a07eff24` |
+| `hub/backend/scripts/l3_shadow_replay.py` | 20,780 | `96f3561086e878437990cdb0bce91cf4f6161509d774a2f9832faa8fc8d6d0e1` |
+| `hub/backend/tests/test_l3_stability.py` | 24,665 | `8c24d6167e7edfd40354ec816da6cdd2c3551d53c324c4f830c0540e4485eff0` |
+| `hub/backend/tests/test_l3_access_monitoring_split.py` | 8,040 | `6de5aa94b40ea63bb075972edc9d64d6994f549a207abebb35629ff1d5c54fc7` |
 
 ## 5. Freeze commit
 
