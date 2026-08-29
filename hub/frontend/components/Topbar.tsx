@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
 
 type Me = {
   email: string;
@@ -11,9 +11,16 @@ type Me = {
   is_hub_admin: boolean;
 };
 
+function avatarColor(value: string) {
+  let hash = 0;
+  for (let i = 0; i < value.length; i++) hash = value.charCodeAt(i) + ((hash << 5) - hash);
+  return `hsl(${Math.abs(hash) % 360} 58% 42%)`;
+}
+
 export function Topbar({ title }: { title: string }) {
   const [me, setMe] = useState<Me | null>(null);
   const router = useRouter();
+  const pathname = usePathname();
 
   useEffect(() => {
     fetch("/api/me", { credentials: "include" })
@@ -27,40 +34,28 @@ export function Topbar({ title }: { title: string }) {
     router.push("/auth/login");
   }
 
-  const initial = (me?.full_name || me?.email || "?").charAt(0).toUpperCase();
+  const identity = me?.full_name || me?.email || "?";
+  const initial = identity.charAt(0).toUpperCase();
+  const color = useMemo(() => avatarColor(me?.email || identity), [me?.email, identity]);
+  const crumb = pathname.split("/").filter(Boolean).join(" / ") || "dashboard";
 
   return (
-    <header className="bg-white border-b border-ink-200 px-8 py-4 flex items-center justify-between sticky top-0 z-10">
-      <div>
-        <h1 className="text-xl font-extrabold text-ink-900">{title}</h1>
+    <header className="sticky top-0 z-20 flex min-h-[68px] items-center border-b border-ink-200/90 bg-white/90 px-4 pl-16 backdrop-blur-xl sm:px-6 sm:pl-16 lg:px-8">
+      <div className="min-w-0">
+        <div className="truncate font-mono text-[9px] uppercase tracking-[.18em] text-ink-400">hub / {crumb}</div>
+        <h1 className="truncate font-display text-lg font-bold text-ink-900 sm:text-xl">{title}</h1>
       </div>
-      <div className="flex items-center gap-4">
+      <div className="ml-auto flex items-center gap-3">
         {me && (
-          <div className="flex items-center gap-3">
-            <div className="text-right hidden sm:block">
-              <div className="text-sm font-semibold text-ink-900 leading-tight">
-                {me.full_name || me.email}
-              </div>
-              <div className="text-[11px] text-ink-500">
-                {me.email}
-                {me.is_hub_admin && (
-                  <span className="ml-2 px-1.5 py-0.5 rounded bg-brand-50 text-brand-700 text-[10px] font-bold">
-                    ADMIN
-                  </span>
-                )}
-              </div>
+          <div className="flex items-center gap-3 rounded-xl border border-ink-200 bg-white px-2 py-1.5">
+            <div className="hidden text-right md:block">
+              <div className="max-w-48 truncate text-xs font-semibold text-ink-900">{identity}</div>
+              <div className="max-w-48 truncate font-mono text-[9px] text-ink-500">{me.email}</div>
             </div>
-            <div className="w-9 h-9 rounded-full bg-gradient-to-br from-brand-500 to-brand-700 grid place-items-center text-white text-sm font-bold">
-              {initial}
-            </div>
+            <div className="grid h-8 w-8 place-items-center rounded-lg text-xs font-bold text-white" style={{ backgroundColor: color }}>{initial}</div>
           </div>
         )}
-        <button
-          onClick={logout}
-          className="px-3 py-1.5 rounded-lg text-sm font-medium text-ink-600 hover:bg-ink-100 transition"
-        >
-          ออกจากระบบ
-        </button>
+        <button onClick={logout} className="rounded-lg border border-transparent px-3 py-2 text-xs font-semibold text-ink-500 hover:border-ink-200 hover:bg-white hover:text-ink-900">ออกจากระบบ</button>
       </div>
     </header>
   );
