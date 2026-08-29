@@ -141,7 +141,10 @@ DORM_CALLBACK_URL=https://dorm.example.ac.th/oauth/callback   # ต้อง reg
 
 # ── Webhook (back-channel จาก Hub) ──
 HUB_WEBHOOK_SHARED_KEY=<ตรงกับ Hub WEBHOOK_SHARED_KEY เป๊ะ>
-
+https://centralhub-<SERVER_IP_DASHED>.sslip.io
+https://central-admin-<SERVER_IP_DASHED>.sslip.io
+https://sU08-dorm-tzaiyl-b6a738-<SERVER_IP_DASHED>.sslip.io
+https://sU08-library-c9g9yq-d30eac-<SERVER_IP_DASHED>.sslip.io
 # ── Session ──
 SESSION_COOKIE_NAME=dorm_session
 SESSION_MAX_AGE_SECONDS=3600

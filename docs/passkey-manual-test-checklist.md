@@ -96,7 +96,7 @@ docker exec -i hub-postgres psql -U hub -d hub_db -c "SELECT action FROM audit_l
    docker compose exec hub-backend python -c "
    from app.database import SessionLocal; from app.models import User
    from app.services import passkey_recovery as pr
-   db=SessionLocal(); u=db.query(User).filter(User.email=='U08@example.invalid').first()
+   db=SessionLocal(); u=db.query(User).filter(User.email=='<U08>').first()
    print('CODE:', pr.generate_backup_codes(u.id, db, rotate=True)[0]); db.commit()"
    ```
 2. ไป http://localhost:3000/auth/passkey/recover → tab "Backup Code"

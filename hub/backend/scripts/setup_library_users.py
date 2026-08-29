@@ -1,21 +1,27 @@
 """One-shot setup script for Subsystem B (ระบบห้องสมุด).
 
 Creates / updates:
-1. Two Hub users (U06@example.invalid → staff, U08@example.invalid → student)
+1. Two Hub users (librarian → staff, member → student)
 2. Subsystem "ระบบห้องสมุด" with status='active' (skips manual approval)
-3. access_list rows:
-     - U06@example.invalid    → role_in_sub = "librarian"
-     - U08@example.invalid → role_in_sub = "member"
+3. access_list rows: librarian / member
+
+⚠️ อีเมลจริงไม่ hardcode ในไฟล์นี้ (นโยบาย PII — ห้ามขึ้น git)
+   ตั้งผ่าน environment variable ก่อนรัน:
+     LIBRARY_LIBRARIAN_EMAIL=<อีเมลบรรณารักษ์>
+     LIBRARY_MEMBER_EMAIL=<อีเมลนักศึกษา>
 
 Prints the freshly-generated client_id + client_secret to stdout
 so they can be copied into hub/subsystem-library/.env.
 
 Run inside hub-backend container:
-    docker exec hub-backend python -m scripts.setup_library_users
+    docker exec -e LIBRARY_LIBRARIAN_EMAIL=... -e LIBRARY_MEMBER_EMAIL=... \\
+        hub-backend python -m scripts.setup_library_users
 """
 
 from __future__ import annotations
 
+import os
+import sys
 from datetime import datetime
 
 from app.database import SessionLocal
@@ -30,10 +36,18 @@ LIBRARY_CALLBACK = "http://localhost:8002/oauth/callback"
 LIBRARY_SCOPE = ["email", "name", "student_id", "faculty"]
 SUBSYSTEM_NAME = "ระบบห้องสมุด"
 
+LIBRARIAN_EMAIL = os.getenv("LIBRARY_LIBRARIAN_EMAIL", "").strip()
+MEMBER_EMAIL = os.getenv("LIBRARY_MEMBER_EMAIL", "").strip()
+if not LIBRARIAN_EMAIL or not MEMBER_EMAIL:
+    sys.exit(
+        "❌ ต้องตั้ง LIBRARY_LIBRARIAN_EMAIL และ LIBRARY_MEMBER_EMAIL ก่อนรัน\n"
+        "   (อีเมลจริงไม่เก็บในไฟล์นี้ตามนโยบาย PII)"
+    )
+
 USERS = [
     {
-        "email": "U06@example.invalid",
-        "full_name": "Furafae (Librarian)",
+        "email": LIBRARIAN_EMAIL,
+        "full_name": "Librarian",
         "user_type": "staff",
         "identifier": "S9001",
         "faculty": "สำนักหอสมุด",
@@ -41,10 +55,10 @@ USERS = [
         "role_in_sub": "librarian",
     },
     {
-        "email": "U08@example.invalid",
-        "full_name": "นักศึกษา U08",
+        "email": MEMBER_EMAIL,
+        "full_name": "นักศึกษา (สมาชิกห้องสมุด)",
         "user_type": "student",
-        "identifier": "U08",
+        "identifier": MEMBER_EMAIL.split("@")[0],
         "faculty": "ยังไม่ระบุ",
         "year_or_position": "ปริญญาตรี",
         "role_in_sub": "member",
