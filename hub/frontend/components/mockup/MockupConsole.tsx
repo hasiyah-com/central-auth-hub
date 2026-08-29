@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { usePathname } from "next/navigation";
+import { SignalRoomML } from "./SignalRoomML";
 
 export const MOCKUP_SCREENS: Record<string, { label: string; endpoint?: string }> = {
   login: { label: "เข้าสู่ระบบ / Login" },
@@ -13,7 +14,7 @@ export const MOCKUP_SCREENS: Record<string, { label: string; endpoint?: string }
   "subsystem-detail": { label: "รายละเอียดระบบ / Subsystem Detail", endpoint: "/api/proxy/admin/subsystems" },
   requests: { label: "คำขอสิทธิ์ / Access Requests", endpoint: "/api/proxy/admin/change-requests?status=pending&limit=100" },
   permissions: { label: "สิทธิ์และขอบเขต / Permissions", endpoint: "/api/proxy/admin/subsystems" },
-  risk: { label: "ความเสี่ยง / Risk & Security", endpoint: "/api/proxy/admin/ml/overview?days=7&sort=recent&limit=50" },
+  risk: { label: "ML / ความผิดปกติ", endpoint: "/api/proxy/admin/ml/overview?days=7&sort=recent&limit=50" },
   "risk-detail": { label: "รายละเอียดความเสี่ยง / Risk Detail", endpoint: "/api/proxy/admin/ml/overview?days=7&sort=score&limit=1" },
   audit: { label: "บันทึกกิจกรรม / Audit Logs", endpoint: "/api/proxy/admin/audit?skip=0&limit=50" },
   settings: { label: "ตั้งค่า / Settings" },
@@ -147,6 +148,7 @@ function Header({ title, endpoint }: { title: string; endpoint?: string }) {
 }
 
 function Screen({ screen, data, rows }: { screen: string; data: Json; rows: Record<string, unknown>[] }) {
+  if (screen === "risk") return <SignalRoomML data={data} rows={rows} />;
   if (screen === "dashboard") return <Dashboard data={data} />;
   if (screen === "settings") return <Settings />;
   if (screen.endsWith("-detail")) return <Detail screen={screen} row={rows[0]} />;
