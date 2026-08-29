@@ -8,6 +8,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Topbar } from "@/components/Topbar";
+import { LineChart } from "@/components/LineChart";
 import { clientFetch } from "@/lib/api";
 
 type Activity = {
@@ -445,18 +446,22 @@ export default function ActivityPage() {
         <div className="mb-6 bg-white rounded-xl border border-ink-200 p-5 shadow-sm">
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-xs font-bold text-ink-500 uppercase tracking-wider">
-              ปริมาณการเข้าใช้งานรายชั่วโมง
+              {chartTitle(hours)}
             </h2>
             <div className="flex items-center gap-3 text-[11px] text-ink-500">
               <span className="flex items-center gap-1">
-                <span className="w-2.5 h-2.5 rounded-sm bg-brand-500 inline-block" /> สำเร็จ
+                <span className="inline-block h-0.5 w-4 rounded-full bg-brand-500" /> สำเร็จ
               </span>
               <span className="flex items-center gap-1">
-                <span className="w-2.5 h-2.5 rounded-sm bg-rose-500 inline-block" /> ถูกบล็อก
+                <span className="inline-block h-0.5 w-4 rounded-full bg-rose-500" /> ถูกบล็อก
               </span>
             </div>
           </div>
-          <HourlyChart hourly={data?.hourly ?? []} />
+          <HourlyChart
+            hourly={data?.hourly ?? []}
+            activities={[...(data?.active ?? []), ...(data?.items ?? [])]}
+            hours={hours}
+          />
         </div>
 
         {/* ── Filters ── */}
@@ -678,65 +683,132 @@ function Select({
   );
 }
 
-function HourlyChart({ hourly }: { hourly: HourBucket[] }) {
-  if (!hourly.length) {
-    return <div className="h-32 grid place-items-center text-ink-300 text-sm">ไม่มีข้อมูล</div>;
+function chartTitle(hours: number): string {
+  if (hours <= 24) return "ปริมาณการเข้าใช้งานรายชั่วโมง";
+  if (hours <= 168) return "แนวโน้มการเข้าใช้งานทุก 6 ชั่วโมง";
+  return "แนวโน้มการเข้าใช้งานรายวัน";
+}
+
+function HourlyChart({
+  hourly,
+  activities,
+  hours,
+}: {
+  hourly: HourBucket[];
+  activities: Activity[];
+  hours: number;
+}) {
+  const bucketHours = hours <= 24 ? 1 : hours <= 168 ? 6 : 24;
+  const bucketMs = bucketHours * 60 * 60 * 1000;
+  const now = Date.now();
+  const rangeStart = now - hours * 60 * 60 * 1000;
+
+  type Point = { total: number; blocked: number };
+  const points = new Map<number, Point>();
+  let source: "api" | "sessions" = "api";
+
+  const add = (timestamp: number, total: number, blocked: number) => {
+    if (!Number.isFinite(timestamp) || timestamp < rangeStart - bucketMs) return;
+    const key = Math.floor(timestamp / bucketMs) * bucketMs;
+    const current = points.get(key) || { total: 0, blocked: 0 };
+    current.total += total;
+    current.blocked += blocked;
+    points.set(key, current);
+  };
+
+  for (const row of hourly) {
+    if (!row.hour) continue;
+    add(parseUtcTime(row.hour), row.count || 0, row.blocked || 0);
   }
-  const max = Math.max(...hourly.map((h) => h.count), 1);
-  const W = 100;
-  const barW = W / hourly.length;
+
+  // รองรับ backend รุ่นเก่าที่ยังไม่ส่ง hourly:
+  // สร้างกราฟจาก session จริงที่มากับ response แทน ไม่ใช้ mock data
+  if (points.size === 0 && activities.length > 0) {
+    source = "sessions";
+    for (const activity of activities) {
+      if (!activity.created_at) continue;
+      const blocked = ["block", "would_block"].includes(activity.decision || "") ? 1 : 0;
+      add(parseUtcTime(activity.created_at), 1, blocked);
+    }
+  }
+
+  const firstBucket = Math.floor(rangeStart / bucketMs) * bucketMs;
+  const lastBucket = Math.floor(now / bucketMs) * bucketMs;
+  const buckets: number[] = [];
+  for (let value = firstBucket; value <= lastBucket; value += bucketMs) buckets.push(value);
+
+  const totalEvents = Array.from(points.values()).reduce((sum, point) => sum + point.total, 0);
+  if (totalEvents === 0) {
+    return (
+      <div className="grid min-h-[132px] place-items-center rounded-lg border border-dashed border-ink-200 bg-ink-50/40 px-4 text-center">
+        <div>
+          <div className="mx-auto mb-2 h-2 w-2 rounded-full bg-ink-300" />
+          <div className="text-sm font-semibold text-ink-500">ยังไม่มีกิจกรรมในช่วงเวลานี้</div>
+          <div className="mt-1 font-mono text-[9px] uppercase tracking-wider text-ink-400">
+            กราฟจะแสดงเมื่อมี login session
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const labels = buckets.map((timestamp) => formatBucketLabel(timestamp, bucketHours));
+  const successful = buckets.map((timestamp) => {
+    const point = points.get(timestamp);
+    return point ? Math.max(0, point.total - point.blocked) : 0;
+  });
+  const blocked = buckets.map((timestamp) => points.get(timestamp)?.blocked || 0);
+
   return (
-    <div className="relative">
-      <svg viewBox={`0 0 ${W} 40`} preserveAspectRatio="none" className="w-full h-32">
-        {hourly.map((h, i) => {
-          const total = (h.count / max) * 38;
-          const blocked = (h.blocked / max) * 38;
-          const x = i * barW;
-          const gap = barW * 0.18;
-          return (
-            <g key={i}>
-              <rect
-                x={x + gap}
-                y={40 - total}
-                width={barW - gap * 2}
-                height={total}
-                rx={0.4}
-                fill="#6366f1"
-                opacity={0.85}
-              >
-                <title>
-                  {new Date(
-                    (h.hour || "").match(/Z$/) ? h.hour! : h.hour + "Z"
-                  ).toLocaleString("th-TH", { timeZone: "Asia/Bangkok", month: "short", day: "2-digit", hour: "2-digit", hour12: false })}
-                  {" — "}{h.count} login{h.blocked ? `, ${h.blocked} blocked` : ""}
-                </title>
-              </rect>
-              {blocked > 0 && (
-                <rect
-                  x={x + gap}
-                  y={40 - blocked}
-                  width={barW - gap * 2}
-                  height={blocked}
-                  rx={0.4}
-                  fill="#f43f5e"
-                />
-              )}
-            </g>
-          );
-        })}
-      </svg>
-      <div className="flex justify-between mt-1 text-[10px] text-ink-400 font-mono">
-        <span>
-          {hourly[0]?.hour
-            ? new Date(hourly[0].hour.match(/Z$/) ? hourly[0].hour : hourly[0].hour + "Z").toLocaleString("th-TH", { timeZone: "Asia/Bangkok", month: "short", day: "2-digit", hour: "2-digit", hour12: false })
-            : ""}
-        </span>
-        <span>
-          {hourly[hourly.length - 1]?.hour
-            ? new Date((hourly[hourly.length - 1].hour as string).match(/Z$/) ? (hourly[hourly.length - 1].hour as string) : hourly[hourly.length - 1].hour + "Z").toLocaleString("th-TH", { timeZone: "Asia/Bangkok", month: "short", day: "2-digit", hour: "2-digit", hour12: false })
-            : ""}
-        </span>
+    <div>
+      <LineChart
+        labels={labels}
+        series={[
+          { name: "สำเร็จ", color: "#13b89a", values: successful },
+          { name: "ถูกบล็อก", color: "#e11d48", values: blocked },
+        ]}
+        height={190}
+        ticks={4}
+        showValues={buckets.length <= 12}
+        valueSuffix=" ครั้ง"
+        showLegend={false}
+      />
+      <div className="mt-1 flex items-center justify-between gap-3 border-t border-ink-100 pt-2 font-mono text-[9px] text-ink-400">
+        <span>{source === "api" ? "แหล่งข้อมูล: activity hourly" : "แหล่งข้อมูลสำรอง: sessions ที่โหลด"}</span>
+        <span>{totalEvents.toLocaleString("th-TH")} events</span>
       </div>
     </div>
   );
 }
+
+function parseUtcTime(value: string): number {
+  const hasTimezone = /[+-]\\d{2}:?\\d{2}$|Z$/i.test(value);
+  return new Date(hasTimezone ? value : value + "Z").getTime();
+}
+
+function formatBucketLabel(timestamp: number, bucketHours: number): string {
+  const date = new Date(timestamp);
+  if (bucketHours >= 24) {
+    return date.toLocaleDateString("th-TH", {
+      timeZone: "Asia/Bangkok",
+      day: "2-digit",
+      month: "short",
+    });
+  }
+  if (bucketHours >= 6) {
+    return date.toLocaleString("th-TH", {
+      timeZone: "Asia/Bangkok",
+      day: "2-digit",
+      month: "short",
+      hour: "2-digit",
+      hour12: false,
+    });
+  }
+  return date.toLocaleTimeString("th-TH", {
+    timeZone: "Asia/Bangkok",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  });
+}
+
