@@ -705,7 +705,6 @@ function HourlyChart({
 
   type Point = { total: number; blocked: number };
   const points = new Map<number, Point>();
-  let source: "api" | "sessions" = "api";
 
   const add = (timestamp: number, total: number, blocked: number) => {
     if (!Number.isFinite(timestamp) || timestamp < rangeStart - bucketMs) return;
@@ -724,7 +723,6 @@ function HourlyChart({
   // รองรับ backend รุ่นเก่าที่ยังไม่ส่ง hourly:
   // สร้างกราฟจาก session จริงที่มากับ response แทน ไม่ใช้ mock data
   if (points.size === 0 && activities.length > 0) {
-    source = "sessions";
     for (const activity of activities) {
       if (!activity.created_at) continue;
       const blocked = ["block", "would_block"].includes(activity.decision || "") ? 1 : 0;
@@ -773,10 +771,6 @@ function HourlyChart({
         valueSuffix=" ครั้ง"
         showLegend={false}
       />
-      <div className="mt-1 flex items-center justify-between gap-3 border-t border-ink-100 pt-2 font-mono text-[9px] text-ink-400">
-        <span>{source === "api" ? "แหล่งข้อมูล: activity hourly" : "แหล่งข้อมูลสำรอง: sessions ที่โหลด"}</span>
-        <span>{totalEvents.toLocaleString("th-TH")} events</span>
-      </div>
     </div>
   );
 }
