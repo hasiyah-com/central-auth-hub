@@ -12,9 +12,9 @@ type Me = {
   is_hub_admin: boolean;
 };
 
-type NavItem = { href: string; label: string; glyph: string };
+export type NavItem = { href: string; label: string; glyph: string };
 
-const ADMIN_NAV: NavItem[] = [
+export const ADMIN_NAV: NavItem[] = [
   { href: "/dashboard", label: "ภาพรวม", glyph: "OV" },
   { href: "/activity", label: "การเข้าใช้งาน", glyph: "RT" },
   { href: "/incidents", label: "เหตุการณ์เสี่ยง", glyph: "IN" },
@@ -30,7 +30,7 @@ const ADMIN_NAV: NavItem[] = [
   { href: "/account", label: "บัญชีของฉัน", glyph: "ME" },
 ];
 
-const DEV_NAV: NavItem[] = [
+export const DEV_NAV: NavItem[] = [
   { href: "/developer/subsystems", label: "ระบบของฉัน", glyph: "SS" },
   { href: "/developer/subsystems/new", label: "ลงทะเบียนใหม่", glyph: "+" },
   { href: "/developer/account", label: "บัญชีของฉัน", glyph: "ME" },
@@ -104,6 +104,7 @@ export function Sidebar() {
         </div>
       </div>
 
+      <EnvChip />
       <nav className="flex-1 overflow-y-auto px-3 py-4">
         {isAdmin && (
           <NavGroup title="Admin Console" items={ADMIN_NAV} pathname={pathname} badgeFor={badgeFor} />
@@ -161,5 +162,34 @@ function NavLink({ href, label, glyph, pathname, badge }: NavItem & { pathname: 
       <span className="flex-1 truncate">{label}</span>
       {!!badge && badge > 0 && <span className="min-w-5 rounded-full bg-rose-500 px-1.5 py-0.5 text-center font-mono text-[9px] font-semibold text-white">{badge > 99 ? "99+" : badge}</span>}
     </Link>
+  );
+}
+
+/**
+ * แถบบอก "console นี้ถูกเสิร์ฟจากที่ไหน" — อ่าน hostname จริงฝั่ง client
+ * ไม่ hardcode คำว่า PRODUCTION เพราะโปรเจกต์ยังไม่มี env var สำหรับ environment
+ * (localhost / 127.0.0.1 / *.local = local, นอกนั้น = deployed)
+ */
+function EnvChip() {
+  const [host, setHost] = useState<string | null>(null);
+  useEffect(() => setHost(window.location.host), []);
+  if (!host) return null;
+  const isLocal = /^(localhost|127\.0\.0\.1|\[::1\])(:|$)|\.local(:|$)/.test(host);
+  return (
+    <div className="flex items-center gap-2 border-b border-white/[.08] px-5 py-3">
+      <span
+        className={clsx(
+          "rounded-md border px-2 py-0.5 font-mono text-[9px] font-semibold uppercase tracking-[.14em]",
+          isLocal
+            ? "border-amber-400/30 bg-amber-400/10 text-amber-300"
+            : "border-brand-500/30 bg-brand-500/10 text-brand-500"
+        )}
+      >
+        {isLocal ? "local" : "deployed"}
+      </span>
+      <span className="min-w-0 truncate font-mono text-[9px] text-ink-500" title={host}>
+        {host}
+      </span>
+    </div>
   );
 }
