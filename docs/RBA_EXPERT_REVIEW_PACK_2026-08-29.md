@@ -118,7 +118,7 @@ traffic จริง → L3 แตะ access decision **0 ครั้ง**
 | **CI ที่คำนึงถึง clustering** | Wilson (สัดส่วน) · cluster bootstrap (เหตุการณ์สัมพันธ์กัน) · hierarchical bootstrap (user→seed→instance) |
 | **Episode-based generation** | 50 เหตุการณ์/25 วัน · reset rolling state · window ไม่ข้าม episode |
 | **ไม่ปรับโมเดลจาก final holdout** | ผล freeze แล้ว — การเปลี่ยนใดๆ ต้องเป็นการทดลองรอบใหม่ |
-| **Freeze ตรวจสอบได้** | SHA-256 ของหลักฐาน 47 ไฟล์ + commit SHA + tag |
+| **Freeze ตรวจสอบได้** | SHA-256 ของหลักฐาน 48 ไฟล์ + commit SHA + tag |
 
 **ตรวจว่าหลักฐานไม่ถูกแก้ย้อนหลัง:**
 
