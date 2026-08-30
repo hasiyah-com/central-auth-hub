@@ -117,7 +117,7 @@ def _public_ip(ip: str) -> bool:
 
 
 HOST_RE = [
-    (re.compile(r"(\d{1,3})-(\d{1,3})-(\d{1,3})-(\d{1,3})\.sslip\.io"), "sslip"),
+    (re.compile(r"(\d{1,3})-(\d{1,3})-(\d{1,3})-(\d{1,3})\.sslip\.io"), "sslip"),
     (re.compile(r"https?://(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})"), "url"),
 ]
 
@@ -380,13 +380,64 @@ def commits_touching(path: str) -> list[str]:
     return raw.splitlines()[:5]
 
 
+def _sample(*parts: str) -> str:
+    """ประกอบตัวอย่างตอนรันไทม์ — ไม่ให้ไฟล์นี้มี literal ของ "ความลับ" อยู่จริง
+
+    ถ้าเขียนตรงๆ pre-commit (detect-secrets / detect-private-key / block-real-pii)
+    จะจับสคริปต์ตัวเองว่ามีความลับ — ซึ่ง **ถูกต้องแล้ว** ในมุมของ hook
+    การประกอบทีหลังทำให้ยังทดสอบ regex ได้ โดยไม่ต้องปิดปาก hook ด้วย pragma
+    """
+    return "".join(parts)
+
+
+# IP ตัวอย่างเลือกให้อยู่ **นอก** ช่วงเอกสาร RFC 5737 โดยตั้งใจ
+# (ช่วงเอกสารถูก _PRIVATE_IP กรองทิ้ง -> ใช้ทดสอบกฎไม่ได้)
+SELF_TEST = [
+    ("อีเมลคนจริง", _sample("somebody", "@", "gmail.com")),
+    ("ความลับ", _sample("-----BEGIN ", "RSA PRIVATE", " KEY-----")),
+    ("ความลับ", _sample("postgresql://u:", "x" * 9, "@db:5432/n")),
+    ("เลขระบุตัวตน", "โทร 0891234567 นะ"),
+    ("โฮสต์ production", "https://app-198-51-99-7.sslip.io"),
+    ("โฮสต์ production", "http://198.51.99.7/health"),
+]
+
+
+def self_test() -> int:
+    """ยืนยันว่าทุกกฎยัง "จับได้จริง" — กันกฎตายเงียบ.
+
+    เคยเกิดมาแล้ว: pattern ถูกเขียนลงไฟล์พร้อมอักขระควบคุม (\b ในสตริงที่ไม่ใช่ raw
+    กลายเป็น backspace 0x08) -> regex ไม่ match อะไรเลย แต่สคริปต์ยังรันผ่านและ
+    รายงาน "ไม่พบ" อย่างมั่นใจ = gate ที่ปลอดภัยจอมปลอม
+    """
+    bad = 0
+    for kind, sample in SELF_TEST:
+        got = {k for k, _ in scan_text(sample, set(), set())}
+        ok = kind in got
+        print(f"  {'✅' if ok else '❌'} {kind:<22} {'' if ok else '<- ไม่จับ!'}")
+        bad += 0 if ok else 1
+    # กันอักขระควบคุมหลุดเข้า pattern อีก
+    raw = Path(__file__).read_bytes()
+    ctrl = [hex(b) for b in range(32) if b not in (9, 10, 13) and bytes([b]) in raw]
+    if ctrl:
+        print(f"  ❌ พบอักขระควบคุมในไฟล์: {ctrl}")
+        bad += 1
+    else:
+        print("  ✅ ไม่มีอักขระควบคุมในไฟล์")
+    tail = "✅ ทุกกฎทำงาน" if not bad else f"❌ {bad} กฎไม่ทำงาน — อย่าเชื่อผลสแกน"
+    print(chr(10) + tail)
+    return 1 if bad else 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--self-test", action="store_true", help="ตรวจว่าทุกกฎยังจับได้จริง")
     ap.add_argument(
         "--refs", nargs="*", default=["--all"], help="ref ที่จะสแกน (default: ทุก ref)"
     )
     ap.add_argument("--out", type=Path, default=None)
     args = ap.parse_args()
+    if args.self_test:
+        return self_test()
 
     global LOCALPARTS
     roster = roster_emails()
