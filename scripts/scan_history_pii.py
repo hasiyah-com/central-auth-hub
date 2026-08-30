@@ -90,6 +90,38 @@ SECRET_RE = [
     (re.compile(r"\bGOCSPX-[A-Za-z0-9_-]{10,}"), "Google OAuth client secret"),
 ]
 
+# ── 3b. โฮสต์/IP ของ production ──
+# ไม่ใช่ PII ของบุคคล แต่ถ้า repo เป็นสาธารณะ = ประกาศเป้าให้สแกน
+# จับเฉพาะบริบทที่เป็นโฮสต์จริงแน่ๆ (URL / sslip.io) ไม่จับเลข 4 ท่อนลอยๆ
+# เพราะจะชนกับเลขเวอร์ชันเต็มไปหมด
+_PRIVATE_IP = re.compile(
+    r"^(?:10\.|127\.|0\.|169\.254\.|192\.168\.|172\.(?:1[6-9]|2\d|3[01])\.)"
+    r"|^(?:192\.0\.2\.|198\.51\.100\.|203\.0\.113\.)"  # ช่วงสำหรับเอกสาร RFC 5737
+)
+
+
+# IP สาธารณะที่เป็น fixture มาตรฐาน ไม่ใช่โฮสต์ของเรา
+# 93.184.216.34 = example.com ของ IANA — ใช้ในเทส SSRF เพื่อแทน "public IP จริง"
+# (ใช้ช่วง RFC 5737 แทนไม่ได้ เพราะ ipaddress ของ Python ถือว่าเป็น private
+#  -> SSRF guard จะบล็อกด้วยเหตุผลอื่น เทสก็ไม่ได้ทดสอบสิ่งที่ตั้งใจ)
+IP_ALLOWLIST = {"93.184.216.34", "93.184.215.14"}
+
+
+def _public_ip(ip: str) -> bool:
+    if ip in IP_ALLOWLIST:
+        return False
+    parts = ip.split(".")
+    if len(parts) != 4 or any(not q.isdigit() or int(q) > 255 for q in parts):
+        return False
+    return not _PRIVATE_IP.match(ip)
+
+
+HOST_RE = [
+    (re.compile(r"(\d{1,3})-(\d{1,3})-(\d{1,3})-(\d{1,3})\.sslip\.io"), "sslip"),
+    (re.compile(r"https?://(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})"), "url"),
+]
+
+
 # ── 4. เลขระบุตัวตน (heuristic — ต้องกรอง false positive) ──
 # ขอบเขตต้องกัน . และ - ด้วย ไม่งั้นทศนิยม/hash ในข้อมูลสังเคราะห์จะติดหมด
 ID_RE = [
@@ -267,6 +299,12 @@ def scan_text(
     for rx, label in SECRET_RE:
         if rx.search(text):
             hits.append(("ความลับ", label))
+    for rx, kind in HOST_RE:
+        for m in rx.finditer(text):
+            ip = ".".join(m.groups()) if kind == "sslip" else m.group(1)
+            if _public_ip(ip):
+                hits.append(("โฮสต์ production", f"{kind}: {mask(ip)}"))
+                break
     for rx, label in ID_RE:
         for m in rx.finditer(text):
             if looks_fake(m.group(0)):

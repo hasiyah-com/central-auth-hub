@@ -141,10 +141,6 @@ DORM_CALLBACK_URL=https://dorm.example.ac.th/oauth/callback   # ต้อง reg
 
 # ── Webhook (back-channel จาก Hub) ──
 HUB_WEBHOOK_SHARED_KEY=<ตรงกับ Hub WEBHOOK_SHARED_KEY เป๊ะ>
-https://centralhub-<SERVER_IP_DASHED>.sslip.io
-https://central-admin-<SERVER_IP_DASHED>.sslip.io
-https://sU08-dorm-tzaiyl-b6a738-<SERVER_IP_DASHED>.sslip.io
-https://sU08-library-c9g9yq-d30eac-<SERVER_IP_DASHED>.sslip.io
 # ── Session ──
 SESSION_COOKIE_NAME=dorm_session
 SESSION_MAX_AGE_SECONDS=3600
@@ -154,6 +150,20 @@ SESSION_MAX_AGE_SECONDS=3600
 - **library** — prefix `LIB_*` แทน `DORM_*`
 - **grade** — ใช้ SQLite (`DB_PATH=/app/data/grade.db`) + มี `GRADE_ROSTER_API_KEY`
   เพิ่ม (X-Api-Key สำหรับ Roster Sync) + `HUB_ISSUER=https://hub.example.ac.th`
+
+> **URL ที่ได้ถ้าไม่ตั้ง custom domain** — Coolify/Dokploy สร้าง hostname ให้อัตโนมัติ
+> ในรูป `<service>-<random>-<ip-คั่นด้วยขีด>.sslip.io` (sslip.io resolve กลับเป็น IP นั้น)
+>
+> ```text
+> https://centralhub-<SERVER_IP_DASHED>.sslip.io          # Hub backend
+> https://central-admin-<SERVER_IP_DASHED>.sslip.io       # Admin console
+> https://<prefix>-dorm-<random>-<SERVER_IP_DASHED>.sslip.io
+> https://<prefix>-library-<random>-<SERVER_IP_DASHED>.sslip.io
+> ```
+>
+> `<SERVER_IP_DASHED>` = IP ของเซิร์ฟเวอร์โดยเปลี่ยน `.` เป็น `-` (เช่น `10.0.0.1` → `10-0-0-1`)
+> **ไม่ระบุ IP จริงในเอกสารนี้โดยตั้งใจ** — repo เป็นสาธารณะ การเขียน host จริงลงไป
+> เท่ากับประกาศเป้าให้สแกน · ค่าจริงดูได้ใน Coolify UI → resource → Domains
 
 > **ห้ามใส่ secret ลง git** — `.env*` ถูก gitignore + pre-commit `block-env-files` block.
 > บน Coolify ใส่ผ่าน **Environment Variables** ของ resource (เก็บ encrypted) ไม่ใช่ commit ไฟล์
