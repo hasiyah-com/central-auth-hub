@@ -1,0 +1,5 @@
+{
+  "_comment": "คัดลอกเป็น redact_hosts.json แล้วใส่ค่าจริง — ไฟล์จริงถูก gitignore เหมือน roster_v2.json (ค่าจริงห้ามอยู่ในโค้ดที่ commit)",
+  "203.0.113.9": "<SERVER_IP>",
+  "203-0-113-9": "<SERVER_IP_DASHED>"
+}

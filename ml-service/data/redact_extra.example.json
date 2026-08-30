@@ -1,0 +1,4 @@
+{
+  "_comment": "อีเมลที่พบในประวัติ git แต่ไม่อยู่ใน roster_v2.json — คัดลอกเป็น redact_extra.json แล้วใส่ค่าจริง (ไฟล์จริงถูก gitignore)",
+  "someone@example.com": "U13@example.invalid"
+}

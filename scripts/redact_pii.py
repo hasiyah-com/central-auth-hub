@@ -33,6 +33,29 @@ ROSTER = ROOT / "ml-service" / "data" / "roster_v2.json"
 SYNTHETIC_DOMAINS = ("@hub.local", "@uni.ac.th")
 PLACEHOLDER_DOMAIN = "example.invalid"
 
+# โฮสต์/IP ของ production — ไม่ใช่ PII ของบุคคล แต่ repo สาธารณะไม่ควรประกาศเป้า
+# ค่าจริงอยู่ในไฟล์ที่ gitignore เท่านั้น (หลักการเดียวกับ roster_v2.json)
+# ถ้าเขียนไว้ในสคริปต์นี้ = ค่าจริงขึ้น git ไปพร้อมเครื่องมือที่ควรจะล้างมัน
+HOSTS_FILE = ROOT / "ml-service" / "data" / "redact_hosts.json"
+# อีเมลที่พบในประวัติแต่ไม่อยู่ใน roster (คนที่เลิกใช้ระบบ / ข้อมูลตัวอย่างรุ่นเก่า)
+# roster ครอบคลุมแค่ 5 จาก 12 อีเมลที่อยู่ในประวัติจริง — ขาดไฟล์นี้ = rewrite แล้วยังเหลือ PII
+EXTRA_FILE = ROOT / "ml-service" / "data" / "redact_extra.json"
+
+
+def extra_emails() -> list[tuple[str, str]]:
+    if not EXTRA_FILE.exists():
+        return []
+    d = json.loads(EXTRA_FILE.read_text(encoding="utf-8"))
+    return [(k, v) for k, v in d.items() if not k.startswith("_")]
+
+
+def host_replacements() -> list[tuple[str, str]]:
+    if not HOSTS_FILE.exists():
+        return []
+    d = json.loads(HOSTS_FILE.read_text(encoding="utf-8"))
+    return [(k, v) for k, v in d.items() if not k.startswith("_")]
+
+
 SKIP_EXT = {
     ".png",
     ".jpg",
@@ -63,17 +86,25 @@ SKIP_PATH = re.compile(
 )
 
 
-def load_rules() -> list[tuple[re.Pattern, str, str]]:
-    """คืน [(pattern, ค่าแทน, คำอธิบายชนิด)] เรียงจากยาวไปสั้น.
+def rule_specs() -> list[tuple[str, str, str, bool]]:
+    """คืน [(kind, pattern, replacement, is_regex)] — แหล่งความจริงเดียวของ mapping.
 
-    ต้องแทนอีเมลเต็มก่อน local-part เสมอ ไม่งั้น local-part จะกินส่วนหน้าของอีเมล
-    แล้วเหลือ `U03@<โดเมนจริง>` ซึ่งยังชี้กลับไปหาโดเมนของคนจริงอยู่
+    ใช้ทั้งการล้างไฟล์ปัจจุบัน (compile เป็น regex) และการเขียนไฟล์กฎให้
+    git-filter-repo ตอน rewrite ประวัติ — mapping ต้องมาจากที่เดียวกัน
+    ไม่งั้น HEAD กับประวัติจะถูกแทนคนละแบบ
     """
     if not ROSTER.exists():
         sys.exit(f"ไม่พบ roster ที่ {ROSTER.relative_to(ROOT)} — ต้องมีเพื่อสร้าง mapping")
     roster: dict[str, str] = json.loads(ROSTER.read_text(encoding="utf-8"))
 
     emails, locals_, ids = [], [], []
+    for email, rep in extra_emails():
+        emails.append((email, rep))
+        lp = email.split("@")[0]
+        # local-part เดี่ยวๆ ต้องแทนด้วย — เฉพาะกรณีที่ค่าแทนเป็น alias (คนจริง)
+        # ข้อมูลตัวอย่างสมมติ (somchai.j ฯลฯ) ไม่ต้อง ไม่ใช่ PII และมีจุดคั่นอยู่แล้ว
+        if len(lp) >= 5 and re.fullmatch(r"U\d+@.*", rep):
+            locals_.append((lp, rep.split("@")[0]))
     for alias, email in roster.items():
         if not email or email.endswith(SYNTHETIC_DOMAINS):
             continue
@@ -84,22 +115,36 @@ def load_rules() -> list[tuple[re.Pattern, str, str]]:
         elif len(lp) >= 5:
             locals_.append((lp, alias))
 
-    rules = []
+    out: list[tuple[str, str, str, bool]] = []
+    # ลำดับสำคัญ: อีเมลเต็มก่อน ไม่งั้น local-part จะกินส่วนหน้าแล้วเหลือโดเมนจริง
     for val, rep in sorted(emails, key=lambda x: -len(x[0])):
-        rules.append((re.compile(re.escape(val), re.I), rep, "อีเมล"))
-    # รหัสตัวเลข: substring ล้วน เพราะถูกฝังใน hostname (s<รหัส>db-postgres)
+        out.append(("อีเมล", val, rep, False))
     for val, rep in sorted(ids, key=lambda x: -len(x[0])):
-        rules.append((re.compile(re.escape(val)), rep, "รหัสตัวเลข"))
+        out.append(("รหัสตัวเลข", val, rep, False))
     for val, rep in sorted(locals_, key=lambda x: -len(x[0])):
-        rules.append(
+        out.append(
             (
-                re.compile(
-                    rf"(?<![A-Za-z0-9._-]){re.escape(val)}(?![A-Za-z0-9._-])", re.I
-                ),
-                rep,
                 "local-part",
+                rf"(?<![A-Za-z0-9._-]){re.escape(val)}(?![A-Za-z0-9._-])",
+                rep,
+                True,
             )
         )
+    # โฮสต์ production — ไม่ได้อยู่ใน roster ต้องระบุแยก
+    for host, rep in host_replacements():
+        out.append(("โฮสต์", host, rep, False))
+    return out
+
+
+def load_rules() -> list[tuple[re.Pattern, str, str]]:
+    """คืน [(pattern, ค่าแทน, คำอธิบายชนิด)] เรียงจากยาวไปสั้น.
+
+    ต้องแทนอีเมลเต็มก่อน local-part เสมอ ไม่งั้น local-part จะกินส่วนหน้าของอีเมล
+    แล้วเหลือ `U03@<โดเมนจริง>` ซึ่งยังชี้กลับไปหาโดเมนของคนจริงอยู่
+    """
+    rules = []
+    for kind, pat, rep, is_rx in rule_specs():
+        rules.append((re.compile(pat if is_rx else re.escape(pat), re.I), rep, kind))
     return rules
 
 
@@ -127,7 +172,23 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--apply", action="store_true", help="แก้ไฟล์จริง (ไม่ใส่ = dry-run)")
     ap.add_argument("--paths", nargs="*", help="จำกัดเฉพาะไฟล์ที่ระบุ")
+    ap.add_argument(
+        "--emit-rules",
+        type=Path,
+        help="เขียนไฟล์กฎรูปแบบ git-filter-repo (--replace-text/--replace-message) "
+        "แล้วจบ — ไฟล์ที่ได้มีค่าจริง ห้าม commit",
+    )
     args = ap.parse_args()
+
+    if args.emit_rules:
+        lines = []
+        for kind, pat, rep, is_rx in rule_specs():
+            # filter-repo: literal เป็นค่าเริ่มต้น · regex ต้องนำหน้าด้วย regex:
+            lines.append(f"{'regex:' if is_rx else ''}{pat}==>{rep}")
+        args.emit_rules.write_text(chr(10).join(lines) + chr(10), encoding="utf-8")
+        print(f"เขียนกฎ {len(lines)} ข้อ -> {args.emit_rules}")
+        print("⚠️ ไฟล์นี้มีค่าจริง — เก็บนอก repo และลบทิ้งหลังใช้")
+        return 0
 
     rules = load_rules()
     print(f"กฎการแทนที่: {len(rules)} ข้อ (จาก roster — ไม่พิมพ์ค่า)\n")
