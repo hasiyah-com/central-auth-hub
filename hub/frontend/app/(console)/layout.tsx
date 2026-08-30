@@ -1,4 +1,5 @@
 import { Sidebar } from "@/components/Sidebar";
+import { ConsoleFooter } from "@/components/ConsoleFooter";
 import { Heartbeat } from "@/components/Heartbeat";
 
 export default function ConsoleLayout({ children }: { children: React.ReactNode }) {
@@ -6,7 +7,10 @@ export default function ConsoleLayout({ children }: { children: React.ReactNode 
     <div className="signal-shell flex min-h-screen">
       <Heartbeat />
       <Sidebar />
-      <div className="signal-content flex min-w-0 flex-1 flex-col">{children}</div>
+      <div className="signal-content flex min-w-0 flex-1 flex-col">
+        {children}
+        <ConsoleFooter />
+      </div>
     </div>
   );
 }
