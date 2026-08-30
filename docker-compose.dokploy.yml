@@ -32,6 +32,13 @@
 #   APP_ENV=production  ENABLE_DOCS=false  ML_SHADOW_MODE=true
 #   NEXT_PUBLIC_HUB_URL=https://hub.<domain>   (build arg ของ frontend)
 #
+#   ── L3 sequence channel (ชั้น 3 ของ RBA — โหมดเฝ้าระวังอย่างเดียว) ──
+#   L3_SEQUENCE_ENABLED=true    default false! ไม่ตั้ง = ปิดสนิทและ "เงียบ" (B61)
+#   L3_TIMEOUT_SECONDS=0.5      แยกจาก ML_TIMEOUT_SECONDS โดยตั้งใจ (B63) — L3 เป็นแค่
+#                               ช่องเฝ้าระวัง ห้ามถ่วง login path เท่าตัวตัดสิน
+#   * REDIS_URL ถูกส่งต่อให้ ml-service ด้วย (ดู service ml-service) — L3 ต้องใช้
+#   * L3 ไม่แตะ access decision: ตั้งได้แค่ monitoring_decision (normal/l3_investigate)
+#
 # ═══ §C. Domains (ตั้งต่อ service ใน Dokploy → Traefik ออก TLS ให้) ════════════
 #   hub-backend  → https://hub.<domain>    port 8000  (subsystem fetch JWKS/OAuth ที่นี่)
 #   hub-frontend → https://admin.<domain>  port 3000  (admin console)
@@ -41,6 +48,19 @@
 #   python -m app.seeds.seed_users                                  # 100 users
 #   (ml-service terminal) python -m scripts.generate_data && python -m scripts.train_model
 #   * JWT keys + alembic migration = boot command ทำให้อัตโนมัติแล้ว (ไม่ต้องรันเอง)
+#
+# ═══ §E. ตรวจว่า L3 ทำงานจริงหลัง deploy (อย่าข้าม — B61) ══════════════════════
+#   (hub-backend terminal)
+#     python -c "import httpx,json; print(json.dumps(httpx.get('http://ml-service:9000/health').json(),ensure_ascii=False,indent=2))"
+#   ต้องเห็น  "l3_sequence": {"redis": "ok", "ready": true, ...}
+#   ถ้าได้ "unavailable" = ml-service ต่อ Redis ไม่ได้ -> L3 abstain ตลอดโดยไม่มี error
+#
+#     env | grep L3_SEQUENCE        # ต้องเห็น L3_SEQUENCE_ENABLED=true
+#
+#   เก็บข้อมูลไปสักพักแล้ววัดผลจริง:
+#     python -m scripts.l3_shadow_replay
+#   ผู้ใช้ต้องสะสม residual >= 100 ครั้งก่อน L3 จึงเริ่มให้คะแนน (ที่อัตรา login จริง
+#   ~1.65 ครั้ง/วัน/คน = ประมาณ 2 เดือน) ก่อนหน้านั้น eligible = 0 เป็นเรื่องปกติ
 
 services:
   ml-service:
@@ -51,8 +71,24 @@ services:
     volumes:
       - ml_models:/app/models
       - ml_data:/app/data
+    environment:
+      # L3 sequence channel — ml-service อ่าน residual history จาก Redis เอง
+      # (hub เขียน key l3resid:{user_id} แต่คำนวณเองไม่ได้ ไม่มี numpy/sklearn — B61)
+      # ค่ามาจาก .env ที่ Dokploy เขียนให้ในโฟลเดอร์ compose (compose interpolate ให้เอง)
+      # ตั้งใจส่งเฉพาะตัวนี้ ไม่ใช้ env_file — ml-service ไม่ควรเห็น SECRET_KEY /
+      # GOOGLE_CLIENT_SECRET / DATABASE_URL (least privilege)
+      #
+      # default ว่าง = ต่อ Redis ไม่ได้ -> L3 abstain แบบ fail-safe ไม่ทำ deploy ล่ม
+      # แต่ "เงียบ" แบบนี้คือบทเรียน B61 -> ตรวจสถานะได้ที่ GET /health (ฟิลด์ redis)
+      REDIS_URL: ${REDIS_URL:-}
+    networks:
+      # ต้องอยู่ทั้งสอง network:
+      #   default        — hub-backend เรียกเข้ามาที่ http://ml-service:9000
+      #   dokploy-network — เข้าถึง Redis resource (อยู่บน network นี้เท่านั้น)
+      # ไม่ตั้ง domain ใน Dokploy UI -> Traefik ไม่ route เข้ามา = ยัง internal อยู่
+      - default
+      - dokploy-network
     command: uvicorn app.main:app --host 0.0.0.0 --port 9000
-    # internal only — hub-backend เรียกผ่าน http://ml-service:9000 (default network)
 
   hub-backend:
     build:

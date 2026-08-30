@@ -158,12 +158,27 @@ class ScoreResponse(BaseModel):
 
 @app.get("/health")
 def health():
-    """liveness + model readiness."""
+    """liveness + ความพร้อมของทั้งสองโมเดล.
+
+    รายงาน `l3_sequence` ด้วยโดยตั้งใจ (บทเรียน B61): L3 fail-safe แบบ "abstain เงียบ"
+    เมื่อต่อ Redis ไม่ได้ — ผลลัพธ์ภายนอกเหมือนกับ "ทำงานปกติแต่ไม่เจออะไร" เป๊ะ
+    ถ้าไม่มีจุดให้ตรวจสถานะ จะไม่มีใครรู้ว่ามันไม่เคยทำงานเลย
+    """
+    redis_ok = _redis() is not None
     return {
         "status": "ok" if model_loaded() else "warning",
         "model": "loaded" if model_loaded() else "not loaded — run train_model",
         "explainer": explainer_status(),  # "ready" | "unavailable" | "uninitialized"
-        "version": "0.3.0",
+        # L3 sequence channel — โมเดลรายคน ไม่มี artifact (fit ตอน request จาก Redis)
+        "l3_sequence": {
+            "redis": "ok" if redis_ok else "unavailable",
+            "ready": redis_ok,
+            "model_version": SEQ.MODEL_VERSION,
+            "note": None
+            if redis_ok
+            else "ตั้ง REDIS_URL ให้ ml-service ไม่งั้น L3 abstain ตลอด (B61)",
+        },
+        "version": "0.4.0",
     }
 
 

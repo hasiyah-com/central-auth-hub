@@ -369,6 +369,24 @@ async def test_latency_within_login_budget(seeded):
     assert p95 < budget, f"p95 {p95:.0f}ms เกินครึ่งของ timeout ({budget:.0f}ms)"
 
 
+@pytest.mark.asyncio
+async def test_ml_health_exposes_l3_readiness(seeded):
+    """`/health` ต้องบอกสถานะ L3 ได้ — กัน B61 ซ้ำ.
+
+    L3 abstain เพราะต่อ Redis ไม่ได้ ให้ผลภายนอกเหมือน "ทำงานปกติแต่ไม่เจออะไร" เป๊ะ
+    ถ้าไม่มีจุดให้ตรวจ จะไม่มีใครรู้ว่ามันไม่เคยทำงานเลย (เคยเกิดมาแล้วทั้ง environment)
+    """
+    import httpx
+
+    h = httpx.get(f"{settings.ml_service_url}/health", timeout=5).json()
+    assert "l3_sequence" in h, "/health ต้องรายงานสถานะ L3 แยกจากโมเดลหลัก"
+    l3 = h["l3_sequence"]
+    assert l3["redis"] in ("ok", "unavailable")
+    assert l3["ready"] is True, f"L3 ไม่พร้อมในสภาพแวดล้อมทดสอบ: {l3}"
+    # ยืนยัน MODEL_VERSION ตรงกันข้าม service ตอน runtime (ไม่ใช่แค่ตอนอ่าน source)
+    assert l3["model_version"] == L3.MODEL_VERSION
+
+
 # ══════════════ 6. Fail-safe (B21) ══════════════
 @pytest.mark.asyncio
 async def test_ml_service_down_fails_safe(seeded, monkeypatch):
