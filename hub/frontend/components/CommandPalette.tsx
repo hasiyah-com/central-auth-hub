@@ -6,6 +6,10 @@
  * ใช้รายการเมนูชุดเดียวกับ Sidebar (ADMIN_NAV / DEV_NAV) จึงไม่ต้อง sync สองที่
  * และกรองตามสิทธิ์จริงของผู้ใช้เหมือน Sidebar (admin / developer)
  *
+ * ธีม: console เป็นพื้นดาร์ก จึงใช้สำนวนสีชุดเดียวกับ Sidebar —
+ * พาเนลใช้ --canvas-panel (#111726) ให้ดู "ลอย" เหนือพื้นหน้า, เส้นขอบ white/10,
+ * ตัวอักษร ink-100/400/500 และไฮไลต์ด้วย brand-500
+ *
  * ตั้งใจให้ทำงานจริง ไม่ใช่ช่องค้นหาหลอก — ถ้าอนาคตมี global search ฝั่ง backend
  * ค่อยต่อยอดจากที่นี่
  */
@@ -91,7 +95,7 @@ export function CommandPalette() {
 
   return (
     <div
-      className="fixed inset-0 z-[60] flex items-start justify-center bg-ink-900/60 p-4 pt-[12vh] backdrop-blur-sm"
+      className="fixed inset-0 z-[60] flex items-start justify-center bg-ink-900/75 p-4 pt-[12vh] backdrop-blur-sm"
       onClick={() => setOpen(false)}
       role="dialog"
       aria-modal="true"
@@ -99,10 +103,10 @@ export function CommandPalette() {
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-lg overflow-hidden rounded-2xl border border-ink-200 bg-white shadow-2xl"
+        className="w-full max-w-lg overflow-hidden rounded-2xl border border-white/10 bg-[#111726] shadow-2xl"
       >
-        <div className="flex items-center gap-3 border-b border-ink-200 px-4 py-3">
-          <span className="font-mono text-[10px] uppercase tracking-[.16em] text-ink-400">
+        <div className="flex items-center gap-3 border-b border-white/[.08] px-4 py-3">
+          <span className="font-mono text-[10px] uppercase tracking-[.16em] text-ink-500">
             go to
           </span>
           <input
@@ -125,16 +129,16 @@ export function CommandPalette() {
               }
             }}
             placeholder="พิมพ์ชื่อหน้า เช่น ผู้ใช้ / audit / ml"
-            className="w-full bg-transparent text-sm text-ink-900 outline-none placeholder:text-ink-400"
+            className="w-full bg-transparent text-sm text-ink-100 outline-none placeholder:text-ink-500"
           />
-          <kbd className="rounded border border-ink-200 px-1.5 py-0.5 font-mono text-[9px] text-ink-400">
+          <kbd className="rounded border border-white/15 px-1.5 py-0.5 font-mono text-[9px] text-ink-400">
             ESC
           </kbd>
         </div>
 
         <div className="max-h-[52vh] overflow-y-auto py-1">
           {results.length === 0 ? (
-            <div className="px-4 py-8 text-center text-sm text-ink-400">
+            <div className="px-4 py-8 text-center text-sm text-ink-500">
               ไม่พบเมนูที่ตรงกับ &ldquo;{q}&rdquo;
             </div>
           ) : (
@@ -144,17 +148,26 @@ export function CommandPalette() {
                 onMouseEnter={() => setCursor(i)}
                 onClick={() => go(item.href)}
                 className={clsx(
-                  "flex w-full items-center gap-3 px-4 py-2.5 text-left",
-                  i === cursor ? "bg-brand-50" : "hover:bg-ink-50"
+                  "flex w-full items-center gap-3 border-l-2 px-4 py-2.5 text-left transition-colors",
+                  i === cursor
+                    ? "border-brand-500 bg-brand-500/10"
+                    : "border-transparent hover:bg-white/[.04]"
                 )}
               >
-                <span className="grid h-6 w-6 shrink-0 place-items-center rounded border border-ink-200 font-mono text-[9px] font-semibold text-ink-500">
+                <span
+                  className={clsx(
+                    "grid h-6 w-6 shrink-0 place-items-center rounded border font-mono text-[9px] font-semibold",
+                    i === cursor
+                      ? "border-brand-500/40 bg-brand-500/10 text-brand-500"
+                      : "border-white/10 text-ink-500"
+                  )}
+                >
                   {item.glyph}
                 </span>
-                <span className="flex-1 truncate text-sm font-medium text-ink-900">
+                <span className="flex-1 truncate text-sm font-medium text-ink-100">
                   {item.label}
                 </span>
-                <span className="truncate font-mono text-[10px] text-ink-400">
+                <span className="truncate font-mono text-[10px] text-ink-500">
                   {item.href}
                 </span>
               </button>
@@ -162,7 +175,7 @@ export function CommandPalette() {
           )}
         </div>
 
-        <div className="flex items-center gap-3 border-t border-ink-200 px-4 py-2 font-mono text-[9px] uppercase tracking-wider text-ink-400">
+        <div className="flex items-center gap-3 border-t border-white/[.08] px-4 py-2 font-mono text-[9px] uppercase tracking-wider text-ink-500">
           <span>↑↓ เลือก</span>
           <span>↵ ไป</span>
           <span className="ml-auto">{results.length} รายการ</span>
