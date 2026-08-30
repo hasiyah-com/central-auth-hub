@@ -1,6 +1,6 @@
 # ชุดหลักฐานการทดลอง RBA — Evidence Manifest (freeze)
 
-**สร้างเมื่อ:** 2026-08-29 · **สร้างโดย:** `scripts/build_evidence_manifest.py`
+**สร้างเมื่อ:** 2026-08-30 · **สร้างโดย:** `scripts/build_evidence_manifest.py`
 
 เอกสารนี้ freeze ผลการทดลอง 4-Layer RBA เพื่อให้ตรวจสอบย้อนกลับได้ —
 ตัวเลขที่อ้างในรายงาน/thesis ทุกตัวสาวกลับมาที่ commit + ไฟล์ + hash ในนี้ได้
@@ -17,8 +17,8 @@ python scripts/build_evidence_manifest.py --verify
 
 | รายการ | ค่า |
 |---|---|
-| commit SHA (เต็ม) | `2f46ae1685faa13eda1ab173143b86ed70e49e2d` |
-| commit SHA (สั้น) | `2f46ae1` |
+| commit SHA (เต็ม) | `89e90638a34abaa0cf6911ae3098a0eb5a6fca61` |
+| commit SHA (สั้น) | `89e9063` |
 | branch | `main` |
 | working tree ตอนสร้าง manifest | มีไฟล์ที่ยังไม่ commit (ดู §5) |
 | จำนวนไฟล์หลักฐาน | 48 |
@@ -117,7 +117,7 @@ L3 = แกน monitoring ล้วน (`normal` / `l3_investigate`) — ไม�
 | `hub/backend/app/security/risk_engine.py` | 8,427 | `45446d58f2d001f97d151e59bbfade4e165b1694c956fe9f1fb3aa4f0e324096` |
 | `hub/backend/app/services/l3_sequence_client.py` | 3,511 | `05112f9a8ab8e22a29ebf9032dab631d7918f4c43532b3f47b1e20d41f069352` |
 | `hub/backend/scripts/l3_shadow_replay.py` | 20,780 | `96f3561086e878437990cdb0bce91cf4f6161509d774a2f9832faa8fc8d6d0e1` |
-| `hub/backend/tests/test_l3_stability.py` | 24,665 | `8c24d6167e7edfd40354ec816da6cdd2c3551d53c324c4f830c0540e4485eff0` |
+| `hub/backend/tests/test_l3_stability.py` | 25,919 | `afe99487eef3dc1db2aa30b7f618d22f6723f32e15467fb27f1c376f418d5d53` |
 | `hub/backend/tests/test_l3_access_monitoring_split.py` | 8,040 | `6de5aa94b40ea63bb075972edc9d64d6994f549a207abebb35629ff1d5c54fc7` |
 
 ## 5. Freeze commit
@@ -125,23 +125,20 @@ L3 = แกน monitoring ล้วน (`normal` / `l3_investigate`) — ไม�
 <!-- FREEZE_COMMIT -->
 | tag | commit | คืออะไร |
 |---|---|---|
-| `rba-freeze-2026-08-29` | `a07b868ecb9f435d7cf2511163281c871d050117` | จุดที่ **ผลการทดลอง** ถูก freeze — ตัวเลข recall/FPR ทั้งหมดมาจากจุดนี้ |
-| `rba-expert-review-2026-08-29` | (ดู `git rev-list -n 1 rba-expert-review-2026-08-29`) | จุดที่ **ส่งตรวจ** = freeze + stability fixes (B62/B63) + แยก access/monitoring |
+| `rba-freeze-2026-08-29` | `74bda639014a13abb851af9f5dd8a772fda21f36` | จุดที่ **ผลการทดลอง** ถูก freeze — ตัวเลข recall/FPR ทั้งหมดมาจากจุดนี้ |
+| `rba-expert-review-2026-08-29` | `2bdbeb1348e77133415b084bf64c7093b3795319` | จุดที่ **ส่งตรวจ** = freeze + stability fixes (B62/B63) + แยก access/monitoring |
 
-> **ทำไม tag ส่งตรวจไม่ระบุ SHA ตายตัวในเอกสารนี้:** เอกสารนี้เองอยู่ใน commit นั้น —
-> SHA คำนวณจากเนื้อหาไฟล์ทั้งหมดรวมทั้งไฟล์นี้ จึงเขียน SHA ของตัวเองลงไปไม่ได้
-> (ไก่กับไข่) **ตัว tag คือหลักฐานที่ถือเป็นทางการ** ส่วน SHA ของ `rba-freeze` ระบุได้
-> เพราะเป็น commit ในอดีตแล้ว
-
-การแก้หลัง freeze เป็น**เชิงปฏิบัติการล้วน** (cache invalidation · ล็อกต่อ user · timeout
-แยก · ชื่อฟิลด์) ไม่แตะฟังก์ชันตัดสินใจของโมเดล — ค่าคงที่ใน §2 จึงเท่ากันทั้งสอง tag
+> ⚠️ **SHA ชุดนี้เปลี่ยนจากที่เคยบันทึกไว้** — ประวัติ git ถูก rewrite ทั้งหมด
+> (30 ส.ค. 2026) เพื่อลบ PII ของผู้ใช้จริงออกจาก commit เก่า ก่อนเปิด repo เป็นสาธารณะ
+> **เนื้อหาไฟล์หลักฐานไม่เปลี่ยน** — hash ใน §4 ยังตรงทุกไฟล์ ตรวจได้ด้วย `--verify`
+> การ rewrite แทนอีเมล/ชื่อผู้ใช้ด้วย alias เดียวกับที่ HEAD ใช้อยู่ จึงไม่กระทบตัวเลขใดๆ
 
 **ตรวจสอบชุดที่ส่งตรวจ:**
 
 ```bash
 git checkout rba-expert-review-2026-08-29
 python scripts/build_evidence_manifest.py --verify
-git rev-list -n 1 rba-expert-review-2026-08-29    # SHA ที่แท้จริงของชุดส่งตรวจ
+python scripts/scan_history_pii.py --self-test    # ยืนยันว่าตัวสแกนยังจับได้จริง
 ```
 
 
