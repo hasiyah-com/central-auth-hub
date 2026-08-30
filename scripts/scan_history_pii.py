@@ -32,6 +32,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 ROSTER = ROOT / "ml-service" / "data" / "roster_v2.json"
+# อีเมลที่ไม่อยู่ใน roster (คนที่เลิกใช้ระบบ / ข้อมูลตัวอย่างรุ่นเก่า)
+# ขาดไฟล์นี้ = จุดบอด: roster ครอบคลุมแค่ 5 จาก 12 อีเมลที่อยู่ในประวัติจริง
+EXTRA = ROOT / "ml-service" / "data" / "redact_extra.json"
 
 # ── 1. path ที่ไม่ควรเคยอยู่ใน git เลย ──
 FORBIDDEN_PATH = [
@@ -184,6 +187,9 @@ SKIP_EXT = {
     ".svg",
 }
 SKIP_PATH = re.compile(r"(^|/)(node_modules|\.next|__pycache__|venv|dist|build)/")
+# ไฟล์ตัวเอง: SELF_TEST มีตัวอย่างที่ "ตั้งใจให้เข้าเกณฑ์" (เบอร์/โฮสต์) ไม่ใช่ของจริง
+# ความถูกต้องของไฟล์นี้คุมด้วย --self-test แทนการสแกนเนื้อหาตัวเอง
+SELF_PATH = "scripts/scan_history_pii.py"
 # lock file ของ package manager = metadata สาธารณะ ไม่ใช่ข้อมูลผู้ใช้เรา
 # lock file / vendor bundle = โค้ดสาธารณะของคนอื่น ไม่ใช่ข้อมูลผู้ใช้เรา
 NOISE_PATH = re.compile(
@@ -202,6 +208,26 @@ def mask(value: str) -> str:
     return f"{value[:3]}{'*' * max(len(value) - 3, 1)}"
 
 
+def fictional_emails() -> set[str]:
+    """อีเมลใน redact_extra ที่เป็นข้อมูลตัวอย่างสมมติ ไม่ใช่คนจริง.
+
+    ดูจากค่าแทน: คนจริงถูกแทนด้วย alias (U13@...) · ตัวอย่างสมมติเก็บ local-part เดิม
+    (somchai.j@example.invalid) — ชื่อสมมติพวกนี้ไม่ควรถูกรายงานว่าเป็น PII
+    ไม่งั้นสแกนจะร้องไม่จบเรื่องไฟล์ template ที่ตั้งใจให้อ่านรู้เรื่อง
+    """
+    if not EXTRA.exists():
+        return set()
+    try:
+        d = json.loads(EXTRA.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001
+        return set()
+    return {
+        k
+        for k, v in d.items()
+        if not k.startswith("_") and not re.fullmatch(r"U\d+@.*", str(v))
+    }
+
+
 def roster_localparts(emails: set[str]) -> set[str]:
     """ส่วนหน้า @ ของอีเมลจริง — ถูกใช้เป็น "ชื่อผู้ใช้" ในรายงาน/hostname ได้
 
@@ -209,7 +235,10 @@ def roster_localparts(emails: set[str]) -> set[str]:
     ทั้งที่ไม่มีเครื่องหมาย @ ให้ regex อีเมลจับ · ยาว >= 5 กัน false positive
     """
     out = set()
+    fictional = fictional_emails()
     for e in emails:
+        if e in fictional:
+            continue  # ชื่อสมมติ — ไม่ใช่ PII
         lp = e.split("@")[0]
         if len(lp) >= 5:
             out.add(lp)
@@ -220,10 +249,20 @@ def roster_localparts(emails: set[str]) -> set[str]:
 
 
 def roster_emails() -> set[str]:
+    out: set[str] = set()
+    if EXTRA.exists():
+        try:
+            out |= {
+                k
+                for k in json.loads(EXTRA.read_text(encoding="utf-8"))
+                if not k.startswith("_")
+            }
+        except Exception:  # noqa: BLE001
+            pass
     if not ROSTER.exists():
-        return set()
+        return out
     try:
-        return {
+        return out | {
             e
             for e in json.loads(ROSTER.read_text(encoding="utf-8")).values()
             if e and not e.endswith(SYNTHETIC_DOMAINS)
@@ -326,6 +365,8 @@ def current_hits(path: str, roster: set[str]) -> set[tuple[str, str]]:
     ต้องแยกระดับ hit ไม่ใช่ระดับไฟล์ — ไฟล์เดียวอาจมี PII เก่าในประวัติ (ล้างแล้ว)
     ปนกับ PII ที่ยังเหลือ ถ้าจัดกลุ่มทั้งไฟล์ จะรายงานของที่ล้างแล้วว่ายังอยู่
     """
+    if path == SELF_PATH:
+        return set()
     raw = subprocess.run(
         ["git", "cat-file", "blob", f"HEAD:{path}"], cwd=ROOT, capture_output=True
     )
@@ -465,7 +506,7 @@ def main() -> int:
     candidates = []
     for sha, paths in blobs.items():
         p = next(iter(paths))
-        if SKIP_PATH.search(p) or NOISE_PATH.search(p):
+        if SKIP_PATH.search(p) or NOISE_PATH.search(p) or p == SELF_PATH:
             continue
         ext = Path(p).suffix.lower()
         if ext in SKIP_EXT and ext not in OFFICE_EXT:
