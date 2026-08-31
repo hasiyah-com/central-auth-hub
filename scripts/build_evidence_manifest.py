@@ -113,11 +113,20 @@ SEEDS = {
 
 
 def sha256(path: Path) -> str:
-    h = hashlib.sha256()
-    with path.open("rb") as f:
-        for chunk in iter(lambda: f.read(65536), b""):
-            h.update(chunk)
-    return h.hexdigest()
+    """SHA-256 ของ **เนื้อหา** ไฟล์ — ไม่ผูกกับแพลตฟอร์มที่ checkout.
+
+    ไฟล์ข้อความถูก normalize บรรทัดเป็น LF ก่อน hash โดยตั้งใจ: repo นี้ตั้ง
+    `core.autocrlf=true` และไม่มี `.gitattributes` -> checkout บน Windows ได้ CRLF
+    ส่วนบน Linux/macOS ได้ LF · ถ้า hash จาก byte ดิบ ผู้ตรวจที่ clone คนละ OS จะ
+    เห็น `--verify` ไม่ผ่าน **ทุกไฟล์** ทั้งที่ไม่มีใครแก้อะไรเลย — หลักฐานจะดูเหมือน
+    ถูกแก้ย้อนหลัง ซึ่งเป็นสิ่งเดียวที่ manifest นี้มีหน้าที่ปฏิเสธ
+
+    ไฟล์ไบนารี (มี null byte) hash จาก byte ดิบตามเดิม — normalize จะทำให้เสีย
+    """
+    data = path.read_bytes()
+    if b"\x00" not in data:  # text -> normalize CRLF/CR เป็น LF
+        data = data.replace(b"\r\n", b"\n").replace(b"\r", b"\n")
+    return hashlib.sha256(data).hexdigest()
 
 
 def git(*args: str) -> str:
@@ -245,6 +254,11 @@ def build(MANIFEST: Path) -> None:
         "โมเดลไม่เคยเห็น · รันครั้งเดียว · **ห้ามปรับ threshold/โมเดล/ฟีเจอร์จากผลชุดนี้**",
         "",
         "## 4. Hash ของไฟล์หลักฐาน (SHA-256)",
+        "",
+        "> **หมายเหตุการคำนวณ:** hash คิดจาก**เนื้อหา**ไฟล์โดย normalize บรรทัดเป็น LF ก่อน",
+        "> (ไฟล์ไบนารีใช้ byte ดิบ) — repo ตั้ง `core.autocrlf=true` และไม่มี `.gitattributes`",
+        "> ถ้า hash จาก byte ดิบ ผู้ตรวจที่ clone บน Linux/macOS จะเห็น `--verify` ไม่ผ่าน",
+        "> **ทุกไฟล์** ทั้งที่ไม่มีใครแก้อะไร · วิธีนี้ทำให้ผลตรวจเหมือนกันทุกแพลตฟอร์ม",
         "",
         "### 4.1 รายงานการทดลอง",
         "",
