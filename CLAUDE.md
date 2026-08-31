@@ -639,6 +639,13 @@ docker compose exec ml-service python -m scripts.train_model
 **B61. fail-safe ที่ "เงียบ" ต้องมีเทสยืนยันเส้นทางสำเร็จในสภาพแวดล้อมจริง** — L3 import numpy แบบ lazy อยู่ใน `hub-backend` ที่ไม่มี numpy → abstain 100% ตลอดกาล ผ่านเทสบน host แต่ไม่เคยทำงานจริง และไม่มี error log เพราะ fail-safe ทำงาน "ถูกต้อง"
 → **กฎ:** abstain 100% กับ fail-safe ที่ทำงานถูกต้อง ให้ผลลัพธ์ภายนอกเหมือนกันเป๊ะ — ต้องมีเทสที่พิสูจน์ว่า**เส้นทางสำเร็จ**ทำงานได้ในคอนเทนเนอร์จริง ไม่ใช่แค่ "พังแล้วไม่ระเบิด" · โค้ดที่ต้องใช้ ML dep ต้องอยู่ใน service ที่มี dep นั้น (ห้าม lazy import เพื่อแชร์ไฟล์ข้าม service) · ค่าคงที่ของโมเดลที่อยู่สอง service ต้องมี parity test
 
+**B66. การทดลองต้องวัดระบบเดียวกับที่ deploy — คอนฟิกต่างกัน = คนละระบบ** — สคริปต์ทดลองทุกตัวเรียก `aggregate(rule, beh, NEUTRAL)` (IForest = 0) แต่ production เรียกด้วยคะแนนจริงที่บวกได้ถึง +0.40 จาก threshold 0.70 → **12.5% ของการตัดสินจริง (128/1024) ถูกกำหนดโดยชั้นที่การทดลองวัดว่าไม่มีส่วนร่วม** รวมถึง block 22 ครั้ง
+→ **กฎ:** harness ต้องเรียกเส้นทางเดียวกับ production หรือมีเทสพิสูจน์ว่าคอนฟิกตรงกัน · ตัวเลขประสิทธิภาพผูกกับ**คอนฟิก** ไม่ใช่แค่โมเดล · ถ้าจงใจปิดชั้นใดตอนวัด ต้องปิดที่ production ด้วย
+→ **Verify:** `tests/test_l3_access_monitoring_split.py::test_point_view_never_moves_access_decision`
+
+**B67. คำอธิบายของ anomaly detector เชื่อได้เฉพาะในย่านที่คะแนนยังไล่ระดับ** — จุดที่หลุด distribution ทุกมิติถูก IForest isolate ที่ความลึกเท่ากันหมด → คะแนนอิ่มตัว SHAP จึงชี้ฟีเจอร์เดิมทุกครั้งไม่ว่ามิติไหนผิดจริง (วัดได้: 6 window ต่างกัน ได้ 0.7439 เท่ากันเป๊ะ)
+→ **กฎ:** อย่ารายงาน top SHAP feature เป็น "สาเหตุ" โดยไม่ตรวจว่าคะแนนอยู่ในย่านที่แยกแยะได้ · เทสที่พิสูจน์ว่า SHAP mapping ถูก ต้องทำในย่านแยกแยะได้ ไม่ใช่ย่านอิ่มตัว
+
 ### หมวดบั๊กเพิ่มเติม (ดูรายละเอียดใน `docs/bugs-encountered.md`)
 
 | Section | Range | Theme |
@@ -656,6 +663,7 @@ docker compose exec ml-service python -m scripts.train_model
 | 🚨 Risk-Triggered MFA (Week 9-10) | B44-B48 | Hard block threshold at finalizer, Force-enroll OTP gate, Browser unsupported → Recovery, atomic consume, runtime grace period |
 | 🧠 ML Feature Expansion (Week 10-11) | B49 | Feature reorder ลืม sync rule_engine.FEAT (score มั่ว) + train/serve skew (synthetic ≠ ค่าจริง) |
 | 🎓 Subsystem C (เกรด) + SOC Dashboard + User 360 (Week 10-11) | B50-B55 | Access policy ขัด docstring (teacher login ไม่ได้), falsy-zero KPI (`\|\|` กับ 0 จริง), force-logout ขาด webhook back-channel, relative-time parse naive-UTC เป็น local (+7ชม.), health-check เข้า `localhost:PORT` จาก container ไม่ได้ (503 gate), subsystem ใหม่ลืม session_cookie_secure |
+| 🧪 Measurement Integrity / Redaction (Week 12-13) | B64-B67 | การทดลองวัดคนละคอนฟิกกับ production (12.5% ของการตัดสิน), SHAP อิ่มตัวเมื่อ OOD, `--replace-text` ไม่แตะไฟล์ ZIP, redactor+scanner จุดบอดร่วม |
 
 ### วิธีเพิ่ม bug ใหม่
 

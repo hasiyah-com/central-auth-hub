@@ -427,12 +427,11 @@ async def test_risk_engine_survives_l3_failure(monkeypatch):
     async def boom(*a, **kw):
         raise RuntimeError("L3 ระเบิด")
 
-    async def fake_ml(features):
-        return {"anomaly_score": 0.0, "explanation": []}
+    from app.services import l3_sequence_client as CLI
 
-    monkeypatch.setattr(risk_engine, "get_anomaly_score", fake_ml)
     monkeypatch.setattr(risk_engine, "get_user_profile", lambda db, uid: None)
-    monkeypatch.setattr(L3, "evaluate_login_remote", boom)
+    # L3 ระเบิดทั้งชั้น (ทั้ง point + sequence อยู่หลัง client ตัวเดียวกันแล้ว)
+    monkeypatch.setattr(CLI, "evaluate_l3", boom)
 
     v = [0.0] * 23
     v[FEAT["permission_change_age"]] = 365.0

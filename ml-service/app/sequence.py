@@ -44,6 +44,20 @@ TIER_DIAGNOSTIC = 100  # 100-999: ให้คะแนน+log แต่ห้�
 TIER_WARN = 1000  # 1000+: ยก warn ได้จริง
 TIER_CHALLENGE = 2000  # 2000+: บันทึก would_challenge (shadow)
 
+# ชื่อ 18 มิติ — ลำดับต้องตรงกับ _windows() เป๊ะ: [mean x6, slope x6, ptp x6]
+# ผิดลำดับ = SHAP ชี้ฟีเจอร์ผิดตัวโดยไม่มีใครรู้ (บทเรียนเดียวกับ B49)
+DIM_NAMES = [
+    "gap_log",
+    "scope",
+    "passkey_age_log",
+    "weekday_usage",
+    "hours_from_typical",
+    "sub_rarity",
+]
+STAT_NAMES = ["mean", "slope", "ptp"]
+SEQ_FEATURE_NAMES = [f"{d}_{s}_w{WINDOW}" for s in STAT_NAMES for d in DIM_NAMES]
+SEQ_FEATURE_COUNT = DIMS * len(STAT_NAMES)
+
 REDIS_KEY = "l3resid:{user_id}"
 CACHE_TTL_SEC = 3600
 # user -> (ts, n_raw ตอน fit, model, n_parsed)
@@ -61,6 +75,7 @@ QUIET = {
     "shadow_decision": None,
     "n_history": 0,
     "model_version": MODEL_VERSION,
+    "explanation": [],
 }
 
 
@@ -85,6 +100,10 @@ class L3Model:
     extreme_threshold: float = 0.0
     dist: Any = None
     base: list[tuple[float, float]] = field(default_factory=list)
+    # SHAP explainer ผูกกับโมเดลรายคน — อยู่ใน _MODEL_CACHE เดียวกัน จึงสร้างครั้งเดียว
+    # ต่อการ fit ไม่ใช่ต่อ request (สร้างใหม่ทุกครั้ง = คอขวดแบบเดียวกับ B63)
+    explainer: Any = None
+    explainer_status: str = "uninitialized"
 
 
 def _center_scale(col) -> tuple[float, float]:
@@ -156,7 +175,72 @@ def fit_user_model(
         return None
 
 
-def evaluate_window(model: L3Model | None, window_raw: list[list[float]]) -> dict:
+SEQ_TOP_K = 5
+
+
+def _get_explainer(model: L3Model):
+    """TreeExplainer ของโมเดลรายคน — lazy + fail-safe แบบเดียวกับ model.py.
+
+    shap import พัง / sklearn version ไม่รองรับ -> status = unavailable แล้วคืน []
+    ไม่ทำให้ช่องทาง scoring พัง (SHAP เป็นคำอธิบาย ไม่ใช่ตัวตัดสิน)
+    """
+    if model.explainer_status != "uninitialized":
+        return model.explainer
+    try:
+        import shap
+
+        model.explainer = shap.TreeExplainer(
+            model.forest, feature_perturbation="tree_path_dependent"
+        )
+        model.explainer_status = "ready"
+    except Exception as e:  # noqa: BLE001
+        model.explainer = None
+        model.explainer_status = "unavailable"
+        logger.warning("[sequence] SHAP unavailable: %s", e)
+    return model.explainer
+
+
+def explain_row(model: L3Model, x_kept, top_k: int = SEQ_TOP_K) -> list[dict]:
+    """SHAP ต่อฟีเจอร์ของ window ปัจจุบัน — บวก = ดันไปทาง anomaly.
+
+    `x_kept` คือแถวที่ผ่าน mask `keep` แล้ว (forest fit บนคอลัมน์ที่เหลือเท่านั้น)
+    จึงต้อง map index กลับเป็นตำแหน่งเดิมใน SEQ_FEATURE_NAMES ก่อนตั้งชื่อ
+    ไม่งั้นชื่อจะเลื่อนทุกครั้งที่มีมิติใดนิ่งจนถูกตัดออก
+    """
+    ex = _get_explainer(model)
+    if ex is None:
+        return []
+    try:
+        raw = ex.shap_values(np.asarray([x_kept], dtype=float))
+        if isinstance(raw, list):
+            raw = raw[0]
+        # sign flip ให้ "บวก = anomaly" เหมือน model.py (shap อธิบาย decision_function
+        # ซึ่งค่าสูง = ปกติ ส่วนคะแนนที่เราใช้คือ -score_samples)
+        contrib = -np.asarray(raw[0], dtype=float)
+        kept_idx = np.flatnonzero(np.asarray(model.keep))
+        out = [
+            {
+                "feature": SEQ_FEATURE_NAMES[int(orig)],
+                "shap": round(float(v), 4),
+                "value": round(float(x_kept[j]), 4),
+                "direction": "anomaly" if float(v) > 0 else "normal",
+            }
+            for j, (orig, v) in enumerate(zip(kept_idx, contrib))
+        ]
+        out.sort(key=lambda d: abs(d["shap"]), reverse=True)
+        return out[:top_k]
+    except Exception as e:  # noqa: BLE001
+        logger.warning("[sequence] SHAP explain failed: %s", e)
+        return []
+
+
+def explainer_status(model: L3Model | None) -> str:
+    return model.explainer_status if model is not None else "no_model"
+
+
+def evaluate_window(
+    model: L3Model | None, window_raw: list[list[float]], explain: bool = False
+) -> dict:
     """ให้คะแนน window ล่าสุด (ยาว WINDOW, เก่า->ใหม่) — คืน dict พร้อมส่งเป็น JSON."""
     try:
         if model is None or not window_raw or len(window_raw) < WINDOW:
@@ -167,8 +251,10 @@ def evaluate_window(model: L3Model | None, window_raw: list[list[float]]) -> dic
         X = _windows(_to_residual(raw, model.base))
         if len(X) == 0:
             return dict(QUIET)
+        x_kept = X[:, model.keep][0]
         a = float(-model.forest.score_samples(X[:, model.keep])[0])
         elig = eligibility(model.n_history)
+        expl = explain_row(model, x_kept) if explain else []
         pct = (
             float(np.searchsorted(model.dist, a) / 100.0)
             if model.dist is not None
@@ -181,6 +267,7 @@ def evaluate_window(model: L3Model | None, window_raw: list[list[float]]) -> dic
             "percentile": pct,
             "eligibility": elig,
             "n_history": model.n_history,
+            "explanation": expl,
         }
         if a < model.threshold:
             return out
@@ -276,7 +363,7 @@ def get_model(redis, user_id: str, key: str, n_raw: int) -> tuple[L3Model | None
         return model, len(history)
 
 
-def score(redis, user_id: str, residual: list[float]) -> dict:
+def score(redis, user_id: str, residual: list[float], explain: bool = False) -> dict:
     """จุดเข้าหลัก — ให้คะแนน window ที่จบด้วย residual นี้.
 
     residual ตัวปัจจุบัน **ยังไม่อยู่ใน history** (hub บันทึกหลังตัดสิน) จึงต่อท้ายเอง
@@ -313,7 +400,7 @@ def score(redis, user_id: str, residual: list[float]) -> dict:
             }
         if tail is None:  # cold path หรือท้ายลิสต์มีแถวเสียจนไม่ครบ window
             tail = load_history(redis, user_id)[-(WINDOW - 1) :]
-        return evaluate_window(model, tail + [list(residual)])
+        return evaluate_window(model, tail + [list(residual)], explain=explain)
     except Exception as e:  # noqa: BLE001
         logger.warning("[sequence] score error: %s", e)
         return dict(QUIET)

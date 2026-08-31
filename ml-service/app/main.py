@@ -22,6 +22,7 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, field_validator
 
+from app import l3_unified as L3U
 from app import sequence as SEQ
 from app.features import FEATURE_COUNT, FEATURE_NAMES, FEATURE_RANGES
 from app.model import (
@@ -278,6 +279,57 @@ def sequence_score(req: SequenceRequest):
             "version": "v1",
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "redis": "ok" if r else "unavailable",
+        },
+    }
+
+
+# ============ L3 unified (point + sequence เป็นผลเดียว) ============
+
+
+class L3EvaluateRequest(BaseModel):
+    """ทุกอย่างที่ L3 ต้องใช้ ในการเรียกครั้งเดียว.
+
+    hub เคยยิงสองครั้ง (/v1/score + /v1/sequence-score) แล้วเก็บผลแยกกัน —
+    รวมเป็นครั้งเดียวเพื่อให้ merge (duplicate_ratio, top_factors ข้ามมุมมอง)
+    เกิดขึ้นที่เดียว และประหยัด round-trip บน login path
+    """
+
+    user_id: str = Field(..., min_length=1, max_length=128)
+    features: list[float] = Field(
+        ..., min_length=FEATURE_COUNT, max_length=FEATURE_COUNT
+    )
+    # None/[] = ข้าม sequence view (hub ปิดแฟล็ก หรือคำนวณ residual ไม่ได้)
+    # -> เหลือ point view อย่างเดียว ไม่ใช่ error
+    residual: list[float] | None = Field(default=None, description=f"{SEQ.DIMS} ค่า")
+    # ผลของ L1/L2/L4 ที่ตัดสินเสร็จแล้ว — ใช้ "วัด" unique_to_l3 เท่านั้น
+    # L3 ไม่มีทางเขียนค่ากลับไปที่ฟิลด์นี้ (ดู l3_unified.evaluate)
+    access_decision: str = Field(default="allow", max_length=32)
+
+    @field_validator("residual")
+    @classmethod
+    def check_dims(cls, v):
+        if v and len(v) != SEQ.DIMS:
+            raise ValueError(f"residual ต้องมี {SEQ.DIMS} ค่า (ได้ {len(v)})")
+        return v
+
+
+@app.post("/v1/l3-evaluate")
+def l3_evaluate(req: L3EvaluateRequest):
+    """L3 ทั้งสองมุมมองในครั้งเดียว — คืน monitoring_decision + คำอธิบายรวม.
+
+    ไม่คืน access decision ใดๆ โดยตั้งใจ: ผลลัพธ์ของ endpoint นี้ออกทางแกน
+    monitoring อย่างเดียว (บังคับด้วย tests/test_l3_access_monitoring_split.py)
+    """
+    r = _redis()
+    data = L3U.evaluate(r, req.user_id, req.features, req.residual, req.access_decision)
+    return {
+        "data": data,
+        "meta": {
+            "version": "v1",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "redis": "ok" if r else "unavailable",
+            "feature_count": FEATURE_COUNT,
+            "sequence_feature_count": SEQ.SEQ_FEATURE_COUNT,
         },
     }
 

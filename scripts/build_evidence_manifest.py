@@ -23,7 +23,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 REPORTS = ROOT / "hub" / "backend" / "tests" / "reports"
-MANIFEST = ROOT / "docs" / "RBA_EVIDENCE_MANIFEST_2026-08-29.md"
+# manifest แต่ละรอบเป็นคนละไฟล์ — **ห้ามเขียนทับของเดิม** เพราะ tag เก่าอ้างไฟล์นั้นอยู่
+# (เขียนทับ = หลักฐานของ freeze รอบก่อนหายไป ตรวจย้อนไม่ได้)
+MANIFEST_DIR = ROOT / "docs"
+MANIFEST_DEFAULT = MANIFEST_DIR / "RBA_EVIDENCE_MANIFEST_2026-09-01.md"
 
 # ── ชุดหลักฐาน: รายงานการทดลอง (เรียงตามลำดับที่ทำจริง) ──
 EVIDENCE_REPORTS = [
@@ -54,6 +57,7 @@ EVIDENCE_REPORTS = [
     "l3_service_split_2026-08-29.md",
     "l3_stability_2026-08-29.md",
     "l3_shadow_replay_2026-08-29.md",
+    "l3_unified_2026-08-31.md",
 ]
 
 # ── โค้ดที่ผลิตตัวเลข (harness ทดลอง + production ที่ถูกวัด) ──
@@ -79,6 +83,12 @@ EVIDENCE_CODE = [
     "hub/backend/scripts/l3_shadow_replay.py",
     "hub/backend/tests/test_l3_stability.py",
     "hub/backend/tests/test_l3_access_monitoring_split.py",
+    # รอบ 31 ส.ค. 2026 — L3 orchestrator เดียว + ถอด IForest ออกจาก access (B66)
+    "ml-service/app/l3_unified.py",
+    "ml-service/app/model.py",
+    "ml-service/app/main.py",
+    "hub/backend/app/security/iforest_scorer.py",
+    "hub/backend/tests/test_l3_unified.py",
 ]
 
 # ── configuration ที่ล็อกไว้: ดึงจาก source จริง ไม่ hardcode ในเอกสาร ──
@@ -148,7 +158,7 @@ def missing() -> list[str]:
     return out
 
 
-def build() -> None:
+def build(MANIFEST: Path) -> None:
     rows = collect()
     cfg = read_config()
     head, short, branch = (
@@ -212,6 +222,13 @@ def build() -> None:
         "per-user IsolationForest (`n_estimators=100`, `contamination=0.02`) ·",
         "L3 = แกน monitoring ล้วน (`normal` / `l3_investigate`) — ไม่แตะ access decision",
         "",
+        "**ครอบคลุม L3 ทั้งสองมุมมองตั้งแต่ 31 ส.ค. 2026** (B66) — เดิม point view",
+        "(IForest 23 ฟีเจอร์) ยังบวกคะแนนเข้า `aggregate()` ได้ถึง +0.40 ทั้งที่การทดลอง",
+        "ทุกชุดวัดด้วย `NEUTRAL` (= 0) · วัดจากข้อมูลจริง 1,024 sessions พบว่ากระทบ",
+        "**128 ครั้ง (12.5%) ของการตัดสิน** รวม block 22 ครั้ง → แก้ด้วย",
+        "`iforest_scorer.monitoring_only()` ทำให้ production ตรงกับตัวเลขที่วัดไว้",
+        "(ไม่ได้ปรับโมเดล/threshold ใดๆ — ดู `l3_unified_2026-08-31.md`)",
+        "",
         "ค่าคงที่ชุดเดียวกันนี้ต้องตรงกับ `ml-service/app/sequence.py` —",
         "บังคับด้วย `tests/test_l3_sequence_client.py::test_constants_parity_hub_vs_ml_service`",
         "",
@@ -255,7 +272,7 @@ def build() -> None:
         "## 5. Freeze commit",
         "",
         "<!-- FREEZE_COMMIT -->",
-        "_(เติมหลัง commit — ดู `git log --oneline -1` หรือ tag `rba-freeze-2026-08-29`)_",
+        "_(เติมหลัง commit — ดู `git log --oneline -1` และ `git tag -l`)_",
         "",
         "## 6. ข้อมูลที่ไม่อยู่ใน git (โดยตั้งใจ)",
         "",
@@ -281,7 +298,7 @@ def build() -> None:
         print(f"  ⚠️ ไม่พบ {len(miss)} ไฟล์: {', '.join(miss[:5])}")
 
 
-def verify() -> int:
+def verify(MANIFEST: Path) -> int:
     """เทียบ hash ปัจจุบันกับที่บันทึกใน manifest — exit 1 ถ้าไม่ตรง."""
     if not MANIFEST.exists():
         print("ไม่พบ manifest — รันโดยไม่ใส่ --verify ก่อน")
@@ -324,5 +341,12 @@ def verify() -> int:
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--verify", action="store_true", help="ตรวจ hash แทนการสร้างใหม่")
+    ap.add_argument(
+        "--manifest",
+        type=Path,
+        default=MANIFEST_DEFAULT,
+        help="ไฟล์ manifest (ค่าเริ่มต้น = รอบล่าสุด) — ใส่ของรอบเก่าเพื่อตรวจย้อนได้",
+    )
     args = ap.parse_args()
-    sys.exit(verify() if args.verify else (build() or 0))
+    target = args.manifest if args.manifest.is_absolute() else ROOT / args.manifest
+    sys.exit(verify(target) if args.verify else (build(target) or 0))

@@ -58,6 +58,14 @@ def test_contract_json_serializable():
     json.dumps(c)  # ต้องไม่ raise
 
 
+def _fake_unified(**over):
+    """payload รวมแบบเงียบ — แทน mock เดิมที่ patch get_anomaly_score."""
+    from app.services.l3_sequence_client import UNIFIED_QUIET
+    import copy
+
+    return {**copy.deepcopy(UNIFIED_QUIET), **over}
+
+
 @pytest.mark.asyncio
 async def test_risk_engine_puts_contract_in_breakdown(monkeypatch):
     """เมื่อเปิด L3 -> risk_breakdown ต้องมี l3_sequence (ไม่ต้องแก้ router)."""
@@ -66,10 +74,12 @@ async def test_risk_engine_puts_contract_in_breakdown(monkeypatch):
 
     monkeypatch.setattr(settings, "l3_sequence_enabled", True, raising=False)
 
-    async def fake_ml(features):
-        return {"anomaly_score": 0.0, "explanation": []}
+    from app.services import l3_sequence_client as CLI
 
-    monkeypatch.setattr(risk_engine, "get_anomaly_score", fake_ml)
+    async def fake_l3(user_id, features, residual, access_decision="allow"):
+        return _fake_unified()
+
+    monkeypatch.setattr(CLI, "evaluate_l3", fake_l3)
     monkeypatch.setattr(risk_engine, "get_user_profile", lambda db, uid: None)
 
     from app.security.rule_engine import FEAT
@@ -92,10 +102,12 @@ async def test_no_contract_when_disabled(monkeypatch):
 
     monkeypatch.setattr(settings, "l3_sequence_enabled", False, raising=False)
 
-    async def fake_ml(features):
-        return {"anomaly_score": 0.0, "explanation": []}
+    from app.services import l3_sequence_client as CLI
 
-    monkeypatch.setattr(risk_engine, "get_anomaly_score", fake_ml)
+    async def fake_l3(user_id, features, residual, access_decision="allow"):
+        return _fake_unified()
+
+    monkeypatch.setattr(CLI, "evaluate_l3", fake_l3)
     monkeypatch.setattr(risk_engine, "get_user_profile", lambda db, uid: None)
 
     from app.security.rule_engine import FEAT
