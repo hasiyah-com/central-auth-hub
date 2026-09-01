@@ -22,7 +22,7 @@ from app.security.risk_evidence import (
     behavior_evidence,
     rule_evidence,
 )
-from app.security.risk_fusion import fuse
+from app.security.risk_fusion import fuse, is_surfaced
 from app.security.rule_engine import evaluate_rules
 
 logger = logging.getLogger(__name__)
@@ -98,13 +98,32 @@ async def evaluate_login_risk(
     kw = dict(gamma=settings.l4_gamma, thresholds=thresholds, shadow_mode=shadow_mode)
     decision = fuse(policy, evidences, **kw)
 
-    # ── วัดว่า L3 เปลี่ยนการตัดสินจริงหรือไม่ (L3 effective unique) ──
-    # เทียบกับผลที่ได้ถ้ามีแค่ L1/L2 · เป็นตัวเลขที่ตอบว่า "ชั้นนี้คุ้มไหม" ตรงที่สุด
+    # ── Counterfactual: ถ้าไม่มี L3 ผลจะเป็นอย่างไร ──
+    # ใช้ **Policy Gate ตัวเดียวกัน** และ fuse ตัวเดียวกัน ต่างแค่หลักฐาน L3
     # คำนวณที่นี่เพราะ ณ ตอนเรียก L3 ยังไม่มีการตัดสินให้เทียบ
-    baseline = fuse(policy, [e for e in evidences if e.layer != "anomaly"], **kw)
-    decision.breakdown["l1l2_only_decision"] = baseline.decision
-    decision.breakdown["l1l2_only_score"] = baseline.total_score
-    decision.breakdown["l3_changed_decision"] = decision.decision != baseline.decision
+    #
+    # แยก metric ให้ชัด — คะแนนขยับแต่ผลเท่าเดิม **ห้ามนับเป็น effective**
+    #   changed_decision   ผลการตัดสินต่างจริง
+    #   changed_score_only คะแนนต่าง แต่ผลเท่าเดิม (ไม่มีคุณค่าเชิงปฏิบัติ)
+    #   surfaced_new       เดิมปล่อยผ่าน ตอนนี้ถูกหยิบขึ้นมา = คุณค่าที่แท้จริง
+    new_l1_l2_baseline = fuse(
+        policy, [e for e in evidences if e.layer != "anomaly"], **kw
+    )
+    changed = decision.decision != new_l1_l2_baseline.decision
+    decision.breakdown["counterfactual"] = {
+        # ชื่อ "new_l1_l2" ไม่ใช่ "baseline" เฉยๆ — เพราะนี่คือ fusion **ใหม่**
+        # ที่ปิด L3 ไม่ใช่ระบบเดิมก่อนเปลี่ยนสถาปัตยกรรม (legacy_baseline)
+        "new_l1_l2_decision": new_l1_l2_baseline.decision,
+        "new_l1_l2_score": new_l1_l2_baseline.total_score,
+        "l3_changed_decision": changed,
+        "l3_changed_score_only": (
+            not changed and decision.total_score != new_l1_l2_baseline.total_score
+        ),
+        "l3_surfaced_new": (
+            not is_surfaced(new_l1_l2_baseline.decision)
+            and is_surfaced(decision.decision)
+        ),
+    }
 
     logger.info(
         "[risk_engine] user=%s risk=%.3f decision=%s primary=%s l3_mode=%s",

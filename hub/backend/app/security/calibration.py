@@ -7,7 +7,7 @@ L3 เป็นค่า `-score_samples()` ของ IsolationForest ซึ่�
 
 **วิธี:** empirical CDF ของคะแนนชั้นนั้นบน login **ปกติ** ในชุด validation
 
-    evidence = P(คะแนนของ login ปกติ <= คะแนนที่เห็นตอนนี้)
+    evidence = P(คะแนนของ login ปกติ < คะแนนที่เห็นตอนนี้)
 
 อ่านได้ตรงๆ ว่า "หายากแค่ไหนถ้าเป็นคนปกติ" — 0.99 คือหายากระดับ 1 ใน 100
 ทุกชั้นจึงเทียบกันได้จริงหลัง calibrate
@@ -84,8 +84,13 @@ class _Table:
                 calibrated=False,
                 version=self.version,
             )
-        # สัดส่วนของ login ปกติที่คะแนนไม่เกินค่านี้
-        idx = bisect.bisect_right(q, float(raw_score))
+        # สัดส่วนของ login ปกติที่คะแนน **ต่ำกว่า** ค่านี้อย่างเคร่งครัด
+        # คะแนนที่ตรงกับค่าที่พบบ่อย (เช่น 0.0 ซึ่ง login ปกติส่วนใหญ่ได้)
+        # ต้องได้ evidence ต่ำ ไม่ใช่สูง จึงใช้ bisect_left
+        # ถ้าใช้ bisect_right ค่าที่พบบ่อยที่สุดจะถูกนับว่าสูงกว่าทุกคนที่เท่ากัน
+        # -> login ปกติที่สุดได้หลักฐาน 1.0 -> block ทุกเหตุการณ์
+        # (บั๊กจริงที่ smoke test จับได้ 2 ก.ย. 2569)
+        idx = bisect.bisect_left(q, float(raw_score))
         return Calibrated(value=idx / len(q), calibrated=True, version=self.version)
 
 

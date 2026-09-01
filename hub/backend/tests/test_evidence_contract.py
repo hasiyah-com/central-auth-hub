@@ -313,8 +313,14 @@ async def _engine(monkeypatch, mode: str, anomaly_raw: float):
 
 
 @pytest.mark.asyncio
-async def test_l3_shadow_mode_matches_baseline_exactly(monkeypatch):
-    """โหมด shadow: L3 เห็นชัดเต็มที่ แต่ผลต้องเท่ากับตอนปิด L3 ทุกประการ."""
+async def test_shadow_equals_new_fusion_without_l3(monkeypatch):
+    """โหมด shadow = fusion ใหม่ที่ปิดหลักฐาน L3 — **ไม่ใช่** ระบบเดิมก่อนเปลี่ยนสถาปัตยกรรม.
+
+    คำว่า "baseline" กำกวมจนใช้ไม่ได้ ต้องแยกสองอย่าง:
+        legacy_baseline    ระบบเดิม (aggregate ผลบวก + threshold ชุดเดิม)
+        new_l1_l2_baseline fusion ใหม่ (max+corroboration) ที่ปิด L3
+    เทสนี้ยืนยันอย่างหลัง · อย่างแรกยืนยันด้วย Config A ในการทดลอง
+    """
     off = await _engine(monkeypatch, "off", 0.0)
     shadow = await _engine(monkeypatch, "shadow", 0.99)
     assert shadow["decision"] == off["decision"]
@@ -327,7 +333,10 @@ async def test_l3_hybrid_stepup_lets_l3_raise_risk(monkeypatch):
     shadow = await _engine(monkeypatch, "shadow", 0.99)
     hybrid = await _engine(monkeypatch, "hybrid_stepup", 0.99)
     assert hybrid["score"] > shadow["score"]
-    assert hybrid["breakdown"]["l3_changed_decision"] is True
+    cf = hybrid["breakdown"]["counterfactual"]
+    assert cf["l3_changed_decision"] is True
+    assert cf["l3_surfaced_new"] is True, "เดิมปล่อยผ่าน ตอนนี้ต้องถูกหยิบขึ้นมา"
+    assert cf["l3_changed_score_only"] is False
 
 
 @pytest.mark.asyncio
@@ -337,7 +346,49 @@ async def test_l3_hybrid_stepup_still_cannot_block_alone(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_score_change_without_decision_change_is_not_counted(monkeypatch):
+    """คะแนนขยับแต่ผลเท่าเดิม ห้ามนับเป็นคุณค่าของ L3 — วัดผลจริง ไม่ใช่วัดตัวเลขขยับ."""
+    out = await _engine(monkeypatch, "hybrid_stepup", 0.30)
+    cf = out["breakdown"]["counterfactual"]
+    if not cf["l3_changed_decision"]:
+        assert cf["l3_surfaced_new"] is False
+
+
+@pytest.mark.asyncio
 async def test_hybrid_block_mode_does_not_exist_yet(monkeypatch):
     """ยังไม่อนุญาตให้ L3 block ได้ — โหมดที่ไม่รู้จักต้องไม่เปิดสิทธิ์เพิ่ม."""
     out = await _engine(monkeypatch, "hybrid_block", 1.0)
     assert out["decision"] != "block"
+
+
+# ══════════════ 9. ECDF ต้องไม่ทำให้ค่าที่พบบ่อยกลายเป็นหลักฐานสูงสุด ══════════════
+
+
+def test_ecdf_maps_the_most_common_score_to_low_evidence(tmp_path, monkeypatch):
+    """login ปกติส่วนใหญ่ได้คะแนน 0.0 -> evidence ต้องต่ำ ไม่ใช่ 1.0.
+
+    บั๊กจริงที่ smoke test จับได้ (2 ก.ย. 2569): ใช้ bisect_right ทำให้ค่าที่
+    พบบ่อยที่สุดถูกนับว่า "สูงกว่าทุกคนที่เท่ากัน" -> ทุก login ปกติได้หลักฐาน 1.0
+    -> block ทุกเหตุการณ์ (FPR 1.000)
+    """
+    import json
+
+    from app.security import calibration as C
+
+    # 90% ของ normal ได้ 0.0 · ที่เหลือไล่ขึ้นไป
+    normals = [0.0] * 90 + [round(0.1 * i, 2) for i in range(1, 11)]
+    f = tmp_path / "calibration_v1.json"
+    f.write_text(
+        json.dumps({"version": "test", "quantiles": {"rule": normals}}),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(C, "CALIBRATION_FILE", f)
+    C.reload_for_tests()
+
+    assert C.calibrate("rule", 0.0).value == pytest.approx(
+        0.0
+    ), "ค่าที่พบบ่อยที่สุดต้องได้หลักฐานต่ำสุด"
+    assert C.calibrate("rule", 1.0).value >= 0.99, "ค่าสูงกว่าทุกคนต้องได้หลักฐานสูง"
+    mid = C.calibrate("rule", 0.5).value
+    assert 0.85 <= mid <= 0.99, f"ค่ากลางค่อนสูงควรอยู่ช่วงสูงแต่ไม่สุด (ได้ {mid})"
+    C.reload_for_tests()

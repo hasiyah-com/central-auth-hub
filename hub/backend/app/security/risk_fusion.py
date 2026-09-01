@@ -32,6 +32,8 @@ DEFAULT_GAMMA = 0.35
 DEFAULT_THRESHOLDS = {"warn": 0.50, "challenge": 0.70, "block": 0.85}
 
 ACTIONS = ("allow", "warn", "challenge", "block")
+# action ที่ถือว่า "ระบบหยิบเหตุการณ์นี้ขึ้นมา" — ใช้นิยาม effective unique
+SURFACED = frozenset({"warn", "challenge", "block"})
 _RANK = {a: i for i, a in enumerate(ACTIONS)}
 
 # ชั้นที่ **ห้ามปฏิเสธผู้ใช้ด้วยตัวคนเดียว** ในระยะแรก
@@ -46,6 +48,11 @@ class RiskDecision:
     decision: str
     reasons: list[str] = field(default_factory=list)
     breakdown: dict = field(default_factory=dict)
+
+
+def is_surfaced(decision: str) -> bool:
+    """เหตุการณ์นี้ถูกระบบหยิบขึ้นมาหรือไม่ (ตัด would_ ออกก่อนเทียบ)."""
+    return decision.removeprefix("would_") in SURFACED
 
 
 def _stronger(a: str, b: str) -> str:
@@ -145,6 +152,92 @@ def fuse(
             "primary_evidence": round(m, 4),
             "support_layer": support.layer if support else None,
             "support_evidence": round(s, 4),
+            "solo_block_capped": solo_capped,
+        },
+    )
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# ทางเลือกสำหรับเปรียบเทียบ — ไม่ใช่ค่าเริ่มต้นของระบบ
+# ══════════════════════════════════════════════════════════════════════════════
+
+DEFAULT_WEIGHTS = {"rule": 0.40, "behavior": 0.35, "anomaly": 0.25}
+
+
+def fuse_weighted_sum(
+    policy: PolicyOutcome,
+    evidences: list[Evidence],
+    *,
+    weights: dict[str, float] | None = None,
+    thresholds: dict[str, float] | None = None,
+    shadow_mode: bool = False,
+) -> RiskDecision:
+    """ผลรวมถ่วงน้ำหนัก — มีไว้**เปรียบเทียบ** กับ max+corroboration เท่านั้น.
+
+    อยู่ในโค้ด production (ไม่ใช่ใน harness) โดยตั้งใจ เพื่อให้การทดลองเรียก
+    เส้นทางเดียวกับที่ระบบจะใช้ถ้าเลือกวิธีนี้ และเทสตรวจคุณสมบัติได้เหมือนกัน
+    (บทเรียน B66 — harness ที่มีสำเนา logic ทำให้วัดคนละระบบกับที่ deploy)
+
+    ข้อเสียที่คาดไว้และเป็นเหตุผลที่ไม่ได้เลือกเป็นค่าเริ่มต้น: ชั้นที่ไม่เห็นอะไร
+    (evidence ต่ำ) จะถ่วงค่าเฉลี่ยลง ทำให้เหตุการณ์ที่มีชั้นเดียวเห็นชัดไม่ถึงเกณฑ์
+    """
+    thr = thresholds or DEFAULT_THRESHOLDS
+    w = weights or DEFAULT_WEIGHTS
+    counted = [e for e in evidences if e.counts]
+
+    breakdown: dict = {
+        "weights": dict(w),
+        "thresholds": dict(thr),
+        "policy": policy.to_contract(),
+        "evidence": {e.layer: e.to_contract() for e in evidences},
+        "abstained_layers": [e.layer for e in evidences if e.abstained],
+    }
+
+    if policy.denied:
+        return RiskDecision(
+            total_score=1.0,
+            decision="would_block" if shadow_mode else "block",
+            reasons=list(policy.reasons),
+            breakdown={**breakdown, "final_risk_score": 1.0, "fusion": "policy_denied"},
+        )
+
+    # normalize ตามชั้นที่นับได้จริง — ไม่งั้นชั้นที่ abstain จะถ่วงคะแนนลงโดยไม่ควร
+    total_w = sum(w.get(e.layer, 0.0) for e in counted)
+    final = 0.0
+    if total_w > 0:
+        final = sum(w.get(e.layer, 0.0) * e.evidence_score for e in counted) / total_w
+    final = round(min(max(final, 0.0), 1.0), 6)
+
+    action = _action_for(final, thr)
+    if policy.min_action:
+        action = _stronger(action, policy.min_action)
+
+    ranked = sorted(counted, key=lambda e: e.evidence_score, reverse=True)
+    primary = ranked[0] if ranked else None
+    solo_capped = False
+    if action == "block" and primary is not None:
+        corroborating = [
+            e
+            for e in counted
+            if e is not primary and e.evidence_score >= thr["challenge"]
+        ]
+        if primary.layer in SOLO_BLOCK_FORBIDDEN and not corroborating:
+            action = "challenge"
+            solo_capped = True
+
+    reasons = list(policy.reasons)
+    for e in ranked:
+        reasons.extend(e.reasons)
+    decision = f"would_{action}" if (shadow_mode and action != "allow") else action
+    return RiskDecision(
+        total_score=final,
+        decision=decision,
+        reasons=reasons,
+        breakdown={
+            **breakdown,
+            "final_risk_score": final,
+            "fusion": "weighted_sum",
+            "primary_layer": primary.layer if primary else None,
             "solo_block_capped": solo_capped,
         },
     )

@@ -25,16 +25,15 @@ from dataclasses import dataclass, field
 from sqlalchemy.orm import Session
 
 from app.services.ip_blacklist import is_blacklisted
-from app.security.rule_engine import FEAT, HARD_BLOCK_RULES, SCORE_RULES
+from app.security.rule_engine import FEAT, HARD_BLOCK_RULES, SCORE_RULES_SPEC
 
-# ข้อบังคับ step-up — **ดึงจาก SCORE_RULES โดยตรง** ไม่นิยามซ้ำ
-# กฎที่มี min_act คือกฎที่เป็นข้อเท็จจริงตายตัว (เครื่องใหม่ · สิทธิ์เพิ่งเปลี่ยน ·
-# session ซ้อน) ซึ่งต้องบังคับยืนยันตัวตนเพิ่มเสมอไม่ว่าคะแนนรวมจะเท่าไร
-# เดิมอยู่เป็น `min_action` บน RuleResult ซึ่งทำให้ชั้นให้คะแนนกลายเป็นผู้ตัดสินไปด้วย
+# ข้อบังคับ step-up — เอาเฉพาะกฎที่ **ประกาศ** ว่าเป็น policy_floor
+# ห้ามอนุมานจากการมี min_action เพราะการแก้น้ำหนักคะแนนจะเปลี่ยนนโยบายโดยไม่ตั้งใจ
+# (ดูคำอธิบายเต็มที่ rule_engine.SCORE_RULES_SPEC)
 POLICY_STEPUP_RULES = [
-    (name, op, threshold, min_act)
-    for name, op, threshold, _weight, min_act in SCORE_RULES
-    if min_act
+    (r["feature"], r["op"], r["threshold"], r["min_action"])
+    for r in SCORE_RULES_SPEC
+    if r["kind"] == "policy_floor"
 ]
 
 _ACTION_RANK = {None: 0, "warn": 1, "challenge": 2}
