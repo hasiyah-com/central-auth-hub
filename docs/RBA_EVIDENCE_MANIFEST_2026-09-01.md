@@ -17,8 +17,8 @@ python scripts/build_evidence_manifest.py --verify
 
 | รายการ | ค่า |
 |---|---|
-| commit SHA (เต็ม) | `3314ec22a22af88b6e0896aa6bcbc10c30fe7a57` |
-| commit SHA (สั้น) | `3314ec2` |
+| commit SHA (เต็ม) | `d08f57c2070b2aa631e4bb60f2abc0504cbabec6` |
+| commit SHA (สั้น) | `d08f57c` |
 | branch | `main` |
 | working tree ตอนสร้าง manifest | มีไฟล์ที่ยังไม่ commit (ดู §5) |
 | จำนวนไฟล์หลักฐาน | 54 |
@@ -123,15 +123,15 @@ L3 = แกน monitoring ล้วน (`normal` / `l3_investigate`) — ไม�
 | `ml-service/scripts/lc_l3_ownership.py` | 14,856 | `ff415e436b2ee0de2d0b8a79e8e577041ba8f2f967f93d3b17ac9389dcffffbb` |
 | `ml-service/scripts/lc_run_4layer.py` | 19,744 | `78d6278c29793f789c899811f54a42fe7f4201ed117fdeda427d9cecf190e009` |
 | `ml-service/app/sequence.py` | 19,463 | `a3834d0cffb7aafa05971b265fc81ed8da5415d6f9bec90c528f4532bbc26d82` |
-| `hub/backend/app/security/l3_sequence.py` | 22,954 | `0acf7905a223d58c7c1b1a0bbd0491eaea3be1eb7e31ae15f34f29f5ecd3bdda` |
+| `hub/backend/app/security/l3_sequence.py` | 22,963 | `5d580eb6de29bf1408fbb3c1b960d60ee0845d3bf60d6497205e206fda2e6b2d` |
 | `hub/backend/app/security/rule_engine.py` | 13,750 | `a905bfc396d742b59a76c2717cce8900accc98bb220a387faf136f7eb6ac7498` |
 | `hub/backend/app/security/behavior_profiling.py` | 15,813 | `e971771fadbaa96f30c8597a00bafd22982392f224e2ae1b51123fe2f9f010f7` |
 | `hub/backend/app/security/risk_aggregator.py` | 4,040 | `51c2a61257481a07b6818ad5be6eb90e6aaa0e5fd036f91e6aa67ca9fd957b22` |
 | `hub/backend/app/security/risk_engine.py` | 11,859 | `f86bb1ae4a8268d14ccb306ac05d265a30266f89273cf6e5bc70fcdcdc9a6b26` |
 | `hub/backend/app/services/l3_sequence_client.py` | 9,901 | `8d2048b71a1b9de8357c345d3d40a889c929267475c7c326c82954496f466ad2` |
-| `hub/backend/scripts/l3_shadow_replay.py` | 20,780 | `3ccee42a89f32d16fe8acb9d207b58151cdebe839d49768366fdfa41386bfddc` |
+| `hub/backend/scripts/l3_shadow_replay.py` | 20,787 | `41168d107bb87a112ff161c655f9e96ffda537fe083a134c129ab03199e2b09d` |
 | `hub/backend/tests/test_l3_stability.py` | 25,969 | `80c0f24ce5ace243d3aa80616c223c3465ba901eb3983bbffb1d60ed6523fd86` |
-| `hub/backend/tests/test_l3_access_monitoring_split.py` | 13,649 | `4e4b391c42abfd1d177db4516e710998bbb57da5394528af61f2b623954403fe` |
+| `hub/backend/tests/test_l3_access_monitoring_split.py` | 13,907 | `f97e8bc7e7143fa95a3adffbab2325ff9fdd06ac72a25bf3a171e08f1409473f` |
 | `ml-service/app/l3_unified.py` | 11,806 | `cb4458c9561f7bd8cd5bfa7d3b28ac843261e2e050670511abfa9586ba9b1f38` |
 | `ml-service/app/model.py` | 6,114 | `d2809ef440ef31ca44d9f830ad5d5473be3fa71f38d429fab76329cf576664f4` |
 | `ml-service/app/main.py` | 13,814 | `8e1d3df54887b039808f1524fe3753638c486c1efb3539c1bfa4791e2dc0b009` |
@@ -147,7 +147,7 @@ L3 = แกน monitoring ล้วน (`normal` / `l3_investigate`) — ไม�
 | `rba-expert-review-2026-08-29` | `2bdbeb1348e77133415b084bf64c7093b3795319` | ส่งตรวจรอบ 1 = freeze + stability (B62/B63) + แยก access/monitoring (เฉพาะ sequence view) |
 | `rba-expert-review-2026-09-01` | commit ที่บรรจุไฟล์นี้ — `git rev-parse rba-expert-review-2026-09-01^{commit}` | **ส่งตรวจรอบ 2** = รอบ 1 + L3 orchestrator เดียว + ถอด IForest ออกจาก access (B66) |
 
-**commit ของโค้ด/หลักฐานในรอบนี้:** `3314ec22a22af88b6e0896aa6bcbc10c30fe7a57`
+**commit ของโค้ด/หลักฐานในรอบนี้:** `d08f57c` (แก้ vocabulary + บทที่ 10 + ฟอนต์) — สืบทอดจาก `3314ec22a22af88b6e0896aa6bcbc10c30fe7a57` (แก้ L3)
 (hash ทุกไฟล์ใน §4 คำนวณจาก tree ณ commit นี้ — manifest ถูก commit ตามมาทีหลัง
 เพราะไฟล์บรรจุ SHA ของ commit ที่บรรจุตัวมันเองไม่ได้)
 
