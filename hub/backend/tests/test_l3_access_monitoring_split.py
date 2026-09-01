@@ -60,7 +60,11 @@ def _unified(res: L3.L3Result, point_score: float = 0.0) -> dict:
         "detected_by": views,
         "duplicate_ratio": None,
         "duplicate_window": 0,
-        "top_factors": [],
+        "diagnostic_factors": [],
+        "diagnostic_method": "robust_window_deviation_v1",
+        "baseline_version": "win-median-iqr-v1",
+        "model_attribution": [],
+        "model_attribution_caveat": None,
         "point": {
             "available": True,
             "anomaly_score": point_score,

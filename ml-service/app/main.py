@@ -304,6 +304,8 @@ class L3EvaluateRequest(BaseModel):
     # ผลของ L1/L2/L4 ที่ตัดสินเสร็จแล้ว — ใช้ "วัด" unique_to_l3 เท่านั้น
     # L3 ไม่มีทางเขียนค่ากลับไปที่ฟิลด์นี้ (ดู l3_unified.evaluate)
     access_decision: str = Field(default="allow", max_length=32)
+    # SHAP เป็นข้อมูล debug ตั้งแต่ 1 ก.ย. 2569 (B67) จึงไม่คำนวณให้ฟรีบน login path
+    explain: bool = Field(default=False, description="คำนวณ SHAP ด้วย (debug)")
 
     @field_validator("residual")
     @classmethod
@@ -321,7 +323,14 @@ def l3_evaluate(req: L3EvaluateRequest):
     monitoring อย่างเดียว (บังคับด้วย tests/test_l3_access_monitoring_split.py)
     """
     r = _redis()
-    data = L3U.evaluate(r, req.user_id, req.features, req.residual, req.access_decision)
+    data = L3U.evaluate(
+        r,
+        req.user_id,
+        req.features,
+        req.residual,
+        req.access_decision,
+        explain=req.explain,
+    )
     return {
         "data": data,
         "meta": {

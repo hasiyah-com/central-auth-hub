@@ -284,92 +284,147 @@ def fig_two_axes(out: Path) -> None:
     save(fig, out, "fig04_two_axes")
 
 
-# 5. SHAP อิ่มตัวเมื่อจุดหลุด distribution ทุกมิติ
-# ที่มา: l3_unified_2026-08-31.md §2.1 (วัดในคอนเทนเนอร์ ml-service)
+# 5. ความแม่นของคำอธิบายตามระดับคะแนน — SHAP เสื่อมก่อนคะแนนอิ่มตัว
+# ที่มา: l3_explainability_2026-09-01.md §3 (spike ครบ 6 มิติ x 7 ย่าน)
 def fig_shap_saturation(out: Path) -> None:
-    dims = [
-        "gap_log",
-        "scope",
-        "passkey\n_age_log",
-        "weekday\n_usage",
-        "hours_from\n_typical",
-        "sub_rarity",
+    labels = [
+        "0.48\n-0.51",
+        "0.51\n-0.53",
+        "0.54\n-0.60",
+        "0.59\n-0.64",
+        "0.69\n-0.71",
+        "0.71\n-0.72",
+        "0.7439\n(เพดาน)",
     ]
-    single = [0.5116, 0.4838, 0.4879, 0.4973, 0.5030, 0.4868]
-    allout = [0.7439] * 6
-    thr = 0.5580
+    shap = [6, 6, 6, 4, 3, 2, 1]
+    dev = [6, 6, 6, 6, 6, 6, 6]
+    x = list(range(len(labels)))
 
-    fig, axes = plt.subplots(1, 2, figsize=(9.2, 4.2), sharey=True)
-    for ax, vals, title, ok, sub in (
-        (
-            axes[0],
-            single,
-            "มิติเดียวผิดปกติ (ไม่ยิง)",
-            True,
-            "คะแนนต่างกันตามมิติ · SHAP ชี้มิติถูก 6/6",
-        ),
-        (
-            axes[1],
-            allout,
-            "ทุกมิติหลุด distribution (ยิง)",
-            False,
-            "คะแนนเท่ากันเป๊ะทุกกรณี · SHAP ชี้มิติถูก 1/6",
-        ),
-    ):
-        bars = ax.bar(dims, vals, color=C_GOOD if ok else C_BAD, width=0.6)
-        for b, v in zip(bars, vals):
-            ax.text(
-                b.get_x() + b.get_width() / 2,
-                v + 0.012,
-                f"{v:.4f}",
-                ha="center",
-                fontsize=8.5,
-            )
-        ax.axhline(thr, ls=":", lw=1.5, color=C_MUTE)
-        ax.set_title(title + "\n" + sub, fontsize=10.5, color=C_GOOD if ok else C_BAD)
-        ax.set_ylim(0, 0.88)
-        ax.tick_params(axis="x", labelsize=8)
-    axes[0].set_ylabel("คะแนน anomaly ของ sequence view")
-    axes[0].text(
-        2.5, thr + 0.022, f"เกณฑ์ยิง p99.9 = {thr}", ha="center", fontsize=9, color=C_MUTE
+    fig, ax = plt.subplots(figsize=(8.4, 4.6))
+    ax.plot(
+        x,
+        dev,
+        marker="o",
+        ms=10,
+        lw=3,
+        color=C_GOOD,
+        label="ส่วนเบี่ยงเบนรายมิติ (วิธีใหม่)",
+        zorder=4,
     )
-    fig.suptitle(
-        "รูปที่ 5  คำอธิบายเชื่อได้เฉพาะในย่านที่คะแนนยังไล่ระดับ (B67)",
-        fontsize=12,
+    ax.plot(
+        x, shap, marker="s", ms=10, lw=3, color=C_BAD, label="SHAP (วิธีเดิม)", zorder=4
+    )
+    for i, (a, b) in enumerate(zip(dev, shap)):
+        ax.text(i, a + 0.22, f"{a}/6", ha="center", fontsize=10, color=C_GOOD)
+        ax.text(i, b - 0.45, f"{b}/6", ha="center", fontsize=10, color=C_BAD)
+
+    # เส้นแบ่งจุดที่ระบบเริ่มขึ้นธง — SHAP เริ่มเสื่อมตรงนี้พอดี
+    ax.axvspan(-0.5, 2.5, color=C_MUTE, alpha=0.10, zorder=1)
+    ax.axvline(2.5, color=C_WARN, ls="--", lw=2, zorder=2)
+    ax.text(
+        2.42,
+        6.55,
+        "เกณฑ์แจ้งเตือน 0.5580",
+        ha="right",
+        fontsize=10.5,
+        color=C_WARN,
         fontweight="bold",
-        y=1.03,
+    )
+    ax.text(1.0, 0.72, "ยังไม่ขึ้นธง", ha="center", fontsize=10, color=C_MUTE)
+    ax.text(
+        4.5,
+        0.72,
+        "ขึ้นธงแล้ว — ย่านที่ใช้งานจริง",
+        ha="center",
+        fontsize=10.5,
+        color=C_BAD,
+        fontweight="bold",
+    )
+
+    ax.annotate(
+        "คะแนนชนเพดานตรงนี้\n(หลังจาก SHAP พังไปแล้ว)",
+        xy=(6, 1),
+        xytext=(4.15, 3.1),
+        fontsize=9.5,
+        color=C_MUTE,
+        ha="center",
+        arrowprops=dict(arrowstyle="->", color=C_MUTE, lw=1.4),
+    )
+
+    ax.set_xticks(x)
+    ax.set_xticklabels(labels, fontsize=9.5)
+    ax.set_xlabel("ช่วงคะแนนความผิดปกติของ sequence view", fontsize=11.5, labelpad=8)
+    ax.set_ylabel("จำนวนครั้งที่ชี้มิติถูก (จาก 6 มิติ)")
+    ax.set_ylim(0, 7)
+    ax.set_yticks([0, 2, 4, 6])
+    ax.set_xlim(-0.5, 6.5)
+    ax.legend(loc="center left", fontsize=10.5, framealpha=0.9)
+    ax.set_title("รูปที่ 5  ความแม่นของคำอธิบาย ตามระดับคะแนน (B67)")
+    ax.text(
+        0.5,
+        -0.245,
+        "SHAP เริ่มชี้ผิดตั้งแต่จุดที่ระบบขึ้นธง ซึ่งเกิดก่อนคะแนนชนเพดาน "
+        "· ส่วนเบี่ยงเบนรายมิติถูกต้องทุกย่าน",
+        transform=ax.transAxes,
+        ha="center",
+        fontsize=10,
+        color=C_MUTE,
     )
     save(fig, out, "fig05_shap_saturation")
 
 
-# 6. SHAP ของ sequence view — ตัวอย่างผลจริง
-# ที่มา: l3_unified_2026-08-31.md §2 (history 1,500 แถว · residual 9.0)
+# 6. ตัวอย่างคำอธิบายหลัก (robust deviation) จากผลจริง
+# ที่มา: l3_explainability_2026-09-01.md §4 — window ที่ทำให้ scope พุ่งเด่น
+#        history N(0,1) 1,500 แถว seed 42 · raw_score 0.7439 (ชนเพดาน)
 def fig_shap_example(out: Path) -> None:
     feats = [
+        "scope_ptp_w5",
+        "scope_slope_w5",
+        "scope_mean_w5",
         "passkey_age_log_ptp_w5",
-        "weekday_usage_slope_w5",
         "weekday_usage_ptp_w5",
-        "sub_rarity_ptp_w5",
-        "gap_log_ptp_w5",
     ]
-    contrib = [0.2207, 0.2165, 0.1910, 0.1900, 0.1817]
-    fig, ax = plt.subplots(figsize=(7.6, 3.6))
+    dev = [25.00, 15.72, 9.41, 6.03, 5.80]
+    is_target = [True, True, True, False, False]
+
+    fig, ax = plt.subplots(figsize=(7.8, 3.8))
     ys = range(len(feats))
-    bars = ax.barh(list(ys), contrib, color=C_L3, height=0.55)
-    for b, v in zip(bars, contrib):
+    bars = ax.barh(
+        list(ys), dev, height=0.58, color=[C_GOOD if t else C_MUTE for t in is_target]
+    )
+    for b, v in zip(bars, dev):
         ax.text(
-            b.get_width() + 0.004,
+            b.get_width() + 0.45,
             b.get_y() + b.get_height() / 2,
-            f"{v:.4f}",
+            f"{v:.2f}",
             va="center",
-            fontsize=9,
+            fontsize=10,
         )
     ax.set_yticks(list(ys))
-    ax.set_yticklabels(feats, fontsize=9)
+    ax.set_yticklabels(feats, fontsize=9.5)
     ax.invert_yaxis()
-    ax.set_xlim(0, 0.27)
-    ax.set_xlabel("สัดส่วนที่ฟีเจอร์นี้อธิบายสัญญาณของมุมมองตัวเอง")
-    ax.set_title("รูปที่ 6  คำอธิบายของ sequence view ที่เพิ่มเข้ามา (เดิมไม่มีเลย)")
+    ax.set_xlim(0, 29)
+    ax.set_xlabel("ส่วนเบี่ยงเบนจากพฤติกรรมปกติของผู้ใช้คนนี้ (เท่าของช่วงกระจาย)")
+    ax.set_title("รูปที่ 6  คำอธิบายหลักที่ส่งให้ผู้ดูแลระบบ")
+    ax.text(
+        0.5,
+        -0.30,
+        "ด้านที่ถูกทำให้ผิดปกติในการทดสอบคือ scope — คำอธิบายชี้ scope "
+        "ครบทั้งสามอันดับแรก (แท่งเขียว)",
+        transform=ax.transAxes,
+        ha="center",
+        fontsize=10,
+        color=C_MUTE,
+    )
+    ax.text(
+        0.5,
+        -0.40,
+        "เหตุการณ์นี้คะแนนชนเพดาน (0.7439) ซึ่งเป็นย่านที่วิธีเดิมชี้ผิด",
+        transform=ax.transAxes,
+        ha="center",
+        fontsize=10,
+        color=C_BAD,
+    )
     save(fig, out, "fig06_shap_example")
 
 

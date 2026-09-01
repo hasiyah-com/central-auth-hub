@@ -160,7 +160,9 @@ _L3_SUMMARY_KEYS = (
     "detected_by",
     "duplicate_ratio",
     "duplicate_window",
-    "top_factors",
+    "diagnostic_factors",
+    "diagnostic_method",
+    "baseline_version",
     "model_version",
 )
 

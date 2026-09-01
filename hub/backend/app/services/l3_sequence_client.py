@@ -107,7 +107,11 @@ UNIFIED_QUIET: dict = {
     "detected_by": [],
     "duplicate_ratio": None,
     "duplicate_window": 0,
-    "top_factors": [],
+    "diagnostic_factors": [],
+    "diagnostic_method": None,
+    "baseline_version": None,
+    "model_attribution": [],
+    "model_attribution_caveat": None,
     "point": {
         "available": False,
         "anomaly_score": 0.0,
@@ -138,7 +142,8 @@ def _coerce_unified(data: dict) -> dict:
     "normal" ที่นี่ — ไม่ปล่อยให้คำแปลกปลอมไหลเข้าไปถึง risk_engine
     """
     mon = data.get("monitoring_decision")
-    factors = data.get("top_factors")
+    diag = data.get("diagnostic_factors")
+    attrib = data.get("model_attribution")
     detected = data.get("detected_by")
 
     def _num(v):
@@ -146,6 +151,10 @@ def _coerce_unified(data: dict) -> dict:
             return float(v)
         except (TypeError, ValueError):
             return None
+
+    def _s(key: str) -> str | None:
+        v = data.get(key)
+        return v if isinstance(v, str) else None
 
     try:
         dup_window = int(data.get("duplicate_window") or 0)
@@ -163,9 +172,17 @@ def _coerce_unified(data: dict) -> dict:
         else [],
         "duplicate_ratio": _num(data.get("duplicate_ratio")),
         "duplicate_window": dup_window,
-        "top_factors": [f for f in factors if isinstance(f, dict)]
-        if isinstance(factors, list)
+        # คำอธิบายหลัก (robust deviation) — ตอบว่ามิติใดต่างจาก baseline ของผู้ใช้
+        "diagnostic_factors": [f for f in diag if isinstance(f, dict)]
+        if isinstance(diag, list)
         else [],
+        "diagnostic_method": _s("diagnostic_method"),
+        "baseline_version": _s("baseline_version"),
+        # SHAP — debug เท่านั้น ห้ามตีความเป็นสาเหตุ (B67)
+        "model_attribution": [f for f in attrib if isinstance(f, dict)]
+        if isinstance(attrib, list)
+        else [],
+        "model_attribution_caveat": _s("model_attribution_caveat"),
         "point": {
             "available": point.get("available") is True,
             "anomaly_score": _num(point.get("anomaly_score")) or 0.0,
@@ -195,6 +212,7 @@ async def evaluate_l3(
     features: list[float],
     residual: list[float] | None,
     access_decision: str = "allow",
+    explain: bool = False,
 ) -> dict:
     """POST /v1/l3-evaluate — L3 ทั้งสองมุมมองในครั้งเดียว.
 
@@ -217,6 +235,8 @@ async def evaluate_l3(
                     "features": [float(x) for x in features],
                     "residual": [float(x) for x in residual] if residual else None,
                     "access_decision": str(access_decision),
+                    # SHAP เป็น debug (B67) — ไม่ขอบน login path
+                    "explain": bool(explain),
                 },
             )
             r.raise_for_status()

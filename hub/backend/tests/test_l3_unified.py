@@ -55,10 +55,10 @@ def _features(n: int = 23) -> list[float]:
     return v
 
 
-async def _ok(resid, access="allow", tries: int = 4) -> dict:
+async def _ok(resid, access="allow", tries: int = 4, explain: bool = False) -> dict:
     """เรียกจนสำเร็จ — call แรกตอน cache เย็นอาจ timeout ตามที่ออกแบบไว้ (B63)."""
     for i in range(tries):
-        out = await evaluate_l3(USER, _features(), resid, access)
+        out = await evaluate_l3(USER, _features(), resid, access, explain=explain)
         if out["error"] is None:
             return out
         assert out["error"] == "l3_timeout", f"ml-service ไม่พร้อม: {out['error']}"
@@ -90,12 +90,12 @@ def _reset_dup(r):
 @pytest.mark.asyncio
 async def test_sequence_view_returns_shap(seeded):
     """residual สุดโต่ง -> sequence ยิง **และ** อธิบายได้ว่าฟีเจอร์ไหนดัน."""
-    out = await _ok([9.0] * L3.DIMS)
+    out = await _ok([9.0] * L3.DIMS, explain=True)
     seq = out["sequence"]
     assert seq["fired"] is True, f"ควรยิงที่ residual สุดโต่ง (ได้ {seq})"
     assert "sequence_residual" in out["detected_by"]
 
-    factors = [f for f in out["top_factors"] if f["owner"] == "l3_sequence"]
+    factors = [f for f in out["model_attribution"] if f["owner"] == "l3_sequence"]
     assert factors, "sequence ยิงแล้วต้องมี SHAP อธิบาย — เดิมไม่มีเลย"
     for f in factors:
         assert f["feature"] in EXPECTED_SEQ_FEATURES, f"ชื่อฟีเจอร์แปลก: {f['feature']}"
@@ -112,9 +112,11 @@ async def test_sequence_shap_names_cover_all_three_stats(seeded):
     """
     seen: set[str] = set()
     for mag in (6.0, 9.0, 12.0):
-        out = await _ok([mag] * L3.DIMS)
+        out = await _ok([mag] * L3.DIMS, explain=True)
         seen |= {
-            f["feature"] for f in out["top_factors"] if f["owner"] == "l3_sequence"
+            f["feature"]
+            for f in out["model_attribution"]
+            if f["owner"] == "l3_sequence"
         }
     assert seen, "ไม่ได้ SHAP ของ sequence เลย"
     assert seen <= EXPECTED_SEQ_FEATURES, f"ชื่อนอกรายการ: {seen - EXPECTED_SEQ_FEATURES}"
@@ -132,7 +134,7 @@ async def test_abstain_user_has_no_sequence_factors():
     out = await evaluate_l3(USER, _features(), [0.1] * L3.DIMS, "allow")
     assert out["sequence"]["eligibility"] == "abstain"
     assert "sequence_residual" not in out["detected_by"]
-    assert not [f for f in out["top_factors"] if f["owner"] == "l3_sequence"]
+    assert not [f for f in out["diagnostic_factors"] if f["owner"] == "l3_sequence"]
 
 
 # ══════════════════ 2. duplicate ratio + unique_to_l3 (runtime) ══════════════════
@@ -195,7 +197,8 @@ async def test_unified_contract_shape(seeded):
         "detected_by",
         "duplicate_ratio",
         "duplicate_window",
-        "top_factors",
+        "diagnostic_factors",
+        "model_attribution",
     ):
         assert key in out, f"ขาดฟิลด์ {key}"
     assert out["monitoring_decision"] in ("normal", "l3_investigate")
@@ -207,18 +210,18 @@ async def test_unified_contract_shape(seeded):
 
 @pytest.mark.asyncio
 async def test_every_factor_declares_its_owner(seeded):
-    """ทุก factor ต้องบอกว่ามาจากมุมมองไหน — ไม่งั้นอ่าน top_factors ไม่ออก."""
-    out = await _ok([9.0] * L3.DIMS)
-    assert out["top_factors"], "ยิงแล้วต้องมีคำอธิบาย"
-    for f in out["top_factors"]:
+    """ทุก factor ต้องบอกว่ามาจากมุมมองไหน — ไม่งั้นอ่านรายการไม่ออก."""
+    out = await _ok([9.0] * L3.DIMS, explain=True)
+    assert out["model_attribution"], "ยิงแล้วต้องมี attribution"
+    for f in out["model_attribution"]:
         assert f["owner"] in ("l3_point", "l3_sequence"), f"owner ไม่ถูกต้อง: {f}"
         assert f["feature"]
 
 
 @pytest.mark.asyncio
 async def test_factors_sorted_by_contribution(seeded):
-    out = await _ok([9.0] * L3.DIMS)
-    contribs = [f["contribution"] for f in out["top_factors"]]
+    out = await _ok([9.0] * L3.DIMS, explain=True)
+    contribs = [f["contribution"] for f in out["model_attribution"]]
     assert contribs == sorted(contribs, reverse=True)
 
 
@@ -244,7 +247,8 @@ async def test_ml_service_unreachable_is_quiet(monkeypatch):
     assert out["error"] is not None
     assert out["monitoring_decision"] == "normal"
     assert out["is_anomaly"] is False
-    assert out["top_factors"] == []
+    assert out["diagnostic_factors"] == []
+    assert out["model_attribution"] == []
 
 
 # ══════════════ 5. parity ของลำดับ 18 มิติ (ความเสี่ยงแบบ B49) ══════════════
@@ -259,7 +263,7 @@ async def test_shap_names_point_at_the_right_dimension(seeded):
     ฟีเจอร์ผิดตัวเงียบๆ — คำอธิบายดูสมเหตุสมผลแต่ผิด ซึ่งอันตรายกว่าไม่มีคำอธิบายเลย
     (บทเรียน B49: ลำดับ feature คือสัญญา ผิดแล้วไม่มี error ให้เห็น)
 
-    **อ่าน `sequence.explanation` ไม่ใช่ `top_factors`** โดยตั้งใจ: มิติเดียวที่ผิดปกติ
+    **อ่าน `sequence.explanation` ไม่ใช่ `diagnostic_factors`** โดยตั้งใจ: มิติเดียวที่ผิดปกติ
     ไม่ทำให้โมเดล joint-residual ยิง (คุณสมบัติจริง ดู reports/l3_unified_2026-08-31.md
     §2.1) ซึ่งเป็นย่านที่ SHAP ยัง *แยกแยะมิติได้* — ต่างจากตอนทุกมิติหลุด
     distribution พร้อมกันที่ SHAP อิ่มตัว
@@ -271,7 +275,7 @@ async def test_shap_names_point_at_the_right_dimension(seeded):
     for j, dim in enumerate(DIM_NAMES):
         cur = [0.0] * L3.DIMS
         cur[j] = 25.0
-        out = await _ok(cur)
+        out = await _ok(cur, explain=True)
         expl = out["sequence"]["explanation"]
         assert expl, f"{dim}: ไม่ได้ SHAP กลับมาเลย"
         top = expl[0]["feature"]
@@ -287,7 +291,7 @@ async def test_shap_names_point_at_the_right_dimension(seeded):
 @pytest.mark.asyncio
 async def test_all_shap_names_are_valid_and_unique(seeded):
     """ชื่อที่ออกมาต้องอยู่ในรายการ 18 ตัว และไม่ซ้ำกันเอง (mask keep map ถูกต้อง)."""
-    out = await _ok([9.0] * L3.DIMS)
+    out = await _ok([9.0] * L3.DIMS, explain=True)
     names = [f["feature"] for f in out["sequence"]["explanation"]]
     assert names, "ไม่ได้ SHAP"
     assert (

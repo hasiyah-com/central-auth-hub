@@ -26,7 +26,7 @@ REPORTS = ROOT / "hub" / "backend" / "tests" / "reports"
 # manifest แต่ละรอบเป็นคนละไฟล์ — **ห้ามเขียนทับของเดิม** เพราะ tag เก่าอ้างไฟล์นั้นอยู่
 # (เขียนทับ = หลักฐานของ freeze รอบก่อนหายไป ตรวจย้อนไม่ได้)
 MANIFEST_DIR = ROOT / "docs"
-MANIFEST_DEFAULT = MANIFEST_DIR / "RBA_EVIDENCE_MANIFEST_2026-09-01.md"
+MANIFEST_DEFAULT = MANIFEST_DIR / "RBA_EVIDENCE_MANIFEST_2026-09-01-r2.md"
 
 # ── ชุดหลักฐาน: รายงานการทดลอง (เรียงตามลำดับที่ทำจริง) ──
 EVIDENCE_REPORTS = [
@@ -58,6 +58,7 @@ EVIDENCE_REPORTS = [
     "l3_stability_2026-08-29.md",
     "l3_shadow_replay_2026-08-29.md",
     "l3_unified_2026-08-31.md",
+    "l3_explainability_2026-09-01.md",
 ]
 
 # ── โค้ดที่ผลิตตัวเลข (harness ทดลอง + production ที่ถูกวัด) ──
@@ -89,6 +90,8 @@ EVIDENCE_CODE = [
     "ml-service/app/main.py",
     "hub/backend/app/security/iforest_scorer.py",
     "hub/backend/tests/test_l3_unified.py",
+    # รอบ r2 (1 ก.ย. 2569) — คำอธิบายหลักเปลี่ยนเป็น robust deviation (B67)
+    "hub/backend/tests/test_l3_explainability.py",
 ]
 
 # ── configuration ที่ล็อกไว้: ดึงจาก source จริง ไม่ hardcode ในเอกสาร ──

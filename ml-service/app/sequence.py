@@ -58,6 +58,11 @@ STAT_NAMES = ["mean", "slope", "ptp"]
 SEQ_FEATURE_NAMES = [f"{d}_{s}_w{WINDOW}" for s in STAT_NAMES for d in DIM_NAMES]
 SEQ_FEATURE_COUNT = DIMS * len(STAT_NAMES)
 
+# คำอธิบายหลักที่ส่งให้ SOC — ดู robust_deviation() และ B67
+DIAGNOSTIC_METHOD = "robust_window_deviation_v1"
+BASELINE_VERSION = "win-median-iqr-v1"
+DIAG_TOP_K = 5
+
 REDIS_KEY = "l3resid:{user_id}"
 CACHE_TTL_SEC = 3600
 # user -> (ts, n_raw ตอน fit, model, n_parsed)
@@ -76,6 +81,9 @@ QUIET = {
     "n_history": 0,
     "model_version": MODEL_VERSION,
     "explanation": [],
+    "diagnostic_factors": [],
+    "diagnostic_method": DIAGNOSTIC_METHOD,
+    "baseline_version": BASELINE_VERSION,
 }
 
 
@@ -104,6 +112,10 @@ class L3Model:
     # ต่อการ fit ไม่ใช่ต่อ request (สร้างใหม่ทุกครั้ง = คอขวดแบบเดียวกับ B63)
     explainer: Any = None
     explainer_status: str = "uninitialized"
+    # baseline ของ window feature ทั้ง 18 มิติ (median / IQR ของชุดที่ใช้ fit)
+    # ใช้ตอบคำถาม "มิติไหนต่างจากปกติของคนนี้" ซึ่ง SHAP ตอบไม่ได้ (ดู B67)
+    win_med: Any = None
+    win_iqr: Any = None
 
 
 def _center_scale(col) -> tuple[float, float]:
@@ -155,6 +167,11 @@ def fit_user_model(
         keep = X.std(axis=0) > 1e-9
         if not keep.any():
             return None
+        # baseline รายมิติจาก window ที่ใช้ fit — ทนต่อค่าสุดโต่งกว่า mean/std
+        win_med = np.median(X, axis=0)
+        win_iqr = np.maximum(
+            np.quantile(X, 0.75, axis=0) - np.quantile(X, 0.25, axis=0), 1e-6
+        )
         forest = IsolationForest(
             n_estimators=100, contamination=0.02, random_state=42
         ).fit(X[:, keep])
@@ -169,6 +186,8 @@ def fit_user_model(
             extreme_threshold=float(np.quantile(a, 1 - EXTREME_FPR)),
             dist=np.quantile(a, np.linspace(0.0, 1.0, 101)),
             base=base,
+            win_med=win_med,
+            win_iqr=win_iqr,
         )
     except Exception as e:  # noqa: BLE001
         logger.warning("[sequence] fit error: %s", e)
@@ -234,6 +253,48 @@ def explain_row(model: L3Model, x_kept, top_k: int = SEQ_TOP_K) -> list[dict]:
         return []
 
 
+def robust_deviation(model: L3Model, x_full, top_k: int = DIAG_TOP_K) -> list[dict]:
+    """ส่วนเบี่ยงเบนรายมิติเทียบ baseline ของผู้ใช้คนนี้ — คำอธิบายหลักที่ส่งให้ SOC.
+
+        d_j = (x_j - median(X_fit_j)) / max(IQR(X_fit_j), eps)
+
+    **ทำไมไม่ใช้ SHAP ตอบคำถามนี้ (B67):** ความแม่นของ `tree_path_dependent` SHAP
+    ในการระบุมิติที่ถูกทำให้ผิดปกติ เริ่มลดลงตั้งแต่ช่วงที่คะแนน**ผ่านเกณฑ์แจ้งเตือน**
+    ซึ่งเกิด**ก่อน**ที่ anomaly score จะชนเพดาน วัดได้ 6/6 -> 4/6 -> 2/6 -> 1/6
+    ขณะที่คะแนนยังแยกกันได้ครบ (ดู reports/l3_explainability_2026-09-01.md)
+
+    ค่านี้คำนวณตรงจากข้อมูล ไม่ผ่านโมเดล จึงไม่มีเพดาน ไม่ขึ้นกับโครงสร้างต้นไม้
+    และตอบตรงคำถามที่ SOC ถามจริง ("ส่วนใดต่างจากปกติของคนนี้")
+
+    `x_full` คือแถว 18 มิติ **ก่อน** ใช้ mask `keep` — index จึงตรงกับ
+    SEQ_FEATURE_NAMES ตรงตำแหน่ง ไม่ต้อง map กลับ
+    """
+    if model is None or model.win_med is None or model.win_iqr is None:
+        return []
+    try:
+        x = np.asarray(x_full, dtype=float)
+        if x.shape != (SEQ_FEATURE_COUNT,) or not np.isfinite(x).all():
+            return []
+        d = (x - model.win_med) / model.win_iqr
+        order = np.argsort(-np.abs(d))[:top_k]
+        return [
+            {
+                "feature": SEQ_FEATURE_NAMES[int(i)],
+                "deviation": round(float(d[i]), 4),
+                # above/below ไม่ใช่ increasing/decreasing โดยตั้งใจ — ฟีเจอร์ mean
+                # และ ptp ไม่มีความหมายเชิงทิศทางเวลา มีแต่ slope ที่มี
+                "direction": "above" if d[i] > 0 else "below",
+                "value": round(float(x[i]), 4),
+                "baseline_median": round(float(model.win_med[i]), 4),
+                "baseline_iqr": round(float(model.win_iqr[i]), 4),
+            }
+            for i in order
+        ]
+    except Exception as e:  # noqa: BLE001
+        logger.warning("[sequence] robust deviation error: %s", e)
+        return []
+
+
 def explainer_status(model: L3Model | None) -> str:
     return model.explainer_status if model is not None else "no_model"
 
@@ -251,9 +312,13 @@ def evaluate_window(
         X = _windows(_to_residual(raw, model.base))
         if len(X) == 0:
             return dict(QUIET)
+        x_full = X[0]
         x_kept = X[:, model.keep][0]
         a = float(-model.forest.score_samples(X[:, model.keep])[0])
         elig = eligibility(model.n_history)
+        # คำอธิบายหลัก — คำนวณเสมอ (numpy 18 ค่า ราคาแทบเป็นศูนย์)
+        diag = robust_deviation(model, x_full)
+        # SHAP เป็นข้อมูลเสริมสำหรับ debug เท่านั้น (B67) จึงคำนวณเมื่อขอ
         expl = explain_row(model, x_kept) if explain else []
         pct = (
             float(np.searchsorted(model.dist, a) / 100.0)
@@ -268,6 +333,7 @@ def evaluate_window(
             "eligibility": elig,
             "n_history": model.n_history,
             "explanation": expl,
+            "diagnostic_factors": diag,
         }
         if a < model.threshold:
             return out

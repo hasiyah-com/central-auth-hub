@@ -643,8 +643,10 @@ docker compose exec ml-service python -m scripts.train_model
 → **กฎ:** harness ต้องเรียกเส้นทางเดียวกับ production หรือมีเทสพิสูจน์ว่าคอนฟิกตรงกัน · ตัวเลขประสิทธิภาพผูกกับ**คอนฟิก** ไม่ใช่แค่โมเดล · ถ้าจงใจปิดชั้นใดตอนวัด ต้องปิดที่ production ด้วย
 → **Verify:** `tests/test_l3_access_monitoring_split.py::test_point_view_never_moves_access_decision`
 
-**B67. คำอธิบายของ anomaly detector เชื่อได้เฉพาะในย่านที่คะแนนยังไล่ระดับ** — จุดที่หลุด distribution ทุกมิติถูก IForest isolate ที่ความลึกเท่ากันหมด → คะแนนอิ่มตัว SHAP จึงชี้ฟีเจอร์เดิมทุกครั้งไม่ว่ามิติไหนผิดจริง (วัดได้: 6 window ต่างกัน ได้ 0.7439 เท่ากันเป๊ะ)
-→ **กฎ:** อย่ารายงาน top SHAP feature เป็น "สาเหตุ" โดยไม่ตรวจว่าคะแนนอยู่ในย่านที่แยกแยะได้ · เทสที่พิสูจน์ว่า SHAP mapping ถูก ต้องทำในย่านแยกแยะได้ ไม่ใช่ย่านอิ่มตัว
+**B67. คำอธิบายของ anomaly detector เสื่อม *ก่อน* คะแนนอิ่มตัว — พังพอดีในย่านที่ใช้งานจริง** — SHAP ของ L3 sequence ชี้มิติถูก 6/6 ตอนคะแนนต่ำ แต่พอผ่านเกณฑ์แจ้งเตือนร่วงเป็น 4/6 → 2/6 → 1/6 **ทั้งที่คะแนนยังแยกกันได้ครบ** เพราะเมื่อจุดหลุด distribution หลายมิติ ต้นไม้ส่วนใหญ่ตัดจบตั้งแต่ปมแรก → attribution กลายเป็นคุณสมบัติของโครงสร้างโมเดล ไม่ใช่ของข้อมูล
+→ **กฎ:** อย่ารายงาน SHAP เป็น "สาเหตุ" หรือ "มิติที่เบี่ยงเบนมากที่สุด" — ใช้ **robust deviation** `(x−median)/IQR` บนอินพุตจริงที่โมเดลใช้ (18 มิติ ไม่ใช่ residual 6 ค่า) · ชื่อฟิลด์ห้ามสื่อเกินหลักฐาน (`diagnostic_factors` = ข้อมูล · `model_attribution` = debug + caveat)
+→ **บทเรียนวิธีวิทยา:** รอบแรกสรุปเหตุ-ผลผิดจากการวัด **2 จุดปลายทาง** ที่บังเอิญอยู่คนละฝั่งของทั้งเกณฑ์และเพดาน — อนุมานสาเหตุจากสองจุดปลาย ต้องมีจุดกลางยืนยันเสมอ
+→ **Verify:** `tests/test_l3_explainability.py` (spike ครบ 6 มิติ × 7 ย่าน)
 
 ### หมวดบั๊กเพิ่มเติม (ดูรายละเอียดใน `docs/bugs-encountered.md`)
 
@@ -663,7 +665,7 @@ docker compose exec ml-service python -m scripts.train_model
 | 🚨 Risk-Triggered MFA (Week 9-10) | B44-B48 | Hard block threshold at finalizer, Force-enroll OTP gate, Browser unsupported → Recovery, atomic consume, runtime grace period |
 | 🧠 ML Feature Expansion (Week 10-11) | B49 | Feature reorder ลืม sync rule_engine.FEAT (score มั่ว) + train/serve skew (synthetic ≠ ค่าจริง) |
 | 🎓 Subsystem C (เกรด) + SOC Dashboard + User 360 (Week 10-11) | B50-B55 | Access policy ขัด docstring (teacher login ไม่ได้), falsy-zero KPI (`\|\|` กับ 0 จริง), force-logout ขาด webhook back-channel, relative-time parse naive-UTC เป็น local (+7ชม.), health-check เข้า `localhost:PORT` จาก container ไม่ได้ (503 gate), subsystem ใหม่ลืม session_cookie_secure |
-| 🧪 Measurement Integrity / Redaction (Week 12-13) | B64-B67 | การทดลองวัดคนละคอนฟิกกับ production (12.5% ของการตัดสิน), SHAP อิ่มตัวเมื่อ OOD, `--replace-text` ไม่แตะไฟล์ ZIP, redactor+scanner จุดบอดร่วม |
+| 🧪 Measurement Integrity / Explainability (Week 12-13) | B64-B67 | การทดลองวัดคนละคอนฟิกกับ production (12.5% ของการตัดสิน), SHAP เสื่อมก่อนคะแนนอิ่มตัว, `--replace-text` ไม่แตะไฟล์ ZIP, redactor+scanner จุดบอดร่วม |
 
 ### วิธีเพิ่ม bug ใหม่
 

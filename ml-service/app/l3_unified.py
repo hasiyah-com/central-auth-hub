@@ -85,7 +85,9 @@ def _point_view(features: list[float]) -> dict:
         return {**quiet, "error": f"point_error: {type(e).__name__}"}
 
 
-def _sequence_view(redis, user_id: str, residual: list[float]) -> dict:
+def _sequence_view(
+    redis, user_id: str, residual: list[float], explain: bool = False
+) -> dict:
     """IForest residual 18 มิติ + SHAP — abstain เงียบเมื่อประวัติไม่พอ."""
     if not residual:
         # hub ปิดแฟล็ก sequence หรือคำนวณ residual ไม่ได้ -> ไม่ใช่ error
@@ -93,7 +95,7 @@ def _sequence_view(redis, user_id: str, residual: list[float]) -> dict:
     if redis is None:
         return {**dict(SEQ.QUIET), "error": "redis_unavailable"}
     try:
-        return {**SEQ.score(redis, user_id, residual, explain=True), "error": None}
+        return {**SEQ.score(redis, user_id, residual, explain=explain), "error": None}
     except Exception as e:  # noqa: BLE001
         logger.warning("[l3_unified] sequence view error: %s", e)
         return {**dict(SEQ.QUIET), "error": f"sequence_error: {type(e).__name__}"}
@@ -104,15 +106,38 @@ def _sequence_flags(seq: dict) -> bool:
     return bool(seq.get("fired")) and seq.get("eligibility") in ("warn", "challenge")
 
 
-def _merge_factors(point: dict, seq: dict, views: list[str]) -> list[dict]:
-    """รวม SHAP สองมุมมองเป็นรายการเดียว ติดป้าย owner กำกับทุกตัว.
+ATTRIBUTION_CAVEAT = (
+    "SHAP attribution ไม่ใช่สาเหตุ และไม่ใช่มิติที่เบี่ยงเบนมากที่สุด — "
+    "ความแม่นในการระบุมิติเริ่มลดลงตั้งแต่ช่วงที่คะแนนผ่านเกณฑ์แจ้งเตือน "
+    "(ก่อน anomaly score ชนเพดาน) ใช้เพื่อ debug โมเดลเท่านั้น · "
+    "ถ้าต้องการรู้ว่ามิติใดต่างจากปกติของผู้ใช้ ให้ดู diagnostic_factors"
+)
+
+
+def _diagnostic_factors(seq: dict, views: list[str]) -> list[dict]:
+    """คำอธิบายหลัก — ส่วนเบี่ยงเบนรายมิติเทียบ baseline ของผู้ใช้คนนั้น (B67).
+
+    มาจาก sequence view เท่านั้น เพราะเป็นมุมมองเดียวที่มี baseline รายบุคคล
+    ส่วน point view ใช้โมเดลตัวเดียวกับทุกคน จึงไม่มี "ปกติของคนนี้" ให้เทียบ
+    """
+    if VIEW_SEQUENCE not in views:
+        return []
+    return [
+        {**f, "owner": OWNER_SEQUENCE} for f in (seq.get("diagnostic_factors") or [])
+    ][:TOP_K]
+
+
+def _model_attribution(point: dict, seq: dict, views: list[str]) -> list[dict]:
+    """SHAP ของทั้งสองมุมมอง — **ข้อมูลเสริมสำหรับ debug ไม่ใช่คำอธิบายที่ส่งให้ SOC**.
+
+    เดิมฟิลด์นี้ชื่อ `top_factors` ซึ่งอ่านแล้วเข้าใจว่าเป็น "ปัจจัยหลัก" หรือสาเหตุ
+    เปลี่ยนชื่อเป็น model_attribution เพื่อไม่ให้สื่อเกินกว่าที่หลักฐานรองรับ (B67)
 
     `contribution` = สัดส่วนภายในมุมมองของตัวเอง (|shap| / ผลรวม |shap| ของมุมมองนั้น)
-    **เทียบข้ามมุมมองตรงๆ ไม่ได้** — SHAP ของสองโมเดลอยู่คนละสเกล จึง normalize
-    ให้อ่านได้ว่า "ฟีเจอร์นี้อธิบายสัญญาณของมุมมองตัวเองกี่เปอร์เซ็นต์" และคง `shap`
-    ค่าดิบไว้ด้วยเพื่อไม่ให้ข้อมูลหาย
+    เทียบข้ามมุมมองตรงๆ ไม่ได้ เพราะ SHAP ของสองโมเดลอยู่คนละสเกล
 
-    เอาเฉพาะมุมมองที่ยิงจริง — มุมมองที่เงียบไม่มีอะไรให้อธิบาย
+    หมายเหตุขอบเขต: ข้อจำกัดที่วัดไว้เป็นของ sequence view (18 มิติ) ส่วน point view
+    (23 คุณลักษณะ) **ยังไม่ได้วัด** ปัญหาแบบเดียวกัน จึงยังสรุปแทนกันไม่ได้
     """
     out: list[dict] = []
     for view, owner, src in (
@@ -174,6 +199,7 @@ def evaluate(
     features: list[float],
     residual: list[float] | None,
     access_decision: str = "allow",
+    explain: bool = False,
 ) -> dict:
     """ประเมิน L3 ทั้งสองมุมมอง คืนผลเดียว.
 
@@ -183,7 +209,7 @@ def evaluate(
     ออกทาง monitoring_decision อย่างเดียว
     """
     point = _point_view(features)
-    seq = _sequence_view(redis, user_id, residual)
+    seq = _sequence_view(redis, user_id, residual, explain=explain)
 
     views: list[str] = []
     if point.get("is_anomaly"):
@@ -210,7 +236,13 @@ def evaluate(
         "detected_by": views,
         "duplicate_ratio": dup_ratio,
         "duplicate_window": dup_window,
-        "top_factors": _merge_factors(point, seq, views),
+        # คำอธิบายหลักที่ส่งให้ SOC — ตอบว่า "ส่วนใดต่างจาก baseline ของผู้ใช้นี้"
+        "diagnostic_factors": _diagnostic_factors(seq, views),
+        "diagnostic_method": seq.get("diagnostic_method") or SEQ.DIAGNOSTIC_METHOD,
+        "baseline_version": seq.get("baseline_version") or SEQ.BASELINE_VERSION,
+        # SHAP — debug เท่านั้น ห้ามตีความเป็นสาเหตุ (B67)
+        "model_attribution": _model_attribution(point, seq, views),
+        "model_attribution_caveat": ATTRIBUTION_CAVEAT,
         # ผลดิบของแต่ละมุมมอง — เก็บไว้ replay/ตรวจย้อน (ไม่ใช้ตัดสินอะไรเพิ่ม)
         "point": point,
         "sequence": seq,

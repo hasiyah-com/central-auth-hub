@@ -51,7 +51,7 @@ const P = (text, o = {}) =>
 const Rich = (runs, o = {}) =>
   new Paragraph({
     alignment: o.align,
-    spacing: { before: o.before ?? 0, after: o.after ?? 140, line: 456 },
+    spacing: { before: o.before ?? 0, after: o.after ?? 140, line: 376 },
     indent: o.indent, shading: o.shading, border: o.border,
     children: runs.map((r) =>
       typeof r === "string"
@@ -72,14 +72,14 @@ const H = (text, level) =>
 const Bullet = (text, lvl = 0) =>
   new Paragraph({
     numbering: { reference: "bullets", level: lvl },
-    spacing: { after: 80, line: 441 },
+    spacing: { after: 80, line: 366 },
     children: [new TextRun({ text, font: FONT, size: 32, color: "1A1A1A" })],
   });
 
 // กล่องเน้นข้อความ (ใช้ shading + เส้นซ้าย แทนตาราง)
 const Callout = (runs, warn = false) =>
   new Paragraph({
-    spacing: { before: 140, after: 160, line: 456 },
+    spacing: { before: 140, after: 160, line: 376 },
     indent: { left: 200, right: 120 },
     shading: { type: ShadingType.CLEAR, fill: warn ? C.boxWarn : C.box },
     border: { left: { style: BorderStyle.SINGLE, size: 18, space: 10,
@@ -124,7 +124,7 @@ function Tbl(headers, rows, widths) {
       margins: { top: 70, bottom: 70, left: 110, right: 110 },
       children: [new Paragraph({
         alignment: o.i === 0 ? AlignmentType.LEFT : AlignmentType.CENTER,
-        spacing: { after: 0, line: 395 },
+        spacing: { after: 0, line: 340 },
         children: [new TextRun({ text: String(text), font: FONT, size: 29,
                                  bold: o.headRow || o.bold,
                                  color: o.headRow ? "FFFFFF" : (o.color ?? "1A1A1A") })],
@@ -572,7 +572,9 @@ add(
   Callout([
     "รายละเอียดทั้งหมดของการแก้ไขรอบนี้ — วิธีวัดผลกระทบ 128 รายการ " +
     "โครงสร้างการรวมสองแบบจำลอง คำอธิบายรายคุณลักษณะ ตัวชี้วัดสัญญาณซ้ำ " +
-    "และข้อจำกัดที่พบใหม่เรื่องคำอธิบายอิ่มตัว — อยู่ในเอกสารฉบับที่สอง ",
+    "และข้อค้นพบเรื่องความน่าเชื่อถือของคำอธิบาย ซึ่งพบว่าวิธีคำนวณแบบเดิม" +
+    "ชี้ด้านผิดในช่วงที่ระบบส่งสัญญาณจริง จึงเปลี่ยนวิธีอธิบายผลทั้งหมด " +
+    "— อยู่ในเอกสารฉบับที่สอง ",
     { t: "RBA_L3_Unified_Report_TH.docx", b: true },
     " ซึ่งถือเป็นเอกสารบังคับอ่านคู่กับฉบับนี้ ไม่ใช่เอกสารประกอบ",
   ]),
