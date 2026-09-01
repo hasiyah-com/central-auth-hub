@@ -120,6 +120,19 @@ class Settings(BaseSettings):
     # ให้ปล่อยผ่านไปเลย แล้วรอบถัดไปค่อยได้ผลจาก cache — เสีย 1 เหตุการณ์ ดีกว่าถ่วงทุก login
     l3_timeout_seconds: float = 0.5
 
+    # ── L3 mode (rollout) — off | shadow | hybrid_stepup ──
+    # off           : ไม่เรียก L3 เลย
+    # shadow        : เรียก เก็บหลักฐาน แต่ L4 ไม่นับ (ค่าเริ่มต้น — ปลอดภัยที่สุด)
+    # hybrid_stepup : L4 นับหลักฐาน L3 ด้วย · ยกได้สูงสุด challenge (ห้าม block เดี่ยว)
+    # ยังไม่มีโหมด hybrid_block โดยตั้งใจ จนกว่าจะมี production replay มากพอ
+    l3_mode: str = "shadow"
+
+    # ── L4 fusion — ต้องเลือกจาก validation แล้ว freeze ก่อนแตะ final holdout ──
+    l4_gamma: float = 0.35
+    l4_threshold_warn: float = 0.50
+    l4_threshold_challenge: float = 0.70
+    l4_threshold_block: float = 0.85
+
     # GeoIP (MaxMind GeoLite2 offline DB) — fail-safe ถ้าไฟล์หาย
     # ดาวน์โหลดฟรีที่ https://www.maxmind.com/en/geolite2/signup
     geoip_db_path: str = "/app/data/GeoLite2-Country.mmdb"
