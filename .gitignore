@@ -8,6 +8,7 @@ design-bundle.bin
 .env.*.local
 .env.prod
 .env.*.prod
+.env.test
 *.pem
 *.key
 keys/
