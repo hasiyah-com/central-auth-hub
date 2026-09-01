@@ -398,7 +398,7 @@ export default function DeveloperSubsystemDetailPage({
     return (
       <>
         <Topbar title="ระบบย่อย" />
-        <main className="p-8 max-w-3xl mx-auto">
+        <main className="signal-page signal-page-compact">
           <div className="p-4 rounded-lg bg-rose-50 border border-rose-200 text-rose-700 text-sm mb-4">
             {error}
           </div>
@@ -417,7 +417,7 @@ export default function DeveloperSubsystemDetailPage({
     return (
       <>
         <Topbar title="ระบบย่อย" />
-        <main className="p-8 max-w-3xl mx-auto text-ink-400 text-sm">
+        <main className="signal-page signal-page-compact text-sm text-ink-400">
           กำลังโหลด…
         </main>
       </>
@@ -532,7 +532,7 @@ export default function DeveloperSubsystemDetailPage({
         </div>
       )}
       <Topbar title={sub.name} />
-      <main className="p-8 max-w-7xl mx-auto w-full space-y-6">
+      <main className="signal-page space-y-6">
         {/* Header */}
         <div className="flex items-end justify-between gap-4 flex-wrap">
           <div>

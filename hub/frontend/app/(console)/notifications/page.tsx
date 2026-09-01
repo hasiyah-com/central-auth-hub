@@ -212,7 +212,7 @@ export default function NotificationsPage() {
   return (
     <>
       <Topbar title="แจ้งเตือนทั้งหมด" />
-      <main className="p-8 max-w-7xl mx-auto w-full space-y-5">
+      <main className="signal-page space-y-5">
         {/* Header */}
         <div className="flex items-end justify-between gap-3 flex-wrap">
           <div>

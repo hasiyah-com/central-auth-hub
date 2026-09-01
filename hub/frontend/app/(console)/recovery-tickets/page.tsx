@@ -98,7 +98,7 @@ export default function RecoveryTicketsPage() {
         </div>
       )}
       <Topbar title="คำขอกู้บัญชี (Recovery Tickets)" />
-      <main className="p-8 max-w-4xl mx-auto w-full">
+      <main className="signal-page signal-page-compact">
         <p className="text-xs text-ink-500 mb-4">
           {/* ⚠️ ยืนยันตัวตนผู้ขอ<strong>ต่อหน้า</strong> (บัตร นศ./ปชช.) ก่อนอนุมัติเสมอ —
           HIGH ต้อง admin 2 คน (four-eyes) */}

@@ -124,7 +124,7 @@ export default function PendingRequestsPage() {
   return (
     <>
       <Topbar title="คำขอ Approve · Developer Change Requests" />
-      <main className="p-8 max-w-6xl mx-auto w-full space-y-6">
+      <main className="signal-page signal-page-compact space-y-6">
         <div className="flex items-end justify-between gap-3 flex-wrap">
           <div>
             <h2 className="text-sm font-bold text-ink-500 uppercase tracking-wider">

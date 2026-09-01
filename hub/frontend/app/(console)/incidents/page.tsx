@@ -72,7 +72,7 @@ export default function IncidentsPage() {
   return (
     <>
       <Topbar title="เหตุการณ์เสี่ยง (Incidents)" />
-      <main className="p-8 max-w-7xl mx-auto w-full">
+      <main className="signal-page">
         {/* KPIs */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
           <StatsCard label="เหตุการณ์ทั้งหมด" value={kpis?.total ?? "—"} icon="🚨" />
@@ -82,7 +82,7 @@ export default function IncidentsPage() {
         </div>
 
         {/* filters */}
-        <div className="mb-4 flex flex-wrap items-center gap-3">
+        <div className="signal-control-deck mb-5 flex flex-wrap items-center gap-3">
           <div className="flex rounded-lg border border-ink-200 overflow-hidden">
             {WINDOW_OPTIONS.map((o) => (
               <button

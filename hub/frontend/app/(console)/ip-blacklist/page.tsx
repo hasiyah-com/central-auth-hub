@@ -179,7 +179,7 @@ export default function IpBlacklistPage() {
   return (
     <>
       <Topbar title="IP Blacklist" />
-      <main className="p-8 max-w-5xl mx-auto w-full">
+      <main className="signal-page signal-page-compact">
         {/* Header */}
         <div className="mb-6 flex items-end justify-between gap-3 flex-wrap">
           <div>

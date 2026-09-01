@@ -126,8 +126,8 @@ export default function UsersPage() {
   return (
     <>
       <Topbar title="ผู้ใช้งาน" />
-      <main className="p-8 max-w-7xl mx-auto w-full">
-        <div className="mb-5 flex flex-wrap items-center gap-3">
+      <main className="signal-page">
+        <div className="signal-control-deck mb-5 flex flex-wrap items-center gap-3">
           <select
             value={type}
             onChange={(e) => setType(e.target.value)}
@@ -166,7 +166,7 @@ export default function UsersPage() {
           >
             + เพิ่มผู้ใช้
           </button>
-          <div className="text-xs text-ink-500">
+          <div className="font-mono text-[11px] text-ink-300">
             {loading
               ? "กำลังโหลด…"
               : debouncedSearch.trim()

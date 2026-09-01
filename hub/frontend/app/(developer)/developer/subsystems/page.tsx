@@ -111,7 +111,7 @@ export default function MySubsystemsPage() {
   return (
     <>
       <Topbar title="ระบบของฉัน" />
-      <main className="p-8 max-w-7xl mx-auto w-full">
+      <main className="signal-page">
         <div className="mb-6 flex items-end justify-between gap-4 flex-wrap">
           <div>
             <h2 className="text-sm font-bold text-ink-500 uppercase tracking-wider">

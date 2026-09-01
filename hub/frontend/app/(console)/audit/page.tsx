@@ -227,7 +227,7 @@ function AuditPageInner() {
   return (
     <>
       <Topbar title="Audit Log" />
-      <main className="p-8 max-w-7xl mx-auto w-full">
+      <main className="signal-page">
         {scopeId && (
           <div className="mb-5 flex items-center gap-2 px-4 py-2.5 rounded-lg bg-brand-50 border border-brand-200 text-sm text-brand-800">
             <span>
@@ -241,7 +241,7 @@ function AuditPageInner() {
             </button>
           </div>
         )}
-        <div className="mb-5 flex flex-wrap items-center gap-3">
+        <div className="signal-control-deck mb-5 flex flex-wrap items-center gap-3">
           <input
             type="text"
             placeholder="filter action (เช่น login, revoke, approved)"

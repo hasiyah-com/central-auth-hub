@@ -48,7 +48,7 @@ export default function ThresholdPage() {
   return (
     <>
       <Topbar title="Threshold Tuning" />
-      <main className="p-8 max-w-7xl mx-auto w-full">
+      <main className="signal-page">
         {/* Breadcrumb */}
         <Link
           href="/ml"

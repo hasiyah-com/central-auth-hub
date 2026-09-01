@@ -106,7 +106,7 @@ export default function ApiAlertsPage() {
   return (
     <>
       <Topbar title="API Alerts" />
-      <main className="p-8 max-w-7xl mx-auto w-full">
+      <main className="signal-page">
         {/* Header */}
         <div className="mb-6 flex items-end justify-between gap-4 flex-wrap">
           <div>
@@ -186,7 +186,7 @@ export default function ApiAlertsPage() {
             </section>
 
             {/* Filters */}
-            <div className="mb-4 flex gap-3 flex-wrap">
+            <div className="signal-control-deck mb-4 flex flex-wrap gap-3">
               <select
                 value={filterRule}
                 onChange={(e) => setFilterRule(e.target.value)}

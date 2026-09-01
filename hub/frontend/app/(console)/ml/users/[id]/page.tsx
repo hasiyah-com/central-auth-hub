@@ -45,7 +45,7 @@ export default function UserTimelinePage({ params }: { params: { id: string } })
   return (
     <>
       <Topbar title={`ML Profile · ${displayName}`} />
-      <main className="mx-auto w-full max-w-[1480px] p-5 sm:p-6 lg:p-8">
+      <main className="signal-page">
         <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
           <Link href="/ml" className="inline-flex items-center gap-2 font-mono text-[10px] font-semibold uppercase tracking-[.12em] text-ink-500 hover:text-brand-700">
             <span aria-hidden="true">←</span> ML Overview

@@ -273,7 +273,7 @@ export default function UserDetailPage({ params }: { params: { id: string } }) {
         </div>
       )}
 
-      <main className="p-6 md:p-8 max-w-[1200px] mx-auto w-full space-y-5">
+      <main className="signal-page signal-page-compact space-y-5">
         {/* breadcrumb */}
         <div className="text-sm text-ink-500 flex items-center gap-2">
           <Link href="/users" className="hover:text-brand-600">

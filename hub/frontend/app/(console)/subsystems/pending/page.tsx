@@ -130,7 +130,7 @@ export default function PendingSubsystemsPage() {
         </div>
       )}
       <Topbar title="คำขอรออนุมัติ" />
-      <main className="p-8 max-w-5xl mx-auto w-full">
+      <main className="signal-page signal-page-compact">
         <div className="mb-6 flex items-center gap-3">
           <Link
             href="/subsystems"

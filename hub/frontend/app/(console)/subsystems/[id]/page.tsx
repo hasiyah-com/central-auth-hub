@@ -810,7 +810,7 @@ export default function SubsystemDetailPage({
     return (
       <>
         <Topbar title="Subsystem" />
-        <main className="p-8 max-w-3xl mx-auto">
+        <main className="signal-page signal-page-compact">
           <div className="p-4 rounded-lg bg-rose-50 border border-rose-200 text-rose-700 text-sm mb-4">
             {error}
           </div>
@@ -829,7 +829,7 @@ export default function SubsystemDetailPage({
     return (
       <>
         <Topbar title="Subsystem" />
-        <main className="p-8 max-w-3xl mx-auto">
+        <main className="signal-page signal-page-compact">
           <div className="text-ink-400 text-sm">กำลังโหลด…</div>
         </main>
       </>
@@ -1166,7 +1166,7 @@ export default function SubsystemDetailPage({
         </div>
       )}
       <Topbar title={sub.name} />
-      <main className="p-8 max-w-7xl mx-auto w-full space-y-6">
+      <main className="signal-page space-y-6">
         {/* Breadcrumb + status hero */}
         <div className="flex items-end justify-between gap-4 flex-wrap">
           <div>
