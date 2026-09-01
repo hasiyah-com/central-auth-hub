@@ -1,0 +1,252 @@
+# Completely isolated integration-test stack.
+#
+# It does not reuse container names, networks, ports, or volumes from the
+# development/production stacks. All published ports bind to localhost.
+#
+# Start core:
+#   bash scripts/test-stack/up.sh
+# Start core + subsystem applications:
+#   bash scripts/test-stack/up.sh --with-subsystems
+# Stop:
+#   bash scripts/test-stack/down.sh
+# Delete test data:
+#   bash scripts/test-stack/down.sh --wipe
+
+name: ${COMPOSE_PROJECT_NAME:-cah-isolated-test}
+
+services:
+  postgres-test:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-hub_test}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-hub_test_password}
+      POSTGRES_DB: ${POSTGRES_DB:-hub_test_db}
+    ports:
+      - "127.0.0.1:${TEST_POSTGRES_PORT:-15432}:5432"
+    volumes:
+      - hub_test_postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-hub_test} -d ${POSTGRES_DB:-hub_test_db}"]
+      interval: 3s
+      timeout: 5s
+      retries: 20
+    networks: [test-net]
+
+  redis-test:
+    image: redis:7-alpine
+    ports:
+      - "127.0.0.1:${TEST_REDIS_PORT:-16379}:6379"
+    volumes:
+      - hub_test_redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 5s
+      retries: 20
+    networks: [test-net]
+
+  ml-service-test:
+    build:
+      context: ./ml-service
+      dockerfile: Dockerfile
+    environment:
+      REDIS_URL: redis://redis-test:6379/0
+    ports:
+      - "127.0.0.1:${TEST_ML_PORT:-19000}:9000"
+    volumes:
+      - hub_test_ml_models:/app/models
+      - hub_test_ml_data:/app/data
+    depends_on:
+      redis-test:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://localhost:9000/health', timeout=3)"
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    command: uvicorn app.main:app --host 0.0.0.0 --port 9000
+    networks: [test-net]
+
+  hub-backend-test:
+    build:
+      context: ./hub/backend
+      dockerfile: Dockerfile
+    env_file:
+      - .env.test
+    environment:
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-hub_test}:${POSTGRES_PASSWORD:-hub_test_password}@postgres-test:5432/${POSTGRES_DB:-hub_test_db}
+      REDIS_URL: redis://redis-test:6379/0
+      ML_SERVICE_URL: http://ml-service-test:9000
+      HUB_BASE_URL: http://localhost:${TEST_HUB_PORT:-18000}
+      HUB_ISSUER: http://localhost:${TEST_HUB_PORT:-18000}
+      ADMIN_FRONTEND_URL: http://localhost:${TEST_FRONTEND_PORT:-13000}
+      CORS_ALLOW_ORIGINS: http://localhost:${TEST_FRONTEND_PORT:-13000},http://localhost:${TEST_DORM_PORT:-18001},http://localhost:${TEST_LIBRARY_PORT:-18002}
+      GOOGLE_REDIRECT_URI: http://localhost:${TEST_HUB_PORT:-18000}/auth/google/callback
+      OAUTH_CALLBACK_URI: http://localhost:${TEST_HUB_PORT:-18000}/oauth/callback
+      GOOGLE_CHANGE_REDIRECT_URI: http://localhost:${TEST_HUB_PORT:-18000}/auth/account/change-google/callback
+      WEBAUTHN_RP_ID: localhost
+      WEBAUTHN_ORIGINS: http://localhost:${TEST_FRONTEND_PORT:-13000},http://localhost:${TEST_HUB_PORT:-18000}
+      ML_SHADOW_MODE: "true"
+    ports:
+      - "127.0.0.1:${TEST_HUB_PORT:-18000}:8000"
+    volumes:
+      - hub_test_jwt_keys:/app/keys
+      - hub_test_backend_data:/app/data
+    depends_on:
+      postgres-test:
+        condition: service_healthy
+      redis-test:
+        condition: service_healthy
+      ml-service-test:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=3)"
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    command: >
+      sh -c "test -f /app/keys/jwt_private.pem || python -m scripts.generate_jwt_keys < /dev/null;
+             alembic upgrade head;
+             exec uvicorn app.main:app --host 0.0.0.0 --port 8000"
+    networks: [test-net]
+
+  hub-frontend-test:
+    build:
+      context: ./hub/frontend
+      dockerfile: Dockerfile.prod
+      args:
+        NEXT_PUBLIC_HUB_URL: http://localhost:${TEST_HUB_PORT:-18000}
+    environment:
+      HUB_INTERNAL_URL: http://hub-backend-test:8000
+      NODE_ENV: production
+    ports:
+      - "127.0.0.1:${TEST_FRONTEND_PORT:-13000}:3000"
+    depends_on:
+      hub-backend-test:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:3000/ || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    networks: [test-net]
+
+  postgres-dorm-test:
+    profiles: [subsystems]
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: ${DORM_POSTGRES_USER:-dorm_test}
+      POSTGRES_PASSWORD: ${DORM_POSTGRES_PASSWORD:-dorm_test_password}
+      POSTGRES_DB: ${DORM_POSTGRES_DB:-dorm_test_db}
+    ports:
+      - "127.0.0.1:${TEST_DORM_POSTGRES_PORT:-15433}:5432"
+    volumes:
+      - dorm_test_postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DORM_POSTGRES_USER:-dorm_test} -d ${DORM_POSTGRES_DB:-dorm_test_db}"]
+      interval: 3s
+      timeout: 5s
+      retries: 20
+    networks: [test-net]
+
+  subsystem-dorm-test:
+    profiles: [subsystems]
+    build:
+      context: ./hub/subsystem-dorm
+      dockerfile: Dockerfile
+    environment:
+      APP_ENV: development
+      SESSION_SECRET_KEY: ${DORM_SESSION_SECRET_KEY:-test-only-dorm-session-secret}
+      DATABASE_URL: postgresql+psycopg2://${DORM_POSTGRES_USER:-dorm_test}:${DORM_POSTGRES_PASSWORD:-dorm_test_password}@postgres-dorm-test:5432/${DORM_POSTGRES_DB:-dorm_test_db}
+      DORM_CLIENT_ID: ${DORM_CLIENT_ID:-}
+      DORM_CLIENT_SECRET: ${DORM_CLIENT_SECRET:-}
+      HUB_INTERNAL_URL: http://hub-backend-test:8000
+      HUB_PUBLIC_URL: http://localhost:${TEST_HUB_PORT:-18000}
+      DORM_CALLBACK_URL: http://localhost:${TEST_DORM_PORT:-18001}/oauth/callback
+      SESSION_COOKIE_NAME: dorm_test_session
+      SESSION_MAX_AGE_SECONDS: "3600"
+      SESSION_COOKIE_SECURE: "false"
+    ports:
+      - "127.0.0.1:${TEST_DORM_PORT:-18001}:8000"
+    depends_on:
+      postgres-dorm-test:
+        condition: service_healthy
+      hub-backend-test:
+        condition: service_healthy
+    networks: [test-net]
+
+  postgres-library-test:
+    profiles: [subsystems]
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: ${LIBRARY_POSTGRES_USER:-library_test}
+      POSTGRES_PASSWORD: ${LIBRARY_POSTGRES_PASSWORD:-library_test_password}
+      POSTGRES_DB: ${LIBRARY_POSTGRES_DB:-library_test_db}
+    ports:
+      - "127.0.0.1:${TEST_LIBRARY_POSTGRES_PORT:-15434}:5432"
+    volumes:
+      - library_test_postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${LIBRARY_POSTGRES_USER:-library_test} -d ${LIBRARY_POSTGRES_DB:-library_test_db}"]
+      interval: 3s
+      timeout: 5s
+      retries: 20
+    networks: [test-net]
+
+  subsystem-library-test:
+    profiles: [subsystems]
+    build:
+      context: ./hub/subsystem-library
+      dockerfile: Dockerfile
+    environment:
+      APP_ENV: development
+      SESSION_SECRET_KEY: ${LIBRARY_SESSION_SECRET_KEY:-test-only-library-session-secret}
+      DATABASE_URL: postgresql+psycopg2://${LIBRARY_POSTGRES_USER:-library_test}:${LIBRARY_POSTGRES_PASSWORD:-library_test_password}@postgres-library-test:5432/${LIBRARY_POSTGRES_DB:-library_test_db}
+      LIBRARY_CLIENT_ID: ${LIBRARY_CLIENT_ID:-}
+      LIBRARY_CLIENT_SECRET: ${LIBRARY_CLIENT_SECRET:-}
+      HUB_INTERNAL_URL: http://hub-backend-test:8000
+      HUB_PUBLIC_URL: http://localhost:${TEST_HUB_PORT:-18000}
+      LIBRARY_CALLBACK_URL: http://localhost:${TEST_LIBRARY_PORT:-18002}/oauth/callback
+      SESSION_COOKIE_NAME: library_test_session
+      SESSION_MAX_AGE_SECONDS: "3600"
+      SESSION_COOKIE_SECURE: "false"
+      DEFAULT_BORROW_DAYS: "14"
+      MAX_BORROWS_PER_MEMBER: "3"
+    ports:
+      - "127.0.0.1:${TEST_LIBRARY_PORT:-18002}:8000"
+    depends_on:
+      postgres-library-test:
+        condition: service_healthy
+      hub-backend-test:
+        condition: service_healthy
+    networks: [test-net]
+
+networks:
+  test-net:
+    name: cah-isolated-test-net
+
+volumes:
+  hub_test_postgres:
+    name: cah_isolated_test_postgres
+  hub_test_redis:
+    name: cah_isolated_test_redis
+  hub_test_jwt_keys:
+    name: cah_isolated_test_jwt_keys
+  hub_test_backend_data:
+    name: cah_isolated_test_backend_data
+  hub_test_ml_models:
+    name: cah_isolated_test_ml_models
+  hub_test_ml_data:
+    name: cah_isolated_test_ml_data
+  dorm_test_postgres:
+    name: cah_isolated_test_dorm_postgres
+  library_test_postgres:
+    name: cah_isolated_test_library_postgres
