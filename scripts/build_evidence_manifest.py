@@ -167,6 +167,22 @@ def missing() -> list[str]:
     return out
 
 
+_FREEZE_PLACEHOLDER = "_(เติมหลัง commit — ดู `git log --oneline -1` และ `git tag -l`)_"
+
+
+def _keep_freeze_block(manifest: Path) -> str:
+    """คืนเนื้อหา §5 เดิมจาก manifest ที่มีอยู่ (ถ้ามี) ไม่งั้นคืน placeholder."""
+    if not manifest.exists():
+        return _FREEZE_PLACEHOLDER
+    text = manifest.read_text(encoding="utf-8")
+    start = text.find("<!-- FREEZE_COMMIT -->")
+    end = text.find("## 6.", start) if start >= 0 else -1
+    if start < 0 or end < 0:
+        return _FREEZE_PLACEHOLDER
+    block = text[start + len("<!-- FREEZE_COMMIT -->") : end].strip()
+    return block or _FREEZE_PLACEHOLDER
+
+
 def build(MANIFEST: Path) -> None:
     rows = collect()
     cfg = read_config()
@@ -286,7 +302,9 @@ def build(MANIFEST: Path) -> None:
         "## 5. Freeze commit",
         "",
         "<!-- FREEZE_COMMIT -->",
-        "_(เติมหลัง commit — ดู `git log --oneline -1` และ `git tag -l`)_",
+        # เก็บเนื้อหา §5 ที่เขียนไว้แล้วกลับมาใส่ — ส่วนนี้เขียนด้วยมือ (tag + SHA)
+        # ถ้าไม่เก็บไว้ จะถูกล้างทุกครั้งที่ regenerate แล้วต้องพิมพ์ใหม่ทั้งบล็อก
+        _keep_freeze_block(MANIFEST),
         "",
         "## 6. ข้อมูลที่ไม่อยู่ใน git (โดยตั้งใจ)",
         "",

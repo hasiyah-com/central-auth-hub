@@ -26,7 +26,7 @@
 > **สองแกนของการตัดสินใจ** (แยกขาดตั้งแต่ 29 ส.ค. 2026):
 >
 > ```text
-> access_decision     = L1/L2/L4 -> allow | challenge | block   (ตัดสินสิทธิ์ผู้ใช้)
+> access_decision     = L1/L2/L4 -> allow | warn | challenge | block   (ตัดสินสิทธิ์ผู้ใช้)
 > monitoring_decision = L3        -> normal | l3_investigate    (ธงให้ SOC ดู)
 > ```
 >

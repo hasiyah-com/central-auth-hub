@@ -63,7 +63,7 @@ def eligibility(n_history: int) -> str:
 
 
 # ── คำศัพท์ของแกน monitoring — ต้องไม่ทับกับ access decision vocab โดยเด็ดขาด ──
-# access_decision     = L1/L2/L4 -> allow | challenge | block  (+ would_* ใน shadow mode)
+# access_decision     = L1/L2/L4 -> allow | warn | challenge | block  (+ would_* ใน shadow)
 # monitoring_decision = L3        -> normal | l3_investigate
 MONITORING_NORMAL = "normal"
 MONITORING_INVESTIGATE = "l3_investigate"
@@ -274,7 +274,7 @@ def evaluate_window(model: L3Model | None, window_raw: list[list[float]]) -> L3R
 def monitoring_decision(result: L3Result) -> str:
     """ธงเฝ้าระวังของ L3 — **คนละแกนกับ access decision โดยสิ้นเชิง**.
 
-        access_decision     = L1/L2/L4 -> allow | challenge | block   (ตัดสินสิทธิ์ผู้ใช้)
+        access_decision     = L1/L2/L4 -> allow | warn | challenge | block   (ตัดสินสิทธิ์ผู้ใช้)
         monitoring_decision = L3        -> normal | l3_investigate    (ธงให้ SOC ดู)
 
     เดิมฟังก์ชันนี้คือ `apply_channel(decision, result)` ที่ยก access decision เป็น `warn`

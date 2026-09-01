@@ -12,7 +12,7 @@ sequence view แยกแกนแล้วจริง แต่ **point view 
 
 แยกให้ขาดเป็นสองแกน:
 
-    access_decision     = L1/L2/L4 -> allow | challenge | block   (ตัดสินสิทธิ์ผู้ใช้)
+    access_decision     = L1/L2/L4 -> allow | warn | challenge | block   (ตัดสินสิทธิ์ผู้ใช้)
     monitoring_decision = L3        -> normal | l3_investigate    (ธงให้ SOC ดู)
 
 L3 **ห้ามแตะ** access_decision ทุกกรณี — รวมถึงห้ามทำ allow -> warn

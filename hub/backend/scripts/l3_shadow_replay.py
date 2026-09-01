@@ -185,7 +185,7 @@ def render(a: dict, days: int | None) -> str:
         "## 3. ความปลอดภัย — สองแกนแยกกันจริงไหม",
         "",
         "```text",
-        "access_decision     = L1/L2/L4 -> allow | challenge | block",
+        "access_decision     = L1/L2/L4 -> allow | warn | challenge | block",
         "monitoring_decision = L3        -> normal | l3_investigate",
         "```",
         "",
