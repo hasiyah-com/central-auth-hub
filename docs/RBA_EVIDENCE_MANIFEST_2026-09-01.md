@@ -17,8 +17,8 @@ python scripts/build_evidence_manifest.py --verify
 
 | รายการ | ค่า |
 |---|---|
-| commit SHA (เต็ม) | `d08f57c2070b2aa631e4bb60f2abc0504cbabec6` |
-| commit SHA (สั้น) | `d08f57c` |
+| commit SHA (เต็ม) | `7425d59cf1d574990fea0aa15f45f041180f0e76` |
+| commit SHA (สั้น) | `7425d59` |
 | branch | `main` |
 | working tree ตอนสร้าง manifest | มีไฟล์ที่ยังไม่ commit (ดู §5) |
 | จำนวนไฟล์หลักฐาน | 54 |
@@ -127,7 +127,7 @@ L3 = แกน monitoring ล้วน (`normal` / `l3_investigate`) — ไม�
 | `hub/backend/app/security/rule_engine.py` | 13,750 | `a905bfc396d742b59a76c2717cce8900accc98bb220a387faf136f7eb6ac7498` |
 | `hub/backend/app/security/behavior_profiling.py` | 15,813 | `e971771fadbaa96f30c8597a00bafd22982392f224e2ae1b51123fe2f9f010f7` |
 | `hub/backend/app/security/risk_aggregator.py` | 4,040 | `51c2a61257481a07b6818ad5be6eb90e6aaa0e5fd036f91e6aa67ca9fd957b22` |
-| `hub/backend/app/security/risk_engine.py` | 11,859 | `f86bb1ae4a8268d14ccb306ac05d265a30266f89273cf6e5bc70fcdcdc9a6b26` |
+| `hub/backend/app/security/risk_engine.py` | 12,439 | `bd227e9139e79d5f3347b0514e498a46e337f963a22bacc0fb9497c275879b83` |
 | `hub/backend/app/services/l3_sequence_client.py` | 9,901 | `8d2048b71a1b9de8357c345d3d40a889c929267475c7c326c82954496f466ad2` |
 | `hub/backend/scripts/l3_shadow_replay.py` | 20,787 | `41168d107bb87a112ff161c655f9e96ffda537fe083a134c129ab03199e2b09d` |
 | `hub/backend/tests/test_l3_stability.py` | 25,969 | `80c0f24ce5ace243d3aa80616c223c3465ba901eb3983bbffb1d60ed6523fd86` |
@@ -147,7 +147,7 @@ L3 = แกน monitoring ล้วน (`normal` / `l3_investigate`) — ไม�
 | `rba-expert-review-2026-08-29` | `2bdbeb1348e77133415b084bf64c7093b3795319` | ส่งตรวจรอบ 1 = freeze + stability (B62/B63) + แยก access/monitoring (เฉพาะ sequence view) |
 | `rba-expert-review-2026-09-01` | commit ที่บรรจุไฟล์นี้ — `git rev-parse rba-expert-review-2026-09-01^{commit}` | **ส่งตรวจรอบ 2** = รอบ 1 + L3 orchestrator เดียว + ถอด IForest ออกจาก access (B66) |
 
-**commit ของโค้ด/หลักฐานในรอบนี้:** `d08f57c` (แก้ vocabulary + บทที่ 10 + ฟอนต์) — สืบทอดจาก `3314ec22a22af88b6e0896aa6bcbc10c30fe7a57` (แก้ L3)
+**commit ของโค้ด/หลักฐานในรอบนี้:** `7425d59` (รวมเส้นทาง aggregate) — สืบทอดจาก `d08f57c` (vocabulary + บทที่ 10 + ฟอนต์) และ — สืบทอดจาก `3314ec22a22af88b6e0896aa6bcbc10c30fe7a57` (แก้ L3)
 (hash ทุกไฟล์ใน §4 คำนวณจาก tree ณ commit นี้ — manifest ถูก commit ตามมาทีหลัง
 เพราะไฟล์บรรจุ SHA ของ commit ที่บรรจุตัวมันเองไม่ได้)
 
