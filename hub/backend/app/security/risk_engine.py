@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.security.behavior_profiling import evaluate_behavior, get_user_profile
-from app.security.iforest_scorer import IForestResult, monitoring_only
+from app.security.iforest_scorer import monitoring_only
 from app.security.risk_aggregator import aggregate
 from app.security.rule_engine import evaluate_rules
 
@@ -55,13 +55,17 @@ async def evaluate_login_risk(
             ip,
             rule_result.reasons,
         )
-        # ยังต้อง map iforest score เป็น 0 สำหรับ breakdown
-        iforest_result = IForestResult(raw_score=0.0, risk_score=0.0, label="skipped")
         from app.security.behavior_profiling import BehaviorResult
 
         behavior_result = BehaviorResult(score=0.0, reasons=["skipped (hard block)"])
 
-        decision = aggregate(rule_result, behavior_result, iforest_result, shadow_mode)
+        # ใช้ monitoring_only() เหมือนเส้นทางหลัก — เดิมสร้าง IForestResult(0,0) ตรงนี้
+        # ซึ่งให้ผลเท่ากันทุกประการ แต่ทำให้ผู้ที่ grep หา "aggregate(" เห็นสองรูปแบบ
+        # แล้วต้องไล่อ่านว่าเส้นทางไหนบวกคะแนนบ้าง · ใช้ตัวเดียวกันทั้งไฟล์ทำให้
+        # ข้อตกลง "IForest ไม่แตะ access" ตรวจได้ด้วยตาจากโค้ดโดยไม่ต้องตามค่า
+        decision = aggregate(
+            rule_result, behavior_result, monitoring_only(), shadow_mode
+        )
         return {
             "decision": decision.decision,
             "score": decision.total_score,
