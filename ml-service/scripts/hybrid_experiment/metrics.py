@@ -219,3 +219,27 @@ def calibration_error(rows: list[EventOutcome], bins: int = 10) -> float:
         acc = sum(1 for x in v if x.is_attack) / len(v)
         err += (len(v) / total) * abs(conf - acc)
     return err
+
+
+def recall_at_fpr(rows: list[EventOutcome], target_fpr: float) -> dict:
+    """recall ที่ระดับ FPR เท่ากัน — วิธีเดียวที่เทียบ config กันได้อย่างยุติธรรม.
+
+    **ทำไมจำเป็น:** แต่ละ config มีการกระจายคะแนนต่างกันมาก (วัดได้ challenge FPR
+    0.003 ถึง 0.584 ที่ threshold ชุดเดียวกัน) การเทียบ recall ที่ threshold คงที่
+    จึงเป็นการเทียบคนละจุดทำงาน ไม่ได้บอกว่าโมเดลไหนดีกว่า
+
+    เลื่อน threshold ของแต่ละ config จนได้ FPR ตามเป้า แล้วค่อยอ่าน recall
+    """
+    nor = sorted((r.score for r in rows if not r.is_attack), reverse=True)
+    atk = [r.score for r in rows if r.is_attack]
+    if not nor or not atk:
+        return {"threshold": 1.0, "recall": 0.0, "actual_fpr": 0.0}
+    k = int(target_fpr * len(nor))
+    thr = nor[k] if k < len(nor) else nor[-1]
+    # threshold ที่ทำให้ FPR ไม่เกินเป้า (ใช้ > เพื่อไม่ให้ค่าที่เสมอกันดันเกิน)
+    actual = sum(1 for x in nor if x > thr) / len(nor)
+    return {
+        "threshold": round(float(thr), 6),
+        "recall": round(sum(1 for x in atk if x > thr) / len(atk), 4),
+        "actual_fpr": round(actual, 4),
+    }
