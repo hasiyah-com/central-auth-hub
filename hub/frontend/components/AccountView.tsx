@@ -162,7 +162,7 @@ export function AccountView() {
     <>
       <Topbar title="บัญชีของฉัน" />
 
-      <div className="px-8 py-6 max-w-3xl space-y-6">
+      <main className="signal-page signal-page-compact space-y-6">
         {/* Profile card */}
         <div className="bg-white rounded-xl border border-ink-200 p-6 shadow-sm">
           <div className="flex items-center gap-4">
@@ -408,7 +408,7 @@ export function AccountView() {
             </div>
           </div>
         )}
-      </div>
+      </main>
 
       {backupCodes && (
         <BackupCodesModal

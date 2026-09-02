@@ -272,7 +272,7 @@ export default function SubsystemsPage() {
   return (
     <>
       <Topbar title="ระบบย่อย" />
-      <main className="p-8 max-w-7xl mx-auto w-full">
+      <main className="signal-page">
         {/* ── หัวเรื่อง ────────────────────────────── */}
         <div className="flex items-start justify-between gap-4 flex-wrap mb-6">
           <div>

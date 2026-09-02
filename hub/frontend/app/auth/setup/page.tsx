@@ -119,7 +119,7 @@ function SetupInner() {
 
   if (!ready) {
     return (
-      <main className="min-h-screen grid place-items-center bg-gradient-to-br from-ink-900 via-ink-800 to-brand-900 px-4">
+      <main className="signal-auth-page min-h-screen grid place-items-center px-4">
         <div className="flex items-center gap-3 text-ink-300">
           <div className="h-5 w-5 animate-spin rounded-full border-2 border-white/70 border-t-transparent" />
           <span className="text-sm">กำลังเตรียมบัญชี…</span>
@@ -129,7 +129,7 @@ function SetupInner() {
   }
 
   return (
-    <main className="min-h-screen grid place-items-center bg-gradient-to-br from-ink-900 via-ink-800 to-brand-900 px-4 py-10">
+    <main className="signal-auth-page min-h-screen grid place-items-center px-4 py-10">
       <div className="reveal w-full max-w-3xl overflow-hidden rounded-3xl bg-white shadow-2xl">
         {/* accent bar */}
         <div className="h-1.5 bg-gradient-to-r from-emerald-400 via-brand-500 to-brand-700" />

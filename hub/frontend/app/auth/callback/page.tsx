@@ -108,7 +108,7 @@ function CallbackInner() {
   }, [params, router]);
 
   return (
-    <main className="min-h-screen grid place-items-center bg-ink-50">
+    <main className="signal-auth-page min-h-screen grid place-items-center">
       <div className="text-center">
         {error ? (
           <div className="space-y-4">

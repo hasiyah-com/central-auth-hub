@@ -19,6 +19,19 @@ export function Topbar({ title }: { title: string }) {
         <Clock />
         <span className="sr-only">{crumb}</span>
       </header>
+      {pathname !== "/dashboard" && (
+        <section className="route-command-bar" aria-labelledby="route-title">
+          <div className="route-command-copy">
+            <span className="mono"><i className="signal-dot" /> CONTROL SURFACE</span>
+            <h1 id="route-title">{title}</h1>
+          </div>
+          <div className="route-command-status">
+            <span className="mono">SECURE SESSION</span>
+            <b><i className="signal-dot" /> VERIFIED</b>
+          </div>
+          <div className="signal-rule" />
+        </section>
+      )}
       <CommandPalette />
     </>
   );

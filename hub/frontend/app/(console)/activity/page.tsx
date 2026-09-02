@@ -247,7 +247,7 @@ export default function ActivityPage() {
       <Topbar title="การเข้าใช้งาน (Realtime)" />
 
       {/* ── Control bar (dark, mission-control) ── */}
-      <div className="bg-ink-900 text-ink-100 px-8 py-4">
+      <div className="signal-live-toolbar bg-ink-900 text-ink-100 px-8 py-4">
         <div className="max-w-7xl mx-auto flex flex-wrap items-center gap-4">
           <div className="flex items-center gap-2">
             <span className="relative flex h-2.5 w-2.5">
@@ -310,7 +310,7 @@ export default function ActivityPage() {
         </div>
       </div>
 
-      <main className="p-8 max-w-7xl mx-auto w-full">
+      <main className="signal-page">
         {error && (
           <div className="mb-6 p-4 rounded-lg bg-rose-50 border border-rose-200 text-rose-700 text-sm">
             {error}

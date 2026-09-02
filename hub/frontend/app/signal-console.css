@@ -1,0 +1,182 @@
+/* Signal Room production console
+   Shared visual language ported from the published Sites reference. */
+
+.route-command-bar {
+  min-height: 104px;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 28px;
+  color: #f6fbff;
+  background:
+    radial-gradient(circle at 88% -40%, rgba(52, 232, 196, .13), transparent 25rem),
+    var(--canvas-deep);
+}
+
+.route-command-bar::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: .035;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.7'/%3E%3C/svg%3E");
+}
+
+.route-command-copy,
+.route-command-status { position: relative; z-index: 1; }
+.route-command-copy > span { display: flex; align-items: center; gap: 8px; color: #8194ad; font-size: .69rem; letter-spacing: .14em; }
+.route-command-copy .signal-dot,
+.route-command-status .signal-dot { width: 6px; height: 6px; }
+.route-command-copy h1 { margin: 5px 0 0; font: 800 1.55rem/1.25 Anuphan, sans-serif; letter-spacing: -.035em; }
+.route-command-status { min-width: 160px; padding: 9px 12px; border: 1px solid rgba(52,232,196,.18); background: rgba(17,23,38,.72); }
+.route-command-status span,
+.route-command-status b { display: block; }
+.route-command-status span { color: #60738c; font-size: .62rem; letter-spacing: .08em; }
+.route-command-status b { display: flex; align-items: center; gap: 7px; margin-top: 3px; color: #d9e7f6; font: 600 .72rem "IBM Plex Mono"; }
+.route-command-bar > .signal-rule { position: absolute; left: 28px; right: 28px; bottom: 0; background: linear-gradient(90deg, var(--signal), rgba(52,232,196,.13), transparent); }
+
+/* All data routes use a single compact document rhythm. */
+.signal-page {
+  max-width: 95rem;
+  padding: 20px 24px 28px;
+}
+.signal-page-compact { max-width: 78rem; }
+.signal-page :is(.rounded-xl, .rounded-2xl) { border-radius: 3px !important; }
+.signal-page .rounded-lg { border-radius: 2px !important; }
+.signal-page :is(.shadow-sm, .shadow-md, .shadow-lg, .shadow-xl, .shadow-2xl) { box-shadow: none !important; }
+
+.signal-page :is(.bg-white, .bg-ink-50) {
+  border-color: var(--ink-200) !important;
+  background-color: #fff;
+}
+.signal-page :is(.bg-white, .bg-ink-50)[class*="border"] { box-shadow: 0 1px 1px rgba(10,14,23,.025); }
+
+.signal-page h2 { color: var(--ink); font-weight: 750; letter-spacing: -.025em; }
+.signal-page h3 { color: #26364b; }
+.signal-page p { line-height: 1.55; }
+.signal-page .text-ink-900 { color: var(--ink); }
+.signal-page .text-ink-800 { color: #28384c; }
+.signal-page .text-ink-700 { color: #43536a; }
+.signal-page .text-ink-500 { color: #748196; }
+.signal-page .text-ink-400 { color: #8c98a8; }
+
+.signal-page table { min-width: 760px; border-collapse: collapse; background: #fff; }
+.signal-page thead { background: #f8f9fb; }
+.signal-page thead th {
+  padding: 10px 12px;
+  color: #7e8b9c;
+  background: #f8f9fb;
+  border-bottom: 1px solid var(--ink-200);
+  font-size: .7rem;
+  font-weight: 600;
+  letter-spacing: .055em;
+  text-transform: uppercase;
+}
+.signal-page tbody td { padding: 12px; border-bottom: 1px solid #edf0f4; font-size: .82rem; }
+.signal-page tbody tr { transition: background .14s ease; }
+.signal-page tbody tr:hover { background: #f7fbfa; }
+
+.signal-page input,
+.signal-page select,
+.signal-page textarea {
+  min-height: 40px;
+  border-radius: 2px !important;
+  background: #fff;
+  font-size: .82rem;
+}
+.signal-page textarea { min-height: 100px; }
+.signal-page button,
+.signal-page a[class*="px-"] { border-radius: 2px !important; }
+.signal-page button { font-size: .8rem; }
+
+.signal-page :is(button, a)[class*="bg-brand-6"],
+.signal-page :is(button, a)[class*="bg-emerald-6"] {
+  color: #061d18 !important;
+  background: linear-gradient(135deg, var(--signal), #24d3b1) !important;
+  border-color: rgba(19,184,154,.55) !important;
+  box-shadow: 0 5px 15px rgba(19,184,154,.12) !important;
+}
+.signal-page :is(button, a)[class*="bg-brand-6"]:hover,
+.signal-page :is(button, a)[class*="bg-emerald-6"]:hover { transform: translateY(-1px); filter: brightness(1.03); }
+
+.signal-page [class*="text-[10px]"],
+.signal-page [class*="text-[11px]"] { font-size: .7rem !important; }
+.signal-page [class*="uppercase"][class*="tracking"] { font-family: "IBM Plex Mono", monospace; letter-spacing: .075em !important; }
+
+/* Old statistic cards become the slim ruled KPI modules from the reference. */
+.signal-page > .grid:first-child > :is(div, article)[class*="bg-white"],
+.signal-page .grid > :is(div, article)[class*="bg-white"][class*="border"] {
+  position: relative;
+}
+.signal-page > .grid:first-child > :is(div, article)[class*="bg-white"]::before {
+  content: "";
+  position: absolute;
+  left: -1px;
+  top: 13px;
+  width: 2px;
+  height: 28px;
+  background: var(--signal-2);
+}
+
+.signal-control-deck,
+.signal-live-toolbar {
+  border-radius: 0 !important;
+  color: #dce8f6;
+  background:
+    radial-gradient(circle at 91% 0%, rgba(52,232,196,.09), transparent 20rem),
+    var(--canvas-panel) !important;
+}
+.signal-live-toolbar { position: relative; padding: 12px 24px !important; border-bottom: 1px solid rgba(148,178,224,.12); }
+.signal-live-toolbar::before { content: ""; position: absolute; left: 24px; right: 24px; bottom: -1px; height: 1px; background: linear-gradient(90deg,var(--signal),transparent 72%); }
+.signal-live-toolbar > div { max-width: none !important; }
+
+/* Account and form pages retain their real controls but share the console cards. */
+.signal-page dl { font-variant-numeric: tabular-nums; }
+.signal-page fieldset { border-color: var(--ink-200); }
+.signal-page :is(.bg-red-50,.bg-rose-50,.bg-amber-50,.bg-emerald-50)[class*="border"] { border-radius: 2px !important; }
+
+/* Authentication utility routes use the same dark identity surface. */
+.signal-auth-page {
+  position: relative;
+  overflow: hidden;
+  color: #eef5ff;
+  background:
+    radial-gradient(circle at 88% -10%, rgba(52,232,196,.13), transparent 38rem),
+    radial-gradient(circle at 0% 100%, rgba(14,165,233,.08), transparent 32rem),
+    #080c14 !important;
+}
+.signal-auth-page::before { content: ""; position: absolute; inset: 0; pointer-events: none; opacity: .035; background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.86' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E"); }
+.signal-auth-page > * { position: relative; z-index: 1; }
+.signal-auth-page > :is(div,section)[class*="bg-white"] { border-radius: 0 !important; border: 1px solid rgba(148,178,224,.16); background: linear-gradient(150deg,rgba(18,25,40,.96),rgba(12,17,28,.98)) !important; color: #edf5ff; box-shadow: 0 24px 80px rgba(0,0,0,.28) !important; }
+.signal-auth-page :is(.text-ink-900,.text-ink-800,.text-ink-700) { color: #edf5ff !important; }
+.signal-auth-page :is(.text-ink-500,.text-ink-400,.text-ink-300) { color: #8192a9 !important; }
+.signal-auth-page :is(.border-ink-100,.border-ink-200,.border-ink-300) { border-color: rgba(148,178,224,.15) !important; }
+.signal-auth-page :is(button,a)[class*="bg-brand-"],
+.signal-auth-page :is(button,a)[class*="bg-emerald-"] { border-radius: 2px !important; background: linear-gradient(135deg,var(--signal),#24d3b1) !important; color: #061d18 !important; }
+.signal-auth-page :is(input,textarea) { border-radius: 2px !important; border-color: rgba(148,178,224,.2) !important; background: rgba(4,8,14,.45) !important; color: #eef5ff !important; }
+
+/* Production-only controls inside the full login design. */
+.login-passkey-form { margin-top: 12px; padding: 13px; border: 1px solid rgba(52,232,196,.2); background: rgba(52,232,196,.035); }
+.login-passkey-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.login-passkey-head b { color: var(--signal); font: 600 .65rem "IBM Plex Mono"; letter-spacing: .08em; }
+.login-passkey-head button { border: 0; background: transparent; color: #71849c; font-size: .72rem; cursor: pointer; }
+.login-passkey-form .passkey-button { margin-top: 10px; }
+.login-passkey-form .passkey-button b,
+.google-button > b { font-size: 1rem; font-weight: 400; }
+.login-warning { color: #f7c876; background: rgba(245,158,11,.08); border-left-color: var(--warn); }
+
+@media (max-width: 760px) {
+  .route-command-bar { min-height: 92px; padding: 17px 16px; }
+  .route-command-status { display: none; }
+  .route-command-copy h1 { font-size: 1.3rem; }
+  .route-command-bar > .signal-rule { left: 16px; right: 16px; }
+  .signal-page { padding: 14px 12px 24px; }
+  .signal-live-toolbar { padding: 11px 12px !important; }
+  .signal-live-toolbar::before { left: 12px; right: 12px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .signal-page > * { animation: none !important; }
+}

@@ -101,7 +101,7 @@ function StepupInner() {
   };
 
   return (
-    <main className="min-h-screen grid place-items-center bg-gradient-to-br from-ink-900 via-ink-800 to-brand-900 px-4">
+    <main className="signal-auth-page min-h-screen grid place-items-center px-4">
       <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl overflow-hidden">
         <div className="px-8 pt-8 pb-6">
           <div className="text-4xl mb-3">🔐</div>

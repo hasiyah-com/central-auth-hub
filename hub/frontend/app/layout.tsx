@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import "./signal-dashboard.css";
+import "./signal-console.css";
 import StepupTotpProvider from "@/components/StepupTotpProvider";
 
 export const metadata: Metadata = {
