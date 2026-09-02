@@ -150,10 +150,11 @@ export function LoginMethodsCard() {
   ];
 
   return (
-    <section className="mb-8">
-      <h2 className="text-xs font-bold text-ink-500 uppercase tracking-wider mb-3">
-        วิธีการเข้าสู่ระบบ (Login Methods)
-      </h2>
+    <section className="card auth-card dashboard-auth-card">
+      <header className="card-head">
+        <div><span className="overline">AUTH POLICY</span><h2>วิธีการเข้าสู่ระบบ</h2><p>นโยบายส่วนกลางสำหรับ Admin Console</p></div>
+        <span className="auth-lock" aria-hidden="true">⌑</span>
+      </header>
 
       {verifying && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40">
@@ -164,8 +165,8 @@ export function LoginMethodsCard() {
         </div>
       )}
 
-      <div className="overflow-hidden rounded-xl border border-ink-200 bg-white shadow-sm">
-        <div className="divide-y divide-ink-100">
+      <div className="dashboard-auth-body">
+        <div>
           {methods.map((m) => {
             const on = draft?.[m.key] ?? false;
             return (
@@ -175,57 +176,27 @@ export function LoginMethodsCard() {
                 onClick={() => toggle(m.key)}
                 disabled={busy}
                 aria-pressed={on}
-                className={
-                  "group grid min-h-[76px] w-full grid-cols-[44px_minmax(0,1fr)_auto] items-center gap-3 px-4 py-3 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-50 sm:px-5 " +
-                  (on ? "bg-white hover:bg-emerald-50/40" : "bg-ink-50/50 hover:bg-ink-50")
-                }
+                className={`auth-method ${on ? "is-on" : "is-off"}`}
               >
                 <span
-                  className={
-                    "flex h-11 w-11 items-center justify-center rounded-xl transition-colors " +
-                    (on
-                      ? "bg-emerald-50 text-emerald-600"
-                      : "bg-ink-100 text-ink-400")
-                  }
+                  className={`method-icon ${m.key}`}
                 >
                   <MethodIcon method={m.key} />
                 </span>
 
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-                    <span className="text-sm font-bold text-ink-900">{m.label}</span>
+                <div className="auth-method-copy">
+                  <div>
+                    <strong>{m.label}</strong>
                     {m.recommended && (
-                      <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700 ring-1 ring-inset ring-emerald-200">
+                      <span className="recommended">
                         แนะนำ
                       </span>
                     )}
                   </div>
-                  <p className="mt-1 truncate text-xs text-ink-500">{m.desc}</p>
+                  <span>{m.desc}</span>
                 </div>
 
-                <span className="flex min-w-[98px] items-center justify-end gap-3">
-                  <span
-                    className={
-                      "hidden w-12 text-right text-xs font-semibold sm:block " +
-                      (on ? "text-emerald-700" : "text-ink-400")
-                    }
-                  >
-                    {on ? "เปิด" : "ปิด"}
-                  </span>
-                  <span
-                    className={
-                      "relative h-6 w-11 flex-none rounded-full transition-colors duration-200 " +
-                      (on ? "bg-emerald-500" : "bg-ink-300")
-                    }
-                  >
-                    <span
-                      className={
-                        "absolute top-0.5 h-5 w-5 rounded-full bg-white shadow-sm transition-transform duration-200 " +
-                        (on ? "translate-x-[22px]" : "translate-x-0.5")
-                      }
-                    />
-                  </span>
-                </span>
+                <span className={`policy-switch ${on ? "on" : "off"}`}><i /></span>
               </button>
             );
           })}
@@ -251,18 +222,18 @@ export function LoginMethodsCard() {
           </div>
         )}
 
-        <div className="flex min-h-[62px] flex-wrap items-center gap-2 border-t border-ink-100 bg-ink-50/40 px-4 py-3 sm:px-5">
+        <div className="auth-save-row">
           <button
             onClick={save}
             disabled={busy || !dirty || noneSelected}
-            className="px-4 py-2 rounded-lg bg-ink-900 hover:bg-ink-800 disabled:bg-ink-300 disabled:cursor-not-allowed text-white text-sm font-bold transition"
+            className="auth-save"
           >
             {busy ? "กำลังบันทึก…" : "บันทึก + ตัด session ทั้งหมด"}
           </button>
           {dirty && !busy && (
             <button
               onClick={reset}
-              className="px-3 py-2 rounded-lg border border-ink-200 hover:bg-ink-50 text-sm text-ink-600"
+              className="auth-reset"
             >
               ยกเลิก
             </button>
