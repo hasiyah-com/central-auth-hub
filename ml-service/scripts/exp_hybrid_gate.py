@@ -309,25 +309,29 @@ def cmd_smoke(args):
         cfg = CFG.CONFIGS[key]
         rows = apply_config(ctxs, cfg, ecdf, 0.35, thr)
         s_ = M.summarize(rows)
-        at1 = M.recall_at_fpr(rows, 0.01)
-        results[key] = {"summary": vars(s_), "recall_at_1pct_fpr": at1}
+        at1 = M.score_only_ranking(rows, 0.01)
+        results[key] = {"summary": vars(s_), "ranking_only_at_1pct": at1}
         print(
             f"{key:4} {cfg.name[:30]:30} {s_.recall:8.3f} {s_.precision:7.3f} "
             f"{s_.challenge_fpr:7.3f} {s_.block_fpr:7.3f} "
             f"{s_.l3_effective_unique:7.3f} {at1['recall']:7.3f}"
         )
 
-    print("\nคู่เปรียบเทียบ (recall ที่ FPR 1% เท่ากัน — เทียบได้จริง):")
+    print("\nคู่เปรียบเทียบ (ranking เท่านั้น — ยังไม่ผ่าน resolver ห้ามอ้างเป็นจุดทำงาน):")
     for a, b, q in CFG.COMPARISONS:
-        ra = results[a]["recall_at_1pct_fpr"]["recall"]
-        rb = results[b]["recall_at_1pct_fpr"]["recall"]
-        print(f"  {a} -> {b}  {q:28} recall@1%FPR {rb - ra:+.4f}")
+        ra = results[a]["ranking_only_at_1pct"]["recall"]
+        rb = results[b]["ranking_only_at_1pct"]["recall"]
+        print(f"  {a} -> {b}  {q:28} ranking@1% {rb - ra:+.4f}")
 
     ARTIFACTS.mkdir(parents=True, exist_ok=True)
     out = ARTIFACTS / f"smoke_seed{args.seed}_size{args.size}.json"
     out.write_text(
         json.dumps(
             {
+                # ผลชุดนี้ตรวจ harness เท่านั้น 1 seed x 1 size x ค่าเริ่มต้น
+                # x วัดบน tuning split -> **ห้ามใช้สรุปเรื่องโมเดลในเล่ม**
+                "status": "diagnostic_smoke_only",
+                "not_for_model_conclusion": True,
                 "seed": args.seed,
                 "size": args.size,
                 "leakage": leak,
@@ -344,6 +348,146 @@ def cmd_smoke(args):
     return 0
 
 
+# ══════════════════════════ Parity gate ══════════════════════════
+def cmd_parity(args):
+    """ตรวจว่า harness กับ production คำนวณตรงกันจริง — ต้องผ่านก่อนรันเต็ม.
+
+    ถ้าไม่ผ่าน ผลการทดลองจะอธิบายไม่ได้ว่าเกิดจากระบบหรือจากความต่างของ harness
+    (บทเรียน B66)
+    """
+    import json
+    import tempfile
+
+    from app.security import calibration as PCAL
+    from app.security.policy_gate import PolicyOutcome
+    from app.security.risk_evidence import behavior_evidence as P_beh
+    from app.security.risk_evidence import rule_evidence as P_rule
+    from app.security.risk_fusion import fuse as P_fuse
+
+    ok = True
+    print(f"PARITY GATE — seed {args.seed} · size {args.size}")
+
+    raw_users = G3.build_seed(args.users, args.seed)
+    splits = DS.build(args.users, args.seed, args.size)
+    point_model, seq_models, ecdf = fit_all(splits, args.size, raw_users)
+
+    # ── 1. sequence parity: production _windows vs harness _winfeat ──
+    print("  [1] sequence parity")
+    ok &= _parity_sequence(splits, seq_models)
+
+    # ── 2. ECDF parity: harness ECDF vs ตาราง calibration ของ production ──
+    print("  [2] ECDF / calibration parity")
+    with tempfile.NamedTemporaryFile(
+        "w", suffix=".json", delete=False, encoding="utf-8"
+    ) as f:
+        json.dump({"version": "parity", "quantiles": ecdf.to_artifact()}, f)
+        cal_path = Path(f.name)
+    PCAL.CALIBRATION_FILE = cal_path
+    PCAL.reload_for_tests()
+    diffs = []
+    for layer in ("rule", "behavior", "anomaly_point", "anomaly_sequence"):
+        for raw in (0.0, 0.05, 0.2, 0.5, 0.8, 1.0):
+            a = ecdf(layer, raw)
+            b = PCAL.calibrate(layer, raw).value
+            if abs(a - b) > 0.02:  # to_artifact ย่อควอนไทล์ จึงยอมคลาดได้เล็กน้อย
+                diffs.append((layer, raw, round(a, 4), round(b, 4)))
+    if diffs:
+        ok = False
+        print(f"      ไม่ตรง {len(diffs)} จุด: {diffs[:4]}")
+    else:
+        print("      ตรงกันทุกจุดที่สุ่มตรวจ")
+
+    # ── 3. fusion parity: harness apply_config vs production fuse ──
+    print("  [3] fusion parity")
+    ctxs = compute_layer_outputs(splits, point_model, seq_models, "tune")[:400]
+    thr = {"warn": 0.5, "challenge": 0.7, "block": 0.85}
+    rows = apply_config(ctxs, CFG.CONFIGS["B"], ecdf, 0.35, thr)
+    bad = 0
+    for c, r in zip(ctxs, rows):
+        evs = [P_rule(c.rule), P_beh(c.behavior)]
+        for e in evs:
+            e.evidence_score = ecdf(e.layer, e.raw_score or 0.0)
+        d = P_fuse(c.policy, evs, gamma=0.35, thresholds=thr)
+        if d.decision != r.decision or abs(d.total_score - r.score) > 1e-9:
+            bad += 1
+    if bad:
+        ok = False
+        print(f"      ไม่ตรง {bad}/{len(rows)} แถว")
+    else:
+        print(f"      ตรงกันทุกหลัก {len(rows)} แถว")
+
+    # ── 4. counterfactual parity: Policy Gate ต้องเป็น object เดียวกันสองรอบ ──
+    print("  [4] counterfactual parity")
+    forced = PolicyOutcome(min_action="challenge", reasons=["parity"], policy="test")
+    a = CFG.evaluate(
+        CFG.CONFIGS["E"],
+        forced,
+        ctxs[0].rule,
+        ctxs[0].behavior,
+        ctxs[0].l3,
+        calibrate_fn=ecdf,
+        gamma=0.35,
+        thresholds=thr,
+    )
+    b = CFG.evaluate(
+        CFG.CONFIGS["B"],
+        forced,
+        ctxs[0].rule,
+        ctxs[0].behavior,
+        CFG.L3Scores(),
+        calibrate_fn=ecdf,
+        gamma=0.35,
+        thresholds=thr,
+    )
+    same_policy = a.breakdown["policy"] == b.breakdown["policy"] == forced.to_contract()
+    floors_ok = a.decision != "allow" and b.decision != "allow"
+    if not (same_policy and floors_ok):
+        ok = False
+        print("      policy ไม่ตรงกันสองรอบ หรือ min_action ไม่ถูกบังคับ")
+    else:
+        print("      Policy Gate เดียวกันทั้งสองรอบ และ min_action ถูกบังคับครบ")
+
+    cal_path.unlink(missing_ok=True)
+    PCAL.CALIBRATION_FILE = Path(PCAL.__file__).with_name("calibration_v1.json")
+    PCAL.reload_for_tests()
+    print(f"\nPARITY GATE: {'ผ่าน' if ok else 'ไม่ผ่าน — ห้ามรันเต็ม'}")
+    return 0 if ok else 1
+
+
+def _parity_sequence(splits, seq_models) -> bool:
+    """residual ชุดเดียวกัน -> 18 มิติของ production ต้องเท่ากับของ harness ทุกตำแหน่ง."""
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location(
+        "prod_sequence", ML.parent / "app" / "sequence.py"
+    )
+    prod = importlib.util.module_from_spec(spec)
+    # ต้องลงทะเบียนก่อน exec — @dataclass อ่าน sys.modules[cls.__module__]
+    sys.modules["prod_sequence"] = prod
+    spec.loader.exec_module(prod)
+
+    alias = sorted(splits)[0]
+    model, base, prof, train_res = seq_models[alias]
+    if model is None or len(train_res) < prod.WINDOW:
+        print("      ข้าม — ไม่มีโมเดล sequence")
+        return True
+    win = train_res[-prod.WINDOW :]
+    prod_feat = prod._windows(np.asarray(win, dtype=float))[0]
+    harness_feat = SEQL._winfeat(win)
+    same = np.allclose(prod_feat, harness_feat, atol=1e-12)
+    if same:
+        print(
+            f"      18 มิติตรงกันทุกตำแหน่ง (max diff "
+            f"{float(np.max(np.abs(prod_feat - harness_feat))):.2e})"
+        )
+    else:
+        print(
+            f"      ไม่ตรง: prod={np.round(prod_feat, 4)[:4]} "
+            f"harness={np.round(harness_feat, 4)[:4]}"
+        )
+    return bool(same)
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -352,6 +496,11 @@ def main():
     sm.add_argument("--size", type=int, default=500)
     sm.add_argument("--users", type=Path, default=DEFAULT_USERS)
     sm.set_defaults(func=cmd_smoke)
+    pa = sub.add_parser("parity", help="ตรวจ harness == production ก่อนรันเต็ม")
+    pa.add_argument("--seed", type=int, default=42)
+    pa.add_argument("--size", type=int, default=500)
+    pa.add_argument("--users", type=Path, default=DEFAULT_USERS)
+    pa.set_defaults(func=cmd_parity)
     args = ap.parse_args()
     return args.func(args)
 

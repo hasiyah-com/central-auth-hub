@@ -221,25 +221,35 @@ def calibration_error(rows: list[EventOutcome], bins: int = 10) -> float:
     return err
 
 
-def recall_at_fpr(rows: list[EventOutcome], target_fpr: float) -> dict:
-    """recall ที่ระดับ FPR เท่ากัน — วิธีเดียวที่เทียบ config กันได้อย่างยุติธรรม.
+def score_only_ranking(rows: list[EventOutcome], target_fpr: float) -> dict:
+    """⚠️ **การวิเคราะห์ ranking เท่านั้น — ไม่ใช่จุดทำงานที่ระบบทำได้จริง**.
 
-    **ทำไมจำเป็น:** แต่ละ config มีการกระจายคะแนนต่างกันมาก (วัดได้ challenge FPR
-    0.003 ถึง 0.584 ที่ threshold ชุดเดียวกัน) การเทียบ recall ที่ threshold คงที่
-    จึงเป็นการเทียบคนละจุดทำงาน ไม่ได้บอกว่าโมเดลไหนดีกว่า
+    ตัดที่คะแนนดิบล้วน จึงข้าม Policy Gate · min_action · L3 solo cap ทั้งหมด
+    ค่าที่ได้บอกได้แค่ว่า "คะแนนของ config นี้จัดอันดับ attack เหนือ normal ได้ดีแค่ไหน"
+    ซึ่งเป็นคุณสมบัติของคะแนน ไม่ใช่ของระบบ
 
-    เลื่อน threshold ของแต่ละ config จนได้ FPR ตามเป้า แล้วค่อยอ่าน recall
+    **ห้ามใช้ตอบว่า "recall ที่ FPR 1%"** — ใช้ hybrid_experiment.sweep.search()
+    ซึ่งเดินผ่าน resolver จริงแทน · ถ้า Policy Gate ทำให้ FPR ต่ำสุดเป็น 1.3%
+    ตัวเลข ROC ที่ 1% คือจุดที่ระบบไปไม่ถึง
+
+    เก็บไว้เพื่อรายงานเป็นการวิเคราะห์เสริม (เช่น เทียบ ranking ของ Config A
+    ที่ใช้ threshold เดิม) โดยต้องติดป้ายกำกับให้ชัดทุกครั้ง
     """
     nor = sorted((r.score for r in rows if not r.is_attack), reverse=True)
     atk = [r.score for r in rows if r.is_attack]
     if not nor or not atk:
-        return {"threshold": 1.0, "recall": 0.0, "actual_fpr": 0.0}
+        return {
+            "threshold": 1.0,
+            "recall": 0.0,
+            "actual_fpr": 0.0,
+            "kind": "ranking_only",
+        }
     k = int(target_fpr * len(nor))
     thr = nor[k] if k < len(nor) else nor[-1]
-    # threshold ที่ทำให้ FPR ไม่เกินเป้า (ใช้ > เพื่อไม่ให้ค่าที่เสมอกันดันเกิน)
-    actual = sum(1 for x in nor if x > thr) / len(nor)
     return {
         "threshold": round(float(thr), 6),
         "recall": round(sum(1 for x in atk if x > thr) / len(atk), 4),
-        "actual_fpr": round(actual, 4),
+        "actual_fpr": round(sum(1 for x in nor if x > thr) / len(nor), 4),
+        "kind": "ranking_only",
+        "warning": "ไม่ผ่าน Policy Gate/resolver — ห้ามอ้างเป็นจุดทำงานจริง",
     }

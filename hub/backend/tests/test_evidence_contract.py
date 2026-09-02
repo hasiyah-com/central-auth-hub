@@ -392,3 +392,70 @@ def test_ecdf_maps_the_most_common_score_to_low_evidence(tmp_path, monkeypatch):
     mid = C.calibrate("rule", 0.5).value
     assert 0.85 <= mid <= 0.99, f"ค่ากลางค่อนสูงควรอยู่ช่วงสูงแต่ไม่สุด (ได้ {mid})"
     C.reload_for_tests()
+
+
+# ══════════════ 10. ECDF ties — ครอบคลุมทุกกรณีขอบ ══════════════
+
+
+def _cal_with(tmp_path, monkeypatch, values, layer="rule"):
+    import json
+
+    from app.security import calibration as C
+
+    f = tmp_path / "calibration_v1.json"
+    f.write_text(
+        json.dumps({"version": "tie-test", "quantiles": {layer: values}}),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(C, "CALIBRATION_FILE", f)
+    C.reload_for_tests()
+    return C
+
+
+def test_ecdf_all_identical_values(tmp_path, monkeypatch):
+    """ทุกค่าเท่ากันหมด -> ค่านั้นต้องได้ 0 และค่าที่สูงกว่าต้องได้ 1."""
+    C = _cal_with(tmp_path, monkeypatch, [0.0, 0.0, 0.0, 0.0])
+    assert C.calibrate("rule", 0.0).value == 0.0
+    assert C.calibrate("rule", 0.1).value == 1.0
+    assert C.calibrate("rule", -1.0).value == 0.0
+    C.reload_for_tests()
+
+
+def test_ecdf_boundaries_and_between(tmp_path, monkeypatch):
+    C = _cal_with(tmp_path, monkeypatch, [0.1, 0.2, 0.3, 0.4])
+    assert C.calibrate("rule", 0.1).value == 0.0, "ค่าต่ำสุดต้องได้ 0"
+    assert C.calibrate("rule", 0.4).value == 0.75, "ค่าสูงสุดที่มีอยู่ได้สัดส่วนที่ต่ำกว่า"
+    assert C.calibrate("rule", 0.5).value == 1.0, "สูงกว่าทุกค่า -> 1"
+    assert C.calibrate("rule", 0.25).value == 0.5, "ค่าระหว่างสองจุด"
+    C.reload_for_tests()
+
+
+def test_ecdf_heavy_ties_do_not_inflate(tmp_path, monkeypatch):
+    """ค่าซ้ำจำนวนมากต้องไม่ดันหลักฐานขึ้น — กันบั๊กเดิมที่ block ทุกเหตุการณ์."""
+    C = _cal_with(tmp_path, monkeypatch, [0.0] * 990 + [0.9] * 10)
+    assert C.calibrate("rule", 0.0).value == 0.0
+    assert C.calibrate("rule", 0.5).value == pytest.approx(0.99)
+    C.reload_for_tests()
+
+
+def test_ecdf_is_monotonic(tmp_path, monkeypatch):
+    C = _cal_with(tmp_path, monkeypatch, [0.0, 0.0, 0.1, 0.2, 0.2, 0.5, 0.9])
+    vals = [C.calibrate("rule", x).value for x in (0.0, 0.05, 0.1, 0.2, 0.3, 0.5, 1.0)]
+    assert vals == sorted(vals), f"ต้องไม่ลดลง: {vals}"
+    assert all(0.0 <= v <= 1.0 for v in vals)
+    C.reload_for_tests()
+
+
+def test_calibrated_value_is_percentile_not_probability():
+    """ชื่อเรียกต้องตรงกับสิ่งที่คำนวณ — เป็น percentile เชิงประจักษ์ ไม่ใช่ความน่าจะเป็น.
+
+    `bisect_left` ให้สัดส่วนที่ต่ำกว่าอย่างเคร่งครัด ซึ่งเป็น conservative percentile
+    การเรียกว่า "ความน่าจะเป็นที่เป็นการโจมตี" จะสื่อผิด เพราะไม่ได้ปรับเทียบกับ
+    อัตราการเกิดจริงของ attack เลย
+    """
+    from app.security import calibration as C
+
+    src = inspect.getsource(C)
+    assert "percentile evidence" in src, "ต้องเรียกว่า percentile evidence"
+    # ต้องมีข้อความปฏิเสธชัดเจนว่าไม่ใช่ความน่าจะเป็น ไม่ใช่แค่เลี่ยงไม่พูดถึง
+    assert "ไม่ใช่ probability" in src or 'ไม่ใช่ "ความน่าจะเป็น' in src
