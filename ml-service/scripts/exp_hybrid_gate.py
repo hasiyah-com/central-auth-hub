@@ -997,8 +997,18 @@ def cmd_final(args):
             results[key]["paired_vs_deployed"] = None
             continue
         oth = per_config_events[key]
-        # resample ครั้งเดียวต่อ boot คำนวณทั้ง 4 metric (เร็วกว่าเรียกแยก ~4 เท่า)
-        deltas = FS.paired_multi_delta(dep_events, oth, n_boot=1000, seed=1)
+        # cluster bootstrap (user->seed) บนสถิติพอเพียง — เร็วพอสำหรับ 316k เหตุการณ์
+        # (resample ทุกเหตุการณ์ทุก boot ช้าเกินไป · ดู final_stats.paired_cluster_multi_delta)
+        t_pb = time.perf_counter()
+        deltas = FS.paired_cluster_multi_delta(dep_events, oth, n_boot=2000, seed=1)
+        print(
+            f"  paired {deployed} vs {key}: "
+            f"ΔRecall {deltas['delta_recall']['delta']:+.4f} "
+            f"[{deltas['delta_recall']['ci_low']:+.4f},"
+            f"{deltas['delta_recall']['ci_high']:+.4f}] "
+            f"[{time.perf_counter() - t_pb:.1f}s]",
+            flush=True,
+        )
         results[key]["paired_vs_deployed"] = {
             "candidate": deployed,
             **deltas,

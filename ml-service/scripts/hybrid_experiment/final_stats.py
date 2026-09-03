@@ -198,3 +198,141 @@ def paired_multi_delta(
         }
 
     return BS.paired_hierarchical_multi(tree, multi, n_boot=n_boot, seed=seed)
+
+
+def _aggregate_groups(cand: list[dict], other: list[dict]) -> tuple[dict, dict]:
+    """สรุปสถิติพอเพียงต่อกลุ่ม (user, seed) — ทำครั้งเดียว ใช้ซ้ำทุก boot.
+
+    การ bootstrap บนสถิติพอเพียงระดับกลุ่ม เร็วกว่าการ resample ทุกเหตุการณ์
+    หลายร้อยเท่า (O(กลุ่ม) แทน O(เหตุการณ์) ต่อ boot) โดยให้ค่า point estimate
+    เท่าเดิมเป๊ะ · แคมเปญ key ต่อกลุ่มจึงไม่ปนข้าม seed
+    """
+    if len(cand) != len(other):
+        raise ValueError("cand กับ other ต้องยาวเท่ากันและเรียงตรงกัน")
+    groups: dict[tuple, dict] = {}
+    camp_tmp: dict[tuple, dict] = {}
+    for c, o in zip(cand, other):
+        gk = (c["user"], c["seed"])
+        g = groups.get(gk)
+        if g is None:
+            g = groups[gk] = {
+                "n_a": 0,
+                "ca_surf": 0,
+                "oa_surf": 0,
+                "ca_ch": 0,
+                "oa_ch": 0,
+                "n_n": 0,
+                "cn_ch": 0,
+                "on_ch": 0,
+            }
+            camp_tmp[gk] = {}
+        if c["is_attack"]:
+            g["n_a"] += 1
+            g["ca_surf"] += c["surfaced"]
+            g["oa_surf"] += o["surfaced"]
+            g["ca_ch"] += c["challenged"]
+            g["oa_ch"] += o["challenged"]
+            camp = c.get("campaign")
+            if camp:
+                cc = camp_tmp[gk].setdefault(camp, [False, False])
+                cc[0] = cc[0] or c["surfaced"]
+                cc[1] = cc[1] or o["surfaced"]
+        else:
+            g["n_n"] += 1
+            g["cn_ch"] += c["challenged"]
+            g["on_ch"] += o["challenged"]
+    for gk, g in groups.items():
+        g["camps"] = [tuple(v) for v in camp_tmp[gk].values()]
+    # จัดกลุ่มตามผู้ใช้เพื่อ resample สองชั้น
+    by_user: dict[str, list] = defaultdict(list)
+    for (u, _s), g in groups.items():
+        by_user[u].append(g)
+    return groups, dict(by_user)
+
+
+def _metrics_from_groups(chosen: list[dict]) -> dict:
+    """รวมสถิติพอเพียงของกลุ่มที่ถูกเลือก -> (a, b) ต่อ metric."""
+    n_a = ca_surf = oa_surf = ca_ch = oa_ch = 0
+    n_n = cn_ch = on_ch = 0
+    nc = c_caught = o_caught = 0
+    for g in chosen:
+        n_a += g["n_a"]
+        ca_surf += g["ca_surf"]
+        oa_surf += g["oa_surf"]
+        ca_ch += g["ca_ch"]
+        oa_ch += g["oa_ch"]
+        n_n += g["n_n"]
+        cn_ch += g["cn_ch"]
+        on_ch += g["on_ch"]
+        for cc, oc in g["camps"]:
+            nc += 1
+            c_caught += cc
+            o_caught += oc
+    r = lambda x, n: (x / n if n else 0.0)  # noqa: E731
+    return {
+        "delta_recall": (r(ca_surf, n_a), r(oa_surf, n_a)),
+        "delta_recall_challenge": (r(ca_ch, n_a), r(oa_ch, n_a)),
+        "delta_challenge_fpr": (r(cn_ch, n_n), r(on_ch, n_n)),
+        "delta_campaign_recall": (r(c_caught, nc), r(o_caught, nc)),
+    }
+
+
+def paired_cluster_multi_delta(
+    cand: list[dict],
+    other: list[dict],
+    *,
+    n_boot: int = 2000,
+    seed: int = 0,
+    alpha: float = 0.05,
+) -> dict:
+    """paired delta หลาย metric — bootstrap ระดับ cluster (user -> seed) บนสถิติพอเพียง.
+
+    เป็น **2-level cluster bootstrap** (สุ่มผู้ใช้ แล้วสุ่ม seed ในผู้ใช้) บนสถิติที่
+    สรุปต่อกลุ่มไว้ก่อน — เร็วพอสำหรับ 316k เหตุการณ์ · ต่างจาก paired_hierarchical
+    (3-level) ตรงที่ไม่ resample เหตุการณ์ภายใน seed ซึ่งเป็นชั้นที่ความแปรปรวนน้อย
+    ที่สุด · ความแปรปรวนหลักมาจากระดับผู้ใช้ซึ่งยังถูก resample เต็มที่
+
+    point estimate (delta บนข้อมูลจริง) เท่ากับ paired_multi_delta เป๊ะ
+    """
+    import random as _random
+
+    groups, by_user = _aggregate_groups(cand, other)
+    all_groups = list(groups.values())
+    if not all_groups:
+        return {}
+    base = _metrics_from_groups(all_groups)
+    names = list(base)
+    deltas0 = {k: base[k][0] - base[k][1] for k in names}
+    users = list(by_user)
+    rng = _random.Random(seed)
+    dist: dict[str, list[float]] = {k: [] for k in names}
+    for _ in range(n_boot):
+        chosen: list[dict] = []
+        for _ in range(len(users)):
+            u = users[rng.randrange(len(users))]
+            gs = by_user[u]
+            chosen.extend(gs[rng.randrange(len(gs))] for _ in range(len(gs)))
+        r = _metrics_from_groups(chosen)
+        for k in names:
+            dist[k].append(r[k][0] - r[k][1])
+    out: dict = {}
+    for k in names:
+        d = deltas0[k]
+        xs = sorted(dist[k])
+        lo = xs[int((alpha / 2) * len(xs))]
+        hi = xs[min(len(xs) - 1, int((1 - alpha / 2) * len(xs)))]
+        if d > 0:
+            agree = sum(1 for x in xs if x > 0) / len(xs)
+        elif d < 0:
+            agree = sum(1 for x in xs if x < 0) / len(xs)
+        else:
+            agree = sum(1 for x in xs if x == 0) / len(xs)
+        out[k] = {
+            "delta": round(d, 6),
+            "ci_low": round(lo, 6),
+            "ci_high": round(hi, 6),
+            "sign_agreement": round(agree, 4),
+            "n_boot_effective": len(xs),
+            "method": "cluster_bootstrap_user_seed_2level",
+        }
+    return out

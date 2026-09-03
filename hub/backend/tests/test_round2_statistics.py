@@ -494,3 +494,66 @@ def test_paired_multi_delta_matches_individual_calls():
         "delta_challenge_fpr",
         "delta_campaign_recall",
     }
+
+
+def test_paired_cluster_multi_delta_point_matches_full():
+    """cluster bootstrap ต้องให้ point estimate (delta) เท่ากับวิธี resample เต็มเป๊ะ.
+
+    ความเร็วมาจากการ bootstrap บนสถิติพอเพียง แต่ delta บนข้อมูลจริงต้องไม่เปลี่ยน
+    """
+    from hybrid_experiment import final_stats as FS
+
+    cand, other = [], []
+    for i in range(200):
+        u = "u%d" % (i % 6)
+        atk = i % 2 == 0
+        camp = ("u%d:A" % (i % 6)) if atk else None
+        cand.append(_ev(u, i % 3, camp, atk, i % 3 != 0, i % 4 != 0))
+        other.append(_ev(u, i % 3, camp, atk, i % 5 != 0, i % 6 != 0))
+    fast = FS.paired_cluster_multi_delta(cand, other, n_boot=300, seed=1)
+    full = FS.paired_multi_delta(cand, other, n_boot=1, seed=1)
+    for k in (
+        "delta_recall",
+        "delta_recall_challenge",
+        "delta_challenge_fpr",
+        "delta_campaign_recall",
+    ):
+        assert fast[k]["delta"] == pytest.approx(full[k]["delta"]), k
+        assert fast[k]["method"] == "cluster_bootstrap_user_seed_2level"
+
+
+def test_paired_cluster_scales_to_many_events():
+    """ต้องรันเร็วบนเหตุการณ์จำนวนมาก (คุณสมบัติที่ทำให้ final ไม่ค้าง)."""
+    import time as _t
+
+    from hybrid_experiment import final_stats as FS
+
+    cand, other = [], []
+    for i in range(60000):
+        u = "u%d" % (i % 12)
+        atk = i % 3 == 0
+        cand.append(
+            _ev(
+                u,
+                i % 5,
+                ("u:%d" % (i % 20)) if atk else None,
+                atk,
+                i % 2 == 0,
+                i % 4 == 0,
+            )
+        )
+        other.append(
+            _ev(
+                u,
+                i % 5,
+                ("u:%d" % (i % 20)) if atk else None,
+                atk,
+                i % 3 == 0,
+                i % 5 == 0,
+            )
+        )
+    t0 = _t.perf_counter()
+    r = FS.paired_cluster_multi_delta(cand, other, n_boot=2000, seed=1)
+    dt = _t.perf_counter() - t0
+    assert "delta_recall" in r
+    assert dt < 15, f"cluster bootstrap ควรเร็ว: {dt:.1f}s สำหรับ 60k เหตุการณ์"
