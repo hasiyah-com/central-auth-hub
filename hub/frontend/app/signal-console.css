@@ -113,6 +113,7 @@
 /* Live production bindings — same component geometry, real API content. */
 .cx-document{width:100%}
 .cx-topbar .search{margin-left:auto}.cx-topbar .top-icon{width:30px;height:30px;display:grid;place-items:center;border-left:1px solid #dfe4ea;color:#66758a}.cx-topbar .time{font-size:7px}
+.cx-profile button{width:24px;height:24px;padding:0;display:grid;place-items:center;border:0;background:transparent;color:#52637a;cursor:pointer}.cx-profile button:hover{color:#34e8c4}
 .cx-command>.cx-live-actions,.cx-command>.cx-command-actions{position:relative;z-index:2}
 .cx-live-actions>.cx-chip{height:31px;cursor:pointer}.cx-live-actions>button{cursor:pointer;padding-inline:10px}.cx-live-actions>button:last-child{margin-left:3px}
 .cx-primary-action,.cx-ml-threshold-link{height:36px;padding:0 14px;display:inline-flex;align-items:center;border:1px solid #2c7568;background:#12332e;color:#7af0d8;text-decoration:none;font-size:9px;font-weight:700;position:relative;z-index:2;cursor:pointer}

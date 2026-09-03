@@ -37,14 +37,16 @@ const GROUPS = [
   { title: "DEVELOPER", glyphs: new Set(["RQ", "ME"]) },
 ];
 
-export function Sidebar() {
+export function Sidebar({ variant = "dashboard" }: { variant?: "dashboard" | "compact" }) {
   const pathname = usePathname();
   const router = useRouter();
   const [me, setMe] = useState<Me | null>(null);
   const [notif, setNotif] = useState<NotifCount | null>(null);
+  const [host, setHost] = useState("");
 
   useEffect(() => {
     fetch("/api/me", { credentials: "include" }).then((r) => (r.ok ? r.json() : null)).then(setMe).catch(() => setMe(null));
+    setHost(window.location.host);
   }, []);
 
   useEffect(() => {
@@ -75,6 +77,30 @@ export function Sidebar() {
   const identity = me?.full_name || me?.email || "กำลังโหลด";
   const initials = useMemo(() => identity.split(/\s+/).map((part) => part[0]).join("").slice(0, 2).toUpperCase(), [identity]);
 
+  if (variant === "compact") {
+    return (
+      <aside className="cx-sidebar">
+        <Link href="/dashboard" className="cx-brand">
+          <span><SignalIcon type="HUB" /><i className="cx-dot"><i /></i></span>
+          <div><b>HUB</b><small>SECURITY CONTROL</small></div>
+        </Link>
+        <div className="cx-env"><i className="cx-dot"><i /></i><span>{/^(localhost|127\.0\.0\.1)/.test(host) ? "LOCAL" : "PRODUCTION"}</span><code className="mono">{host || "CONNECTING"}</code></div>
+        <nav aria-label="เมนูหลัก">
+          {isAdmin && GROUPS.map((group) => {
+            const items = ADMIN_NAV.filter((item) => group.glyphs.has(item.glyph));
+            return <section key={group.title}><p className="mono">{group.title}</p>{items.map((item) => <CompactNavLink key={item.href} item={item} pathname={pathname} badge={badgeFor(item.href)} />)}</section>;
+          })}
+          {isDeveloper && !isAdmin && <section><p className="mono">DEVELOPER</p>{DEV_NAV.map((item) => <CompactNavLink key={item.href} item={item} pathname={pathname} />)}</section>}
+        </nav>
+        <div className="cx-profile">
+          <span className="mono">{initials || "?"}</span>
+          <div><b>{identity}</b><small>{me?.is_hub_admin ? "Super Admin" : me?.user_type || "Identity"}</small></div>
+          <button type="button" onClick={logout} aria-label="ออกจากระบบ"><SignalIcon type="OUT" /></button>
+        </div>
+      </aside>
+    );
+  }
+
   return (
     <aside className="sidebar">
       <Link href="/dashboard" className="brand-lockup">
@@ -95,6 +121,11 @@ export function Sidebar() {
       </div>
     </aside>
   );
+}
+
+function CompactNavLink({ item, pathname, badge }: { item: NavItem; pathname: string; badge?: number }) {
+  const active = pathname === item.href || pathname.startsWith(item.href + "/");
+  return <Link href={item.href} className={active ? "active" : ""}><SignalIcon type={item.glyph}/><span>{item.label}</span>{badge && badge > 0 ? <b className="mono">{badge > 99 ? "99+" : badge}</b> : null}</Link>;
 }
 
 function NavLink({ item, pathname, badge }: { item: NavItem; pathname: string; badge?: number }) {

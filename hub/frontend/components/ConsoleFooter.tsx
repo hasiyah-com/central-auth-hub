@@ -15,7 +15,7 @@ import { useEffect, useState } from "react";
 
 type State = "checking" | "ok" | "down";
 
-export function ConsoleFooter() {
+export function ConsoleFooter({ variant = "dashboard" }: { variant?: "dashboard" | "compact" }) {
   const [state, setState] = useState<State>("checking");
 
   useEffect(() => {
@@ -42,6 +42,16 @@ export function ConsoleFooter() {
     down: { dot: "bg-rose-400", text: "ติดต่อ Hub ไม่ได้", cls: "text-rose-400" },
   };
   const m = meta[state];
+
+  if (variant === "compact") {
+    return (
+      <footer className="cx-footer">
+        <span>Central Auth Hub</span>
+        <code className="mono">AUDIT CHAIN · VERIFIED</code>
+        <span><i className={`cx-dot ${state === "down" ? "danger" : state === "checking" ? "warn" : ""}`}><i /></i>{m.text}</span>
+      </footer>
+    );
+  }
 
   return (
     <footer className="mt-auto border-t border-white/[.08] bg-[#0b1530] px-4 py-4 sm:px-6 lg:px-8">
