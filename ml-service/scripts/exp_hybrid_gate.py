@@ -767,34 +767,6 @@ def cmd_tune(args):
 
 
 # ══════════════════════════ Final holdout (เปิดครั้งเดียวหลัง freeze) ══════════════════════════
-def _ci_inputs(rows) -> dict:
-    """ย่อแต่ละเหตุการณ์เหลือ 3 บิตที่ CI ต้องใช้ แล้วจัดกลุ่มตามผู้ใช้.
-
-    bootstrap ต้องวนหลายพันรอบ ถ้าให้มันเดินบน EventOutcome เต็มดวงจะช้าโดยไม่ได้
-    อะไรเพิ่ม — สถิติที่คำนวณเป็นแค่การนับ
-    """
-    from collections import defaultdict
-
-    out = defaultdict(list)
-    for r in rows:
-        out[r.user].append(
-            (
-                r.is_attack,
-                r.is_surfaced,
-                r.decision.removeprefix("would_") in M.CHALLENGED,
-            )
-        )
-    return dict(out)
-
-
-def _recall_stat(rows) -> float:
-    n = sum(1 for a, _, _ in rows if a)
-    return (sum(1 for a, s, _ in rows if a and s) / n) if n else 0.0
-
-
-def _chfpr_stat(rows) -> float:
-    n = sum(1 for a, _, _ in rows if not a)
-    return (sum(1 for a, _, c in rows if not a and c) / n) if n else 0.0
 
 
 def _final_gate(results: dict, fz: dict) -> dict:
@@ -962,7 +934,8 @@ def cmd_final(args):
     results = {}
     for key in CFG.ORDER:
         rows = per_config_rows[key]
-        clusters = _ci_inputs(rows)
+        # CI แบบ unpaired ด้วย cluster bootstrap บนสถิติพอเพียง (เร็วพอสำหรับ 316k)
+        desc = FS.cluster_single_ci(per_config_events[key], n_boot=2000, seed=7)
         results[key] = {
             "name": CFG.CONFIGS[key].name,
             "thresholds": thr_map[key],
@@ -972,10 +945,9 @@ def cmd_final(args):
             # CI แบบ unpaired — เก็บไว้บรรยายความไม่แน่นอนของแต่ละ config เท่านั้น
             # **ห้ามใช้สรุปความต่างระหว่าง config** ให้ใช้ paired_vs_deployed แทน
             "descriptive_unpaired_ci": {
-                "recall": BS.cluster_bootstrap(clusters, _recall_stat, n_boot=1000),
-                "challenge_fpr": BS.cluster_bootstrap(
-                    clusters, _chfpr_stat, n_boot=1000
-                ),
+                "recall": desc["recall"],
+                "challenge_fpr": desc["challenge_fpr"],
+                "method": desc["method"],
                 "note": "unpaired — บรรยายเท่านั้น ไม่ใช่การทดสอบความแตกต่าง",
             },
             # ECE เก็บเป็นข้อมูลดิบพร้อม caveat — ไม่ใช่ metric ตัดสิน (percentile evidence

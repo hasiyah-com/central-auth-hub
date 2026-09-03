@@ -336,3 +336,67 @@ def paired_cluster_multi_delta(
             "method": "cluster_bootstrap_user_seed_2level",
         }
     return out
+
+
+def cluster_single_ci(
+    events: list[dict], *, n_boot: int = 2000, seed: int = 0, alpha: float = 0.05
+) -> dict:
+    """CI ของ recall / challenge_fpr ของ config เดียว — cluster bootstrap บนสถิติพอเพียง.
+
+    ใช้แทน cluster_bootstrap ที่ resample ทุกเหตุการณ์ (ช้าบน 316k) · เป็น CI แบบ
+    unpaired (บรรยายความไม่แน่นอนของ config เดียว) ไม่ใช่การเทียบระหว่าง config —
+    การเทียบใช้ paired_cluster_multi_delta
+    """
+    import random as _random
+
+    by_user: dict[str, list] = defaultdict(list)
+    groups: dict[tuple, dict] = {}
+    for e in events:
+        gk = (e["user"], e["seed"])
+        g = groups.get(gk)
+        if g is None:
+            g = groups[gk] = {"n_a": 0, "surf_a": 0, "n_n": 0, "ch_n": 0}
+        if e["is_attack"]:
+            g["n_a"] += 1
+            g["surf_a"] += e["surfaced"]
+        else:
+            g["n_n"] += 1
+            g["ch_n"] += e["challenged"]
+    for (u, _s), g in groups.items():
+        by_user[u].append(g)
+
+    def stat(chosen: list[dict]) -> tuple[float, float]:
+        na = sum(g["n_a"] for g in chosen)
+        sa = sum(g["surf_a"] for g in chosen)
+        nn = sum(g["n_n"] for g in chosen)
+        cn = sum(g["ch_n"] for g in chosen)
+        return ((sa / na if na else 0.0), (cn / nn if nn else 0.0))
+
+    all_g = list(groups.values())
+    if not all_g:
+        return {"recall": [0.0, 0.0, 0.0], "challenge_fpr": [0.0, 0.0, 0.0]}
+    base = stat(all_g)
+    users = list(by_user)
+    rng = _random.Random(seed)
+    dr, dc = [], []
+    for _ in range(n_boot):
+        chosen: list[dict] = []
+        for _ in range(len(users)):
+            u = users[rng.randrange(len(users))]
+            gs = by_user[u]
+            chosen.extend(gs[rng.randrange(len(gs))] for _ in range(len(gs)))
+        r, c = stat(chosen)
+        dr.append(r)
+        dc.append(c)
+
+    def ci(point: float, xs: list[float]) -> list[float]:
+        xs = sorted(xs)
+        lo = xs[int((alpha / 2) * len(xs))]
+        hi = xs[min(len(xs) - 1, int((1 - alpha / 2) * len(xs)))]
+        return [round(point, 6), round(lo, 6), round(hi, 6)]
+
+    return {
+        "recall": ci(base[0], dr),
+        "challenge_fpr": ci(base[1], dc),
+        "method": "cluster_bootstrap_user_seed_2level",
+    }
