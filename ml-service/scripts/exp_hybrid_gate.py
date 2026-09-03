@@ -1378,6 +1378,29 @@ def cmd_freeze(args):
         print(f"Config {CANDIDATE_CONFIG} ไม่มี threshold ที่อยู่ในงบ — ห้าม freeze")
         return 1
 
+    # override block threshold ของ deployed config (ประกาศล่วงหน้าใน protocol)
+    # การยก block เป็นคันโยกฟรี: block->challenge ไม่กระทบ recall/challenge FPR
+    # (พิสูจน์บน validation ใน round2_prefreeze_2026-09-03.md) · บันทึกทั้งค่าเดิม
+    # และค่าใหม่ใน frozen record เพื่อ audit ได้
+    block_override = None
+    dep_thr = per_config_thresholds.get(args.deploy_config)
+    if args.deployed_block is not None and isinstance(dep_thr, dict):
+        block_override = {
+            "config": args.deploy_config,
+            "block_from": dep_thr["block"],
+            "block_to": args.deployed_block,
+            "rationale": (
+                "ยก block บน validation (คันโยกฟรี ไม่กระทบ recall/challenge FPR) "
+                "ประกาศล่วงหน้าใน RBA_ROUND2_PROTOCOL.md"
+            ),
+        }
+        dep_thr = {**dep_thr, "block": args.deployed_block}
+        per_config_thresholds[args.deploy_config] = dep_thr
+        print(
+            f"  override block ของ Config {args.deploy_config}: "
+            f"{block_override['block_from']} -> {args.deployed_block}"
+        )
+
     # reference scores ของ deployed config บน validation-tuning — ใช้ตอน final
     # ทำ tail calibration (validation -> holdout) โดยไม่ต้องเปิด validation ซ้ำ
     # (เก็บควอนไทล์ย่อไว้ ไม่เก็บทุกจุด เพื่อไม่ให้ไฟล์ใหญ่ · เป็นคะแนนของ normal ล้วน)
@@ -1450,6 +1473,7 @@ def cmd_freeze(args):
         "deployed_config": args.deploy_config,
         "declared_candidate": args.deploy_config,
         "declared_fallback": args.fallback,
+        "deployed_block_override": block_override,
         "deployed_config_gamma": per_config_gamma.get(args.deploy_config),
         "deployed_config_thresholds": per_config_thresholds.get(args.deploy_config),
         "l3_mode_implied": (
@@ -1812,6 +1836,12 @@ def main():
         "--fallback",
         default="shadow / current deployment",
         help="แผนสำรองถ้า candidate ไม่ผ่าน gate (ประกาศล่วงหน้า · ห้ามเลือก post-hoc)",
+    )
+    fz.add_argument(
+        "--deployed-block",
+        type=float,
+        default=None,
+        help="override block threshold ของ deployed config (คันโยกฟรีที่พิสูจน์บน validation)",
     )
     fz.add_argument(
         "--view",
