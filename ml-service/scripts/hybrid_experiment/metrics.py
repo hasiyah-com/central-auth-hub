@@ -71,7 +71,7 @@ class EventOutcome:
         )
 
     @property
-    def l3_effective_unique(self) -> bool:
+    def within_config_l3_counterfactual_unique(self) -> bool:
         """เปลี่ยนผลจริงบน attack — ไม่นับกรณีคะแนนขยับแต่ยังปล่อยผ่านเหมือนเดิม."""
         return self.is_attack and not self.surfaced_without_l3 and self.is_surfaced
 
@@ -92,7 +92,7 @@ class Summary:
     challenge_fpr: float = 0.0
     block_fpr: float = 0.0
     l3_raw_unique: float = 0.0
-    l3_effective_unique: float = 0.0
+    within_config_l3_counterfactual_unique: float = 0.0
     l3_changed_score_only: float = 0.0
     l3_overlap: float = 0.0
     l3_abstain_rate: float = 0.0
@@ -136,8 +136,8 @@ def summarize(rows: list[EventOutcome]) -> Summary:
     with_cf = [r for r in rows if r.decision_without_l3 is not None]
     s.l3_abstain_rate = _rate(sum(1 for r in rows if r.l3_abstained), len(rows))
     if atk:
-        s.l3_effective_unique = _rate(
-            sum(1 for r in atk if r.l3_effective_unique), len(atk)
+        s.within_config_l3_counterfactual_unique = _rate(
+            sum(1 for r in atk if r.within_config_l3_counterfactual_unique), len(atk)
         )
         s.l3_raw_unique = _rate(
             sum(1 for r in atk if (r.l3_evidence or 0) > 0 and not r.other_layers_high),
@@ -195,7 +195,7 @@ def campaign_level(rows: list[EventOutcome]) -> dict:
     l3_only_n = sum(
         1
         for v in camp.values()
-        if any(x.l3_effective_unique for x in v)
+        if any(x.within_config_l3_counterfactual_unique for x in v)
         and not any(x.surfaced_without_l3 for x in v)
     )
     return {

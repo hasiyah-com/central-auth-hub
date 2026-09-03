@@ -99,7 +99,7 @@ class CellStat:
     per_user_block_fpr: dict = field(default_factory=dict)
     per_user_warn_fpr: dict = field(default_factory=dict)
     pooled: dict = field(default_factory=dict)
-    l3_effective_unique: float = 0.0
+    within_config_l3_counterfactual_unique: float = 0.0
     campaign: dict = field(default_factory=dict)
 
 
@@ -153,7 +153,7 @@ def cell_stat(seed: int, size: int, rows: list[M.EventOutcome]) -> CellStat:
             "n_attack": s.n_attack,
             "n_normal": s.n_normal,
         },
-        l3_effective_unique=s.l3_effective_unique,
+        within_config_l3_counterfactual_unique=s.within_config_l3_counterfactual_unique,
         campaign=M.campaign_level(rows),
     )
 
@@ -243,7 +243,7 @@ def stat_direct(
             "n_attack": n_atk,
             "n_normal": n_nor,
         },
-        l3_effective_unique=eff / n_atk if n_atk else 0.0,
+        within_config_l3_counterfactual_unique=eff / n_atk if n_atk else 0.0,
         campaign={
             "n": n_camp,
             "surfaced": (
@@ -287,7 +287,9 @@ def macro(cells: list[CellStat]) -> dict:
             "warn_fpr": _mean(cm(c, "per_user_warn_fpr") for c in cs),
             "pooled_challenge_fpr": _mean(c.pooled["challenge_fpr"] for c in cs),
             "pooled_recall": _mean(c.pooled["recall"] for c in cs),
-            "l3_effective_unique": _mean(c.l3_effective_unique for c in cs),
+            "within_config_l3_counterfactual_unique": _mean(
+                c.within_config_l3_counterfactual_unique for c in cs
+            ),
             "n_cells": len(cs),
         }
 
@@ -301,7 +303,9 @@ def macro(cells: list[CellStat]) -> dict:
         "pooled_challenge_fpr": _mean(c.pooled["challenge_fpr"] for c in cells),
         "pooled_block_fpr": _mean(c.pooled["block_fpr"] for c in cells),
         "pooled_recall": _mean(c.pooled["recall"] for c in cells),
-        "l3_effective_unique": _mean(c.l3_effective_unique for c in cells),
+        "within_config_l3_counterfactual_unique": _mean(
+            c.within_config_l3_counterfactual_unique for c in cells
+        ),
         "campaign_surfaced": _mean(c.campaign.get("surfaced", 0.0) for c in cells),
         "campaign_l3_only": _mean(c.campaign.get("l3_only", 0.0) for c in cells),
         "per_size": per_size,

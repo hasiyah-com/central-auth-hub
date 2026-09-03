@@ -170,7 +170,9 @@ def _point(gamma: float, thr: dict, m: dict) -> dict:
         "challenge_fpr": round(m["challenge_fpr"], 6),
         "block_fpr": round(m["block_fpr"], 6),
         "warn_fpr": round(m["warn_fpr"], 6),
-        "l3_effective_unique": round(m["l3_effective_unique"], 6),
+        "within_config_l3_counterfactual_unique": round(
+            m["within_config_l3_counterfactual_unique"], 6
+        ),
         "campaign_surfaced": round(m["campaign_surfaced"], 6),
         "eligible": ok,
         "violations": fails,
@@ -220,4 +222,86 @@ def search(evaluate_fn, normal_scores: list[float], gammas=GAMMA_GRID) -> dict:
         "target_attainable": bool(ok_points),
         "best": best,
         "points": points,
+    }
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Round 2 — common-FPR operating point (เทียบข้ามสถาปัตยกรรมที่ FPR ร่วม)
+#
+# ที่มา: Round 1 บอกว่า "เทียบที่ challenge FPR 1% ไม่ได้ เพราะ legacy floor 1.2467%"
+# ทางแก้ที่ถูกคือเทียบที่ common FPR **ที่สูงกว่า floor** เช่น 1.5% — ทุก config
+# ถูกดันให้ทำงานที่ FPR เดียวกัน แล้วเทียบ recall กันตรงๆ
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+def _linear_threshold_grid(n_points: int = 60) -> list[dict]:
+    """ชุด threshold แบบเชิงเส้นเมื่อไม่มีคะแนน normal ให้อ้างควอนไทล์ (ใช้ในเทส/ทั่วไป)."""
+    out: list[dict] = []
+    for i in range(n_points):
+        ch = 0.5 + (0.99995 - 0.5) * i / (n_points - 1)
+        blk = ch + (1.0 - ch) * 0.5
+        wn = ch * 0.9
+        out.append(
+            {"warn": round(wn, 6), "challenge": round(ch, 6), "block": round(blk, 6)}
+        )
+    return out
+
+
+def operating_point_at_fpr(
+    evaluate_fn,
+    target_fpr: float,
+    *,
+    gamma: float,
+    normal_scores: list[float] | None = None,
+) -> dict:
+    """หาจุดทำงานที่ challenge FPR **ไม่เกิน** target แล้วได้ recall สูงสุด.
+
+    `evaluate_fn(gamma, thresholds) -> macro dict` ต้องเรียก resolver ของ production
+    (เหมือน sweep.search) · ถ้าไม่มีจุดใดถึงเป้า คืน attained=False พร้อม
+    minimum_attainable_fpr — **ห้ามขยับเป้า** ให้รายงานว่าเป้านั้นทำไม่ได้
+    """
+    cands = (
+        threshold_candidates(normal_scores)
+        if normal_scores
+        else _linear_threshold_grid()
+    )
+    rows = []
+    for thr in cands:
+        m = evaluate_fn(gamma, thr)
+        rows.append((thr, m))
+    eligible = [(thr, m) for thr, m in rows if m["challenge_fpr"] <= target_fpr + 1e-12]
+    if not eligible:
+        floor = min(m["challenge_fpr"] for _, m in rows) if rows else 1.0
+        return {
+            "attained": False,
+            "target_fpr": target_fpr,
+            "gamma": gamma,
+            "minimum_attainable_fpr": round(floor, 6),
+            "note": (
+                "ไม่มีจุดทำงานที่ FPR ถึงเป้า — ห้ามขยับเป้า ให้รายงานว่าทำไม่ได้ "
+                "พร้อมค่าต่ำสุดที่ทำได้จริง"
+            ),
+        }
+    thr, m = max(
+        eligible,
+        key=lambda x: (
+            x[1]["recall"],
+            x[1].get("recall_challenge", 0.0),
+            x[1]["precision"],
+        ),
+    )
+    return {
+        "attained": True,
+        "target_fpr": target_fpr,
+        "gamma": gamma,
+        "thresholds": thr,
+        "recall": round(m["recall"], 6),
+        "recall_challenge": round(m.get("recall_challenge", 0.0), 6),
+        "precision": round(m["precision"], 6),
+        "challenge_fpr": round(m["challenge_fpr"], 6),
+        "block_fpr": round(m["block_fpr"], 6),
+        "warn_fpr": round(m["warn_fpr"], 6),
+        "within_config_l3_counterfactual_unique": round(
+            m.get("within_config_l3_counterfactual_unique", 0.0), 6
+        ),
     }

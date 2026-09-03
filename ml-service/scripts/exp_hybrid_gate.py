@@ -342,7 +342,7 @@ def cmd_smoke(args):
         print(
             f"{key:4} {cfg.name[:30]:30} {s_.recall:8.3f} {s_.precision:7.3f} "
             f"{s_.challenge_fpr:7.3f} {s_.block_fpr:7.3f} "
-            f"{s_.l3_effective_unique:7.3f} {at1['recall']:7.3f}"
+            f"{s_.within_config_l3_counterfactual_unique:7.3f} {at1['recall']:7.3f}"
         )
 
     print("\nคู่เปรียบเทียบ (ranking เท่านั้น — ยังไม่ผ่าน resolver ห้ามอ้างเป็นจุดทำงาน):")
@@ -606,7 +606,9 @@ def cmd_tune(args):
                         "challenge_fpr": round(m["challenge_fpr"], 6),
                         "block_fpr": round(m["block_fpr"], 6),
                         "warn_fpr": round(m["warn_fpr"], 6),
-                        "l3_effective_unique": round(m["l3_effective_unique"], 6),
+                        "within_config_l3_counterfactual_unique": round(
+                            m["within_config_l3_counterfactual_unique"], 6
+                        ),
                         "campaign_surfaced": round(m["campaign_surfaced"], 6),
                         "eligible": ok,
                         "violations": fails,
@@ -716,7 +718,7 @@ def cmd_tune(args):
             f"{key:4} {CFG.CONFIGS[key].name[:24]:24} "
             f"g={str(v['gamma']):<5} {b['recall']:7.4f} {b['recall_challenge']:8.4f} "
             f"{b['precision']:7.4f} {b['warn_fpr']:8.4f} {b['challenge_fpr']:7.4f} "
-            f"{b['l3_effective_unique']:7.4f}{flag}"
+            f"{b['within_config_l3_counterfactual_unique']:7.4f}{flag}"
         )
 
     for title, view in (
@@ -795,6 +797,53 @@ def _chfpr_stat(rows) -> float:
     return (sum(1 for a, _, c in rows if not a and c) / n) if n else 0.0
 
 
+def _final_gate(results: dict, fz: dict) -> dict:
+    """สร้าง gate verdict ต่องบ FPR ที่ประกาศไว้ — pass/fail ต่อ config + candidate.
+
+    candidate/ fallback ถูกประกาศ**ล่วงหน้า**ใน frozen config · การเลือก config ที่
+    ผ่านงบแบบย้อนหลัง (post-hoc) ห้ามทำ — gate แค่ตรวจว่า candidate ที่ประกาศไว้ผ่านไหม
+    """
+    budgets = fz.get(
+        "fpr_budgets",
+        {
+            "warn": SW.WARN_FPR_BUDGET,
+            "challenge": SW.CHALLENGE_FPR_BUDGET,
+            "block": SW.BLOCK_FPR_BUDGET,
+        },
+    )
+    deployed = fz.get("deployed_config", CANDIDATE_CONFIG)
+    per_config = {}
+    for key, r in results.items():
+        m = r["macro"]
+        fails = []
+        for lvl in ("warn", "challenge", "block"):
+            if m[f"{lvl}_fpr"] > budgets[lvl]:
+                fails.append(f"{lvl}_fpr={m[f'{lvl}_fpr']:.4f}>{budgets[lvl]}")
+        per_config[key] = {
+            "warn_fpr": round(m["warn_fpr"], 6),
+            "challenge_fpr": round(m["challenge_fpr"], 6),
+            "block_fpr": round(m["block_fpr"], 6),
+            "passed": not fails,
+            "violations": fails,
+        }
+    cand_pass = per_config.get(deployed, {}).get("passed", False)
+    return {
+        "budgets": budgets,
+        "declared_candidate": deployed,
+        "declared_fallback": fz.get("declared_fallback", "shadow / current deployment"),
+        "candidate_passed": cand_pass,
+        "per_config": per_config,
+        "verdict": (
+            f"candidate (Config {deployed}) ผ่าน Final Gate — พร้อมพิจารณา deploy"
+            if cand_pass
+            else (
+                f"candidate (Config {deployed}) ไม่ผ่าน Final Gate — ไม่มี config ใหม่ "
+                "พร้อม deploy · ห้ามเลือก config อื่นที่ผ่านงบแบบย้อนหลัง (post-hoc)"
+            )
+        ),
+    }
+
+
 def cmd_final(args):
     """วัดผลบน final holdout — **ครั้งเดียว** ด้วยค่าที่ freeze แล้วเท่านั้น.
 
@@ -822,17 +871,21 @@ def cmd_final(args):
         print("ถ้าจำเป็นต้องรันซ้ำจริง ใส่ --i-know-this-is-a-rerun และบันทึกเหตุผลในรายงาน")
         return 1
 
-    seeds, sizes = fz["seeds"], fz["sizes"]
+    seeds = fz.get("holdout_seeds") or fz["seeds"]
+    sizes = fz["sizes"]
     gamma_map = fz["per_config_gamma"]
     thr_map = fz["per_config_thresholds"]
+    deployed = fz.get("deployed_config", CANDIDATE_CONFIG)
     print(
-        f"FINAL HOLDOUT — view {fz['frozen_view']} · gamma {gamma_map} · "
-        f"{len(seeds)} seeds x {len(sizes)} sizes"
+        f"FINAL HOLDOUT — view {fz['frozen_view']} · deployed Config {deployed} · "
+        f"holdout seeds {seeds} x {len(sizes)} sizes"
     )
     print(f"  commit ที่ freeze {fz['git_commit'][:12]}")
 
     per_config_rows: dict[str, list] = {k: [] for k in CFG.ORDER}
     per_config_cells: dict[str, list] = {k: [] for k in CFG.ORDER}
+    # per-event record ต่อ config — ใช้ทำ paired delta ระหว่าง config (เรียงตรงกันทุกตัว)
+    per_config_events: dict[str, list] = {k: [] for k in CFG.ORDER}
     audit_runs: list[dict] = []
     leak_total = {"overlapping_rows": 0, "holdout_rows": 0}
 
@@ -872,6 +925,24 @@ def cmd_final(args):
                 rows = TU.resolve_rows(recs, use_thr)
                 per_config_rows[key].extend(rows)
                 per_config_cells[key].append(TU.cell_stat(seed, size, rows))
+                for r in rows:
+                    per_config_events[key].append(
+                        {
+                            "user": r.user,
+                            "seed": seed,
+                            "campaign": r.campaign,
+                            "is_attack": r.is_attack,
+                            "surfaced": r.is_surfaced,
+                            "challenged": r.decision.removeprefix("would_")
+                            in M.CHALLENGED,
+                            # L3-only: L3 ทำให้ผลเปลี่ยนจริง (ไม่มี L3 = ปล่อยผ่าน)
+                            "l3_only_hit": (
+                                r.is_attack
+                                and r.is_surfaced
+                                and not r.surfaced_without_l3
+                            ),
+                        }
+                    )
             print(f"  seed {seed} size {size:>5} -> {len(ctxs)} เหตุการณ์", flush=True)
 
     final_audit = AU.summarize_audit(audit_runs)
@@ -885,6 +956,9 @@ def cmd_final(args):
         )
     )
 
+    from hybrid_experiment import final_stats as FS
+    from hybrid_experiment import tailcal as TC
+
     results = {}
     for key in CFG.ORDER:
         rows = per_config_rows[key]
@@ -895,10 +969,78 @@ def cmd_final(args):
             "macro": TU.macro(per_config_cells[key]),
             "pooled": vars(M.summarize(rows)),
             "campaign": M.campaign_level(rows),
-            "calibration_error": M.calibration_error(rows),
-            "recall_ci": BS.cluster_bootstrap(clusters, _recall_stat, n_boot=1000),
-            "challenge_fpr_ci": BS.cluster_bootstrap(
-                clusters, _chfpr_stat, n_boot=1000
+            # CI แบบ unpaired — เก็บไว้บรรยายความไม่แน่นอนของแต่ละ config เท่านั้น
+            # **ห้ามใช้สรุปความต่างระหว่าง config** ให้ใช้ paired_vs_deployed แทน
+            "descriptive_unpaired_ci": {
+                "recall": BS.cluster_bootstrap(clusters, _recall_stat, n_boot=1000),
+                "challenge_fpr": BS.cluster_bootstrap(
+                    clusters, _chfpr_stat, n_boot=1000
+                ),
+                "note": "unpaired — บรรยายเท่านั้น ไม่ใช่การทดสอบความแตกต่าง",
+            },
+            # ECE เก็บเป็นข้อมูลดิบพร้อม caveat — ไม่ใช่ metric ตัดสิน (percentile evidence
+            # ไม่ใช่ probability) · ใช้ tail_calibration ด้านล่างแทน
+            "ece_raw_not_a_verdict": {
+                "value": M.calibration_error(rows),
+                "caveat": (
+                    "ECE เป็นเครื่องมือของ probability prediction แต่ final_risk_score "
+                    "เป็น percentile evidence ไม่ใช่ probability — ค่านี้ไม่ตัดสินว่า "
+                    "config ดีหรือแย่"
+                ),
+            },
+        }
+
+    # ── paired delta เทียบ deployed config (นี่คือการทดสอบความต่างที่ถูกต้อง) ──
+    dep_events = per_config_events[deployed]
+    for key in CFG.ORDER:
+        if key == deployed:
+            results[key]["paired_vs_deployed"] = None
+            continue
+        oth = per_config_events[key]
+        results[key]["paired_vs_deployed"] = {
+            "candidate": deployed,
+            "delta_recall": FS.paired_config_delta(
+                dep_events, oth, metric="recall", n_boot=1000, seed=1
+            ),
+            "delta_recall_challenge": FS.paired_config_delta(
+                dep_events, oth, metric="recall_challenge", n_boot=1000, seed=2
+            ),
+            "delta_challenge_fpr": FS.paired_config_delta(
+                dep_events, oth, metric="challenge_fpr", n_boot=1000, seed=3
+            ),
+            "delta_campaign_recall": FS.paired_campaign_recall_delta(
+                dep_events, oth, n_boot=1000, seed=4
+            ),
+            "note": (
+                "Δ = deployed − this_config · CI/sign_agreement จาก paired "
+                "hierarchical bootstrap (user->seed->event ชุดเดียวกันทั้งสองแขน)"
+            ),
+        }
+        # campaign-level L3-only แบบ hierarchical (แทน Wilson) สำหรับ config ที่มี L3
+        if CFG.CONFIGS[key].views:
+            tree = FS.campaign_l3_only_tree(per_config_events[key])
+            results[key]["campaign_l3_only_hierarchical_ci"] = (
+                BS.hierarchical_proportion(tree, n_boot=1000, seed=5)
+            )
+
+    # ── tail calibration ของ deployed config: validation (reference) -> holdout ──
+    ref = fz.get("deployed_validation_normal_score_quantiles") or []
+    holdout_dep_normal = [r.score for r in per_config_rows[deployed] if not r.is_attack]
+    if ref and holdout_dep_normal:
+        tail = {
+            "reference": "validation-tuning normal scores ของ deployed config",
+            "benign_exceedance": TC.benign_exceedance(ref, holdout_dep_normal),
+            "pit_uniformity": TC.pit_uniformity(ref, holdout_dep_normal),
+            "note": (
+                "ตอบคำถาม Round 1: distribution ของคะแนน normal บน holdout ต่างจาก "
+                "validation แค่ไหน (เหตุที่ FPR บน holdout สูงกว่าที่จูน)"
+            ),
+        }
+    else:
+        tail = {
+            "available": False,
+            "reason": (
+                "ไม่มี reference scores (deployed อาจเป็น legacy) หรือไม่มี holdout normal"
             ),
         }
 
@@ -909,10 +1051,28 @@ def cmd_final(args):
         print(
             f"{key:4} {CFG.CONFIGS[key].name[:28]:28} {m['recall']:8.4f} "
             f"{m['precision']:7.4f} {m['challenge_fpr']:7.4f} "
-            f"{m['l3_effective_unique']:7.4f}"
+            f"{m['within_config_l3_counterfactual_unique']:7.4f}"
         )
+    gate = _final_gate(results, fz)
     print(f"\nleakage: {leak_total}")
     print(f"shortcut (final): {final_audit['conclusion']}")
+    print(f"\nFINAL GATE — candidate Config {deployed}:")
+    for key in CFG.ORDER:
+        g = gate["per_config"][key]
+        mark = "ผ่าน" if g["passed"] else "ไม่ผ่าน"
+        star = "  <-- candidate" if key == deployed else ""
+        print(
+            f"  {key}  warn {g['warn_fpr']:.4f} ch {g['challenge_fpr']:.4f} "
+            f"blk {g['block_fpr']:.4f}  {mark}{star}"
+        )
+    print(f"  => {gate['verdict']}")
+    if isinstance(tail, dict) and tail.get("benign_exceedance"):
+        be = tail["benign_exceedance"]
+        print(
+            f"\ntail calibration (deployed, validation->holdout): "
+            f"p99 exceedance {be['p99']['observed_exceedance']:.4f} "
+            f"(nominal 0.01) · shift={be['tail_shift_detected']}"
+        )
 
     out = ARTIFACTS / "final_result.json"
     out.write_text(
@@ -926,10 +1086,19 @@ def cmd_final(args):
                 "gamma": fz["chosen_gamma"],
                 "per_config_gamma": gamma_map,
                 "per_config_thresholds": thr_map,
+                "deployed_config": deployed,
+                "holdout_seeds": seeds,
                 "leakage": leak_total,
                 "shortcut_audit_final": final_audit,
+                "tail_calibration_deployed": tail,
+                "final_gate": _final_gate(results, fz),
                 "results": results,
                 "metric_definitions": METRIC_DEFINITIONS,
+                "comparison_note": (
+                    "ความต่างระหว่าง config อ่านจาก results[k]['paired_vs_deployed'] "
+                    "เท่านั้น · descriptive_unpaired_ci ใช้บรรยาย ไม่ใช่ทดสอบความต่าง · "
+                    "ECE ไม่ใช่ metric ตัดสิน (ดู tail_calibration_deployed แทน)"
+                ),
             },
             ensure_ascii=False,
             indent=2,
@@ -1125,7 +1294,7 @@ METRIC_DEFINITIONS = {
     "precision": "TP / (TP + FP) แบบ pooled ต่อ cell แล้วเฉลี่ยข้าม cell",
     "challenge_fpr": "สัดส่วน login ปกติที่ได้ challenge หรือ block",
     "block_fpr": "สัดส่วน login ปกติที่ได้ block",
-    "l3_effective_unique": (
+    "within_config_l3_counterfactual_unique": (
         "สัดส่วน attack ที่ **เปลี่ยนผลจริง** เพราะ L3 "
         "(ไม่มี L3 = ปล่อยผ่าน · มี L3 = ถูกหยิบขึ้นมา) "
         "ไม่นับกรณีคะแนนขยับแต่ผลเท่าเดิม"
@@ -1133,6 +1302,40 @@ METRIC_DEFINITIONS = {
     "campaign_surfaced": "แคมเปญที่มีอย่างน้อยหนึ่งเหตุการณ์ถูก surfaced",
     "macro_average": "เฉลี่ยรายผู้ใช้ก่อน แล้วเฉลี่ยข้าม cell — ไม่ pool รวม",
 }
+
+
+def _deployed_validation_scores(
+    deploy_config, gamma, thresholds, seeds, sizes
+) -> list[float]:
+    """คะแนน final ของ normal บน validation-tuning ของ deployed config (ควอนไทล์ย่อ).
+
+    ใช้เป็น reference ของ tail calibration ตอน final — เก็บที่ freeze แล้วเทียบกับ
+    holdout ตอน final โดยไม่ต้องเปิด validation ซ้ำ · legacy (Config A) ไม่มี
+    resolver.final_score จึงคืนลิสต์ว่าง (tail calibration ไม่นิยามกับระบบเก่า)
+    """
+    if CFG.CONFIGS[deploy_config].fusion == "legacy":
+        return []
+    scores: list[float] = []
+    for seed in seeds:
+        for size in sizes:
+            path = CELLS / f"cell_s{seed}_n{size}.pkl"
+            if not path.exists():
+                continue
+            cell = load_cell(seed, size)
+            recs = build_records(
+                cell["ctxs"], cell["ecdf"], CFG.CONFIGS[deploy_config], gamma
+            )
+            scores.extend(
+                r.resolver.final_score
+                for r in recs
+                if not r.is_attack and r.resolver is not None
+            )
+    if not scores:
+        return []
+    scores.sort()
+    # ย่อเหลือ <= 512 จุด เพื่อไม่ให้ frozen_config ใหญ่ · เพียงพอต่อ exceedance
+    step = max(1, len(scores) // 512)
+    return [round(v, 6) for v in scores[::step]]
 
 
 def cmd_freeze(args):
@@ -1175,6 +1378,25 @@ def cmd_freeze(args):
         print(f"Config {CANDIDATE_CONFIG} ไม่มี threshold ที่อยู่ในงบ — ห้าม freeze")
         return 1
 
+    # reference scores ของ deployed config บน validation-tuning — ใช้ตอน final
+    # ทำ tail calibration (validation -> holdout) โดยไม่ต้องเปิด validation ซ้ำ
+    # (เก็บควอนไทล์ย่อไว้ ไม่เก็บทุกจุด เพื่อไม่ให้ไฟล์ใหญ่ · เป็นคะแนนของ normal ล้วน)
+    ref_scores = _deployed_validation_scores(
+        args.deploy_config,
+        per_config_gamma.get(args.deploy_config) or 0.0,
+        per_config_thresholds.get(args.deploy_config),
+        tuning["seeds"],
+        tuning["sizes"],
+    )
+
+    holdout_seeds = args.holdout_seeds or HOLDOUT_SEEDS
+    if set(holdout_seeds) & set(tuning["seeds"]):
+        print(
+            f"holdout_seeds {holdout_seeds} ทับกับ seeds ที่ใช้ tune {tuning['seeds']} "
+            "— ห้าม freeze (holdout ต้องเป็น seed ที่ไม่เคยเห็น)"
+        )
+        return 1
+
     parity = args.parity_passed
     frozen = {
         "frozen_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
@@ -1193,6 +1415,11 @@ def cmd_freeze(args):
         "seeds": tuning["seeds"],
         "sizes": tuning["sizes"],
         "holdout_seeds_reserve": HOLDOUT_SEEDS,
+        # seed ของ final holdout — ต้องไม่เคยถูกใช้ tune (Round 2 ใช้ [101-105])
+        "holdout_seeds": holdout_seeds,
+        # คะแนน normal บน validation-tuning ของ deployed config (ควอนไทล์ย่อ)
+        # ใช้เป็น reference ของ tail calibration ตอน final — ไม่ต้องเปิด validation ซ้ำ
+        "deployed_validation_normal_score_quantiles": ref_scores,
         "feature_order": list(LC.FEATURES),
         "n_features": len(LC.FEATURES),
         "split_hashes": split_fingerprint(tuning["seeds"], tuning["sizes"]),
@@ -1221,6 +1448,8 @@ def cmd_freeze(args):
         # config ที่จะใช้ตัดสินการเข้าถึงจริง — เลือกจากหลักฐานบน validation
         # config อื่นยังถูกวัดบน holdout ด้วย เพื่อรายงานเปรียบเทียบ
         "deployed_config": args.deploy_config,
+        "declared_candidate": args.deploy_config,
+        "declared_fallback": args.fallback,
         "deployed_config_gamma": per_config_gamma.get(args.deploy_config),
         "deployed_config_thresholds": per_config_thresholds.get(args.deploy_config),
         "l3_mode_implied": (
@@ -1567,10 +1796,22 @@ def main():
         help="ยืนยันว่ารัน parity ผ่านแล้ว (ต้องใส่ ไม่งั้น final จะไม่ยอมรัน)",
     )
     fz.add_argument(
+        "--holdout-seeds",
+        type=int,
+        nargs="*",
+        default=None,
+        help="seed ของ final holdout (ค่าเริ่มต้น HOLDOUT_SEEDS=[101-105]) ต้องไม่ทับ tune",
+    )
+    fz.add_argument(
         "--deploy-config",
         choices=list(CFG.ORDER),
         default="B",
         help="config ที่จะใช้ตัดสินการเข้าถึงจริง (config อื่นยังถูกวัดบน holdout)",
+    )
+    fz.add_argument(
+        "--fallback",
+        default="shadow / current deployment",
+        help="แผนสำรองถ้า candidate ไม่ผ่าน gate (ประกาศล่วงหน้า · ห้ามเลือก post-hoc)",
     )
     fz.add_argument(
         "--view",

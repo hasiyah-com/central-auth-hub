@@ -17,9 +17,16 @@
 ## 1. Candidate และ Fallback — ประกาศไว้ก่อน
 
 ```
-candidate: Config B with validation-adjusted block threshold
+candidate: Config B · gamma=1.0 · warn=0.941667 · challenge=0.989833 · block=0.9999
 fallback:  current deployed configuration / shadow mode
 ```
+
+**block=0.9999 ตัดสินบน validation แล้ว (2026-09-03)** — การยก block threshold จาก
+Round 1 (0.998112) เป็น 0.9999 ลด validation block FPR จาก 0.179% เหลือ 0.009%
+โดย recall / recall@challenge / challenge FPR **ไม่เปลี่ยนเลย** (block->challenge
+ยังนับใน recall และ CHALLENGED) · เลือก 0.9999 ไม่ใช่ 1.0 เพื่อคง hard-block ไว้
+สำหรับเคสที่ rule+behavior สูงเกือบเต็มพร้อมกัน · หลักฐาน:
+`hub/backend/tests/reports/round2_prefreeze_2026-09-03.md`
 
 **Config F ไม่ใช่ fallback** แม้จะผ่านงบ FPR ทุกระดับใน Round 1 เพราะ recall
 ต่ำกว่ามาก (recall@challenge 0.4678 เทียบกับ B ที่ 0.7080) · ให้เก็บ F ไว้เป็น
