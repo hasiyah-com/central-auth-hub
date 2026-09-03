@@ -101,8 +101,9 @@ function StepupInner() {
   };
 
   return (
-    <main className="signal-auth-page min-h-screen grid place-items-center px-4">
-      <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl overflow-hidden">
+    <main className="cx-auth">
+      <a className="cx-auth-brand" href="/auth/login"><b>HUB</b><span className="mono">IDENTITY CONTROL</span></a>
+      <div className="cx-auth-card">
         <div className="px-8 pt-8 pb-6">
           <div className="text-4xl mb-3">🔐</div>
           <h1 className="text-xl font-extrabold text-ink-900 mb-1">

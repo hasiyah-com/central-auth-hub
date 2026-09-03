@@ -531,10 +531,10 @@ export default function DeveloperSubsystemDetailPage({
           </div>
         </div>
       )}
-      <Topbar title={sub.name} />
-      <main className="signal-page space-y-6">
+      <Topbar title={sub.name} actions={<div className="cx-command-actions"><Badge tone={STATUS_TONE[sub.status] || "default"}>● {sub.status.toUpperCase()}</Badge><button className="cx-button" onClick={openEditModal}>แก้ไข</button><button className="cx-button" onClick={rotateSecret} disabled={rotateBusy}>ขอ Rotate Secret</button></div>} />
+      <main className="cx-document cx-service-detail signal-page space-y-6">
         {/* Header */}
-        <div className="flex items-end justify-between gap-4 flex-wrap">
+        <section className="cx-service-hero">
           <div>
             <Link
               href="/developer/subsystems"
@@ -576,11 +576,11 @@ export default function DeveloperSubsystemDetailPage({
               {new Date(sub.created_at).toISOString().slice(0, 10)}
             </div>
           </div>
-        </div>
+        </section>
 
         {/* Pending change requests banner */}
         {pendings.length > 0 && (
-          <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+          <div className="cx-alert">
             <div className="text-xs font-bold text-amber-900 uppercase tracking-wider mb-2">
               ⏳ Pending Approval · {pendings.length} request
             </div>
@@ -605,14 +605,7 @@ export default function DeveloperSubsystemDetailPage({
         )}
 
         {msg && (
-          <div
-            className={
-              "p-3 rounded-lg text-sm " +
-              (msg.kind === "ok"
-                ? "bg-emerald-50 border border-emerald-200 text-emerald-700"
-                : "bg-rose-50 border border-rose-200 text-rose-700")
-            }
-          >
+          <div className={`cx-alert ${msg.kind === "err" ? "danger" : ""}`}>
             {msg.text}
           </div>
         )}
@@ -622,7 +615,7 @@ export default function DeveloperSubsystemDetailPage({
           <h3 className="text-xs font-bold text-ink-500 uppercase tracking-wider mb-3">
             ข้อมูล OAuth Client
           </h3>
-          <div className="bg-white rounded-xl border border-ink-200 shadow-sm p-6 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-5">
+          <div className="cx-panel cx-service-fields grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-5">
             <div>
               <FieldLabel>Client ID</FieldLabel>
               <div className="font-mono text-[13px] text-ink-900 break-all bg-ink-50 px-3 py-2 rounded border border-ink-100">

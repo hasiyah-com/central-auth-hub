@@ -110,27 +110,12 @@ export default function MySubsystemsPage() {
 
   return (
     <>
-      <Topbar title="ระบบของฉัน" />
-      <main className="signal-page">
-        <div className="mb-6 flex items-end justify-between gap-4 flex-wrap">
-          <div>
-            <h2 className="text-sm font-bold text-ink-500 uppercase tracking-wider">
-              Developer Portal · ระบบที่คุณลงทะเบียน
-            </h2>
-            <p className="text-xs text-ink-400 mt-1">
-              {/* ระบบย่อยที่คุณเป็นเจ้าของ — จัดการ whitelist + ดูสถานะการอนุมัติ */}
-            </p>
-          </div>
-          <Link
-            href="/developer/subsystems/new"
-            className="px-4 py-2 rounded-lg bg-brand-600 hover:bg-brand-700 text-white text-sm font-semibold transition shadow-sm"
-          >
-            + ลงทะเบียนระบบใหม่
-          </Link>
-        </div>
+      <Topbar title="ระบบของฉัน" actions={<Link href="/developer/subsystems/new" className="cx-primary-action">+ ลงทะเบียนระบบใหม่</Link>} />
+      <main className="cx-document signal-page">
+        <section className="cx-review-head"><span className="mono">DEVELOPER PORTAL</span><b>ระบบที่คุณเป็นเจ้าของและสถานะการเชื่อมต่อกับ Hub</b></section>
 
         {error && (
-          <div className="mb-5 p-4 rounded-lg bg-rose-50 border border-rose-200 text-rose-700 text-sm">
+          <div className="cx-alert danger">
             {error}
           </div>
         )}
@@ -138,7 +123,7 @@ export default function MySubsystemsPage() {
         {loading ? (
           <div className="text-ink-400 text-sm">กำลังโหลด…</div>
         ) : subs.length === 0 ? (
-          <div className="bg-white rounded-xl border border-ink-200 shadow-sm p-12 text-center">
+          <div className="cx-empty">
             <div className="text-5xl mb-3">🌱</div>
             <h3 className="text-lg font-bold text-ink-900 mb-2">
               ยังไม่ได้ลงทะเบียนระบบย่อย
@@ -155,11 +140,11 @@ export default function MySubsystemsPage() {
             </Link>
           </div>
         ) : (
-          <DataTable
+          <section className="cx-panel"><header><div><span className="mono">OWNED SUBSYSTEMS</span><h2>ระบบที่ลงทะเบียน</h2></div><span className="cx-chip signal">{subs.length} SYSTEMS</span></header><DataTable
             columns={columns}
             rows={subs}
             emptyMessage="ยังไม่มีระบบ"
-          />
+          /></section>
         )}
       </main>
     </>

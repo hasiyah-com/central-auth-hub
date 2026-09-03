@@ -47,31 +47,13 @@ export default function ThresholdPage() {
 
   return (
     <>
-      <Topbar title="Threshold Tuning" />
-      <main className="signal-page">
-        {/* Breadcrumb */}
-        <Link
-          href="/ml"
-          className="text-xs text-ink-500 hover:text-brand-600 underline"
-        >
-          &larr; ML Overview
-        </Link>
-
-        {/* Header */}
-        <div className="mt-3 mb-6">
-          <h2 className="text-2xl font-extrabold text-ink-900">
-            Threshold Tuning
-          </h2>
-          <p className="text-sm text-ink-500 mt-1 max-w-2xl">
-            จำลองว่าถ้าเปลี่ยน threshold จะส่งผลอย่างไรกับ sessions ที่บันทึกไว้ (30 วัน)
-            ไม่ retrain model — แค่ apply threshold ใหม่กับ scores ที่มีอยู่
-          </p>
-        </div>
-
-        {/* 2-column layout */}
-        <div className="grid grid-cols-1 lg:grid-cols-[1fr_1.4fr] gap-4">
+      <Topbar title="Threshold Tuning" actions={<div className="cx-command-actions"><Link className="cx-button" href="/ml">← ML Overview</Link><span className="cx-chip signal"><i/>LIVE PREVIEW</span></div>} />
+      <main className="cx-document signal-page">
+        <section className="cx-review-head"><span className="mono">POLICY SIMULATION · 30 DAYS</span><b>จำลองผลของ Threshold กับคะแนนจริงที่บันทึกไว้ โดยไม่ retrain model</b></section>
+        <div className="cx-grid threshold-layout">
           {/* Left: Sliders */}
-          <div className="bg-white rounded-xl border border-ink-200 shadow-sm p-6">
+          <article className="cx-panel cx-threshold-controls">
+            <header><div><span className="mono">POLICY CONTROLS</span><h2>Risk thresholds</h2></div></header><div className="cx-threshold-body">
             <div className="mb-5">
               <div className="flex items-baseline justify-between mb-2">
                 <label className="text-xs font-bold text-ink-500 uppercase tracking-wider">
@@ -141,19 +123,16 @@ export default function ThresholdPage() {
                 </div>
               )}
             </div>
-          </div>
+            </div>
+          </article>
 
           {/* Right: Simulated breakdown */}
-          <div className="bg-white rounded-xl border border-ink-200 shadow-sm p-6">
+          <article className="cx-panel cx-threshold-preview">
+            <header><div><span className="mono">IMPACT PREVIEW</span><h2>Session ที่จะเปลี่ยนผลลัพธ์</h2></div>{pvLoading && <span className="mono">COMPUTING…</span>}</header><div className="cx-threshold-body">
             <div className="flex items-baseline justify-between mb-5">
               <h4 className="text-xs font-bold text-ink-500 uppercase tracking-wider">
                 Simulated · 30 วัน
               </h4>
-              {pvLoading && (
-                <span className="text-[10px] text-ink-400 animate-pulse">
-                  ● computing…
-                </span>
-              )}
             </div>
 
             {preview ? (
@@ -243,7 +222,8 @@ export default function ThresholdPage() {
                 เลื่อน slider เพื่อจำลอง
               </div>
             )}
-          </div>
+            </div>
+          </article>
         </div>
       </main>
     </>

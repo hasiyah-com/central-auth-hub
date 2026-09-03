@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Topbar } from "@/components/Topbar";
-import { Badge } from "@/components/Badge";
 import { clientFetch } from "@/lib/api";
 
 type ChangeRequest = {
@@ -121,139 +120,28 @@ export default function PendingRequestsPage() {
     }
   }
 
+  const actions = <div className="cx-live-actions">{(["pending", "approved", "rejected"] as const).map((item) => <button key={item} type="button" className={status === item ? "active" : ""} onClick={() => setStatus(item)}>{item}</button>)}</div>;
+
   return (
     <>
-      <Topbar title="คำขอ Approve · Developer Change Requests" />
-      <main className="signal-page signal-page-compact space-y-6">
-        <div className="flex items-end justify-between gap-3 flex-wrap">
-          <div>
-            <h2 className="text-sm font-bold text-ink-500 uppercase tracking-wider">
-              Change Request Workflow
-            </h2>
-            <p className="text-xs text-ink-400 mt-1">
-              Sensitive operations (rotate secret · edit scope · roles · redirect URIs) ต้อง admin approve
-            </p>
-          </div>
-          <div className="inline-flex rounded-lg border border-ink-200 bg-white overflow-hidden text-xs font-semibold">
-            {(["pending", "approved", "rejected"] as const).map((s) => (
-              <button
-                key={s}
-                onClick={() => setStatus(s)}
-                className={
-                  "px-3 py-2 transition border-r last:border-r-0 border-ink-200 " +
-                  (status === s
-                    ? "bg-brand-600 text-white"
-                    : "text-ink-600 hover:bg-ink-50")
-                }
-              >
-                {s === "pending"
-                  ? "⏳ Pending"
-                  : s === "approved"
-                  ? "✅ Approved"
-                  : "🛑 Rejected"}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {msg && (
-          <div
-            className={
-              "p-3 rounded-lg text-sm " +
-              (msg.kind === "ok"
-                ? "bg-emerald-50 border border-emerald-200 text-emerald-700"
-                : "bg-rose-50 border border-rose-200 text-rose-700")
-            }
-          >
-            {msg.text}
-          </div>
-        )}
-
-        {loading ? (
-          <div className="text-ink-400 text-sm">กำลังโหลด…</div>
-        ) : items.length === 0 ? (
-          <div className="bg-white border border-ink-200 rounded-xl p-12 text-center text-ink-400">
-            ไม่มี request {status === "pending" ? "ที่รอ review" : status}
-          </div>
-        ) : (
-          <div className="space-y-3">
-            {items.map((req) => {
-              const typeInfo = TYPE_LABELS[req.request_type] || {
-                label: req.request_type,
-                icon: "📝",
-              };
-              return (
-                <div
-                  key={req.id}
-                  className="bg-white border border-ink-200 rounded-xl p-5 shadow-sm"
-                >
-                  <div className="flex items-start justify-between gap-4 flex-wrap">
-                    <div className="flex-1 min-w-[260px]">
-                      <div className="flex items-center gap-2 mb-2">
-                        <span className="text-xl">{typeInfo.icon}</span>
-                        <span className="font-extrabold text-ink-900">
-                          {typeInfo.label}
-                        </span>
-                        <Badge tone={STATUS_TONE[req.status] || "default"}>
-                          {req.status.toUpperCase()}
-                        </Badge>
-                      </div>
-                      <div className="text-sm text-ink-700">
-                        <strong>{req.subsystem_name}</strong>{" "}
-                        <span className="text-ink-400">โดย</span>{" "}
-                        <span className="font-mono">{req.requested_by_email}</span>
-                      </div>
-                      <div className="text-[11px] text-ink-400 font-mono mt-1">
-                        ขอเมื่อ {fmtTime(req.created_at)}
-                        {req.reviewed_at && (
-                          <>
-                            {" · "}review {fmtTime(req.reviewed_at)}
-                          </>
-                        )}
-                      </div>
-                    </div>
-                    {req.status === "pending" && (
-                      <div className="flex gap-2">
-                        <button
-                          onClick={() => approve(req)}
-                          disabled={reviewing === req.id}
-                          className="px-3 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold disabled:opacity-50"
-                        >
-                          {reviewing === req.id ? "…" : "✅ Approve"}
-                        </button>
-                        <button
-                          onClick={() => reject(req)}
-                          disabled={reviewing === req.id}
-                          className="px-3 py-2 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold disabled:opacity-50"
-                        >
-                          🛑 Reject
-                        </button>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Payload diff */}
-                  {req.request_type !== "rotate_secret" && (
-                    <div className="mt-3 bg-ink-50 rounded-lg p-3 text-[12px] font-mono break-all">
-                      <div className="text-[10px] font-bold uppercase tracking-wider text-ink-500 mb-1">
-                        Payload ที่ขอเปลี่ยน
-                      </div>
-                      <pre className="text-ink-900 whitespace-pre-wrap">
-                        {JSON.stringify(req.payload, null, 2)}
-                      </pre>
-                    </div>
-                  )}
-
-                  {req.reviewer_note && (
-                    <div className="mt-3 bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs">
-                      <strong>หมายเหตุจาก admin:</strong> {req.reviewer_note}
-                    </div>
-                  )}
-                </div>
-              );
+      <Topbar title="คำขอ Approve" actions={actions} />
+      <main className="cx-document">
+        {msg && <div className={`cx-alert ${msg.kind === "err" ? "danger" : ""}`}>{msg.text}</div>}
+        <section className="cx-panel">
+          <header><div><span className="mono">DEVELOPER CHANGE REQUESTS</span><h2>รายการคำขอ</h2></div><span className="cx-data">{loading ? "LOADING" : `${items.length} REQUESTS`}</span></header>
+          {items.length === 0 && !loading ? <div className="cx-diff-empty"><strong>ไม่มีคำขอ {status === "pending" ? "ที่รอตัดสินใจ" : status}</strong><span className="mono">OLD → NEW DIFF WILL APPEAR HERE</span></div> : <div className="cx-request-list">
+            {items.map((request) => {
+              const typeInfo=TYPE_LABELS[request.request_type] || {label:request.request_type,icon:"•"};
+              return <article key={request.id}>
+                <header><span className="cx-request-icon">{typeInfo.icon}</span><div><b>{typeInfo.label}</b><small>{request.subsystem_name} · {request.requested_by_email}</small></div><span className={`cx-chip ${request.status === "approved" ? "signal" : request.status === "rejected" ? "danger" : "warn"}`}>{request.status.toUpperCase()}</span></header>
+                <div className="cx-request-meta"><span>REQUESTED <b className="mono">{fmtTime(request.created_at)}</b></span><span>REQUEST ID <b className="mono">{request.id.slice(0,12)}</b></span></div>
+                {request.request_type !== "rotate_secret" && <pre className="cx-request-payload">{JSON.stringify(request.payload,null,2)}</pre>}
+                {request.reviewer_note && <div className="cx-policy-note"><span><b>หมายเหตุจาก Admin:</b> {request.reviewer_note}</span></div>}
+                {request.status === "pending" && <footer><button type="button" disabled={reviewing === request.id} onClick={() => approve(request)}>อนุมัติ</button><button type="button" disabled={reviewing === request.id} onClick={() => reject(request)}>ปฏิเสธ</button></footer>}
+              </article>;
             })}
-          </div>
-        )}
+          </div>}
+        </section>
       </main>
     </>
   );

@@ -129,54 +129,34 @@ export default function PendingSubsystemsPage() {
           </div>
         </div>
       )}
-      <Topbar title="คำขอรออนุมัติ" />
-      <main className="signal-page signal-page-compact">
-        <div className="mb-6 flex items-center gap-3">
-          <Link
-            href="/subsystems"
-            className="text-xs text-ink-500 hover:text-brand-600"
-          >
-            ← กลับไปที่ระบบย่อยทั้งหมด
-          </Link>
-          <div className="ml-auto text-xs text-ink-500">
-            {loading ? "กำลังโหลด…" : `${subs.length} คำขอ`}
-          </div>
-        </div>
+      <Topbar title="คำขอรออนุมัติ" actions={<div className="cx-command-actions"><Link className="cx-button" href="/subsystems">← ระบบย่อยทั้งหมด</Link><span className="cx-chip warn">{loading ? "LOADING" : `${subs.length} PENDING`}</span></div>} />
+      <main className="cx-document signal-page signal-page-compact">
+        <section className="cx-review-head"><span className="mono">REVIEW QUEUE</span><b>ตรวจ OAuth client, Redirect URI และ Scope ก่อนตัดสินใจ</b></section>
 
         {msg && (
-          <div
-            className={
-              "mb-5 p-3 rounded-lg text-sm " +
-              (msg.kind === "ok"
-                ? "bg-emerald-50 border border-emerald-200 text-emerald-700"
-                : "bg-rose-50 border border-rose-200 text-rose-700")
-            }
-          >
+          <div className={`cx-alert ${msg.kind === "err" ? "danger" : ""}`}>
             {msg.text}
           </div>
         )}
 
         {!loading && subs.length === 0 && (
-          <div className="rounded-2xl bg-white border border-ink-200 p-12 text-center">
-            <div className="text-5xl mb-3">✨</div>
-            <div className="font-semibold text-ink-700">
+          <div className="cx-empty">
+            <div>◇</div><div>
+            <b>
               ไม่มีคำขอรออนุมัติ
-            </div>
-            <div className="text-xs text-ink-500 mt-1">
+            </b>
+            <small>
               ระบบย่อยใหม่จะปรากฏที่นี่เมื่อมีการลงทะเบียน
-            </div>
+            </small></div>
           </div>
         )}
 
-        <div className="space-y-4">
+        <section className="cx-panel"><header><div><span className="mono">PENDING REGISTRATIONS</span><h2>คำขอระบบย่อย</h2></div></header><div className="cx-request-list">
           {subs.map((s) => {
             const uris = splitUris(s.redirect_uris);
             const isConfirmingThis = confirming?.id === s.id;
             return (
-              <div
-                key={s.id}
-                className="rounded-2xl bg-white border border-ink-200 p-6 shadow-sm"
-              >
+              <article key={s.id}>
                 <div className="flex items-start gap-4 mb-4">
                   <div className="flex-1">
                     <div className="text-lg font-bold text-ink-900">
@@ -289,10 +269,10 @@ export default function PendingSubsystemsPage() {
                     </button>
                   </div>
                 )}
-              </div>
+              </article>
             );
           })}
-        </div>
+        </div></section>
       </main>
     </>
   );

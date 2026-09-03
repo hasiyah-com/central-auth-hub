@@ -126,12 +126,13 @@ function Donut({ segments, total }: { segments: { label: string; value: number; 
 
 function StatCard({ label, value, sub, accent }: { label: string; value: ReactNode; sub?: string; accent?: string }) {
   return (
-    <div className="bg-white rounded-xl border border-ink-200 p-4 shadow-sm">
-      <div className="text-[11px] text-ink-500 uppercase tracking-wider">{label}</div>
-      <div className={`text-2xl font-extrabold mt-1 ${accent || "text-ink-900"}`}>
+    <div className="cx-kpi">
+      <i />
+      <span>{label}</span>
+      <strong className={accent || ""}>
         {value}
-        {sub && <span className="text-xs font-normal text-ink-400 ml-1">{sub}</span>}
-      </div>
+      </strong>
+      {sub && <small>{sub}</small>}
     </div>
   );
 }
@@ -263,7 +264,16 @@ export default function UserDetailPage({ params }: { params: { id: string } }) {
 
   return (
     <>
-      <Topbar title="User 360° View" />
+      <Topbar
+        title="รายละเอียดผู้ใช้งาน"
+        actions={
+          <div className="cx-command-actions">
+            <Badge tone={STATUS_TONE[u?.status || ""] || "default"}>{u?.status || "LOADING"}</Badge>
+            <button className="cx-button cx-edit-button" onClick={() => setEditOpen(true)}>แก้ไขผู้ใช้</button>
+            <button className="cx-button cx-suspend-button" onClick={removeUser} disabled={!u || busy === "delete"}>ลบผู้ใช้</button>
+          </div>
+        }
+      />
       {verifying && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40">
           <div className="bg-white rounded-2xl px-6 py-5 shadow-xl flex items-center gap-3 text-sm text-ink-700">
@@ -273,9 +283,8 @@ export default function UserDetailPage({ params }: { params: { id: string } }) {
         </div>
       )}
 
-      <main className="signal-page signal-page-compact space-y-5">
-        {/* breadcrumb */}
-        <div className="text-sm text-ink-500 flex items-center gap-2">
+      <main className="cx-document signal-page signal-page-compact space-y-5">
+        <div className="cx-detail-breadcrumb">
           <Link href="/users" className="hover:text-brand-600">
             ผู้ใช้งาน
           </Link>
@@ -283,36 +292,6 @@ export default function UserDetailPage({ params }: { params: { id: string } }) {
           <span className="text-ink-800 font-medium">{u?.full_name || "…"}</span>
           <span>/</span>
           <span className="text-ink-400">360° View</span>
-        </div>
-
-        {/* title row */}
-        <div className="flex flex-wrap items-end justify-between gap-3">
-          <div>
-            <h1 className="text-2xl font-extrabold text-ink-900">User 360° View</h1>
-            <p className="text-sm text-ink-500">ภาพรวมข้อมูลผู้ใช้แบบครบวงจร</p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <button
-              onClick={forceLogout}
-              disabled={busy === "logout" || activeSessions.length === 0}
-              className="px-3 py-2 rounded-lg border border-ink-200 text-sm font-medium hover:bg-ink-50 disabled:opacity-40"
-            >
-              🚪 Force Logout ทั้งหมด
-            </button>
-            <button
-              onClick={removeUser}
-              disabled={busy === "delete" || u?.status === "deleted"}
-              className="px-3 py-2 rounded-lg border border-red-300 text-red-700 text-sm font-medium hover:bg-red-50 disabled:opacity-40"
-            >
-              🗑️ ลบผู้ใช้
-            </button>
-            <button
-              onClick={() => setEditOpen(true)}
-              className="px-3 py-2 rounded-lg bg-brand-600 text-white text-sm font-semibold hover:bg-brand-700"
-            >
-              ✏️ แก้ไขผู้ใช้
-            </button>
-          </div>
         </div>
 
         {error && (
@@ -328,7 +307,7 @@ export default function UserDetailPage({ params }: { params: { id: string } }) {
         ) : (
           <>
             {/* ── Profile + Risk ── */}
-            <section className="bg-white rounded-xl border border-ink-200 p-6 shadow-sm grid md:grid-cols-3 gap-6">
+            <section className="cx-user-profile">
               <div className="md:col-span-2 flex items-start gap-4">
                 <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-brand-500 to-brand-700 grid place-items-center text-white text-3xl font-extrabold shrink-0">
                   {initial}
@@ -407,7 +386,7 @@ export default function UserDetailPage({ params }: { params: { id: string } }) {
             </section>
 
             {/* ── stat cards ── */}
-            <section className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+            <section className="cx-kpis six">
               <StatCard label="สิทธิ์ระบบย่อย" value={access?.active_count ?? 0} sub="active" />
               <StatCard label="บทบาท" value={roles.length} sub="assigned" />
               <StatCard label="Scopes" value={allScopes.length} sub="granted" />
@@ -425,11 +404,11 @@ export default function UserDetailPage({ params }: { params: { id: string } }) {
             </section>
 
             {/* ── main 2-col ── */}
-            <div className="grid lg:grid-cols-3 gap-5">
+            <div className="cx-user-layout">
               {/* left */}
-              <div className="lg:col-span-2 space-y-5">
+              <div className="cx-user-main">
                 {/* Subsystems & Access */}
-                <section className="bg-white rounded-xl border border-ink-200 shadow-sm">
+                <section className="cx-panel cx-access-panel">
                   <div className="px-5 py-4 border-b border-ink-100 flex items-center justify-between gap-3 flex-wrap">
                     <h3 className="text-sm font-bold text-ink-700 flex items-center gap-2">
                       สิทธิ์เข้าถึงระบบย่อย
@@ -519,7 +498,7 @@ export default function UserDetailPage({ params }: { params: { id: string } }) {
                 </section>
 
                 {/* Recent Login & Risk */}
-                <section className="bg-white rounded-xl border border-ink-200 shadow-sm">
+                <section className="cx-panel cx-login-panel">
                   <div className="px-5 py-4 border-b border-ink-100">
                     <h3 className="text-sm font-bold text-ink-700">Recent Login &amp; Risk Events</h3>
                   </div>
@@ -564,9 +543,9 @@ export default function UserDetailPage({ params }: { params: { id: string } }) {
               </div>
 
               {/* right */}
-              <div className="space-y-5">
+              <aside className="cx-user-aside">
                 {/* Quick Actions */}
-                <section className="bg-white rounded-xl border border-ink-200 shadow-sm p-4">
+                <section className="cx-panel cx-quick-actions">
                   <h3 className="text-sm font-bold text-ink-700 mb-3">Quick Actions</h3>
                   <div className="space-y-1.5">
                     {[
@@ -596,7 +575,7 @@ export default function UserDetailPage({ params }: { params: { id: string } }) {
                 </section>
 
                 {/* Passkeys & MFA */}
-                <section className="bg-white rounded-xl border border-ink-200 shadow-sm">
+                <section className="cx-panel">
                   <div className="px-4 py-3.5 border-b border-ink-100 flex items-center justify-between">
                     <h3 className="text-sm font-bold text-ink-700">Passkeys &amp; MFA</h3>
                     <span className="text-xs text-ink-400">{passkeys?.count ?? 0} รายการ</span>
@@ -625,7 +604,7 @@ export default function UserDetailPage({ params }: { params: { id: string } }) {
                 </section>
 
                 {/* Credential Management + Recovery Ready */}
-                <section className="bg-white rounded-xl border border-ink-200 shadow-sm">
+                <section className="cx-panel">
                   <div className="px-4 py-3.5 border-b border-ink-100 flex items-center justify-between">
                     <h3 className="text-sm font-bold text-ink-700">Authentication Methods</h3>
                     {creds && (
@@ -672,13 +651,13 @@ export default function UserDetailPage({ params }: { params: { id: string } }) {
                     )}
                   </div>
                 </section>
-              </div>
+              </aside>
             </div>
 
             {/* ── bottom 3-col ── */}
-            <div className="grid lg:grid-cols-3 gap-5">
+            <div className="cx-user-bottom">
               {/* Active Sessions */}
-              <section className="bg-white rounded-xl border border-ink-200 shadow-sm p-4">
+              <section className="cx-panel">
                 <h3 className="text-sm font-bold text-ink-700 mb-3">
                   Active Sessions <span className="text-ink-400 font-normal">({activeSessions.length})</span>
                 </h3>
@@ -706,7 +685,7 @@ export default function UserDetailPage({ params }: { params: { id: string } }) {
               </section>
 
               {/* Access Overview donut */}
-              <section className="bg-white rounded-xl border border-ink-200 shadow-sm p-4">
+              <section className="cx-panel">
                 <h3 className="text-sm font-bold text-ink-700 mb-3">Access Overview</h3>
                 <div className="flex items-center gap-4">
                   <Donut segments={donutSegs} total={allScopes.length} />
@@ -726,7 +705,7 @@ export default function UserDetailPage({ params }: { params: { id: string } }) {
               </section>
 
               {/* Risk Factors */}
-              <section className="bg-white rounded-xl border border-ink-200 shadow-sm p-4">
+              <section className="cx-panel">
                 <h3 className="text-sm font-bold text-ink-700 mb-3">
                   Risk Factors <span className="text-ink-400 font-normal">(login ล่าสุด)</span>
                 </h3>

@@ -168,8 +168,9 @@ function RecoverInner() {
   );
 
   return (
-    <main className="signal-auth-page min-h-screen grid place-items-center px-4">
-      <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl overflow-hidden">
+    <main className="cx-auth">
+      <a className="cx-auth-brand" href="/auth/login"><b>HUB</b><span className="mono">IDENTITY CONTROL</span></a>
+      <div className="cx-auth-card">
         <div className="px-8 pt-8 pb-6">
           <h1 className="text-xl font-extrabold text-ink-900 mb-1">
             {tab === "regen" ? "ขอ Backup Codes ใหม่" : "กู้บัญชี Passkey"}

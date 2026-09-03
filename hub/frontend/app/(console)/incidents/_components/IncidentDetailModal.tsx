@@ -126,7 +126,7 @@ export function IncidentDetailModal({ data, onClose, onActionDone }: Props) {
         </div>
       )}
 
-      <div className="mx-auto max-w-6xl bg-ink-50 rounded-2xl shadow-2xl overflow-hidden">
+      <div className="mx-auto max-w-6xl bg-ink-50 overflow-hidden cx-single-page">
         {/* ── header ── */}
         <div className="bg-white px-6 py-4 border-b border-ink-200 flex items-center justify-between sticky top-0 z-10">
           <div className="flex items-center gap-3">
@@ -175,9 +175,9 @@ export function IncidentDetailModal({ data, onClose, onActionDone }: Props) {
           </div>
         </div>
 
-        <div className="p-6 space-y-5">
+        <div className="cx-dossier">
           {/* ══ Incident Summary — Why → What → What to do ══ */}
-          <div className="bg-white rounded-xl border-2 border-brand-200 p-5">
+          <div className="bg-white border border-brand-200 p-5 cx-reference-summary">
             <h3 className="text-sm font-extrabold text-ink-800 mb-3 flex items-center gap-1.5">
               <span>🧭</span> สรุปเหตุการณ์ (Incident Summary)
             </h3>
@@ -206,7 +206,7 @@ export function IncidentDetailModal({ data, onClose, onActionDone }: Props) {
           </div>
 
           {/* ══ Attack Path ══ */}
-          <div className="bg-white rounded-xl border border-ink-200 p-5">
+          <div className="bg-white border border-ink-200 p-5 cx-attack-path">
             <h3 className="text-sm font-extrabold text-ink-800 mb-3 flex items-center gap-1.5">
               <span>🛤️</span> เส้นทางการโจมตี (Attack Path)
             </h3>
@@ -231,7 +231,7 @@ export function IncidentDetailModal({ data, onClose, onActionDone }: Props) {
           </div>
 
           {/* ══ sections grid ══ */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+          <div className="cx-reference-grid operations">
             {/* ① Entry */}
             <Card title="1. ช่องทางการเข้า (Authentication Entry)" icon="🔑">
               <KV label="Entry Type" value={<Badge tone="brand">{entry.channel_label}</Badge>} />
@@ -557,13 +557,10 @@ function Card({
   children: React.ReactNode;
 }) {
   return (
-    <div className={`bg-white rounded-xl border border-ink-200 p-4 ${span === 2 ? "lg:col-span-2" : ""}`}>
-      <h3 className="text-sm font-extrabold text-ink-800 mb-3 flex items-center gap-1.5">
-        <span>{icon}</span>
-        {title}
-      </h3>
-      {children}
-    </div>
+    <article className={`cx-panel cx-reference-card ${span === 2 ? "wide" : ""}`}>
+      <header><div><span className="mono">INCIDENT EVIDENCE</span><h2><i>{icon}</i> {title}</h2></div></header>
+      <div className="cx-reference-body">{children}</div>
+    </article>
   );
 }
 

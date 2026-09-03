@@ -1,17 +1,18 @@
 "use client";
 
 import Link from "next/link";
+import type { ReactNode } from "react";
 import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import { CommandPalette } from "@/components/CommandPalette";
 
-export function Topbar({ title }: { title: string }) {
+export function Topbar({ title, actions }: { title: string; actions?: ReactNode }) {
   const pathname = usePathname();
   const crumb = pathname.split("/").filter(Boolean).join(" / ") || "dashboard";
   return (
     <>
-      <header className="topbar">
-        <div className="crumb"><span className="mono">HUB</span><i>/</i><strong>{title}</strong></div>
+      <header className="topbar cx-topbar">
+        <div className="crumb cx-crumb"><code>HUB</code><i>/</i><strong>{title}</strong></div>
         <button className="search" type="button" aria-label="ค้นหาในระบบ" onClick={() => document.dispatchEvent(new KeyboardEvent("keydown", { key: "k", metaKey: true, ctrlKey: true, bubbles: true }))}>
           <SearchIcon /><span>ค้นหาในระบบ...</span><kbd className="mono">⌘ K</kbd>
         </button>
@@ -20,16 +21,12 @@ export function Topbar({ title }: { title: string }) {
         <span className="sr-only">{crumb}</span>
       </header>
       {pathname !== "/dashboard" && (
-        <section className="route-command-bar" aria-labelledby="route-title">
-          <div className="route-command-copy">
-            <span className="mono"><i className="signal-dot" /> CONTROL SURFACE</span>
+        <section className="cx-command" aria-labelledby="route-title">
+          <div>
+            <span className="mono"><i className="cx-dot"><i /></i> CONTROL SURFACE</span>
             <h1 id="route-title">{title}</h1>
           </div>
-          <div className="route-command-status">
-            <span className="mono">SECURE SESSION</span>
-            <b><i className="signal-dot" /> VERIFIED</b>
-          </div>
-          <div className="signal-rule" />
+          {actions}
         </section>
       )}
       <CommandPalette />

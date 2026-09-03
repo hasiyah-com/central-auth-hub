@@ -242,399 +242,200 @@ export default function ActivityPage() {
   // (กันเข้าใจผิดว่า pulse เขียว = คนออนไลน์จริงตอนนี้ ทั้งที่ fetch ค้างไปแล้ว)
   const stale = !!error && !!data;
 
+  const controls = (
+    <div className="cx-live-actions">
+      <button
+        type="button"
+        className={live ? "cx-chip signal" : "cx-chip outline"}
+        onClick={() => setLive((value) => !value)}
+        aria-pressed={live}
+      >
+        <i className={live ? "cx-dot" : "cx-dot warn"}><i /></i>
+        {live ? "LIVE" : "PAUSED"}
+      </button>
+      {WINDOWS.map((window) => (
+        <button
+          key={window.h}
+          type="button"
+          className={hours === window.h ? "active" : ""}
+          onClick={() => setHours(window.h)}
+        >
+          {window.h === 1 ? "1h" : window.h === 24 ? "24h" : window.h === 168 ? "7d" : "30d"}
+        </button>
+      ))}
+      <button type="button" onClick={() => load(false)} aria-label="รีเฟรชข้อมูล">
+        ↻ รีเฟรช
+      </button>
+    </div>
+  );
+
   return (
     <>
-      <Topbar title="การเข้าใช้งาน (Realtime)" />
+      <Topbar title="การเข้าใช้งาน (Realtime)" actions={controls} />
 
-      {/* ── Control bar (dark, mission-control) ── */}
-      <div className="signal-live-toolbar bg-ink-900 text-ink-100 px-8 py-4">
-        <div className="max-w-7xl mx-auto flex flex-wrap items-center gap-4">
-          <div className="flex items-center gap-2">
-            <span className="relative flex h-2.5 w-2.5">
-              {live && (
-                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
-              )}
-              <span
-                className={`relative inline-flex rounded-full h-2.5 w-2.5 ${
-                  live ? "bg-emerald-400" : "bg-ink-500"
-                }`}
-              />
-            </span>
-            <span className="font-mono text-xs tracking-widest uppercase text-emerald-300">
-              {live ? "LIVE" : "PAUSED"}
-            </span>
-          </div>
-
-          <button
-            onClick={() => setLive((v) => !v)}
-            className="text-xs px-3 py-1.5 rounded-md border border-ink-700 hover:bg-ink-800 transition"
-          >
-            {live ? "⏸ หยุด" : "▶ เล่น"}
-          </button>
-
-          {/* window selector */}
-          <div className="flex items-center gap-1 bg-ink-800 rounded-lg p-1">
-            {WINDOWS.map((w) => (
-              <button
-                key={w.h}
-                onClick={() => setHours(w.h)}
-                className={`text-xs px-3 py-1 rounded-md transition ${
-                  hours === w.h
-                    ? "bg-brand-600 text-white font-semibold"
-                    : "text-ink-300 hover:text-white"
-                }`}
-              >
-                {w.label}
-              </button>
-            ))}
-          </div>
-
-          <div className="flex-1" />
-
-          {lastUpdated && (
-            <span
-              className={`font-mono text-[11px] ${
-                stale ? "text-amber-400 font-bold" : "text-ink-400"
-              }`}
-            >
-              {stale ? "⚠ ค้าง · " : "อัปเดต "}
-              {lastUpdated.toLocaleTimeString("th-TH", { hour12: false })}
-            </span>
-          )}
-          <button
-            onClick={() => load(true)}
-            className="text-xs px-3 py-1.5 rounded-md bg-ink-800 hover:bg-ink-700 transition"
-          >
-            ↻ รีเฟรช
-          </button>
-        </div>
-      </div>
-
-      <main className="signal-page">
-        {error && (
-          <div className="mb-6 p-4 rounded-lg bg-rose-50 border border-rose-200 text-rose-700 text-sm">
-            {error}
-          </div>
+      <main className="cx-document cx-activity-page">
+        {error && !data && (
+          <div className="cx-alert danger" role="alert">{error}</div>
         )}
 
-        {/* ── KPI strip ── */}
-        <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-6">
-          <Kpi label="Session ใช้งานอยู่" value={data?.active_count ?? "—"} accent="#10b981" sub="Hub + ระบบย่อย" pulse={(data?.active_count ?? 0) > 0} />
-          <Kpi label="เข้าใช้งาน" value={k?.total ?? "—"} accent="#0ea5e9" sub={`${hours} ชม.ล่าสุด`} />
-          <Kpi label="ถูกบล็อก" value={k?.blocked ?? "—"} accent="#e11d48" sub="block / would-block" danger={(k?.blocked ?? 0) > 0} />
-          <Kpi label="ต้อง MFA" value={k?.challenged ?? "—"} accent="#f97316" sub="challenge / mfa" />
+        <section className="cx-kpis five" aria-label="สรุปการเข้าใช้งาน">
+          <Kpi label="ACTIVE SESSIONS" value={data?.active_count ?? "—"} sub="ONLINE NOW" tone="signal" />
+          <Kpi label="TOTAL LOGINS" value={k?.total ?? "—"} sub={`${hours} HOURS`} />
+          <Kpi label="BLOCKED" value={k?.blocked ?? "—"} sub="BLOCK / WOULD-BLOCK" tone="danger" />
+          <Kpi label="MFA" value={k?.challenged ?? "—"} sub="CHALLENGE / MFA" />
           <Kpi
-            label="ความเสี่ยงเฉลี่ย"
+            label="AVG RISK"
             value={k?.avg_risk != null ? k.avg_risk.toFixed(2) : "—"}
-            accent={k?.avg_risk != null ? riskColor(k.avg_risk) : "#64748b"}
-            sub="avg risk score"
+            sub="RISK SCORE"
+            tone={(k?.avg_risk ?? 0) >= 0.6 ? "danger" : undefined}
           />
-        </div>
+        </section>
 
-        {/* ── ผู้ใช้ที่กำลังออนไลน์ (ทุกระบบย่อยรวมกัน) ── */}
-        <div
-          className={`mb-6 bg-white rounded-xl border shadow-sm overflow-hidden transition ${
-            stale ? "border-amber-300 opacity-60 grayscale" : "border-emerald-200"
-          }`}
-          title={stale ? "ข้อมูลอาจไม่เป็นปัจจุบัน — โหลดรอบล่าสุดไม่สำเร็จ" : undefined}
-        >
-          <div className="flex items-center gap-2 px-5 py-3 bg-gradient-to-r from-emerald-50 to-white border-b border-emerald-100">
-            <span className="relative flex h-2.5 w-2.5">
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
-              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500" />
-            </span>
-            <h2 className="text-sm font-extrabold text-emerald-900">
-              Session ที่ใช้งานอยู่
-            </h2>
-            <span className="px-2 py-0.5 rounded-full bg-emerald-600 text-white text-xs font-bold tabular-nums">
-              {data?.active_count ?? 0}
-            </span>
-            <span className="hidden md:inline text-[11px] text-emerald-700/70 ml-1">
-              🟢 Hub = ออนไลน์จริง · 🔵 ระบบย่อย = session ที่ยัง valid (ค่าประมาณ)
-            </span>
-          </div>
-          {!data ? (
-            <div className="px-5 py-8 text-center text-ink-400 text-sm">กำลังโหลด…</div>
-          ) : data.active.length === 0 ? (
-            <div className="px-5 py-8 text-center text-ink-400 text-sm">
-              ไม่มี session ที่ใช้งานอยู่ตอนนี้
+        <section className={`cx-panel cx-active-panel ${stale ? "is-stale" : ""}`}>
+          <header>
+            <div>
+              <span className="mono">ACTIVE USERS · REALTIME</span>
+              <h2>ผู้ใช้ที่กำลังใช้งาน</h2>
             </div>
-          ) : (
-            <div className="divide-y divide-emerald-50">
-              {data.active.map((it) => {
-                const ch = channelMeta(it.login_method);
-                const risk = it.risk_score ?? it.anomaly_score ?? 0;
-                return (
-                  <div key={it.id} className="flex items-center gap-3 px-5 py-3 hover:bg-emerald-50/40 transition">
-                    <span
-                      className="w-9 h-9 rounded-full grid place-items-center text-white text-sm font-bold flex-none ring-2 ring-emerald-200"
-                      style={{ background: avatarColor(it.user_email) }}
-                    >
-                      {(it.full_name || it.user_email || "?")[0]?.toUpperCase()}
-                    </span>
-                    <div className="min-w-0 w-56">
-                      <div className="font-semibold text-ink-900 truncate">{it.user_email || "—"}</div>
-                      <div className="text-[11px] text-ink-400 truncate">
-                        {it.full_name || ""}{it.user_type ? ` · ${it.user_type}` : ""}
-                      </div>
-                    </div>
-                    <div className="hidden md:block w-44 text-sm text-ink-700 truncate">
-                      <span
-                        className={`inline-block w-1.5 h-1.5 rounded-full mr-1.5 align-middle ${
-                          it.session_kind === "hub" ? "bg-emerald-500" : "bg-sky-500"
-                        }`}
-                      />
-                      {it.subsystem_name ? `🧩 ${it.subsystem_name}` : "🏛️ Hub-direct"}
-                    </div>
-                    <span className={`hidden lg:inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[11px] font-semibold ${ch.cls}`}>
-                      <span>{ch.icon}</span>{ch.label}
-                    </span>
-                    <div className="hidden xl:flex items-center gap-1.5 w-24">
-                      <div className="flex-1 h-1.5 rounded-full bg-ink-100 overflow-hidden">
-                        <div className="h-full rounded-full" style={{ width: `${Math.round(risk * 100)}%`, background: riskColor(risk) }} />
-                      </div>
-                      <span className="font-mono text-[10px]" style={{ color: riskColor(risk) }}>{risk.toFixed(2)}</span>
-                    </div>
-                    <div className="hidden sm:block flex-1 text-xs text-ink-500 truncate text-right">
-                      {it.geo_city ? `${it.geo_city}, ` : ""}{it.geo_country || ""}
-                      <span className="font-mono text-[10px] text-ink-400 ml-1">{it.ip || ""}</span>
-                    </div>
-                    <div className="ml-auto sm:ml-0 text-right flex-none w-24">
-                      {it.session_kind === "hub" ? (
-                        <>
-                          <div className="inline-flex items-center gap-1 text-emerald-700 font-bold text-xs">
-                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                            {fmtDuration(it.created_at)}
-                          </div>
-                          <div className="text-[10px] text-ink-400">ออนไลน์จริง</div>
-                        </>
-                      ) : (
-                        <>
-                          <div
-                            className="inline-flex items-center gap-1 text-sky-700 font-bold text-xs"
-                            title={
-                              it.session_expires_at
-                                ? `session valid ถึง ${fmtClock(it.session_expires_at)}`
-                                : undefined
-                            }
-                          >
-                            <span className="w-1.5 h-1.5 rounded-full bg-sky-500" />
-                            {fmtDuration(it.created_at)}
-                          </div>
-                          <div className="text-[10px] text-ink-400">
-                            session{it.session_expires_at ? ` · ถึง ${fmtClock(it.session_expires_at).slice(-8, -3)}` : ""}
-                          </div>
-                        </>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-
-        {/* ── ประวัติการเข้าใช้งาน ── */}
-        <div className="flex items-center gap-2 mb-3 mt-2">
-          <span className="text-base">📜</span>
-          <h2 className="text-sm font-extrabold text-ink-800">ประวัติการเข้าใช้งาน</h2>
-          {/* <span className="text-[11px] text-ink-400">(ออกจากระบบแล้ว / หมดอายุ)</span> */}
-        </div>
-
-        {/* ── Hourly chart ── */}
-        <div className="mb-6 bg-white rounded-xl border border-ink-200 p-5 shadow-sm">
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-xs font-bold text-ink-500 uppercase tracking-wider">
-              {chartTitle(hours)}
-            </h2>
-            <div className="flex items-center gap-3 text-[11px] text-ink-500">
-              <span className="flex items-center gap-1">
-                <span className="inline-block h-0.5 w-4 rounded-full bg-brand-500" /> สำเร็จ
-              </span>
-              <span className="flex items-center gap-1">
-                <span className="inline-block h-0.5 w-4 rounded-full bg-rose-500" /> ถูกบล็อก
-              </span>
-            </div>
-          </div>
-          <HourlyChart
-            hourly={data?.hourly ?? []}
-            activities={[...(data?.active ?? []), ...(data?.items ?? [])]}
-            hours={hours}
-          />
-        </div>
-
-        {/* ── Filters ── */}
-        <div className="mb-4 flex flex-wrap items-center gap-2">
-          <input
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder="ค้นหาอีเมล / ชื่อ…"
-            className="px-3 py-2 rounded-lg border border-ink-200 text-sm focus:ring-2 focus:ring-brand-500 w-56"
-          />
-          <Select value={decision} onChange={setDecision} placeholder="ทุก decision">
-            {["allow", "warn", "challenge", "mfa", "block", "would_block", "would_mfa"].map((d) => (
-              <option key={d} value={d}>{d}</option>
-            ))}
-          </Select>
-          <Select value={channel} onChange={setChannel} placeholder="ทุกช่องทาง">
-            {["google", "passkey", "discoverable", "line", "hub_direct"].map((c) => (
-              <option key={c} value={c}>{c}</option>
-            ))}
-          </Select>
-          <Select value={subId} onChange={setSubId} placeholder="ทุกระบบ">
-            <option value="hub">Hub-direct</option>
-            {subsystems.map((s) => (
-              <option key={s.id} value={s.id}>{s.name}</option>
-            ))}
-          </Select>
-          {(q || decision || channel || subId) && (
-            <button
-              onClick={() => { setQ(""); setDecision(""); setChannel(""); setSubId(""); }}
-              className="text-xs px-3 py-2 rounded-lg border border-ink-200 hover:bg-ink-50 text-ink-600"
-            >
-              ล้างตัวกรอง
-            </button>
-          )}
-          <span className="ml-auto text-xs text-ink-400">
-            แสดง {data?.items.length ?? 0} / {data?.total ?? 0} รายการ
-          </span>
-        </div>
-
-        {/* ── Feed table ── */}
-        <div className="bg-white rounded-xl border border-ink-200 shadow-sm overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <span className="cx-chip signal"><i className="cx-dot"><i /></i>LIVE · {data?.active_count ?? 0}</span>
+          </header>
+          <div className="cx-table-wrap">
+            <table>
               <thead>
-                <tr className="text-left text-[11px] font-bold text-ink-500 uppercase tracking-wider bg-ink-50 border-b border-ink-200">
-                  <th className="px-4 py-3">ผู้ใช้</th>
-                  <th className="px-4 py-3">ระบบ</th>
-                  <th className="px-4 py-3">ช่องทาง</th>
-                  <th className="px-4 py-3 w-40">ความเสี่ยง (ML)</th>
-                  <th className="px-4 py-3">ผล</th>
-                  <th className="px-4 py-3">ที่ไหน</th>
-                  <th className="px-4 py-3">อุปกรณ์</th>
-                  <th className="px-4 py-3 text-right">เมื่อไหร่</th>
+                <tr>
+                  <th>USER</th>
+                  <th>SYSTEM / SESSION</th>
+                  <th>CHANNEL</th>
+                  <th>LOCATION / IP</th>
+                  <th>ONLINE FOR</th>
+                  <th>RISK</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-ink-100">
-                {!data && (
-                  <tr><td colSpan={8} className="px-4 py-10 text-center text-ink-400">กำลังโหลด…</td></tr>
-                )}
-                {data && data.items.length === 0 && (
-                  <tr><td colSpan={8} className="px-4 py-10 text-center text-ink-400">ไม่มีการเข้าใช้งานในช่วงนี้</td></tr>
-                )}
-                {data?.items.map((it) => {
-                  const ch = channelMeta(it.login_method);
-                  const dec = decisionBadge(it.decision);
-                  const risk = it.risk_score ?? it.anomaly_score ?? 0;
-                  const fresh = freshIds.has(it.id);
+              <tbody>
+                {!data && <EmptyRow cols={6} label="กำลังโหลดข้อมูล" />}
+                {data && data.active.length === 0 && <EmptyRow cols={6} label="ไม่มีผู้ใช้งานออนไลน์" />}
+                {data?.active.map((item) => {
+                  const channelInfo = channelMeta(item.login_method);
+                  const risk = item.risk_score ?? item.anomaly_score ?? 0;
                   return (
-                    <tr
-                      key={it.id}
-                      className={`hover:bg-ink-50/50 transition-colors ${
-                        fresh ? "animate-[fadeIn_0.4s_ease] bg-emerald-50/60" : ""
-                      }`}
-                    >
-                      {/* user */}
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-2.5">
-                          <span
-                            className="w-8 h-8 rounded-full grid place-items-center text-white text-xs font-bold flex-none"
-                            style={{ background: avatarColor(it.user_email) }}
-                          >
-                            {(it.full_name || it.user_email || "?")[0]?.toUpperCase()}
+                    <tr key={item.id}>
+                      <td>
+                        <div className="cx-person">
+                          <span style={{ background: avatarColor(item.user_email) }}>
+                            {(item.full_name || item.user_email || "?")[0]?.toUpperCase()}
                           </span>
-                          <div className="min-w-0">
-                            <div className="font-semibold text-ink-900 truncate max-w-[180px]">
-                              {it.user_email || "—"}
-                            </div>
-                            <div className="text-[11px] text-ink-400 truncate max-w-[180px]">
-                              {it.full_name || ""}{it.user_type ? ` · ${it.user_type}` : ""}
-                            </div>
-                          </div>
+                          <b>{item.user_email || "—"}<small>{item.full_name || "ไม่ระบุชื่อ"}{item.user_type ? ` · ${item.user_type}` : ""}</small></b>
                         </div>
                       </td>
-                      {/* subsystem */}
-                      <td className="px-4 py-3">
-                        {it.subsystem_name ? (
-                          <span className="inline-flex items-center gap-1 text-ink-700">
-                            🧩 {it.subsystem_name}
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 text-ink-400 text-xs">
-                            🏛️ Hub-direct
-                          </span>
-                        )}
+                      <td>
+                        <b>{item.subsystem_name || "Hub-direct"}</b>
+                        <small className="cx-data">{item.session_kind === "subsystem" ? "SUBSYSTEM SESSION" : "HUB SESSION"}</small>
                       </td>
-                      {/* channel */}
-                      <td className="px-4 py-3">
-                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[11px] font-semibold ${ch.cls}`}>
-                          <span>{ch.icon}</span>{ch.label}
-                        </span>
+                      <td><span className="cx-chip outline">{channelInfo.label}</span></td>
+                      <td>
+                        <span className="cx-data">{[item.geo_city, item.geo_country].filter(Boolean).join(", ") || "ไม่ทราบตำแหน่ง"}</span>
+                        <code>{item.ip || "—"}</code>
                       </td>
-                      {/* risk meter */}
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-2">
-                          <div className="flex-1 h-1.5 rounded-full bg-ink-100 overflow-hidden">
-                            <div
-                              className="h-full rounded-full transition-all"
-                              style={{ width: `${Math.round(risk * 100)}%`, background: riskColor(risk) }}
-                            />
-                          </div>
-                          <span className="font-mono text-[11px] tabular-nums w-8 text-right" style={{ color: riskColor(risk) }}>
-                            {risk.toFixed(2)}
-                          </span>
-                        </div>
+                      <td>
+                        <b>{fmtDuration(item.created_at)}</b>
+                        <small className="cx-data">{item.session_kind === "hub" ? "ONLINE" : "SESSION VALID"}</small>
                       </td>
-                      {/* decision */}
-                      <td className="px-4 py-3">
-                        <span className={`inline-block px-2 py-0.5 rounded-full text-[11px] font-bold ${dec.cls}`}>
-                          {dec.label}
-                        </span>
-                      </td>
-                      {/* where */}
-                      <td className="px-4 py-3">
-                        <div className="text-ink-700 text-xs">
-                          {it.geo_country || it.geo_city ? (
-                            <>{it.geo_city ? `${it.geo_city}, ` : ""}{it.geo_country || ""}</>
-                          ) : (
-                            <span className="text-ink-400">ไม่ทราบ</span>
-                          )}
-                        </div>
-                        <div className="font-mono text-[10px] text-ink-400 flex items-center gap-1">
-                          {it.ip || "—"}
-                          {it.is_attack_ip && (
-                            <span className="px-1 rounded bg-rose-100 text-rose-700 font-bold">⚠ blacklist</span>
-                          )}
-                        </div>
-                      </td>
-                      {/* device */}
-                      <td className="px-4 py-3">
-                        <div className="text-ink-700 text-xs">{it.browser || "—"}</div>
-                        <div className="text-[10px] text-ink-400">
-                          {it.os_name || ""}{it.device_type ? ` · ${it.device_type}` : ""}
-                        </div>
-                      </td>
-                      {/* when */}
-                      <td className="px-4 py-3 text-right whitespace-nowrap">
-                        <div className="font-semibold text-ink-700 text-xs">{fmtRel(it.created_at)}</div>
-                        <div className="font-mono text-[10px] text-ink-400">{fmtClock(it.created_at)}</div>
-                      </td>
+                      <td><Risk value={risk} /></td>
                     </tr>
                   );
                 })}
               </tbody>
             </table>
           </div>
-        </div>
-      </main>
+        </section>
 
-      <style jsx>{`
-        @keyframes fadeIn {
-          from { background-color: rgba(16, 185, 129, 0.25); }
-          to { background-color: rgba(16, 185, 129, 0.06); }
-        }
-      `}</style>
+        <section className="cx-panel">
+          <header>
+            <div>
+              <span className="mono">HOURLY VOLUME · LINE CHART</span>
+              <h2>{chartTitle(hours)}</h2>
+            </div>
+            <span className="cx-data">{lastUpdated ? `UPDATED ${lastUpdated.toLocaleTimeString("th-TH", { hour12: false })}` : "WAITING FOR API"}</span>
+          </header>
+          <div className="cx-line-chart">
+            <HourlyChart
+              hourly={data?.hourly ?? []}
+              activities={[...(data?.active ?? []), ...(data?.items ?? [])]}
+              hours={hours}
+            />
+          </div>
+        </section>
+
+        <section className="cx-panel">
+          <header>
+            <div>
+              <span className="mono">AUTH HISTORY</span>
+              <h2>ประวัติการเข้าใช้งาน</h2>
+            </div>
+            <span className="cx-data">{data ? `${data.items.length} / ${data.total} RECORDS` : "WAITING FOR API"}</span>
+          </header>
+
+          <div className="cx-toolbar">
+            <label>
+              <SearchIcon />
+              <input value={q} onChange={(event) => setQ(event.target.value)} placeholder="อีเมล, IP, อุปกรณ์..." />
+            </label>
+            <Select value={decision} onChange={setDecision} placeholder="ทุก decision">
+              {["allow", "warn", "challenge", "mfa", "block", "would_block", "would_mfa"].map((item) => <option key={item} value={item}>{item}</option>)}
+            </Select>
+            <Select value={channel} onChange={setChannel} placeholder="ทุกช่องทาง">
+              {["google", "passkey", "discoverable", "line", "hub_direct"].map((item) => <option key={item} value={item}>{item}</option>)}
+            </Select>
+            <Select value={subId} onChange={setSubId} placeholder="ทุกระบบ">
+              <option value="hub">Hub-direct</option>
+              {subsystems.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+            </Select>
+            {(q || decision || channel || subId) && (
+              <button type="button" onClick={() => { setQ(""); setDecision(""); setChannel(""); setSubId(""); }}>ล้างตัวกรอง</button>
+            )}
+          </div>
+
+          <div className="cx-table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>TIME</th>
+                  <th>USER</th>
+                  <th>CHANNEL</th>
+                  <th>GEO / DEVICE</th>
+                  <th>RISK</th>
+                  <th>DECISION</th>
+                </tr>
+              </thead>
+              <tbody>
+                {!data && <EmptyRow cols={6} label="กำลังโหลดข้อมูล" />}
+                {data && data.items.length === 0 && <EmptyRow cols={6} label="ไม่พบประวัติการเข้าใช้งาน" />}
+                {data?.items.map((item) => {
+                  const channelInfo = channelMeta(item.login_method);
+                  const decisionInfo = decisionBadge(item.decision);
+                  const risk = item.risk_score ?? item.anomaly_score ?? 0;
+                  return (
+                    <tr key={item.id} className={freshIds.has(item.id) ? "is-fresh" : ""}>
+                      <td><b>{fmtRel(item.created_at)}</b><small className="cx-data">{fmtClock(item.created_at)}</small></td>
+                      <td>
+                        <b>{item.user_email || "—"}</b>
+                        <small className="cx-data">{item.full_name || "ไม่ระบุชื่อ"} · {item.subsystem_name || "Hub-direct"}</small>
+                      </td>
+                      <td><span className="cx-chip outline">{channelInfo.label}</span></td>
+                      <td>
+                        <span>{[item.geo_city, item.geo_country].filter(Boolean).join(", ") || "ไม่ทราบตำแหน่ง"}</span>
+                        <small className="cx-data">{item.ip || "—"} · {[item.browser, item.os_name].filter(Boolean).join(" / ") || "ไม่ทราบอุปกรณ์"}</small>
+                      </td>
+                      <td><Risk value={risk} /></td>
+                      <td><span className={`cx-chip ${["block", "would_block"].includes(item.decision || "") ? "danger" : ["challenge", "mfa", "would_mfa", "would_challenge"].includes(item.decision || "") ? "warn" : "signal"}`}>{decisionInfo.label}</span></td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </main>
     </>
   );
 }
@@ -642,27 +443,38 @@ export default function ActivityPage() {
 // ── sub-components ──
 
 function Kpi({
-  label, value, accent, sub, danger, pulse,
+  label, value, sub, tone,
 }: {
-  label: string; value: number | string; accent: string; sub: string; danger?: boolean; pulse?: boolean;
+  label: string;
+  value: number | string;
+  sub: string;
+  tone?: "signal" | "danger";
 }) {
-  const colored = danger || pulse;
   return (
-    <div className="bg-white rounded-xl border border-ink-200 p-4 shadow-sm relative overflow-hidden">
-      <div className="absolute left-0 top-0 bottom-0 w-1" style={{ background: accent }} />
-      <div className="text-[11px] font-semibold text-ink-500 uppercase tracking-wider flex items-center gap-1.5">
-        {pulse && <span className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: accent }} />}
-        {label}
-      </div>
-      <div
-        className={`text-3xl font-extrabold mt-1 tabular-nums ${colored ? "" : "text-ink-900"}`}
-        style={colored ? { color: accent } : undefined}
-      >
-        {value}
-      </div>
-      <div className="text-[10px] text-ink-400 mt-0.5 font-mono">{sub}</div>
-    </div>
+    <article className={`cx-kpi ${tone || ""}`}>
+      <span className="mono">{label}</span>
+      <strong>{value}</strong>
+      <small className="mono">{sub}</small>
+    </article>
   );
+}
+
+function Risk({ value }: { value: number }) {
+  const tone = value >= 0.85 ? "crit" : value >= 0.6 ? "high" : value >= 0.3 ? "mid" : "low";
+  return (
+    <span className="cx-risk">
+      <i><span className={tone} style={{ width: `${Math.max(2, Math.round(value * 100))}%` }} /></i>
+      <b className="mono">{value.toFixed(2)}</b>
+    </span>
+  );
+}
+
+function EmptyRow({ cols, label }: { cols: number; label: string }) {
+  return <tr><td colSpan={cols}><div className="cx-empty"><strong>{label}</strong><span className="mono">NO LIVE DATA</span></div></td></tr>;
+}
+
+function SearchIcon() {
+  return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg>;
 }
 
 function Select({

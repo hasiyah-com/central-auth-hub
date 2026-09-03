@@ -163,9 +163,9 @@ export default function NewSubsystemPage() {
     const viaEmail = result.secret_delivery === "email"; // pragma: allowlist secret
     return (
       <>
-        <Topbar title="ลงทะเบียนสำเร็จ" />
-        <main className="signal-page signal-page-compact">
-          <div className="bg-white rounded-xl border border-emerald-200 shadow-sm p-8">
+        <Topbar title="ลงทะเบียนสำเร็จ" actions={<Link className="cx-primary-action" href="/developer/subsystems">ระบบของฉัน</Link>} />
+        <main className="cx-document signal-page signal-page-compact">
+          <section className="cx-panel cx-developer-form">
             <div className="flex items-center gap-3 mb-5">
               <div className="w-12 h-12 rounded-full bg-emerald-100 grid place-items-center text-2xl">
                 ✓
@@ -303,7 +303,7 @@ export default function NewSubsystemPage() {
                 กลับรายการ
               </button>
             </div>
-          </div>
+          </section>
         </main>
       </>
     );
@@ -312,8 +312,8 @@ export default function NewSubsystemPage() {
   // ── Registration form ────────────────────────────────────
   return (
     <>
-      <Topbar title="ลงทะเบียนระบบย่อย" />
-      <main className="signal-page signal-page-compact">
+      <Topbar title="ลงทะเบียนระบบย่อย" actions={<Link className="cx-button" href="/developer/subsystems">ยกเลิก</Link>} />
+      <main className="cx-document signal-page signal-page-compact">
         <div className="mb-6">
           <Link
             href="/developer/subsystems"
@@ -338,7 +338,7 @@ export default function NewSubsystemPage() {
 
         <form
           onSubmit={submit}
-          className="bg-white rounded-xl border border-ink-200 shadow-sm p-6 space-y-6"
+          className="cx-panel cx-developer-form"
         >
           {/* Name */}
           <div>

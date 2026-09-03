@@ -3,10 +3,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Topbar } from "@/components/Topbar";
-import { Badge } from "@/components/Badge";
 import { SlidePanel } from "@/components/SlidePanel";
 import { clientFetch } from "@/lib/api";
-import { AnomalyTable } from "../../_components/AnomalyTable";
 import { SessionDetailPanel } from "../../_components/SessionDetailPanel";
 import type { UserTimeline, UserSession } from "../../_types";
 
@@ -42,83 +40,73 @@ export default function UserTimelinePage({ params }: { params: { id: string } })
   const summary = useMemo(() => summarize(sessions), [sessions]);
   const displayName = data?.user.full_name || data?.user.email || "User ML Profile";
 
+  const actions = (
+    <div className="cx-command-actions">
+      <Link className="cx-ml-threshold-link" href="/ml">← ML Overview</Link>
+      <select className="cx-command-select" value={days} onChange={(event) => setDays(Number(event.target.value))}>
+        <option value={7}>7 วัน</option><option value={30}>30 วัน</option><option value={90}>90 วัน</option><option value={365}>1 ปี</option>
+      </select>
+    </div>
+  );
+
   return (
     <>
-      <Topbar title={`ML Profile · ${displayName}`} />
-      <main className="signal-page">
-        <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-          <Link href="/ml" className="inline-flex items-center gap-2 font-mono text-[10px] font-semibold uppercase tracking-[.12em] text-ink-500 hover:text-brand-700">
-            <span aria-hidden="true">←</span> ML Overview
-          </Link>
-          <label className="flex items-center gap-2 font-mono text-[10px] uppercase tracking-wider text-ink-500">
-            Window
-            <select value={days} onChange={(event) => setDays(Number(event.target.value))} className="rounded-lg border border-ink-200 bg-white px-3 py-2 text-xs normal-case text-ink-800">
-              <option value={7}>7 วัน</option>
-              <option value={30}>30 วัน</option>
-              <option value={90}>90 วัน</option>
-              <option value={365}>1 ปี</option>
-            </select>
-          </label>
-        </div>
-
-        {error && (
-          <div className="mb-5 flex items-center justify-between gap-4 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
-            <span>{error}</span>
-            <button onClick={load} className="shrink-0 rounded-lg border border-rose-200 bg-white px-3 py-1.5 text-xs font-semibold hover:bg-rose-100">ลองใหม่</button>
-          </div>
-        )}
-
+      <Topbar title={`ML Profile · ${displayName}`} actions={actions} />
+      <main className="cx-document">
+        {error && <div className="cx-alert danger"><span>{error}</span><button type="button" onClick={load}>ลองใหม่</button></div>}
         {loading && !data ? <LoadingState /> : data && (
           <>
-            <section className="relative overflow-hidden rounded-2xl border border-white/10 bg-ink-900 p-5 text-white sm:p-6">
-              <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_92%_5%,rgba(52,232,196,.16),transparent_25rem)]" />
-              <div className="relative grid gap-6 xl:grid-cols-[1.2fr_2fr] xl:items-end">
-                <div>
-                  <div className="flex items-center gap-2 font-mono text-[9px] uppercase tracking-[.2em] text-brand-500"><span className="signal-dot" /> Individual risk baseline</div>
-                  <h2 className="mt-4 font-display text-2xl font-extrabold sm:text-3xl">{displayName}</h2>
-                  <div className="mt-2 flex flex-wrap items-center gap-2">
-                    <span className="font-mono text-xs text-ink-400">{data.user.email}</span>
-                    <Badge tone={USER_TYPE_TONE[data.user.user_type] || "default"}>{data.user.user_type}</Badge>
-                    <span className="rounded-full border border-white/10 px-2.5 py-1 font-mono text-[9px] text-ink-400">ID {data.user.id}</span>
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-white/10 bg-white/10 sm:grid-cols-4">
-                  <DarkMetric label="Sessions" value={String(sessions.length)} sub={`${days} วันล่าสุด`} />
-                  <DarkMetric label="Avg risk" value={summary.average.toFixed(3)} sub="ค่าเฉลี่ย anomaly score" tone={riskTone(summary.average)} />
-                  <DarkMetric label="Flagged" value={String(summary.flagged)} sub="score >= 0.4" tone={summary.flagged ? "text-amber-300" : "text-brand-500"} />
-                  <DarkMetric label="Peak risk" value={summary.peak.toFixed(3)} sub="สูงสุดในช่วงนี้" tone={riskTone(summary.peak)} />
-                </div>
+            <section className="cx-identity-hero">
+              <div>
+                <span className="mono">BEHAVIOR PROFILE</span>
+                <h2>{displayName} <small>{data.user.user_type}</small></h2>
+                <code className="mono">{data.user.email} · {data.user.id}</code>
+              </div>
+              <div className="cx-hero-metrics">
+                <span>SESSIONS<b className="mono">{sessions.length}</b></span>
+                <span>AVG RISK<b className="mono">{summary.average.toFixed(3)}</b></span>
+                <span>FLAGGED<b className="mono">{summary.flagged}</b></span>
+                <span>PEAK RISK<b className="mono">{summary.peak.toFixed(3)}</b></span>
               </div>
             </section>
 
-            <div className="mt-5 grid gap-5 xl:grid-cols-[1.7fr_1fr]">
-              <section className="rounded-xl border border-ink-200 bg-white p-5">
-                <SectionTitle eyebrow="Risk timeline" title="รูปแบบความเสี่ยงตามเวลา" detail={`${days} วันล่าสุด · ${sessions.length} sessions`} />
-                <RiskSparkline sessions={sessions} />
-              </section>
-
-              <section className="rounded-xl border border-ink-200 bg-white p-5">
-                <SectionTitle eyebrow="Behavior baseline" title="พฤติกรรมปกติของผู้ใช้" />
-                <dl className="mt-5 divide-y divide-ink-100">
-                  <BaselineRow label="ประเทศที่พบบ่อย" value={summary.country} />
-                  <BaselineRow label="อุปกรณ์ที่พบบ่อย" value={summary.device} />
-                  <BaselineRow label="ช่วงเวลาที่ใช้บ่อย" value={summary.hourRange} />
-                  <BaselineRow label="Decision หลัก" value={summary.decision} />
-                </dl>
-              </section>
-            </div>
-
-            <section className="mt-5 rounded-xl border border-ink-200 bg-white p-5">
-              <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
-                <SectionTitle eyebrow="Session evidence" title="ประวัติการประเมินทั้งหมด" detail="เลือกแถวเพื่อดู 4-layer breakdown และบันทึก feedback" />
-                <div className="flex flex-wrap gap-2">
-                  {Object.entries(summary.decisions).map(([decision, count]) => (
-                    <span key={decision} className="rounded-full border border-ink-200 bg-ink-50 px-2.5 py-1 font-mono text-[9px] uppercase text-ink-600">{decision} {count}</span>
-                  ))}
+            <section className="cx-grid two">
+              <article className="cx-panel">
+                <header><div><span className="mono">RISK TIMELINE · {days} DAYS</span><h2>รูปแบบความเสี่ยงตามเวลา</h2></div></header>
+                <div className="cx-profile-chart"><RiskSparkline sessions={sessions} /></div>
+              </article>
+              <article className="cx-panel">
+                <header><div><span className="mono">BEHAVIOR BASELINE</span><h2>พฤติกรรมปกติของผู้ใช้</h2></div></header>
+                <div className="cx-definition">
+                  <div><span>ประเทศที่พบบ่อย</span><b>{summary.country}</b></div>
+                  <div><span>อุปกรณ์ที่พบบ่อย</span><b>{summary.device}</b></div>
+                  <div><span>ช่วงเวลาที่ใช้บ่อย</span><b className="mono">{summary.hourRange}</b></div>
+                  <div><span>Decision หลัก</span><b className="mono">{summary.decision}</b></div>
                 </div>
+              </article>
+            </section>
+
+            <section className="cx-panel">
+              <header><div><span className="mono">SESSION EVIDENCE · {sessions.length} RECORDS</span><h2>ประวัติการประเมินทั้งหมด</h2></div><span className="cx-chip outline">เลือกแถวเพื่อดู 4-Layer</span></header>
+              <div className="cx-table-wrap">
+                <table>
+                  <thead><tr><th>TIME</th><th>RISK SCORE</th><th>DECISION</th><th>DEVICE</th><th>IP / COUNTRY</th><th>FEEDBACK</th></tr></thead>
+                  <tbody>
+                    {sessions.length === 0 && <tr><td colSpan={6}><div className="cx-empty"><strong>ไม่มี Session ในช่วงเวลานี้</strong><span className="mono">NO USER RISK HISTORY</span></div></td></tr>}
+                    {sessions.map((session) => {
+                      const risk = session.risk_score ?? session.score ?? 0;
+                      return <tr key={session.id} className="cx-clickable-row" onClick={() => setSelected(session)}>
+                        <td><code>{new Date(asUtc(session.created_at)).toLocaleString("th-TH", { timeZone: "Asia/Bangkok" })}</code></td>
+                        <td><Risk value={risk} /></td>
+                        <td><span className={`cx-chip ${decisionTone(session.decision)}`}>{(session.decision || "UNKNOWN").toUpperCase()}</span></td>
+                        <td><span>{[session.device_type, session.browser].filter(Boolean).join(" · ") || "—"}</span><small className="cx-data">{session.os_name || "UNKNOWN OS"}</small></td>
+                        <td><code>{session.ip || "—"}</code><small className="cx-data">{[session.geo_city, session.geo_country].filter(Boolean).join(", ") || "ไม่ทราบตำแหน่ง"}</small></td>
+                        <td><span className="cx-chip outline">{session.feedback_label || "ยังไม่ตรวจ"}</span></td>
+                      </tr>;
+                    })}
+                  </tbody>
+                </table>
               </div>
-              <h3 className="mb-3 text-[11px] font-semibold uppercase tracking-[.12em] text-ink-500">Sessions · {sessions.length} รายการ</h3>
-              <AnomalyTable rows={sessions} onRowClick={setSelected} showUser={false} showFeedback emptyMessage="ไม่มี session ในช่วงเวลานี้" />
             </section>
           </>
         )}
@@ -129,6 +117,18 @@ export default function UserTimelinePage({ params }: { params: { id: string } })
       </SlidePanel>
     </>
   );
+
+}
+
+function Risk({ value }: { value: number }) {
+  const tone = value >= .85 ? "crit" : value >= .6 ? "high" : value >= .3 ? "mid" : "low";
+  return <span className="cx-risk"><i><span className={tone} style={{ width: `${Math.max(2, Math.round(value * 100))}%` }} /></i><b className="mono">{value.toFixed(3)}</b></span>;
+}
+
+function decisionTone(value: string | null) {
+  if (["block", "would_block"].includes(value || "")) return "danger";
+  if (["mfa", "challenge", "would_mfa", "would_challenge", "warn"].includes(value || "")) return "warn";
+  return "signal";
 }
 
 function SectionTitle({ eyebrow, title, detail }: { eyebrow: string; title: string; detail?: string }) {

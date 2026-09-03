@@ -211,53 +211,12 @@ export default function NotificationsPage() {
 
   return (
     <>
-      <Topbar title="แจ้งเตือนทั้งหมด" />
-      <main className="signal-page space-y-5">
-        {/* Header */}
-        <div className="flex items-end justify-between gap-3 flex-wrap">
-          <div>
-            <h2 className="text-sm font-bold text-ink-500 uppercase tracking-wider">
-              Notification Center
-            </h2>
-            <p className="text-xs text-ink-400 mt-1">
-              เรียงเวลาล่าสุด · auto-refresh 30s · มีทั้งหมด {data?.total ?? 0} รายการ
-            </p>
-          </div>
-          <div className="flex items-center gap-2 flex-wrap">
-            {data && (
-              <div
-                className={
-                  "px-4 py-2 rounded-lg text-sm font-bold tabular-nums " +
-                  (unreadCount > 0
-                    ? "bg-amber-500 text-white"
-                    : "bg-emerald-500 text-white")
-                }
-              >
-                {unreadCount > 0
-                  ? `🔔 ${unreadCount} ยังไม่อ่าน`
-                  : "✓ อ่านครบแล้ว"}
-              </div>
-            )}
-            {unreadCount > 0 && (
-              <button
-                onClick={clearAll}
-                disabled={busy === "clear"}
-                className="px-3 py-2 rounded-lg border border-emerald-300 hover:bg-emerald-50 text-xs font-semibold text-emerald-700 disabled:opacity-50"
-              >
-                ✓ Mark ทั้งหมดว่าอ่าน
-              </button>
-            )}
-            <button
-              onClick={load}
-              className="px-3 py-2 rounded-lg border border-ink-200 hover:bg-ink-50 text-xs font-semibold text-ink-700"
-            >
-              ⟳ รีเฟรช
-            </button>
-          </div>
-        </div>
+      <Topbar title="แจ้งเตือนทั้งหมด" actions={<div className="cx-command-actions">{data && <span className={`cx-chip ${unreadCount > 0 ? "warn" : "signal"}`}>{unreadCount > 0 ? `${unreadCount} UNREAD` : "ALL READ"}</span>}{unreadCount > 0 && <button className="cx-button" onClick={clearAll} disabled={busy === "clear"}>อ่านทั้งหมด</button>}<button className="cx-button" onClick={load}>รีเฟรช</button></div>} />
+      <main className="cx-document signal-page space-y-5">
+        <section className="cx-review-head"><span className="mono">NOTIFICATION CENTER · AUTO REFRESH 30S</span><b>สัญญาณจากระบบจริงทั้งหมด {data?.total ?? 0} รายการ</b></section>
 
         {/* Read/Unread tabs */}
-        <div className="inline-flex rounded-lg border border-ink-200 bg-white overflow-hidden text-xs font-semibold w-fit">
+        <div className="cx-filter-chips">
           {(
             [
               { key: "unread", label: "🔔 ยังไม่อ่าน", count: unreadCount },
@@ -269,10 +228,10 @@ export default function NotificationsPage() {
               key={tab.key}
               onClick={() => setReadFilter(tab.key)}
               className={
-                "px-4 py-2 transition border-r last:border-r-0 border-ink-200 " +
+                "cx-chip " +
                 (readFilter === tab.key
-                  ? "bg-brand-600 text-white"
-                  : "text-ink-600 hover:bg-ink-50")
+                  ? "signal"
+                  : "")
               }
             >
               {tab.label}{" "}
@@ -305,6 +264,7 @@ export default function NotificationsPage() {
           <Link
             href={featured.link}
             className={
+              "cx-featured-alert " +
               "block rounded-xl border-2 p-5 hover:shadow-md transition group " +
               (featured.severity === "critical"
                 ? "bg-rose-50 border-rose-300 hover:border-rose-500"
@@ -366,10 +326,10 @@ export default function NotificationsPage() {
           </div>
         ) : (
           filteredItems.length > 0 && (
-            <div className="bg-white border border-ink-200 rounded-xl overflow-hidden shadow-sm">
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead className="bg-ink-50">
+            <section className="cx-panel cx-notifications"><header><div><span className="mono">EVENT STREAM</span><h2>รายการแจ้งเตือน</h2></div><span className="mono">{filteredItems.length} EVENTS</span></header>
+              <div className="cx-table-wrap">
+                <table>
+                  <thead>
                     <tr>
                       <th className="px-4 py-3 text-left text-[11px] font-bold text-ink-500 uppercase tracking-wider w-[140px]">
                         เวลา
@@ -493,7 +453,7 @@ export default function NotificationsPage() {
                   </tbody>
                 </table>
               </div>
-            </div>
+            </section>
           )
         )}
 

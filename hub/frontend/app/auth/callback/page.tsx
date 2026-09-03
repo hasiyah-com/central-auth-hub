@@ -108,8 +108,9 @@ function CallbackInner() {
   }, [params, router]);
 
   return (
-    <main className="signal-auth-page min-h-screen grid place-items-center">
-      <div className="text-center">
+    <main className="cx-auth">
+      <a className="cx-auth-brand" href="/auth/login"><b>HUB</b><span className="mono">IDENTITY CONTROL</span></a>
+      <section className="cx-auth-card"><span className="mono">ONE-TIME CODE EXCHANGE</span><h1>กำลังยืนยันการเข้าสู่ระบบ</h1><div className="text-center">
         {error ? (
           <div className="space-y-4">
             <div className="text-red-600 font-semibold">{error}</div>
@@ -126,7 +127,7 @@ function CallbackInner() {
             <span>กำลังเข้าสู่ระบบ…</span>
           </div>
         )}
-      </div>
+      </div></section>
     </main>
   );
 }

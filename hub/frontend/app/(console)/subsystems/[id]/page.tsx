@@ -810,7 +810,7 @@ export default function SubsystemDetailPage({
     return (
       <>
         <Topbar title="Subsystem" />
-        <main className="signal-page signal-page-compact">
+        <main className="cx-document signal-page signal-page-compact">
           <div className="p-4 rounded-lg bg-rose-50 border border-rose-200 text-rose-700 text-sm mb-4">
             {error}
           </div>
@@ -829,7 +829,7 @@ export default function SubsystemDetailPage({
     return (
       <>
         <Topbar title="Subsystem" />
-        <main className="signal-page signal-page-compact">
+        <main className="cx-document signal-page signal-page-compact">
           <div className="text-ink-400 text-sm">กำลังโหลด…</div>
         </main>
       </>
@@ -1165,10 +1165,10 @@ export default function SubsystemDetailPage({
           </div>
         </div>
       )}
-      <Topbar title={sub.name} />
-      <main className="signal-page space-y-6">
+      <Topbar title={sub.name} actions={<div className="cx-command-actions"><Badge tone={STATUS_TONE[sub.status] || "default"}>● {sub.status.toUpperCase()}</Badge><button className="cx-button" onClick={openEditModal}>แก้ไข</button><button className="cx-button" onClick={rotateSecret} disabled={rotateBusy}>Rotate Secret</button>{sub.status === "active" ? <button className="cx-button cx-suspend-button" onClick={suspendSubsystem} disabled={ctlBusy}>ระงับระบบ</button> : <button className="cx-button" onClick={resumeSubsystem} disabled={ctlBusy}>เปิดใช้งาน</button>}</div>} />
+      <main className="cx-document cx-service-detail signal-page space-y-6">
         {/* Breadcrumb + status hero */}
-        <div className="flex items-end justify-between gap-4 flex-wrap">
+        <section className="cx-service-hero">
           <div>
             <Link
               href="/subsystems"
@@ -1260,7 +1260,7 @@ export default function SubsystemDetailPage({
                 ` · อนุมัติ ${new Date(sub.approved_at).toISOString().slice(0, 10)}`}
             </div>
           </div>
-        </div>
+        </section>
 
         {msg && (
           <div
@@ -1296,11 +1296,11 @@ export default function SubsystemDetailPage({
 
         {/* ── Section 0: KPI 7 วันล่าสุด ─────────────────── */}
         {stats && (
-          <section>
+          <section className="cx-service-kpi-section">
             <h3 className="text-xs font-bold text-ink-500 uppercase tracking-wider mb-3">
               ภาพรวม · 7 วันล่าสุด
             </h3>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="cx-kpis four">
               <KpiCard
                 label="Login total"
                 value={stats.total_logins.toLocaleString("en-US")}
@@ -2506,13 +2506,14 @@ function KpiCard({
       ? "text-rose-700"
       : "text-ink-900";
   return (
-    <div className={`rounded-xl border p-4 ${toneClass}`}>
-      <div className="text-[10px] font-bold uppercase tracking-wider text-ink-500">
+    <div className={`cx-kpi ${toneClass}`}>
+      <i />
+      <span>
         {label}
-      </div>
-      <div className={`text-2xl font-extrabold tabular-nums mt-1 ${valueClass}`}>
+      </span>
+      <strong className={valueClass}>
         {value}
-      </div>
+      </strong>
     </div>
   );
 }

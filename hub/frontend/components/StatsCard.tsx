@@ -18,19 +18,13 @@ const TONES: Record<NonNullable<Props["tone"]>, { edge: string; value: string; w
 
 export function StatsCard({ label, value, sub, icon, tone = "default" }: Props) {
   const t = TONES[tone];
+  const cxTone = tone === "good" || tone === "brand" ? "signal" : tone === "danger" ? "danger" : "";
   return (
-    <div className={clsx("relative min-h-[132px] overflow-hidden rounded-xl border border-ink-200 bg-gradient-to-br to-white p-5", t.wash)}>
-      <span className={clsx("absolute inset-y-0 left-0 w-[3px]", t.edge)} />
-      <div className="flex items-start justify-between gap-3">
-        <div className="text-[11px] font-semibold uppercase tracking-[.12em] text-ink-500">{label}</div>
-        {icon && (
-          <div className="grid h-7 w-7 place-items-center rounded-full border border-ink-200 bg-white" aria-hidden="true">
-            <span className="h-1.5 w-1.5 rounded-full bg-current opacity-60" />
-          </div>
-        )}
-      </div>
-      <div className={clsx("mt-4 font-display text-[30px] font-extrabold leading-none tabular-nums", t.value)}>{value}</div>
-      {sub && <div className="mt-2 text-[11px] leading-snug text-ink-500">{sub}</div>}
-    </div>
+    <article className={clsx("cx-kpi", cxTone)}>
+      <span className="mono">{label}</span>
+      <strong className={t.value}>{value}</strong>
+      {sub && <small>{sub}</small>}
+      {icon && <i className="cx-kpi-mark" aria-hidden="true" />}
+    </article>
   );
 }

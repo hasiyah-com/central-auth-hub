@@ -7,8 +7,6 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Topbar } from "@/components/Topbar";
-import { Badge } from "@/components/Badge";
-import { StatsCard } from "@/components/StatsCard";
 import { clientFetch } from "@/lib/api";
 import { IncidentDetailModal } from "./_components/IncidentDetailModal";
 import {
@@ -69,169 +67,95 @@ export default function IncidentsPage() {
 
   const kpis = data?.kpis;
 
+  const actions = (
+    <div className="cx-live-actions">
+      {WINDOW_OPTIONS.map((option) => (
+        <button key={option.v} type="button" className={hours === option.v ? "active" : ""} onClick={() => setHours(option.v)}>
+          {option.v === 24 ? "24h" : option.v === 168 ? "7d" : "30d"}
+        </button>
+      ))}
+      <button type="button" onClick={load}>↻ รีเฟรชเหตุการณ์</button>
+    </div>
+  );
+
   return (
     <>
-      <Topbar title="เหตุการณ์เสี่ยง (Incidents)" />
-      <main className="signal-page">
-        {/* KPIs */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
-          <StatsCard label="เหตุการณ์ทั้งหมด" value={kpis?.total ?? "—"} icon="🚨" />
-          <StatsCard label="ถูกบล็อก" value={kpis?.blocked ?? "—"} icon="⛔" />
-          <StatsCard label="ต้องยืนยันตัวตน" value={kpis?.challenged ?? "—"} icon="🔐" />
-          <StatsCard label="Attack IP" value={kpis?.attack_ip ?? "—"} icon="🛑" />
-        </div>
+      <Topbar title="เหตุการณ์เสี่ยง (Incidents)" actions={actions} />
+      <main className="cx-document">
+        <section className="cx-kpis four" aria-label="สรุปเหตุการณ์เสี่ยง">
+          <article className="cx-kpi danger"><span className="mono">TOTAL INCIDENTS</span><strong>{kpis?.total ?? "—"}</strong><small className="mono">{hours} HOURS</small></article>
+          <article className="cx-kpi danger"><span className="mono">BLOCKED</span><strong>{kpis?.blocked ?? "—"}</strong><small className="mono">ENFORCED / SHADOW</small></article>
+          <article className="cx-kpi"><span className="mono">CHALLENGED</span><strong>{kpis?.challenged ?? "—"}</strong><small className="mono">MFA REQUIRED</small></article>
+          <article className="cx-kpi"><span className="mono">ATTACK IP</span><strong>{kpis?.attack_ip ?? "—"}</strong><small className="mono">NETWORK SIGNAL</small></article>
+        </section>
 
-        {/* filters */}
-        <div className="signal-control-deck mb-5 flex flex-wrap items-center gap-3">
-          <div className="flex rounded-lg border border-ink-200 overflow-hidden">
-            {WINDOW_OPTIONS.map((o) => (
-              <button
-                key={o.v}
-                onClick={() => setHours(o.v)}
-                className={
-                  "px-3 py-1.5 text-sm font-medium transition " +
-                  (hours === o.v
-                    ? "bg-brand-600 text-white"
-                    : "bg-white text-ink-600 hover:bg-ink-50")
-                }
-              >
-                {o.label}
-              </button>
-            ))}
+        {error && <div className="cx-alert danger" role="alert">{error}</div>}
+
+        <section className="cx-panel">
+          <header>
+            <div><span className="mono">RISK EVENT QUEUE</span><h2>เหตุการณ์ที่ต้องตรวจสอบ</h2></div>
+            <span className="cx-data">{loading ? "LOADING" : `${data?.items.length ?? 0} / ${data?.total ?? 0} RECORDS`}</span>
+          </header>
+          <div className="cx-toolbar">
+            <label><SearchIcon /><input value={q} onChange={(event) => setQ(event.target.value)} onKeyDown={(event) => event.key === "Enter" && load()} placeholder="อีเมล, ชื่อผู้ใช้ หรือ Incident ID..." /></label>
+            <select value={decision} onChange={(event) => setDecision(event.target.value)}>
+              <option value="">ทุก decision</option>
+              <option value="block">block</option>
+              <option value="would_block">would_block</option>
+              <option value="challenge">challenge</option>
+              <option value="would_mfa">would_mfa</option>
+              <option value="mfa_passed">mfa_passed</option>
+            </select>
+            <button type="button" onClick={load}>ค้นหา</button>
           </div>
-          <select
-            value={decision}
-            onChange={(e) => setDecision(e.target.value)}
-            className="px-3 py-2 rounded-lg border border-ink-200 bg-white text-sm focus:outline-none focus:border-brand-500"
-          >
-            <option value="">ทุก decision</option>
-            <option value="block">block</option>
-            <option value="would_block">would_block</option>
-            <option value="challenge">challenge</option>
-            <option value="would_mfa">would_mfa</option>
-            <option value="mfa_passed">mfa_passed</option>
-          </select>
-          <input
-            type="text"
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && load()}
-            placeholder="ค้นหา email / ชื่อ… (Enter)"
-            className="px-3 py-2 rounded-lg border border-ink-200 bg-white text-sm focus:outline-none focus:border-brand-500 w-60"
-          />
-        </div>
-
-        {error && (
-          <div className="mb-4 p-3 rounded-lg bg-rose-50 border border-rose-200 text-rose-700 text-sm">
-            {error}
-          </div>
-        )}
-
-        {/* list */}
-        <div className="bg-white rounded-xl border border-ink-200 overflow-hidden">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left text-[11px] font-bold text-ink-400 uppercase tracking-wider border-b border-ink-100">
-                <th className="px-4 py-3">เวลา</th>
-                <th className="px-4 py-3">ผู้ใช้</th>
-                <th className="px-4 py-3">เข้าทาง → เป้าหมาย</th>
-                <th className="px-4 py-3">Risk</th>
-                <th className="px-4 py-3">Decision</th>
-                <th className="px-4 py-3">สถานะ</th>
-              </tr>
-            </thead>
-            <tbody>
-              {loading ? (
-                <tr>
-                  <td colSpan={6} className="px-4 py-10 text-center text-ink-400">
-                    กำลังโหลด…
-                  </td>
-                </tr>
-              ) : !data || data.items.length === 0 ? (
-                <tr>
-                  <td colSpan={6} className="px-4 py-10 text-center text-ink-400">
-                    ไม่มีเหตุการณ์เสี่ยงในช่วงที่เลือก 🎉
-                  </td>
-                </tr>
-              ) : (
-                data.items.map((row) => {
+          <div className="cx-table-wrap">
+            <table>
+              <thead><tr><th>DETECTED</th><th>IDENTITY</th><th>ENTRY → TARGET</th><th>RISK</th><th>DECISION</th><th>STATUS</th></tr></thead>
+              <tbody>
+                {loading && <EmptyRow label="กำลังโหลดเหตุการณ์" />}
+                {!loading && (!data || data.items.length === 0) && <EmptyRow label="ไม่มีเหตุการณ์เสี่ยงในช่วงที่เลือก" />}
+                {!loading && data?.items.map((row) => {
                   const status = STATUS_META[row.status] ?? STATUS_META.expired;
+                  const risk = row.risk_score ?? 0;
                   return (
-                    <tr
-                      key={row.id}
-                      onClick={() => openDetail(row)}
-                      className={
-                        "border-b border-ink-50 hover:bg-brand-50/40 cursor-pointer transition " +
-                        (openId === row.id ? "bg-brand-50" : "")
-                      }
-                    >
-                      <td className="px-4 py-3 font-mono text-xs text-ink-500 whitespace-nowrap">
-                        {row.created_at
-                          ? new Date(row.created_at)
-                              .toISOString()
-                              .slice(5, 16)
-                              .replace("T", " ")
-                          : "—"}
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="font-medium text-ink-900 truncate max-w-[160px]">
-                          {row.full_name || row.user_email || "—"}
-                        </div>
-                        <div className="text-[11px] text-ink-400 font-mono truncate max-w-[160px]">
-                          {row.user_email}
-                        </div>
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="text-ink-800">{row.channel_label}</div>
-                        <div className="text-[11px] text-ink-400">
-                          {row.is_subsystem ? "🧩 " : "🏠 "}
-                          {row.target}
-                        </div>
-                      </td>
-                      <td className="px-4 py-3 font-mono font-bold tabular-nums">
-                        {row.risk_score != null ? row.risk_score.toFixed(2) : "—"}
-                      </td>
-                      <td className="px-4 py-3">
-                        <Badge tone={DECISION_TONE[row.decision || ""] || "default"}>
-                          {row.decision || "—"}
-                        </Badge>
-                      </td>
-                      <td className="px-4 py-3">
-                        <Badge tone={status.tone}>{status.label}</Badge>
-                      </td>
+                    <tr key={row.id} onClick={() => openDetail(row)} className={`cx-clickable-row ${openId === row.id ? "is-selected" : ""}`}>
+                      <td><code>{row.created_at ? new Date(row.created_at).toISOString().slice(5, 16).replace("T", " ") : "—"}</code><small className="cx-data">{row.id.slice(0, 12)}</small></td>
+                      <td><b>{row.full_name || row.user_email || "—"}</b><small className="cx-data">{row.user_email || "UNKNOWN IDENTITY"}</small></td>
+                      <td><span>{row.channel_label}</span><small className="cx-data">{row.is_subsystem ? "SUBSYSTEM" : "HUB"} · {row.target}</small></td>
+                      <td><Risk value={risk} /></td>
+                      <td><span className={`cx-chip ${DECISION_TONE[row.decision || ""] === "danger" ? "danger" : DECISION_TONE[row.decision || ""] === "warn" ? "warn" : "outline"}`}>{row.decision || "—"}</span></td>
+                      <td><span className={`cx-chip ${status.tone === "danger" ? "danger" : status.tone === "good" ? "signal" : "outline"}`}>{status.label}</span></td>
                     </tr>
                   );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
-
-        {data && data.total > data.items.length && (
-          <p className="mt-3 text-xs text-ink-400 text-center">
-            แสดง {data.items.length} จาก {data.total} เหตุการณ์ — กรอง/ลดช่วงเวลาเพื่อดูเจาะจง
-          </p>
-        )}
+                })}
+              </tbody>
+            </table>
+          </div>
+          {data && data.total > data.items.length && <div className="cx-pagination"><span className="mono">SHOWING {data.items.length} OF {data.total}</span></div>}
+        </section>
       </main>
 
-      {/* full-screen detail modal */}
       {openId !== null && !detailLoading && detail && (
-        <IncidentDetailModal
-          data={detail}
-          onClose={() => setOpenId(null)}
-          onActionDone={() => {
-            if (openId) fetchDetail(openId);
-            load();
-          }}
-        />
+        <IncidentDetailModal data={detail} onClose={() => setOpenId(null)} onActionDone={() => { if (openId) fetchDetail(openId); load(); }} />
       )}
       {openId !== null && detailLoading && (
         <div className="fixed inset-0 z-50 bg-ink-900/50 grid place-items-center">
-          <div className="bg-white rounded-2xl px-6 py-5 shadow-xl text-sm text-ink-500">
-            กำลังโหลด…
-          </div>
+          <div className="cx-loading-card">กำลังโหลดรายละเอียดเหตุการณ์…</div>
         </div>
       )}
     </>
   );
+}
+
+function Risk({ value }: { value: number }) {
+  const tone = value >= 0.85 ? "crit" : value >= 0.6 ? "high" : value >= 0.3 ? "mid" : "low";
+  return <span className="cx-risk"><i><span className={tone} style={{ width: `${Math.max(2, Math.round(value * 100))}%` }} /></i><b className="mono">{value.toFixed(2)}</b></span>;
+}
+
+function EmptyRow({ label }: { label: string }) {
+  return <tr><td colSpan={6}><div className="cx-empty"><strong>{label}</strong><span className="mono">NO RISK EVENTS</span></div></td></tr>;
+}
+
+function SearchIcon() {
+  return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg>;
 }

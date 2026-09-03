@@ -8,7 +8,6 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Topbar } from "@/components/Topbar";
-import { Badge } from "@/components/Badge";
 import {
   adminListRecoveryTickets,
   adminApproveTicket,
@@ -88,146 +87,38 @@ export default function RecoveryTicketsPage() {
     }
   }
 
+  const high = items.filter((item) => item.recovery_level === "HIGH").length;
+  const actions = <button className="cx-primary-action" type="button" onClick={load}>↻ รีเฟรชรายการ</button>;
   return (
     <>
-      {verifying && (
-        <div className="fixed inset-0 z-[60] grid place-items-center bg-black/40">
-          <div className="bg-white rounded-2xl px-6 py-5 shadow-xl text-sm text-ink-700">
-            🔐 กำลังยืนยันด้วย Passkey…
-          </div>
-        </div>
-      )}
-      <Topbar title="คำขอกู้บัญชี (Recovery Tickets)" />
-      <main className="signal-page signal-page-compact">
-        <p className="text-xs text-ink-500 mb-4">
-          {/* ⚠️ ยืนยันตัวตนผู้ขอ<strong>ต่อหน้า</strong> (บัตร นศ./ปชช.) ก่อนอนุมัติเสมอ —
-          HIGH ต้อง admin 2 คน (four-eyes) */}
-        </p>
-
-        {msg && (
-          <div
-            className={
-              "mb-4 p-3 rounded-lg text-sm " +
-              (msg.kind === "ok"
-                ? "bg-emerald-50 border border-emerald-200 text-emerald-700"
-                : "bg-rose-50 border border-rose-200 text-rose-700")
-            }
-          >
-            {msg.text}
-          </div>
-        )}
-
-        {link && (
-          <div className="mb-4 p-4 rounded-lg bg-brand-50 border border-brand-200">
-            <div className="text-xs font-bold text-brand-900 mb-1">
-              🔗 ลิงก์กู้บัญชี (ใช้ครั้งเดียว · 30 นาที) — ส่งให้ผู้ใช้เปิดเอง
-            </div>
-            <div className="bg-white border border-brand-200 rounded p-2 font-mono text-[11px] break-all">
-              {link.url}
-            </div>
-            <button
-              onClick={() => navigator.clipboard?.writeText(link.url)}
-              className="mt-2 text-xs px-3 py-1 rounded bg-brand-600 text-white font-semibold"
-            >
-              คัดลอกลิงก์
-            </button>
-          </div>
-        )}
-
-        {loading ? (
-          <div className="text-ink-400 text-sm">กำลังโหลด…</div>
-        ) : items.length === 0 ? (
-          <div className="bg-white rounded-xl border border-ink-200 p-12 text-center">
-            <div className="text-5xl mb-3">✨</div>
-            <div className="font-semibold text-ink-700">ไม่มีคำขอรออนุมัติ</div>
-          </div>
-        ) : (
-          <div className="space-y-4">
-            {items.map((t) => (
-              <div
-                key={t.id}
-                className="bg-white rounded-xl border border-ink-200 p-5 shadow-sm"
-              >
-                <div className="flex items-start justify-between gap-3 flex-wrap">
-                  <div>
-                    <div className="font-bold text-ink-900">{t.email}</div>
-                    <div className="text-xs text-ink-500 mt-0.5">
-                      แจ้งหาย: {t.credential_type || "—"} · {t.reason || "ไม่ระบุเหตุผล"}
-                    </div>
-                    <div className="text-[11px] text-ink-400 font-mono mt-1">
-                      Ticket {t.id.slice(0, 8)} ·{" "}
-                      {t.created_at
-                        ? new Date(t.created_at).toISOString().slice(0, 16).replace("T", " ")
-                        : ""}
-                    </div>
-                  </div>
-                  <div className="flex flex-col items-end gap-1">
-                    <Badge tone={t.recovery_level === "HIGH" ? "danger" : "warn"}>
-                      {t.recovery_level}
-                    </Badge>
-                    <span className="text-[11px] text-ink-500 font-mono">
-                      อนุมัติ {t.approvals}/{t.required}
-                    </span>
-                  </div>
-                </div>
-
-                {/* Evidence form */}
-                <div className="mt-4 flex flex-wrap items-end gap-2 border-t border-ink-100 pt-3">
-                  <div>
-                    <label className="block text-[10px] font-bold text-ink-500 uppercase mb-1">
-                      หลักฐานที่ตรวจ
-                    </label>
-                    <select
-                      value={f(t.id).evidence_type}
-                      onChange={(e) =>
-                        setForm((s) => ({
-                          ...s,
-                          [t.id]: { ...f(t.id), evidence_type: e.target.value },
-                        }))
-                      }
-                      className="px-2 py-1.5 rounded border border-ink-200 text-sm"
-                    >
-                      {EVIDENCE.map((ev) => (
-                        <option key={ev.v} value={ev.v}>
-                          {ev.label}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                  <input
-                    value={f(t.id).remark}
-                    onChange={(e) =>
-                      setForm((s) => ({
-                        ...s,
-                        [t.id]: { ...f(t.id), remark: e.target.value },
-                      }))
-                    }
-                    placeholder="หมายเหตุ (เช่น เลขบัตร, ผู้ตรวจ)"
-                    className="flex-1 min-w-[180px] px-3 py-1.5 rounded border border-ink-200 text-sm"
-                  />
-                  <button
-                    onClick={() => approve(t)}
-                    disabled={busy === t.id + "a"}
-                    className="px-4 py-1.5 rounded-lg bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700 disabled:opacity-50"
-                  >
-                    {busy === t.id + "a"
-                      ? "…"
-                      : t.required > t.approvals + 1
-                        ? "อนุมัติ (1/2)"
-                        : "อนุมัติ → ออกลิงก์"}
-                  </button>
-                  <button
-                    onClick={() => reject(t)}
-                    disabled={busy === t.id + "r"}
-                    className="px-3 py-1.5 rounded-lg border border-rose-200 text-rose-700 text-sm font-semibold hover:bg-rose-50 disabled:opacity-50"
-                  >
-                    ปฏิเสธ
-                  </button>
-                </div>
+      {verifying && <div className="fixed inset-0 z-[60] grid place-items-center bg-black/40"><div className="cx-loading-card">กำลังยืนยันด้วย Passkey…</div></div>}
+      <Topbar title="คำขอกู้บัญชี" actions={actions} />
+      <main className="cx-document">
+        <section className="cx-kpis four">
+          <article className="cx-kpi"><span className="mono">PENDING TICKETS</span><strong>{items.length}</strong><small className="mono">REVIEW QUEUE</small></article>
+          <article className="cx-kpi danger"><span className="mono">HIGH RECOVERY RISK</span><strong>{high}</strong><small className="mono">FOUR-EYES REQUIRED</small></article>
+          <article className="cx-kpi"><span className="mono">STANDARD REVIEW</span><strong>{items.length-high}</strong><small className="mono">ONE ADMIN</small></article>
+          <article className="cx-kpi signal"><span className="mono">ONE-TIME LINK</span><strong>{link ? 1 : 0}</strong><small className="mono">READY TO COPY</small></article>
+        </section>
+        {msg && <div className={`cx-alert ${msg.kind === "err" ? "danger" : ""}`}>{msg.text}</div>}
+        {link && <section className="cx-panel"><header><div><span className="mono">ONE-TIME SECRET · 30 MINUTES</span><h2>ลิงก์กู้บัญชี</h2></div><button type="button" onClick={() => navigator.clipboard?.writeText(link.url)}>คัดลอกลิงก์</button></header><pre className="cx-recovery-link">{link.url}</pre></section>}
+        <section className="cx-panel">
+          <header><div><span className="mono">ACCOUNT RECOVERY TRIAGE</span><h2>คำขอกู้บัญชีที่รอตรวจสอบ</h2></div><span className="cx-chip warn">STEP-UP REQUIRED</span></header>
+          <div className="cx-recovery-list">
+            {!loading && items.length === 0 && <div className="cx-empty"><strong>ไม่มีคำขอรออนุมัติ</strong><span className="mono">RECOVERY QUEUE CLEAR</span></div>}
+            {items.map((ticket) => <article key={ticket.id}>
+              <header><div><b>{ticket.email}</b><small>Ticket {ticket.id.slice(0,8)} · {ticket.credential_type || "ไม่ระบุ Credential"}</small></div><span className={`cx-chip ${ticket.recovery_level === "HIGH" ? "danger" : "warn"}`}>{ticket.recovery_level}</span></header>
+              <p>{ticket.reason || "ไม่ระบุเหตุผล"}</p>
+              <div className="cx-recovery-evidence">
+                <label>หลักฐานที่ตรวจ<select value={f(ticket.id).evidence_type} onChange={(event)=>setForm((state)=>({...state,[ticket.id]:{...f(ticket.id),evidence_type:event.target.value}}))}>{EVIDENCE.map((evidence)=><option key={evidence.v} value={evidence.v}>{evidence.label}</option>)}</select></label>
+                <label>หมายเหตุ<input value={f(ticket.id).remark} onChange={(event)=>setForm((state)=>({...state,[ticket.id]:{...f(ticket.id),remark:event.target.value}}))} placeholder="เลขบัตรหรือชื่อผู้ตรวจ" /></label>
+                <span className="mono">APPROVAL {ticket.approvals}/{ticket.required}</span>
               </div>
-            ))}
+              <footer><button type="button" disabled={busy===ticket.id+"a"} onClick={()=>approve(ticket)}>อนุมัติ{ticket.required>ticket.approvals+1?" (1/2)":" → ออกลิงก์"}</button><button type="button" disabled={busy===ticket.id+"r"} onClick={()=>reject(ticket)}>ปฏิเสธ</button></footer>
+            </article>)}
           </div>
-        )}
+        </section>
+        <section className="cx-grid two"><article className="cx-panel"><header><div><span className="mono">APPROVAL FLOW</span><h2>ขั้นตอนอนุมัติที่ปลอดภัย</h2></div></header><div className="cx-recovery-flow"><span><b className="mono">01</b><small>ตรวจหลักฐานตัวตน</small></span><span>→</span><span><b className="mono">02</b><small>ยืนยัน Step-up</small></span><span>→</span><span><b className="mono">03</b><small>สร้าง Recovery link</small></span></div></article><article className="cx-panel"><header><div><span className="mono">SECURITY POLICY</span><h2>การอนุมัติแบบ Four-eyes</h2></div></header><div className="cx-empty"><strong>คำขอความเสี่ยงสูงต้อง Admin 2 คน</strong><span className="mono">HIGH RISK RECOVERY CONTROL</span></div></article></section>
       </main>
     </>
   );

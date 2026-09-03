@@ -160,11 +160,11 @@ export function AccountView() {
 
   return (
     <>
-      <Topbar title="บัญชีของฉัน" />
+      <Topbar title="บัญชีของฉัน" actions={<span className="cx-chip signal">✓ VERIFIED</span>} />
 
-      <main className="signal-page signal-page-compact space-y-6">
+      <main className="cx-document signal-page signal-page-compact space-y-6">
         {/* Profile card */}
-        <div className="bg-white rounded-xl border border-ink-200 p-6 shadow-sm">
+        <section className="cx-account-hero">
           <div className="flex items-center gap-4">
             <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-brand-500 to-brand-700 grid place-items-center text-white text-2xl font-extrabold">
               {initial}
@@ -198,10 +198,11 @@ export function AccountView() {
               value={me?.is_hub_admin ? "ผู้ดูแลระบบ (Hub Admin)" : "นักพัฒนา (Developer)"}
             />
           </dl>
-        </div>
+        </section>
 
         {/* Change Google account (re-link) */}
-        <div className="bg-white rounded-xl border border-ink-200 p-6 shadow-sm">
+        <section className="cx-panel cx-account-provider">
+          <header><div><span className="mono">CONNECTED IDENTITY</span><h2>บัญชี Google ที่เชื่อม</h2></div></header><div className="cx-account-provider-body">
           <div className="flex items-start justify-between gap-4 flex-wrap">
             <div className="min-w-0">
               <h3 className="text-sm font-bold text-ink-800 flex items-center gap-2">
@@ -241,14 +242,12 @@ export function AccountView() {
               )}
             </div>
           )}
-        </div>
+          </div>
+        </section>
 
         {/* Security heading */}
-        <div className="flex items-center gap-2 pt-1">
-          <span className="text-base">🔑</span>
-          <h2 className="text-sm font-extrabold text-ink-800 uppercase tracking-wider">
-            ความปลอดภัย · Passkey
-          </h2>
+        <div className="cx-review-head">
+          <span className="mono">AUTHENTICATION</span><b>ความปลอดภัย · Passkey และ MFA</b>
         </div>
 
         {supported === false && (
@@ -261,7 +260,7 @@ export function AccountView() {
         {/* Passkey list */}
         <div
           id="setup-passkey"
-          className="bg-white rounded-xl border border-gray-200 p-6 space-y-4"
+          className="cx-panel cx-account-security"
         >
           <div className="flex items-center justify-between">
             <div>
@@ -368,7 +367,7 @@ export function AccountView() {
 
         {/* Backup codes status + regenerate */}
         {backupStatus && backupStatus.generation > 0 && (
-          <div className="bg-white rounded-xl border border-gray-200 p-6">
+          <div className="cx-panel cx-account-security">
             <div className="flex items-center justify-between">
               <div>
                 <h3 className="text-lg font-bold text-gray-900 mb-1">Backup Codes</h3>

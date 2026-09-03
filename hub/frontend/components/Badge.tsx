@@ -10,5 +10,6 @@ const TONES = {
 } as const;
 
 export function Badge({ children, tone = "default" }: { children: React.ReactNode; tone?: keyof typeof TONES }) {
-  return <span className={clsx("inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide", TONES[tone])}>{children}</span>;
+  const cxTone = tone === "good" || tone === "brand" ? "signal" : tone === "danger" || tone === "pink" ? "danger" : tone === "warn" ? "warn" : "outline";
+  return <span className={clsx("cx-chip", cxTone)}>{children}</span>;
 }
