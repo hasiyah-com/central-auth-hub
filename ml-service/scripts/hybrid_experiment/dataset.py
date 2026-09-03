@@ -61,9 +61,15 @@ class UserSplit:
     tune_slice: tuple[int, int] = (0, 0)
 
 
-def build(users_xlsx: Path, seed: int, size: int) -> dict[str, UserSplit]:
-    """สร้างข้อมูลหนึ่ง seed แล้วแบ่งสี่ส่วน — ทุก config ต้องใช้ผลของฟังก์ชันนี้ร่วมกัน."""
-    raw = G3.build_seed(users_xlsx, seed)
+def build(
+    users_xlsx: Path, seed: int, size: int, raw: dict | None = None
+) -> dict[str, UserSplit]:
+    """สร้างข้อมูลหนึ่ง seed แล้วแบ่งสี่ส่วน — ทุก config ต้องใช้ผลของฟังก์ชันนี้ร่วมกัน.
+
+    `raw` ส่งเข้ามาได้เมื่อวนหลาย size บน seed เดียวกัน เพื่อไม่ต้อง generate ซ้ำ
+    (ผลลัพธ์เหมือนกันทุกประการ เพราะ `build_seed` deterministic ต่อ seed)
+    """
+    raw = raw if raw is not None else G3.build_seed(users_xlsx, seed)
     out: dict[str, UserSplit] = {}
     for alias, u in raw.items():
         tr_raw, tr_ft = G3.nested_subset(u, size)

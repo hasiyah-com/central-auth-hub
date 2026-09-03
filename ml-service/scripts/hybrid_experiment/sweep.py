@@ -18,9 +18,23 @@ threshold ที่ลองต้องมาจาก **ควอนไทล�
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-
-GAMMA_GRID = (0.0, 0.1, 0.2, 0.35, 0.5)
+# ── กริดของ gamma: ประกาศสองรอบ บันทึกไว้ทั้งคู่ ──
+# pass 1 (2 ก.ย. 2569): (0.0, 0.1, 0.2, 0.35, 0.5)
+#   ผล: recall เพิ่มขึ้นแบบ monotone จนถึง 0.5 โดย FPR แทบไม่ขยับ
+#        -> ค่าที่เลือกได้ไปติด **ขอบกริด** ซึ่งแปลว่ายังไม่รู้ว่าจุดที่ดีที่สุดอยู่ตรงไหน
+# pass 2: ขยายถึง 1.0 แล้วรันซ้ำ **บน validation-tuning เท่านั้น** (holdout ยังไม่ถูกเปิด)
+#   การขยายกริดหลังเห็นผลของ tuning เป็นสิ่งที่ tuning split มีไว้ให้ทำ แต่ต้อง
+#   บันทึกว่าเป็นรอบที่สอง ไม่ใช่รายงานเหมือนประกาศกริดนี้มาตั้งแต่แรก
+#
+# หยุดที่ 1.0 เพราะ gamma = 1 คือ R = M + S(1-M) = 1 - (1-M)(1-S) ซึ่งเป็น
+# probabilistic OR (noisy-OR) — ปลายทางที่มีความหมายของสูตรนี้ ไม่ใช่เลขที่สุ่มตัด
+GAMMA_GRID = (0.0, 0.1, 0.2, 0.35, 0.5, 0.65, 0.8, 1.0)
+GAMMA_GRID_PASSES = {
+    "pass1": [0.0, 0.1, 0.2, 0.35, 0.5],
+    "pass2": [0.0, 0.1, 0.2, 0.35, 0.5, 0.65, 0.8, 1.0],
+    "reason_for_pass2": "ค่าที่เลือกใน pass 1 ไปติดขอบกริด (gamma = 0.5)",
+    "upper_endpoint_rationale": "gamma = 1 คือ noisy-OR ของหลักฐานสองชั้น",
+}
 
 # งบ FPR — ประกาศไว้ก่อนรัน ห้ามแก้หลังเห็นผล
 CHALLENGE_FPR_BUDGET = 0.01
@@ -42,26 +56,6 @@ def tier_of(size: int) -> str:
         if lo <= size < hi:
             return name
     return MATURITY_TIERS[-1][0]
-
-
-@dataclass
-class OperatingPoint:
-    gamma: float
-    thresholds: dict
-    recall: float = 0.0
-    precision: float = 0.0
-    challenge_fpr: float = 0.0
-    block_fpr: float = 0.0
-    warn_fpr: float = 0.0
-    l3_effective_unique: float = 0.0
-    detail: dict = field(default_factory=dict)
-
-    @property
-    def eligible(self) -> bool:
-        return (
-            self.challenge_fpr <= CHALLENGE_FPR_BUDGET
-            and self.block_fpr <= BLOCK_FPR_BUDGET
-        )
 
 
 def threshold_candidates(normal_scores: list[float], n_points: int = 12) -> list[dict]:
@@ -102,64 +96,128 @@ def threshold_candidates(normal_scores: list[float], n_points: int = 12) -> list
 
 
 def attainable_floor(evaluate_fn) -> dict:
-    """FPR ต่ำสุดที่ระบบทำได้ — ดันทุก threshold ไปสุดแล้ววัดว่าเหลือเท่าไร.
+    """FPR ต่ำสุดที่ระบบทำได้ — ดัน threshold ไปเกิน 1.0 แล้ววัดว่าเหลือเท่าไร.
 
-    ส่วนที่เหลือมาจาก Policy Gate ล้วน (deny + min_action) ซึ่ง threshold
-    ไม่มีอำนาจลด · ถ้าค่านี้สูงกว่างบ แปลว่าเป้าที่ตั้งไว้ทำไม่ได้ทางโครงสร้าง
+    ส่วนที่เหลือมาจาก Policy Gate ล้วน (deny + min_action) ซึ่ง threshold ไม่มี
+    อำนาจลด · ถ้าค่านี้สูงกว่างบ แปลว่าเป้าที่ตั้งไว้ทำไม่ได้ทางโครงสร้าง
+
+    **ห้ามขยับเป้าให้ตรงกับค่าที่ทำได้** — ต้องรายงานว่าเป้าเดิมทำไม่ได้
+    พร้อมค่าต่ำสุดที่ทำได้จริงและสาเหตุ ไม่ใช่เขียนเป้าใหม่ให้ผลดูผ่าน
     """
     impossible = {"warn": 1.01, "challenge": 1.01, "block": 1.01}
-    s = evaluate_fn(0.0, impossible)
+    m = evaluate_fn(0.0, impossible)
+    ch_floor = m["challenge_fpr"]
+    blk_floor = m["block_fpr"]
     return {
-        "challenge_fpr_floor": s.challenge_fpr,
-        "block_fpr_floor": s.block_fpr,
-        "warn_fpr_floor": s.warn_fpr,
-        "source": "policy_gate_only",
+        "target_fpr": CHALLENGE_FPR_BUDGET,
+        "target_attainable": ch_floor <= CHALLENGE_FPR_BUDGET,
+        "minimum_attainable_fpr": round(ch_floor, 6),
+        "cause": "policy_floor",
+        "block": {
+            "target_fpr": BLOCK_FPR_BUDGET,
+            "target_attainable": blk_floor <= BLOCK_FPR_BUDGET,
+            "minimum_attainable_fpr": round(blk_floor, 6),
+            "cause": "policy_floor",
+        },
+        "per_size_minimum_attainable_fpr": {
+            str(k): round(v["challenge_fpr"], 6)
+            for k, v in m.get("per_size", {}).items()
+        },
+        "note": (
+            "ค่านี้คือ FPR ที่เหลือเมื่อ threshold ถูกดันจนไม่มีเหตุการณ์ใดผ่านเกณฑ์คะแนน "
+            "-> มาจาก Policy Gate ล้วน · ถ้า target_attainable=false ห้ามขยับเป้า "
+            "ให้รายงานว่าเป้าเดิมทำไม่ได้"
+        ),
     }
 
 
-def search(evaluate_fn, normal_scores: list[float]) -> dict:
-    """ค้นหา operating point ที่ดีที่สุดภายในงบ FPR.
+def eligible(m: dict) -> tuple[bool, list[str]]:
+    """ผ่านงบ FPR ทั้ง **ค่ารวม** และ **ทุกขนาดข้อมูล** หรือไม่.
 
-    `evaluate_fn(gamma, thresholds) -> Summary` ต้องเรียก **resolver จริง**
-    (fuse + policy + cap) ไม่ใช่การตัดคะแนนตรง ๆ
+    ต้องตรวจรายขนาดด้วย เพราะจุดทำงานที่ FPR รวม 0.9% แต่ขนาด 50 อยู่ที่ 4%
+    แปลว่าผู้ใช้ใหม่รับภาระเกินงบ ทั้งที่ตัวเลขรวมผ่าน
+    """
+    fails: list[str] = []
+    if m["challenge_fpr"] > CHALLENGE_FPR_BUDGET:
+        fails.append(f"macro_challenge_fpr={m['challenge_fpr']:.4f}")
+    if m["block_fpr"] > BLOCK_FPR_BUDGET:
+        fails.append(f"macro_block_fpr={m['block_fpr']:.4f}")
+    # งบ warn ถูกประกาศไว้ตั้งแต่ต้นแต่เดิม**ไม่เคยถูกตรวจ** — เป็นช่องโหว่จริง
+    # เพราะ recall นับ warn ด้วย จุดทำงานจึงดัน recall ขึ้นได้ด้วยการเตือนถี่ขึ้น
+    # โดยไม่มีอะไรฟ้อง (เจอตอนเทียบ B ที่ gamma 1.0: warn FPR 2.40% -> 3.76%)
+    if m["warn_fpr"] > WARN_FPR_BUDGET:
+        fails.append(f"macro_warn_fpr={m['warn_fpr']:.4f}")
+    for size, v in m.get("per_size", {}).items():
+        if v["challenge_fpr"] > CHALLENGE_FPR_BUDGET:
+            fails.append(f"size{size}_challenge_fpr={v['challenge_fpr']:.4f}")
+        if v["block_fpr"] > BLOCK_FPR_BUDGET:
+            fails.append(f"size{size}_block_fpr={v['block_fpr']:.4f}")
+        if v["warn_fpr"] > WARN_FPR_BUDGET:
+            fails.append(f"size{size}_warn_fpr={v['warn_fpr']:.4f}")
+    return (not fails), fails
+
+
+def _point(gamma: float, thr: dict, m: dict) -> dict:
+    ok, fails = eligible(m)
+    return {
+        "gamma": gamma,
+        "thresholds": thr,
+        "recall": round(m["recall"], 6),
+        # recall ที่นับเฉพาะ challenge/block — ต้องรายงานคู่กันเสมอ ไม่งั้นอ่านไม่ออกว่า
+        # recall ที่เพิ่มขึ้นมาจากการจับได้จริง หรือมาจากการเตือน (warn) ถี่ขึ้น
+        "recall_challenge": round(m["recall_challenge"], 6),
+        "precision": round(m["precision"], 6),
+        "challenge_fpr": round(m["challenge_fpr"], 6),
+        "block_fpr": round(m["block_fpr"], 6),
+        "warn_fpr": round(m["warn_fpr"], 6),
+        "l3_effective_unique": round(m["l3_effective_unique"], 6),
+        "campaign_surfaced": round(m["campaign_surfaced"], 6),
+        "eligible": ok,
+        "violations": fails,
+        "per_size": {
+            str(k): {
+                "recall": round(v["recall"], 6),
+                "recall_challenge": round(v["recall_challenge"], 6),
+                "challenge_fpr": round(v["challenge_fpr"], 6),
+                "block_fpr": round(v["block_fpr"], 6),
+                "warn_fpr": round(v["warn_fpr"], 6),
+            }
+            for k, v in m.get("per_size", {}).items()
+        },
+    }
+
+
+def search(evaluate_fn, normal_scores: list[float], gammas=GAMMA_GRID) -> dict:
+    """ค้นหา operating point ที่ดีที่สุดภายในงบ FPR (macro across seed x size x user).
+
+    `evaluate_fn(gamma, thresholds) -> macro dict` ต้องเรียก **resolver จริง**
+    ของ production ไม่ใช่การตัดคะแนนตรงๆ
 
     เกณฑ์เลือกตามลำดับ:
-        1. FPR อยู่ในงบ (challenge และ block)
-        2. recall สูงสุด
+        1. FPR อยู่ในงบ ทั้งค่ารวมและทุกขนาด
+        2. macro recall สูงสุด
         3. precision สูงสุด
         4. gamma ต่ำสุด (โมเดลง่ายกว่าเมื่อผลเท่ากัน)
     """
     floor = attainable_floor(evaluate_fn)
     cands = threshold_candidates(normal_scores)
-    points: list[OperatingPoint] = []
-    for gamma in GAMMA_GRID:
-        for thr in cands:
-            s = evaluate_fn(gamma, thr)
-            points.append(
-                OperatingPoint(
-                    gamma=gamma,
-                    thresholds=thr,
-                    recall=s.recall,
-                    precision=s.precision,
-                    challenge_fpr=s.challenge_fpr,
-                    block_fpr=s.block_fpr,
-                    warn_fpr=s.warn_fpr,
-                    l3_effective_unique=s.l3_effective_unique,
-                )
-            )
-    eligible = [p for p in points if p.eligible]
+    points = [_point(g, thr, evaluate_fn(g, thr)) for g in gammas for thr in cands]
+    ok_points = [p for p in points if p["eligible"]]
     best = None
-    if eligible:
-        best = max(eligible, key=lambda p: (p.recall, p.precision, -p.gamma))
+    if ok_points:
+        best = max(ok_points, key=lambda p: (p["recall"], p["precision"], -p["gamma"]))
     return {
         "attainable_floor": floor,
         "budget": {
             "challenge_fpr": CHALLENGE_FPR_BUDGET,
             "block_fpr": BLOCK_FPR_BUDGET,
+            "warn_fpr": WARN_FPR_BUDGET,
         },
+        "selection_rule": "macro recall -> precision -> gamma ต่ำสุด · FPR ต้องผ่านทุกขนาด",
+        "gamma_grid": list(gammas),
         "n_candidates": len(points),
-        "n_eligible": len(eligible),
-        "target_attainable": bool(eligible),
-        "best": None if best is None else vars(best),
-        "points": [vars(p) for p in points],
+        "n_eligible": len(ok_points),
+        "target_attainable": bool(ok_points),
+        "best": best,
+        "points": points,
     }

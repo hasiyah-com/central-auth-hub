@@ -69,6 +69,63 @@ def _action_for(score: float, thresholds: dict[str, float]) -> str:
     return "allow"
 
 
+@dataclass(frozen=True)
+class ResolverInput:
+    """ทุกอย่างที่ต้องใช้แปลง final score -> action โดยไม่ต้องคำนวณหลักฐานใหม่.
+
+    มีไว้เพื่อให้การกวาด threshold (grid search) เรียก **ตัวแก้ผลของ production
+    ตัวเดียวกัน** ได้โดยไม่ต้องคำนวณ L1/L2/L3 ใหม่ทุกจุด — ถ้า harness เขียน
+    การแปลงคะแนนเป็น action เองจะกลายเป็นสำเนา logic ซึ่งเป็นต้นเหตุของ B66
+    """
+
+    final_score: float
+    policy_denied: bool = False
+    policy_min_action: str | None = None
+    primary_layer: str | None = None
+    # evidence ของชั้นที่นับได้ทั้งหมด **ยกเว้น** primary — ใช้ตรวจ corroboration
+    other_evidence: tuple[float, ...] = ()
+
+    def to_dict(self) -> dict:
+        return {
+            "final_score": self.final_score,
+            "policy_denied": self.policy_denied,
+            "policy_min_action": self.policy_min_action,
+            "primary_layer": self.primary_layer,
+            "other_evidence": list(self.other_evidence),
+        }
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "ResolverInput":
+        return cls(
+            final_score=float(d["final_score"]),
+            policy_denied=bool(d.get("policy_denied")),
+            policy_min_action=d.get("policy_min_action"),
+            primary_layer=d.get("primary_layer"),
+            other_evidence=tuple(float(x) for x in d.get("other_evidence") or ()),
+        )
+
+
+def resolve_action(
+    inp: ResolverInput, thresholds: dict[str, float]
+) -> tuple[str, bool]:
+    """คะแนน + ข้อบังคับ -> (action, ถูก cap เพราะชั้นเดียวหรือไม่).
+
+    **จุดเดียวในระบบที่แปลงคะแนนเป็น action** — ทั้ง fuse, fuse_weighted_sum และ
+    การทดลองทุกตัวต้องเดินผ่านฟังก์ชันนี้
+    """
+    if inp.policy_denied:
+        return "block", False
+    action = _action_for(inp.final_score, thresholds)
+    if inp.policy_min_action:
+        action = _stronger(action, inp.policy_min_action)
+    solo_capped = False
+    if action == "block" and inp.primary_layer in SOLO_BLOCK_FORBIDDEN:
+        if not any(x >= thresholds["challenge"] for x in inp.other_evidence):
+            action = "challenge"
+            solo_capped = True
+    return action, solo_capped
+
+
 def fuse(
     policy: PolicyOutcome,
     evidences: list[Evidence],
@@ -107,7 +164,14 @@ def fuse(
             total_score=1.0,
             decision="would_block" if shadow_mode else "block",
             reasons=list(policy.reasons),
-            breakdown={**breakdown, "final_risk_score": 1.0, "fusion": "policy_denied"},
+            breakdown={
+                **breakdown,
+                "final_risk_score": 1.0,
+                "fusion": "policy_denied",
+                "resolver": ResolverInput(
+                    final_score=1.0, policy_denied=True
+                ).to_dict(),
+            },
         )
 
     ranked = sorted(counted, key=lambda e: e.evidence_score, reverse=True)
@@ -117,23 +181,14 @@ def fuse(
     s = support.evidence_score if support else 0.0
     final = round(m + gamma * s * (1.0 - m), 6)
 
-    action = _action_for(final, thr)
-
-    # ── ข้อบังคับจาก Policy Gate ยกขึ้นได้ แต่ลดลงไม่ได้ ──
-    if policy.min_action:
-        action = _stronger(action, policy.min_action)
-
-    # ── ชั้นที่ห้าม block เดี่ยว ──
-    solo_capped = False
-    if action == "block" and primary is not None:
-        corroborating = [
-            e
-            for e in counted
-            if e is not primary and e.evidence_score >= thr["challenge"]
-        ]
-        if primary.layer in SOLO_BLOCK_FORBIDDEN and not corroborating:
-            action = "challenge"
-            solo_capped = True
+    resolver = ResolverInput(
+        final_score=final,
+        policy_denied=False,
+        policy_min_action=policy.min_action,
+        primary_layer=primary.layer if primary else None,
+        other_evidence=tuple(e.evidence_score for e in counted if e is not primary),
+    )
+    action, solo_capped = resolve_action(resolver, thr)
 
     reasons: list[str] = list(policy.reasons)
     for e in ranked:
@@ -153,6 +208,7 @@ def fuse(
             "support_layer": support.layer if support else None,
             "support_evidence": round(s, 4),
             "solo_block_capped": solo_capped,
+            "resolver": resolver.to_dict(),
         },
     )
 
@@ -198,7 +254,14 @@ def fuse_weighted_sum(
             total_score=1.0,
             decision="would_block" if shadow_mode else "block",
             reasons=list(policy.reasons),
-            breakdown={**breakdown, "final_risk_score": 1.0, "fusion": "policy_denied"},
+            breakdown={
+                **breakdown,
+                "final_risk_score": 1.0,
+                "fusion": "policy_denied",
+                "resolver": ResolverInput(
+                    final_score=1.0, policy_denied=True
+                ).to_dict(),
+            },
         )
 
     # normalize ตามชั้นที่นับได้จริง — ไม่งั้นชั้นที่ abstain จะถ่วงคะแนนลงโดยไม่ควร
@@ -208,22 +271,16 @@ def fuse_weighted_sum(
         final = sum(w.get(e.layer, 0.0) * e.evidence_score for e in counted) / total_w
     final = round(min(max(final, 0.0), 1.0), 6)
 
-    action = _action_for(final, thr)
-    if policy.min_action:
-        action = _stronger(action, policy.min_action)
-
     ranked = sorted(counted, key=lambda e: e.evidence_score, reverse=True)
     primary = ranked[0] if ranked else None
-    solo_capped = False
-    if action == "block" and primary is not None:
-        corroborating = [
-            e
-            for e in counted
-            if e is not primary and e.evidence_score >= thr["challenge"]
-        ]
-        if primary.layer in SOLO_BLOCK_FORBIDDEN and not corroborating:
-            action = "challenge"
-            solo_capped = True
+    resolver = ResolverInput(
+        final_score=final,
+        policy_denied=False,
+        policy_min_action=policy.min_action,
+        primary_layer=primary.layer if primary else None,
+        other_evidence=tuple(e.evidence_score for e in counted if e is not primary),
+    )
+    action, solo_capped = resolve_action(resolver, thr)
 
     reasons = list(policy.reasons)
     for e in ranked:
@@ -239,5 +296,6 @@ def fuse_weighted_sum(
             "fusion": "weighted_sum",
             "primary_layer": primary.layer if primary else None,
             "solo_block_capped": solo_capped,
+            "resolver": resolver.to_dict(),
         },
     )

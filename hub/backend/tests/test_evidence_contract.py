@@ -459,3 +459,99 @@ def test_calibrated_value_is_percentile_not_probability():
     assert "percentile evidence" in src, "ต้องเรียกว่า percentile evidence"
     # ต้องมีข้อความปฏิเสธชัดเจนว่าไม่ใช่ความน่าจะเป็น ไม่ใช่แค่เลี่ยงไม่พูดถึง
     assert "ไม่ใช่ probability" in src or 'ไม่ใช่ "ความน่าจะเป็น' in src
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# จุดแปลงคะแนน -> action ต้องมีจุดเดียว (resolve_action)
+#
+# เหตุผล: การทดลองต้องกวาด threshold นับสิบล้านจุด ถ้า harness เขียนการแปลง
+# คะแนนเป็น action เองเพื่อความเร็ว จะกลายเป็นการวัดคนละระบบกับที่ deploy (B66)
+# production จึงแยก ResolverInput + resolve_action ออกมาให้เรียกซ้ำได้
+# เทสชุดนี้ยืนยันว่าเส้นทางลัดนั้นให้ผลเท่ากับการเรียก fuse เต็มรูปแบบเสมอ
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+def _thr(w, c, b):
+    return {"warn": w, "challenge": c, "block": b}
+
+
+@pytest.mark.parametrize(
+    "thresholds",
+    [
+        _thr(0.10, 0.20, 0.30),
+        _thr(0.50, 0.70, 0.85),
+        _thr(0.80, 0.90, 0.95),
+        _thr(1.01, 1.01, 1.01),  # ดันจนไม่มีคะแนนใดผ่าน -> เหลือแต่ Policy Gate
+    ],
+)
+def test_resolver_shortcut_equals_full_fuse(thresholds):
+    """resolve_action(resolver, thr) ต้องได้ decision เดียวกับ fuse(..., thr) เสมอ."""
+    from app.security.risk_fusion import ResolverInput, fuse, resolve_action
+
+    cases = []
+    for r_score in (0.0, 0.3, 0.55, 0.75, 0.92, 1.0):
+        for b_score in (0.0, 0.4, 0.72, 0.99):
+            for a_score in (0.0, 0.6, 0.88, 1.0):
+                cases.append((r_score, b_score, a_score))
+
+    for min_action in (None, "warn", "challenge", "block"):
+        policy = PolicyOutcome(min_action=min_action, reasons=[], policy="t")
+        for r_score, b_score, a_score in cases:
+            evs = [
+                Evidence(layer="rule", evidence_score=r_score),
+                Evidence(layer="behavior", evidence_score=b_score),
+                Evidence(layer="anomaly", evidence_score=a_score),
+            ]
+            d = fuse(policy, evs, gamma=0.35, thresholds=thresholds)
+            ri = ResolverInput.from_dict(d.breakdown["resolver"])
+            assert (
+                resolve_action(ri, thresholds)[0] == d.decision
+            ), f"ไม่ตรง: {min_action} {(r_score, b_score, a_score)} {thresholds}"
+
+
+def test_resolver_input_is_threshold_independent():
+    """ทุกฟิลด์ของ ResolverInput ต้องไม่ขึ้นกับ threshold.
+
+    ถ้าฟิลด์ใดขึ้นกับ threshold การ cache ไว้แล้วกวาด threshold ทีหลังจะผิด
+    โดยไม่มีอะไรฟ้อง — จึงตรึงคุณสมบัตินี้ไว้ด้วยเทส
+    """
+    from app.security.risk_fusion import fuse
+
+    policy = PolicyOutcome(min_action="warn", reasons=[], policy="t")
+    evs = [
+        Evidence(layer="rule", evidence_score=0.62),
+        Evidence(layer="behavior", evidence_score=0.41),
+        Evidence(layer="anomaly", evidence_score=0.93),
+    ]
+    a = fuse(policy, evs, gamma=0.35, thresholds=_thr(0.1, 0.2, 0.3))
+    b = fuse(policy, evs, gamma=0.35, thresholds=_thr(0.7, 0.8, 0.9))
+    assert a.breakdown["resolver"] == b.breakdown["resolver"]
+
+
+def test_resolver_present_on_every_fusion_path():
+    """ทุกเส้นทางของ L4 ต้องแนบ resolver มาด้วย รวมถึงตอน Policy Gate ปฏิเสธ."""
+    from app.security.risk_fusion import fuse, fuse_weighted_sum
+
+    evs = [Evidence(layer="rule", evidence_score=0.5)]
+    for f in (fuse, fuse_weighted_sum):
+        for policy in (
+            PolicyOutcome(reasons=[], policy="t"),
+            PolicyOutcome(denied=True, reasons=["deny"], policy="t"),
+        ):
+            d = f(policy, evs)
+            assert "resolver" in d.breakdown, f"{f.__name__} ขาด resolver"
+
+
+def test_resolve_action_keeps_l3_solo_cap():
+    """ทางลัดต้องบังคับข้อจำกัด 'L3 คนเดียว block ไม่ได้' เหมือนเส้นทางเต็ม."""
+    from app.security.risk_fusion import ResolverInput, resolve_action
+
+    thr = _thr(0.5, 0.7, 0.85)
+    solo = ResolverInput(
+        final_score=0.99, primary_layer="anomaly", other_evidence=(0.1,)
+    )
+    assert resolve_action(solo, thr) == ("challenge", True)
+    backed = ResolverInput(
+        final_score=0.99, primary_layer="anomaly", other_evidence=(0.75,)
+    )
+    assert resolve_action(backed, thr) == ("block", False)
