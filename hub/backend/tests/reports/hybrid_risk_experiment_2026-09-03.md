@@ -19,6 +19,7 @@
 | ข้อมูล | 5 seeds × 5 ขนาด × 12 ผู้ใช้ · tuning 161,650 เหตุการณ์ · **holdout 316,150 เหตุการณ์** |
 | holdout เปิดกี่ครั้ง | **1 ครั้ง** หลัง freeze · หลังจากนี้ชุดนี้ **ใช้เป็น final ไม่ได้อีก** |
 | leakage | 0 / 316,150 แถว |
+| full pytest | **893 passed · 46 skipped** · image `sha256:d140bf98e81d` (ดู §12.3) |
 
 ---
 
@@ -442,16 +443,52 @@ holdout ชุดปัจจุบันถูกเปิดแล้ว **จ
    สำรองไว้แล้วใน harness) หรือ prospective production replay
 5. รายงาน holdout ปัจจุบันในชื่อ **`final_round_1_failed_gate`** เป็นหลักฐานถาวร
 
-### 12.3 จำนวนเทสที่ต้องกระทบยอด
+### 12.3 จำนวนเทส — กระทบยอดแล้ว
 
-| ตัวเลข | ที่มา | ขอบเขต |
-|---|---|---|
-| 934 passed | รายงานรอบก่อน (session ก่อนหน้า) | **ยังไม่ยืนยันว่าใช้คำสั่งใด** |
-| 893 passed / 46 skipped | 2026-09-03 · `pytest . -q` ใน container `hub-backend` โดย `--ignore` ไฟล์ 9 ตัวที่เป็นสคริปต์ live-stack (เรียก `sys.exit()` ตอน import: `test_behavior_rarity`, `test_behavior_scope_escalation`, `test_behavior_tier2`, `test_e2e_full_stack`, `test_l1_oidc`, `test_l3_sequence`, `test_l3_window_integrity`, `test_rule_engine_v2_signals`, `test_tier2_catches_evasive`) | unit + integration ที่รันได้โดยไม่ต้องมี stack ครบ |
+**สภาพแวดล้อมที่วัด** (2026-09-03, commit `edca9fd`)
 
-**ยังไม่กระทบยอด** — ต้องรัน full pytest อีกครั้งก่อน freeze รอบ 2 พร้อมบันทึก
-command, container image digest และ commit SHA ลงในรายงาน
-(ณ เวลาเขียนรายงานนี้ Docker engine ไม่ตอบสนอง จึงยังรันซ้ำไม่ได้)
+```
+docker compose config --images          -> cah-hub-hub-backend
+docker image inspect cah-hub-hub-backend --format '{{.Id}}'
+   sha256:d140bf98e81d1b0802c7d9183ea235493e4b2520a5b1428d7ece97bd4fc20e4d
+```
+
+**คำสั่งและผลจริง**
+
+| คำสั่ง | ผล |
+|---|---|
+| `pytest . -q` (ไม่กรอง) | **INTERNALERROR · exit 3** — ล้มตั้งแต่ collection ไม่ได้รันเทสเลย |
+| `pytest . -q --ignore=<9 ไฟล์>` | **893 passed · 46 skipped · exit 0** (174.98s) |
+| `pytest tests/test_evidence_contract.py -v` | **55 passed** (3.60s) |
+
+**สาเหตุที่ `pytest . -q` ล้ม:** มีไฟล์ 9 ไฟล์ในโฟลเดอร์ `tests/` ที่ตั้งชื่อขึ้นต้นว่า
+`test_*` แต่**ไม่ใช่เทสของ pytest** — เป็นสคริปต์ที่ต้องยิงใส่ stack ที่รันอยู่จริง
+และเรียก `sys.exit(1)` ตั้งแต่ตอน import เมื่อเชื่อมต่อ service ไม่ได้ ทำให้ pytest
+ล้มทั้ง session (`SystemExit` ระหว่าง collection):
+
+```
+test_behavior_rarity.py          test_behavior_scope_escalation.py
+test_behavior_tier2.py           test_e2e_full_stack.py
+test_l1_oidc.py                  test_l3_sequence.py
+test_l3_window_integrity.py      test_rule_engine_v2_signals.py
+test_tier2_catches_evasive.py
+```
+
+สองไฟล์ในนั้น (`test_e2e_full_stack.py`, `test_l1_oidc.py`) **ไม่มีฟังก์ชัน `def test_`
+เลยแม้แต่ตัวเดียว** ยืนยันว่าเป็นสคริปต์ไม่ใช่เทส · โฟลเดอร์นี้มีแบบแผนชื่อ
+`manual_*_driver.py` อยู่แล้วสำหรับสคริปต์ประเภทนี้ ไฟล์ทั้ง 9 จึงตั้งชื่อผิดแบบแผน
+
+**ตัวเลข `934` ถือว่ายืนยันไม่ได้และถูกแทนที่** — มาจาก session ก่อนหน้าโดยไม่ได้
+บันทึกคำสั่ง/commit/image ที่ใช้ จึงทำซ้ำไม่ได้และกระทบยอดกับ 893 ไม่ได้
+(ผลต่าง 41 ไม่ตรงกับจำนวนฟังก์ชันเทสในไฟล์ทั้ง 9 ซึ่งรวมได้ 57 ตัว)
+
+> **ตัวเลข full suite ที่ใช้เป็นผลสุดท้าย: `893 passed · 46 skipped`**
+> นิยาม: เทสที่ pytest เก็บและรันได้ในคอนเทนเนอร์ `hub-backend` โดยไม่ต้องมี
+> stack ของ subsystem ครบ · ไม่รวมสคริปต์ live-stack 9 ไฟล์ข้างต้น
+
+**งานที่เสนอสำหรับรอบถัดไป:** เปลี่ยนชื่อไฟล์ทั้ง 9 เป็น `manual_*_driver.py`
+ตามแบบแผนที่มีอยู่ เพื่อให้ `pytest .` แบบไม่กรองทำงานได้ และตัวเลข full suite
+มีความหมายเดียวไม่กำกวมอีก
 
 ---
 
