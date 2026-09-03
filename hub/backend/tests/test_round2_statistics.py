@@ -462,3 +462,35 @@ def test_paired_campaign_recall_delta_counts_campaign_units():
         other.append(_ev("u1", 0, "u1:A", True, True, True))
     r = FS.paired_campaign_recall_delta(cand, other, n_boot=200, seed=4)
     assert r["delta"] > 0  # B จับได้ 2/2 แคมเปญ · E จับได้ 1/2
+
+
+def test_paired_multi_delta_matches_individual_calls():
+    """resample ครั้งเดียวหลาย metric ต้องได้ delta เท่ากับเรียกทีละ metric.
+
+    ยืนยันว่า optimization (รวมหลาย metric ใน boot เดียว) ไม่เปลี่ยนค่า delta —
+    delta คำนวณจากข้อมูลจริง ไม่ขึ้นกับการสุ่ม จึงต้องตรงเป๊ะ
+    """
+    from hybrid_experiment import final_stats as FS
+
+    cand, other = [], []
+    for i in range(120):
+        u = "u%d" % (i % 6)
+        atk = i % 2 == 0
+        camp = ("u%d:A" % (i % 6)) if atk else None
+        cand.append(_ev(u, i % 3, camp, atk, i % 3 != 0, i % 4 != 0))
+        other.append(_ev(u, i % 3, camp, atk, i % 5 != 0, i % 6 != 0))
+    multi = FS.paired_multi_delta(cand, other, n_boot=100, seed=1)
+    ind_recall = FS.paired_config_delta(cand, other, metric="recall", n_boot=1, seed=9)
+    ind_chfpr = FS.paired_config_delta(
+        cand, other, metric="challenge_fpr", n_boot=1, seed=9
+    )
+    # delta (point estimate บนข้อมูลจริง) ต้องตรงเป๊ะ ไม่ขึ้นกับ n_boot/seed
+    assert multi["delta_recall"]["delta"] == pytest.approx(ind_recall["delta"])
+    assert multi["delta_challenge_fpr"]["delta"] == pytest.approx(ind_chfpr["delta"])
+    # มีครบ 4 metric
+    assert set(multi) == {
+        "delta_recall",
+        "delta_recall_challenge",
+        "delta_challenge_fpr",
+        "delta_campaign_recall",
+    }

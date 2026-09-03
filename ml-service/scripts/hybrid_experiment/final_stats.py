@@ -153,3 +153,48 @@ def paired_campaign_recall_delta(
         )
 
     return BS.paired_hierarchical(tree, stat, n_boot=n_boot, seed=seed)
+
+
+def paired_multi_delta(
+    cand: list[dict], other: list[dict], *, n_boot: int = 2000, seed: int = 0
+) -> dict:
+    """ΔRecall, ΔRecall@ch, ΔChallengeFPR, ΔCampaignRecall — resample ครั้งเดียวต่อ boot.
+
+    เทียบเท่าการเรียก paired_config_delta + paired_campaign_recall_delta แยกกัน แต่
+    เร็วกว่าราว 4 เท่าเพราะ resample tree (แพงสุด) แค่รอบเดียวต่อ boot · ผลเป็น paired
+    ทั้งภายในและข้าม metric (ทุก metric เห็นตัวอย่างชุดเดียวกัน)
+    """
+    tree = _tree_from_paired(cand, other)
+
+    def multi(items: list[dict]) -> dict:
+        # นับครั้งเดียว แยก attack/normal แล้วคำนวณทุก metric
+        atk = [x for x in items if x["is_attack"]]
+        nor = [x for x in items if not x["is_attack"]]
+        na, nn = len(atk), len(nor)
+        recall = (
+            (sum(1 for x in atk if x["cand_surf"]) / na if na else 0.0),
+            (sum(1 for x in atk if x["other_surf"]) / na if na else 0.0),
+        )
+        recall_ch = (
+            (sum(1 for x in atk if x["cand_ch"]) / na if na else 0.0),
+            (sum(1 for x in atk if x["other_ch"]) / na if na else 0.0),
+        )
+        ch_fpr = (
+            (sum(1 for x in nor if x["cand_ch"]) / nn if nn else 0.0),
+            (sum(1 for x in nor if x["other_ch"]) / nn if nn else 0.0),
+        )
+        cc = _campaign_caught(items, "cand")
+        oc = _campaign_caught(items, "other")
+        nc = len(cc)
+        camp = (
+            (sum(1 for v in cc.values() if v) / nc if nc else 0.0),
+            (sum(1 for v in oc.values() if v) / nc if nc else 0.0),
+        )
+        return {
+            "delta_recall": recall,
+            "delta_recall_challenge": recall_ch,
+            "delta_challenge_fpr": ch_fpr,
+            "delta_campaign_recall": camp,
+        }
+
+    return BS.paired_hierarchical_multi(tree, multi, n_boot=n_boot, seed=seed)

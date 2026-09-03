@@ -254,3 +254,65 @@ def hierarchical_proportion(
         "n_hits": k,
         "upper_bound_method": method,
     }
+
+
+def paired_hierarchical_multi(
+    tree: dict,
+    multi_stat,
+    *,
+    n_boot: int = 2000,
+    seed: int = 0,
+    alpha: float = 0.05,
+) -> dict:
+    """เหมือน paired_hierarchical แต่คำนวณ **หลาย metric ในการ resample ครั้งเดียว**.
+
+    `multi_stat(items) -> dict[name] = (a, b)` · ทุก metric ใช้ตัวอย่างที่ resample
+    ชุดเดียวกันต่อรอบ (paired ทั้งภายในและข้าม metric) · เร็วกว่าการเรียก
+    paired_hierarchical ทีละ metric เท่าจำนวน metric เพราะ resample แพงที่สุด
+
+    คืน dict[name] = {delta, ci_low, ci_high, sign_agreement, n_boot_effective}
+    """
+    flat = _flatten(tree)
+    if not flat:
+        return {}
+    base = multi_stat(flat)
+    names = list(base)
+    deltas0 = {k: base[k][0] - base[k][1] for k in names}
+    rng = random.Random(seed)
+    dist: dict[str, list[float]] = {k: [] for k in names}
+    for _ in range(n_boot):
+        sample = _resample_tree(tree, rng)
+        if not sample:
+            continue
+        r = multi_stat(sample)
+        for k in names:
+            a, b = r[k]
+            dist[k].append(a - b)
+    out: dict = {}
+    for k in names:
+        d = deltas0[k]
+        xs = sorted(dist[k])
+        if not xs:
+            out[k] = {
+                "delta": round(d, 6),
+                "ci_low": round(d, 6),
+                "ci_high": round(d, 6),
+                "sign_agreement": 1.0,
+            }
+            continue
+        lo = xs[int((alpha / 2) * len(xs))]
+        hi = xs[min(len(xs) - 1, int((1 - alpha / 2) * len(xs)))]
+        if d > 0:
+            agree = sum(1 for x in xs if x > 0) / len(xs)
+        elif d < 0:
+            agree = sum(1 for x in xs if x < 0) / len(xs)
+        else:
+            agree = sum(1 for x in xs if x == 0) / len(xs)
+        out[k] = {
+            "delta": round(d, 6),
+            "ci_low": round(lo, 6),
+            "ci_high": round(hi, 6),
+            "sign_agreement": round(agree, 4),
+            "n_boot_effective": len(xs),
+        }
+    return out

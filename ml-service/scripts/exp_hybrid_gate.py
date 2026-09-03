@@ -997,23 +997,15 @@ def cmd_final(args):
             results[key]["paired_vs_deployed"] = None
             continue
         oth = per_config_events[key]
+        # resample ครั้งเดียวต่อ boot คำนวณทั้ง 4 metric (เร็วกว่าเรียกแยก ~4 เท่า)
+        deltas = FS.paired_multi_delta(dep_events, oth, n_boot=1000, seed=1)
         results[key]["paired_vs_deployed"] = {
             "candidate": deployed,
-            "delta_recall": FS.paired_config_delta(
-                dep_events, oth, metric="recall", n_boot=1000, seed=1
-            ),
-            "delta_recall_challenge": FS.paired_config_delta(
-                dep_events, oth, metric="recall_challenge", n_boot=1000, seed=2
-            ),
-            "delta_challenge_fpr": FS.paired_config_delta(
-                dep_events, oth, metric="challenge_fpr", n_boot=1000, seed=3
-            ),
-            "delta_campaign_recall": FS.paired_campaign_recall_delta(
-                dep_events, oth, n_boot=1000, seed=4
-            ),
+            **deltas,
             "note": (
                 "Δ = deployed − this_config · CI/sign_agreement จาก paired "
-                "hierarchical bootstrap (user->seed->event ชุดเดียวกันทั้งสองแขน)"
+                "hierarchical bootstrap (user->seed->event ชุดเดียวกันทั้งสองแขน) · "
+                "ทุก metric resample ชุดเดียวกันต่อ boot"
             ),
         }
         # campaign-level L3-only แบบ hierarchical (แทน Wilson) สำหรับ config ที่มี L3
