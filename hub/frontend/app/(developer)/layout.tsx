@@ -1,5 +1,5 @@
-import { ConsoleFrame } from "@/components/ConsoleFrame";
+import { SignalSiteSurface } from "@/components/site/SignalSiteSurface";
 
-export default function DeveloperLayout({ children }: { children: React.ReactNode }) {
-  return <ConsoleFrame>{children}</ConsoleFrame>;
+export default function DeveloperLayout() {
+  return <SignalSiteSurface />;
 }
