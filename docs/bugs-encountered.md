@@ -419,6 +419,16 @@
 
 ---
 
+**B68. การ optimize ความเร็วของ `final` เผลอเปิด holdout ซ้ำหลายครั้ง — ทำลาย single-open**
+- อาการ: Round 2 มี commit ชุด perf 3 ตัว ("final ช้าเกิน") ช่วง ~1.5 ชม. ก่อน freeze สุดท้าย → บ่งชี้ว่า `final` ถูกรันบน holdout `[101-105]` **มากกว่าหนึ่งครั้ง**ระหว่างจูนความเร็วของ bootstrap ทั้งที่ระบบออกแบบให้เปิด holdout ครั้งเดียว
+- สาเหตุ: guard เดิม (`final_result.json exists` + `--i-know-this-is-a-rerun`) อ่อนเกินไป — ลบ `final_result.json` หรือรันบนโค้ดที่ยัง dirty ก็เปิดซ้ำได้เงียบๆ · การ optimize ที่วัดเวลาของ `final` เอง จำเป็นต้องรัน `final` ซ้ำ → เปิด holdout ซ้ำโดยไม่ได้ตั้งใจให้เป็นการทดลอง
+- **ทำไมยังไม่ทำให้ผลผิด (รอบนี้):** ค่า gate เป็น **deterministic** ของ threshold ที่ freeze + scoring path · `git diff <freeze-arg>..<final-freeze> -- app/security/` = **ว่าง** (decision logic ไม่เปลี่ยน perf แตะแค่ bootstrap/CI) · candidate ถูก freeze ก่อนรัน final ครั้งแรก ไม่มีการปรับ threshold ตามผล holdout · ผล fail-closed (candidate ไม่ผ่าน → ไม่ deploy)
+- **ทำไมยังอันตราย:** การเปิดซ้ำเปิดช่องให้ปรับโค้ด/threshold "ตามที่เห็นบน holdout" ได้โดยไม่รู้ตัว · holdout ที่เปิดแล้วใช้เป็น clean final ที่บริสุทธิ์อีกไม่ได้
+- **กฎ:** (1) การวัด/optimize ความเร็วต้องทำบน **validation หรือข้อมูลสังเคราะห์** ห้ามรัน `final` บน holdout จริงเพื่อจับเวลา (2) `cmd_final` มี **holdout ledger** (`holdout_ledger.json`) บันทึกถาวรว่า seed ชุดใดถูกเปิดแล้ว → ปฏิเสธการเปิดซ้ำเว้นแต่ `--reopen-spent-holdout` อย่างตั้งใจ (ห้ามลบ entry) (3) holdout ที่ใช้แล้วต้องขึ้นบัญชี spent · รอบถัดไปใช้ seed ชุดใหม่เสมอ
+- **Verify:** `_load_holdout_ledger`/`_record_holdout_open` ใน `exp_hybrid_gate.py` · ledger seed `[101-105]` เป็น spent แล้ว · รายละเอียด `tests/reports/hybrid_risk_round2_2026-09-04.md` §5
+
+---
+
 ## วิธีเพิ่ม bug ใหม่
 
 1. เพิ่มที่ section ที่เหมาะสม (สร้าง section ใหม่ถ้าจำเป็น)

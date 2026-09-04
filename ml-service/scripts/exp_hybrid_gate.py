@@ -61,6 +61,9 @@ from app.security.rule_engine import evaluate_rules  # noqa: E402
 
 ARTIFACTS = ML.parent / "data" / "hybrid_experiment"
 FROZEN = ARTIFACTS / "frozen_config.json"
+# บันทึกถาวรว่า holdout seed ชุดใดถูกเปิดไปแล้ว (B68) — กันเปิดซ้ำโดยไม่ตั้งใจ
+# เช่นตอน optimize ความเร็วของ final ซึ่งเผลอรันบน holdout จริงหลายครั้ง
+HOLDOUT_LEDGER = ARTIFACTS / "holdout_ledger.json"
 SIZES = [50, 100, 500, 1000, 5000]
 SEEDS = [42, 43, 44, 45, 46]
 HOLDOUT_SEEDS = [101, 102, 103, 104, 105]
@@ -769,6 +772,43 @@ def cmd_tune(args):
 # ══════════════════════════ Final holdout (เปิดครั้งเดียวหลัง freeze) ══════════════════════════
 
 
+def _load_holdout_ledger() -> dict:
+    """อ่าน ledger ของ holdout ที่เปิดแล้ว — คีย์คือ seed ที่เรียงแล้วคั่นด้วย comma."""
+    if not HOLDOUT_LEDGER.exists():
+        return {}
+    try:
+        return json.loads(HOLDOUT_LEDGER.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001
+        return {}
+
+
+def _record_holdout_open(seeds, git_commit: str) -> None:
+    """บันทึกว่า holdout seed ชุดนี้ถูกเปิด — เพิ่ม open_count ถ้าเปิดซ้ำ.
+
+    ledger เป็นหลักฐานถาวรว่า seed ใดใช้ไปแล้ว · ห้ามลบ entry (ลบ = เปิดโอกาสให้
+    เปิดซ้ำเงียบๆ) · ไฟล์ gitignored (อยู่ใน ml-service/data)
+    """
+    ledger = _load_holdout_ledger()
+    key = ",".join(str(x) for x in sorted(seeds))
+    now = time.strftime("%Y-%m-%dT%H:%M:%S%z")
+    if key in ledger:
+        ledger[key]["open_count"] = ledger[key].get("open_count", 1) + 1
+        ledger[key]["last_opened_at"] = now
+        ledger[key].setdefault("reopened", True)
+    else:
+        ledger[key] = {
+            "seeds": sorted(seeds),
+            "first_opened_at": now,
+            "last_opened_at": now,
+            "open_count": 1,
+            "frozen_commit": git_commit,
+        }
+    HOLDOUT_LEDGER.parent.mkdir(parents=True, exist_ok=True)
+    HOLDOUT_LEDGER.write_text(
+        json.dumps(ledger, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+
+
 def _final_gate(results: dict, fz: dict) -> dict:
     """สร้าง gate verdict ต่องบ FPR ที่ประกาศไว้ — pass/fail ต่อ config + candidate.
 
@@ -838,12 +878,30 @@ def cmd_final(args):
             print(f"  - {x}")
         return 1
     fz = json.loads(FROZEN.read_text(encoding="utf-8"))
+    seeds = fz.get("holdout_seeds") or fz["seeds"]
+
+    # ── B68: holdout ledger — กันเปิด seed ชุดเดิมซ้ำ ──
+    # ledger บันทึกถาวรว่า seed ชุดใดถูกเปิดไปแล้ว · การเปิดซ้ำทำลายการรับประกัน
+    # "เปิดครั้งเดียว" แม้ผลจะ deterministic (เพราะการรันซ้ำระหว่าง optimize เปิดโอกาส
+    # ให้ปรับโค้ด/threshold ตามที่เห็นได้) · ต้องใช้ --reopen-spent-holdout อย่างตั้งใจ
+    # เท่านั้นถึงจะเปิดซ้ำ และจะถูกบันทึกว่าเป็นการเปิดซ้ำ
+    spent = _load_holdout_ledger()
+    seed_key = ",".join(str(x) for x in sorted(seeds))
+    if seed_key in spent and not args.reopen_spent_holdout:
+        entry = spent[seed_key]
+        print(
+            f"ปฏิเสธ: holdout seeds {seeds} ถูกเปิดไปแล้ว {entry.get('open_count', 1)} ครั้ง"
+        )
+        print(
+            f"  เปิดครั้งแรก {entry.get('first_opened_at')} · frozen {entry.get('frozen_commit','')[:12]}"
+        )
+        print("  holdout ที่เปิดแล้วใช้เป็น final ที่บริสุทธิ์อีกไม่ได้ (B68)")
+        print("  ถ้าจำเป็นต้องเปิดซ้ำจริง ใส่ --reopen-spent-holdout และบันทึกเหตุผลในรายงาน")
+        return 1
     if (ARTIFACTS / "final_result.json").exists() and not args.i_know_this_is_a_rerun:
         print("มีผล final อยู่แล้ว — holdout ต้องเปิดครั้งเดียว")
         print("ถ้าจำเป็นต้องรันซ้ำจริง ใส่ --i-know-this-is-a-rerun และบันทึกเหตุผลในรายงาน")
         return 1
-
-    seeds = fz.get("holdout_seeds") or fz["seeds"]
     sizes = fz["sizes"]
     gamma_map = fz["per_config_gamma"]
     thr_map = fz["per_config_thresholds"]
@@ -1080,6 +1138,7 @@ def cmd_final(args):
         encoding="utf-8",
     )
     print(f"artifact -> {out.relative_to(REPO)}")
+    _record_holdout_open(seeds, fz.get("git_commit", ""))
     clean = (
         leak_total["overlapping_rows"] == 0 and final_audit["n_flagged_features"] == 0
     )
@@ -1830,6 +1889,11 @@ def main():
         "--i-know-this-is-a-rerun",
         action="store_true",
         help="รันซ้ำทั้งที่มีผลแล้ว — ต้องบันทึกเหตุผลในรายงาน",
+    )
+    fi.add_argument(
+        "--reopen-spent-holdout",
+        action="store_true",
+        help="เปิด holdout seed ที่อยู่ใน ledger แล้ว (B68) — ทำลาย single-open ต้องบันทึกเหตุผล",
     )
     fi.set_defaults(func=cmd_final)
     lf = sub.add_parser(

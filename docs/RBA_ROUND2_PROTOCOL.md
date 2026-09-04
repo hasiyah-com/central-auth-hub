@@ -125,3 +125,18 @@ Round 2 ถือว่า **สำเร็จ** เมื่อ:
 
 ถ้าข้อใดไม่ผ่าน → รายงานเป็น `final_round_2_failed_gate` และ **ไม่ deploy**
 ตาม fallback ที่ประกาศไว้
+
+---
+
+## 7. ผลลัพธ์ (ปิดรอบ 2026-09-04)
+
+**สถานะ: `final_round_2_failed_gate`** — Config B แก้ block สำเร็จ (0.25% → 0.04%)
+แต่ไม่ผ่านที่ **warn FPR 5.26% > 5.0%** บน holdout `[101-105]` (distribution shift ที่
+ขนาด 500/1000) → ไม่มี config ใหม่พร้อม deploy · fallback = shadow / current
+
+- รายงานเต็ม: `hub/backend/tests/reports/hybrid_risk_round2_2026-09-04.md`
+- ⚠️ provenance: holdout `[101-105]` ถูกเปิดหลายครั้งระหว่าง optimize (B68) → ขึ้นบัญชี
+  spent ใน `holdout_ledger.json` · Round 2b (ถ้ามี) ต้องใช้ holdout ชุดใหม่ (ไม่ใช่
+  101-105 หรือ 201-205 ที่สงวนให้ Round 3)
+- paired bootstrap ยืนยัน B > C/D/E ด้าน recall เสถียร (sign 1.0, CI ไม่คร่อม 0) →
+  L3 คงไว้ที่ shadow · ข้อสรุปหลักของ Round 1 ยังยืน

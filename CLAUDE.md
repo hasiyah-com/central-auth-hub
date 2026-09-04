@@ -648,6 +648,10 @@ docker compose exec ml-service python -m scripts.train_model
 → **บทเรียนวิธีวิทยา:** รอบแรกสรุปเหตุ-ผลผิดจากการวัด **2 จุดปลายทาง** ที่บังเอิญอยู่คนละฝั่งของทั้งเกณฑ์และเพดาน — อนุมานสาเหตุจากสองจุดปลาย ต้องมีจุดกลางยืนยันเสมอ
 → **Verify:** `tests/test_l3_explainability.py` (spike ครบ 6 มิติ × 7 ย่าน)
 
+**B68. การ optimize ความเร็วของ `final` เผลอเปิด holdout ซ้ำหลายครั้ง — ทำลาย single-open** — Round 2 มี commit perf ("final ช้าเกิน") ก่อน freeze สุดท้าย → `final` ถูกรันบน holdout `[101-105]` หลายครั้งระหว่างจูนความเร็ว bootstrap · ค่า gate ยัง deterministic และ decision logic ไม่เปลี่ยน (fail-closed จึงไม่ deploy ผิด) แต่ holdout ที่เปิดแล้วใช้เป็น clean final อีกไม่ได้ และการเปิดซ้ำเปิดช่องปรับโค้ดตามที่เห็นบน holdout
+→ **กฎ:** (1) วัด/optimize ความเร็วบน **validation หรือข้อมูลสังเคราะห์** ห้ามรัน `final` บน holdout จริงเพื่อจับเวลา (2) `cmd_final` มี **holdout ledger** (`holdout_ledger.json`) บันทึกถาวรว่า seed ใดเปิดแล้ว → ปฏิเสธเปิดซ้ำเว้นแต่ `--reopen-spent-holdout` (ห้ามลบ entry) (3) รอบถัดไปใช้ seed ชุดใหม่เสมอ
+→ **Verify:** `_load_holdout_ledger`/`_record_holdout_open` ใน `exp_hybrid_gate.py` · `tests/reports/hybrid_risk_round2_2026-09-04.md` §5
+
 ### หมวดบั๊กเพิ่มเติม (ดูรายละเอียดใน `docs/bugs-encountered.md`)
 
 | Section | Range | Theme |
@@ -665,7 +669,7 @@ docker compose exec ml-service python -m scripts.train_model
 | 🚨 Risk-Triggered MFA (Week 9-10) | B44-B48 | Hard block threshold at finalizer, Force-enroll OTP gate, Browser unsupported → Recovery, atomic consume, runtime grace period |
 | 🧠 ML Feature Expansion (Week 10-11) | B49 | Feature reorder ลืม sync rule_engine.FEAT (score มั่ว) + train/serve skew (synthetic ≠ ค่าจริง) |
 | 🎓 Subsystem C (เกรด) + SOC Dashboard + User 360 (Week 10-11) | B50-B55 | Access policy ขัด docstring (teacher login ไม่ได้), falsy-zero KPI (`\|\|` กับ 0 จริง), force-logout ขาด webhook back-channel, relative-time parse naive-UTC เป็น local (+7ชม.), health-check เข้า `localhost:PORT` จาก container ไม่ได้ (503 gate), subsystem ใหม่ลืม session_cookie_secure |
-| 🧪 Measurement Integrity / Explainability (Week 12-13) | B64-B67 | การทดลองวัดคนละคอนฟิกกับ production (12.5% ของการตัดสิน), SHAP เสื่อมก่อนคะแนนอิ่มตัว, `--replace-text` ไม่แตะไฟล์ ZIP, redactor+scanner จุดบอดร่วม |
+| 🧪 Measurement Integrity / Explainability (Week 12-13) | B64-B68 | การทดลองวัดคนละคอนฟิกกับ production (12.5% ของการตัดสิน), SHAP เสื่อมก่อนคะแนนอิ่มตัว, `--replace-text` ไม่แตะไฟล์ ZIP, redactor+scanner จุดบอดร่วม, optimize `final` เผลอเปิด holdout ซ้ำ (single-open พัง) |
 
 ### วิธีเพิ่ม bug ใหม่
 
