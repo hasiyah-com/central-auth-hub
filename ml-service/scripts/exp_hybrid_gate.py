@@ -815,10 +815,15 @@ def _record_holdout_open(seeds, git_commit: str) -> None:
 
 
 def _final_gate(results: dict, fz: dict) -> dict:
-    """สร้าง gate verdict ต่องบ FPR ที่ประกาศไว้ — pass/fail ต่อ config + candidate.
+    """สร้าง gate verdict ต่องบ FPR ที่ประกาศไว้ — **per-size** pass/fail ต่อ config.
 
     candidate/ fallback ถูกประกาศ**ล่วงหน้า**ใน frozen config · การเลือก config ที่
     ผ่านงบแบบย้อนหลัง (post-hoc) ห้ามทำ — gate แค่ตรวจว่า candidate ที่ประกาศไว้ผ่านไหม
+
+    **per-size ไม่ใช่ macro** (ตัดสิน 2026-09-04): `sweep.eligible()` ตอน tune ตรวจ
+    ทุกขนาด → gate ต้องใช้มาตรฐานเดียวกัน ไม่งั้น config ที่ผ่าน macro แต่ทะลุงบที่
+    cold-start (size เล็ก) จะถูกนับว่าผ่านทั้งที่ผู้ใช้ประวัติน้อยรับภาระเกินงบ ·
+    macro ยังเก็บไว้เป็นข้อมูลประกอบ แต่ passed ตัดสินจาก per-size
     """
     budgets = fz.get(
         "fpr_budgets",
@@ -832,16 +837,25 @@ def _final_gate(results: dict, fz: dict) -> dict:
     per_config = {}
     for key, r in results.items():
         m = r["macro"]
-        fails = []
-        for lvl in ("warn", "challenge", "block"):
-            if m[f"{lvl}_fpr"] > budgets[lvl]:
-                fails.append(f"{lvl}_fpr={m[f'{lvl}_fpr']:.4f}>{budgets[lvl]}")
+        fails = []  # per-size violations — มาตรฐานเดียวกับ tune
+        for size, v in m.get("per_size", {}).items():
+            for lvl in ("warn", "challenge", "block"):
+                if v[f"{lvl}_fpr"] > budgets[lvl]:
+                    fails.append(f"{lvl}@{size}={v[f'{lvl}_fpr'] * 100:.2f}%")
+        macro_fails = [
+            f"{lvl}_macro={m[f'{lvl}_fpr'] * 100:.2f}%"
+            for lvl in ("warn", "challenge", "block")
+            if m[f"{lvl}_fpr"] > budgets[lvl]
+        ]
         per_config[key] = {
             "warn_fpr": round(m["warn_fpr"], 6),
             "challenge_fpr": round(m["challenge_fpr"], 6),
             "block_fpr": round(m["block_fpr"], 6),
-            "passed": not fails,
+            "passed": not fails,  # per-size เป็นเกณฑ์ตัดสิน
             "violations": fails,
+            "macro_passed": not macro_fails,
+            "macro_violations": macro_fails,
+            "gate_standard": "per_size",
         }
     cand_pass = per_config.get(deployed, {}).get("passed", False)
     return {

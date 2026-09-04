@@ -69,6 +69,10 @@ Round 1 (0.998112) เป็น 0.9999 ลด validation block FPR จาก 0.1
 | challenge FPR | ≤ 1.0% |
 | block FPR | ≤ 0.2% |
 
+**มาตรฐาน gate = per-size (ตัดสิน 2026-09-04):** งบต้องผ่าน **ทุกขนาดข้อมูล** ไม่ใช่แค่
+ค่า macro · ตรงกับที่ `sweep.eligible()` ใช้ตอน tune · macro-only จะกลบภาระของผู้ใช้
+cold-start (ประวัติน้อย) ที่อาจทะลุงบ · `_final_gate()` แก้ให้ตรวจ per-size แล้ว
+
 **ห้ามขยับงบหลังเห็นผล** ถ้า candidate ทำไม่ได้ ต้องรายงานว่าทำไม่ได้
 พร้อม `attainable_floor` ไม่ใช่เขียนงบใหม่ให้ผลดูผ่าน
 
@@ -125,6 +129,16 @@ Round 2 ถือว่า **สำเร็จ** เมื่อ:
 
 ถ้าข้อใดไม่ผ่าน → รายงานเป็น `final_round_2_failed_gate` และ **ไม่ deploy**
 ตาม fallback ที่ประกาศไว้
+
+---
+
+## 7c. Round 2b — ผลลัพธ์ (per-size, 2026-09-04)
+
+**สถานะ: `final_round_2b_failed_gate`** — ภายใต้ per-size gate **ไม่มี config ใดผ่าน** ·
+Config B ใกล้ที่สุด ตกจุดเดียว **challenge@size50 = 1.23% > 1%** (cold-start) ·
+warn fix (0.98) และ block fix (0.9999) ได้ผลครบ · ข้อจำกัดที่เหลือคือ cold-start
+challenge FPR · **ไม่ deploy** · รายงาน: `hub/backend/tests/reports/hybrid_risk_round2b_2026-09-04.md`
+· holdout [106-110] ledger open_count=1 (single-open · spent) · Round 2c ต้องใช้ holdout ใหม่
 
 ---
 
