@@ -11,6 +11,9 @@ import { useCallback, useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Topbar } from "@/components/Topbar";
+// design system ที่ port จากดีไซน์ตัวจริง — .sc = ชุด cx-* ของหน้าคอนโซล
+import "../../../signal-room.css";
+import "../../../signal-console.css";
 import { Badge } from "@/components/Badge";
 import {
   adminGetUserAccessList,
@@ -124,15 +127,28 @@ function Donut({ segments, total }: { segments: { label: string; value: number; 
   );
 }
 
+/** Empty state — บอกว่าอะไรจะปรากฏตรงนี้ ไม่ใช่แค่ "ไม่มีข้อมูล" ลอย ๆ */
+function Empty({ title, hint, sm }: { title: string; hint?: string; sm?: boolean }) {
+  return (
+    <div className={`cx-empty${sm ? " sm" : ""}`}>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true">
+        <ellipse cx="12" cy="6" rx="8" ry="3" />
+        <path d="M4 6v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6" />
+        <path d="M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3" />
+      </svg>
+      <strong>{title}</strong>
+      {hint && <span>{hint}</span>}
+    </div>
+  );
+}
+
 function StatCard({ label, value, sub, accent }: { label: string; value: ReactNode; sub?: string; accent?: string }) {
   return (
-    <div className="bg-white rounded-xl border border-ink-200 p-4 shadow-sm">
-      <div className="text-[11px] text-ink-500 uppercase tracking-wider">{label}</div>
-      <div className={`text-2xl font-extrabold mt-1 ${accent || "text-ink-900"}`}>
-        {value}
-        {sub && <span className="text-xs font-normal text-ink-400 ml-1">{sub}</span>}
-      </div>
-    </div>
+    <article className="cx-kpi">
+      <span>{label}</span>
+      <strong className={`mono ${accent || ""}`}>{value}</strong>
+      {sub && <small className="mono">{sub}</small>}
+    </article>
   );
 }
 
@@ -262,61 +278,70 @@ export default function UserDetailPage({ params }: { params: { id: string } }) {
   const initial = (u?.full_name || u?.email || "?").charAt(0).toUpperCase();
 
   return (
-    <>
+    <div className="sc">
       <Topbar title="User 360° View" />
       {verifying && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40">
-          <div className="bg-white rounded-2xl px-6 py-5 shadow-xl flex items-center gap-3 text-sm text-ink-700">
+          <div className="bg-white border border-ink-200 px-6 py-5 flex items-center gap-3 text-sm text-ink-700">
             <span className="animate-pulse text-lg">🔐</span>
             กำลังยืนยันด้วย Passkey…
           </div>
         </div>
       )}
 
-      <main className="p-6 md:p-8 max-w-[1200px] mx-auto w-full space-y-5">
-        {/* breadcrumb */}
-        <div className="text-sm text-ink-500 flex items-center gap-2">
-          <Link href="/users" className="hover:text-brand-600">
-            ผู้ใช้งาน
-          </Link>
-          <span>/</span>
-          <span className="text-ink-800 font-medium">{u?.full_name || "…"}</span>
-          <span>/</span>
-          <span className="text-ink-400">360° View</span>
+      {/* ── command bar: ชื่อหน้า + การกระทำหลัก ── */}
+      <section className="cx-command">
+        <div>
+          <span>
+            <span className="cx-dot">
+              <i />
+            </span>
+            control surface
+          </span>
+          <h1>รายละเอียดผู้ใช้งาน</h1>
         </div>
 
-        {/* title row */}
-        <div className="flex flex-wrap items-end justify-between gap-3">
-          <div>
-            <h1 className="text-2xl font-extrabold text-ink-900">User 360° View</h1>
-            <p className="text-sm text-ink-500">ภาพรวมข้อมูลผู้ใช้แบบครบวงจร</p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <button
-              onClick={forceLogout}
-              disabled={busy === "logout" || activeSessions.length === 0}
-              className="px-3 py-2 rounded-lg border border-ink-200 text-sm font-medium hover:bg-ink-50 disabled:opacity-40"
-            >
-              🚪 Force Logout ทั้งหมด
-            </button>
-            <button
-              onClick={removeUser}
-              disabled={busy === "delete" || u?.status === "deleted"}
-              className="px-3 py-2 rounded-lg border border-red-300 text-red-700 text-sm font-medium hover:bg-red-50 disabled:opacity-40"
-            >
-              🗑️ ลบผู้ใช้
-            </button>
-            <button
-              onClick={() => setEditOpen(true)}
-              className="px-3 py-2 rounded-lg bg-brand-600 text-white text-sm font-semibold hover:bg-brand-700"
-            >
-              ✏️ แก้ไขผู้ใช้
-            </button>
-          </div>
+        <div className="cx-command-actions">
+          {activeSessions.length > 0 && (
+            <span className="cx-chip">
+              <span className="cx-dot">
+                <i />
+              </span>
+              SIGNED IN
+            </span>
+          )}
+          <button
+            onClick={forceLogout}
+            disabled={busy === "logout" || activeSessions.length === 0}
+            className="cx-edit-button"
+          >
+            Force Logout
+          </button>
+          <button onClick={() => setEditOpen(true)} className="cx-edit-button">
+            แก้ไขผู้ใช้
+          </button>
+          <button
+            onClick={removeUser}
+            disabled={busy === "delete" || u?.status === "deleted"}
+            className="cx-suspend-button"
+          >
+            ลบผู้ใช้
+          </button>
+        </div>
+      </section>
+
+      <main className="cx-document">
+        {/* breadcrumb */}
+        <div className="cx-user-breadcrumb">
+          <Link href="/users">ผู้ใช้งาน</Link>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+            <path d="m9 18 6-6-6-6" />
+          </svg>
+          <span>User 360° View</span>
         </div>
 
         {error && (
-          <div className="p-4 rounded-lg bg-rose-50 border border-rose-200 text-rose-700 text-sm">
+          <div className="mb-2 border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">
             {error}
           </div>
         )}
@@ -328,23 +353,22 @@ export default function UserDetailPage({ params }: { params: { id: string } }) {
         ) : (
           <>
             {/* ── Profile + Risk ── */}
-            <section className="bg-white rounded-xl border border-ink-200 p-6 shadow-sm grid md:grid-cols-3 gap-6">
-              <div className="md:col-span-2 flex items-start gap-4">
-                <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-brand-500 to-brand-700 grid place-items-center text-white text-3xl font-extrabold shrink-0">
-                  {initial}
-                </div>
+            <section className="cx-user-hero">
+              <div className="cx-user-profile">
+                <div className="cx-user-avatar mono">{initial}</div>
                 <div className="min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <h2 className="text-2xl font-extrabold text-ink-900">{u.full_name}</h2>
+                  <span>identity record</span>
+                  <h2>
+                    {u.full_name}
                     {u.is_hub_admin ? (
                       <Badge tone="danger">ADMIN</Badge>
                     ) : (
                       <Badge tone={TYPE_TONE[u.user_type || ""] || "default"}>{u.user_type}</Badge>
                     )}
                     <Badge tone={STATUS_TONE[u.status || ""] || "default"}>{u.status}</Badge>
-                  </div>
-                  <div className="text-sm text-ink-500 font-mono mt-0.5">{u.email}</div>
-                  <dl className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-2.5 mt-4 text-xs">
+                  </h2>
+                  <code className="mono">{u.email}</code>
+                  <dl>
                     {[
                       ["รหัส / User ID", u.identifier || u.id.slice(0, 8)],
                       ["ประเภทผู้ใช้", u.is_hub_admin ? "Hub Admin" : u.user_type || "—"],
@@ -357,14 +381,14 @@ export default function UserDetailPage({ params }: { params: { id: string } }) {
                       ["Backup codes", `${passkeys?.backup_codes.remaining ?? 0}/${passkeys?.backup_codes.total ?? 0}`],
                     ].map(([k, v]) => (
                       <div key={k} className="min-w-0">
-                        <dt className="text-ink-400">{k}</dt>
-                        <dd className="text-ink-800 font-medium truncate" title={v || undefined}>
+                        <dt>{k}</dt>
+                        <dd className="truncate" title={v || undefined}>
                           {v}
                         </dd>
                       </div>
                     ))}
                     <div className="min-w-0 col-span-2">
-                      <dt className="text-ink-400">ที่อยู่</dt>
+                      <dt>ที่อยู่</dt>
                       <dd
                         onDoubleClick={() => setAddrExpanded((v) => !v)}
                         title={
@@ -374,7 +398,7 @@ export default function UserDetailPage({ params }: { params: { id: string } }) {
                               : "ดับเบิลคลิกเพื่อดูทั้งหมด"
                             : undefined
                         }
-                        className={`text-ink-800 font-medium cursor-pointer select-none ${
+                        className={`cursor-pointer select-none ${
                           addrExpanded ? "whitespace-normal break-words" : "truncate"
                         }`}
                       >
@@ -386,35 +410,40 @@ export default function UserDetailPage({ params }: { params: { id: string } }) {
               </div>
 
               {/* Risk card */}
-              <div className="rounded-xl bg-ink-50/60 border border-ink-100 p-4">
-                <div className="text-xs text-ink-500 uppercase tracking-wider">
-                  Current Risk Level
-                </div>
-                <div className="flex items-baseline gap-2 mt-1">
-                  <span className={`px-2 py-0.5 rounded-md text-sm font-bold ${risk.tone}`}>
-                    {risk.text}
-                  </span>
-                  <span className="text-2xl font-extrabold text-ink-900 font-mono">
+              <div className="cx-risk-card">
+                <span>current risk</span>
+                <div>
+                  <strong className="mono">
                     {currentRisk !== null ? currentRisk.toFixed(2) : "—"}
-                  </span>
-                  <span className="text-xs text-ink-400">/ 1.00</span>
+                  </strong>
+                  <small className="mono">/ 1.00</small>
+                  <span className="cx-chip">{risk.text}</span>
                 </div>
-                <Sparkline data={sparkData} />
-                <div className="text-[11px] text-ink-400">
-                  {sessions[0]?.created_at ? `อัปเดต ${relTime(sessions[0].created_at)}` : "ยังไม่มี session"}
-                </div>
+                {sparkData.length >= 2 ? (
+                  <Sparkline data={sparkData} />
+                ) : (
+                  <div className="cx-risk-plot">
+                    <i /><i /><i /><i />
+                    <span className="mono">AWAITING EVENTS</span>
+                  </div>
+                )}
+                <small className="mono" style={{ color: "#6f8198", fontSize: 6 }}>
+                  {sessions[0]?.created_at
+                    ? `อัปเดต ${relTime(sessions[0].created_at)}`
+                    : "ยังไม่มี session"}
+                </small>
               </div>
             </section>
 
             {/* ── stat cards ── */}
-            <section className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-              <StatCard label="สิทธิ์ระบบย่อย" value={access?.active_count ?? 0} sub="active" />
-              <StatCard label="บทบาท" value={roles.length} sub="assigned" />
-              <StatCard label="Scopes" value={allScopes.length} sub="granted" />
-              <StatCard label="Session ออนไลน์" value={activeSessions.length} sub="ตอนนี้" />
+            <section className="cx-kpis six">
+              <StatCard label="สิทธิ์ระบบย่อย" value={access === null ? "—" : access.active_count} sub="active" />
+              <StatCard label="บทบาท" value={access === null ? "—" : roles.length} sub="assigned" />
+              <StatCard label="Scopes" value={access === null ? "—" : allScopes.length} sub="granted" />
+              <StatCard label="Session ออนไลน์" value={history === null ? "—" : activeSessions.length} sub="ตอนนี้" />
               <StatCard
                 label="Failed Logins (7d)"
-                value={summary?.failed_logins_7d ?? 0}
+                value={summary === null ? "—" : summary.failed_logins_7d}
                 accent={(summary?.failed_logins_7d ?? 0) > 0 ? "text-red-600" : "text-ink-900"}
               />
               <StatCard
@@ -424,326 +453,311 @@ export default function UserDetailPage({ params }: { params: { id: string } }) {
               />
             </section>
 
-            {/* ── main 2-col ── */}
-            <div className="grid lg:grid-cols-3 gap-5">
-              {/* left */}
-              <div className="lg:col-span-2 space-y-5">
-                {/* Subsystems & Access */}
-                <section className="bg-white rounded-xl border border-ink-200 shadow-sm">
-                  <div className="px-5 py-4 border-b border-ink-100 flex items-center justify-between gap-3 flex-wrap">
-                    <h3 className="text-sm font-bold text-ink-700 flex items-center gap-2">
-                      สิทธิ์เข้าถึงระบบย่อย
-                      <span className="text-ink-400 font-normal">({access?.active_count} ระบบ)</span>
-                      <span className="text-ink-300 font-normal">·</span>
-                      <span className="text-ink-400 font-normal">สถานะบัญชี</span>
-                      <Badge tone={STATUS_TONE[u.status || ""] || "default"}>{u.status}</Badge>
-                    </h3>
-                    {access && access.grantable.length > 0 && (
-                      <div className="flex items-center gap-2">
-                        <select
-                          value={grantSel}
-                          onChange={(e) => setGrantSel(e.target.value)}
-                          className="px-2.5 py-1.5 rounded-lg border border-ink-200 text-sm focus:outline-none focus:border-brand-500"
-                        >
-                          <option value="">+ เพิ่มสิทธิ์เข้าระบบ…</option>
-                          {access.grantable.map((g) => (
-                            <option key={g.subsystem_id} value={g.subsystem_id}>
-                              {g.subsystem_name}
-                            </option>
-                          ))}
-                        </select>
-                        <button
-                          onClick={grant}
-                          disabled={!grantSel || busy === "grant"}
-                          className="px-3 py-1.5 rounded-lg bg-brand-600 text-white text-sm font-semibold hover:bg-brand-700 disabled:opacity-40"
-                        >
-                          เพิ่ม
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                  {u.status !== "active" && (
-                    <div className="mx-5 mt-3 px-3 py-2 rounded-lg bg-amber-50 border border-amber-200 text-[12px] text-amber-800">
-                      บัญชีสถานะ <b>{u.status}</b> — ถูกบล็อกจากทุกระบบย่อยโดยอัตโนมัติ
-                      (นโยบายทุกแบบต้องการสถานะ <code>active</code>) จนกว่าจะเปลี่ยนกลับเป็น active
-                    </div>
-                  )}
-                  <div className="divide-y divide-ink-100">
-                    {subsystems.length === 0 ? (
-                      <div className="text-sm text-ink-500 text-center py-8">ยังไม่มีสิทธิ์เข้าระบบย่อยใด</div>
-                    ) : (
-                      subsystems.map((s) => (
-                        <div key={s.subsystem_id} className="px-5 py-3 flex items-center gap-3">
-                          <div className="flex-1 min-w-0">
-                            <div className="font-medium text-ink-900 flex items-center gap-2">
-                              {s.subsystem_name}
-                              {s.role && <Badge tone="brand">{s.role}</Badge>}
-                              {s.source === "policy" && <Badge tone="default">นโยบาย</Badge>}
-                            </div>
-                            <div className="text-xs text-ink-500 mt-0.5">{s.reason}</div>
-                            {s.scopes.length > 0 && (
-                              <div className="flex flex-wrap gap-1 mt-1.5">
-                                {s.scopes.slice(0, 5).map((sc) => (
-                                  <span
-                                    key={sc}
-                                    className="text-[10px] px-1.5 py-0.5 rounded bg-ink-100 text-ink-600 font-mono"
-                                  >
-                                    {sc}
-                                  </span>
-                                ))}
-                                {s.scopes.length > 5 && (
-                                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-ink-50 text-ink-400">
-                                    +{s.scopes.length - 5}
-                                  </span>
-                                )}
-                              </div>
-                            )}
-                          </div>
-                          {s.can_revoke ? (
-                            <button
-                              onClick={() => revoke(s.subsystem_id, s.subsystem_name)}
-                              disabled={busy === "revoke:" + s.subsystem_id}
-                              className="px-3 py-1.5 rounded-lg bg-red-600 text-white text-xs font-semibold hover:bg-red-700 disabled:opacity-50 shrink-0"
-                            >
-                              {busy === "revoke:" + s.subsystem_id ? "กำลังถอน…" : "ถอนสิทธิ์"}
-                            </button>
-                          ) : (
-                            <span className="text-[11px] text-ink-400 shrink-0" title="เข้าได้ตามนโยบาย — ถอนรายคนไม่ได้">
-                              ถอนรายคนไม่ได้
-                            </span>
-                          )}
-                        </div>
-                      ))
-                    )}
-                  </div>
-                </section>
-
-                {/* Recent Login & Risk */}
-                <section className="bg-white rounded-xl border border-ink-200 shadow-sm">
-                  <div className="px-5 py-4 border-b border-ink-100">
-                    <h3 className="text-sm font-bold text-ink-700">Recent Login &amp; Risk Events</h3>
-                  </div>
-                  <div className="divide-y divide-ink-100">
-                    {sessions.length === 0 ? (
-                      <div className="text-sm text-ink-500 text-center py-8">ยังไม่มีประวัติ</div>
-                    ) : (
-                      sessions.slice(0, 8).map((s) => {
-                        const r = riskLabel(s.risk_score);
-                        return (
-                          <div key={s.id} className="px-5 py-2.5 flex items-center gap-3 text-xs">
-                            <span
-                              className="w-2 h-2 rounded-full shrink-0"
-                              style={{ background: s.online ? "#10b981" : "#cbd5e1" }}
-                            />
-                            <div className="w-28 shrink-0 text-ink-400">{relTime(s.created_at)}</div>
-                            <div className="flex-1 min-w-0">
-                              <div className="font-medium text-ink-900 truncate">
-                                {s.subsystem_name}
-                                <span className="text-ink-400 font-normal"> · {s.login_method || "—"}</span>
-                              </div>
-                              <div className="text-ink-500 truncate">
-                                {s.ip || "—"}
-                                {s.geo_country && ` · ${s.geo_country}`}
-                                {s.browser && ` · ${s.browser}`}
-                              </div>
-                            </div>
-                            {s.risk_score !== null && (
-                              <span className="font-mono text-ink-400">{s.risk_score.toFixed(2)}</span>
-                            )}
-                            {s.decision && (
-                              <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold shrink-0 ${r.tone}`}>
-                                {s.decision}
-                              </span>
-                            )}
-                          </div>
-                        );
-                      })
-                    )}
-                  </div>
-                </section>
+            {/* ── การ์ดทั้งหมดอยู่ในตาราง 3 คอลัมน์เดียว — ทุกแถวเต็มพอดี ไม่มีช่องว่างค้าง ── */}
+            <div className="cx-grid3">
+              {/* Subsystems & Access */}
+              <section className="cx-panel cx-span2">
+              <div className="px-5 py-4 border-b border-ink-100 flex items-center justify-between gap-3 flex-wrap">
+              <h3 className="flex items-center gap-2">
+              สิทธิ์เข้าถึงระบบย่อย
+              <span className="cx-sub">({access === null ? "—" : access.active_count} ระบบ)</span>
+              <span className="text-ink-300 font-normal">·</span>
+              <span className="cx-sub">สถานะบัญชี</span>
+              <Badge tone={STATUS_TONE[u.status || ""] || "default"}>{u.status}</Badge>
+              </h3>
+              {access && access.grantable.length > 0 && (
+              <div className="flex items-center gap-2">
+              <select
+              value={grantSel}
+              onChange={(e) => setGrantSel(e.target.value)}
+              className="px-2.5 py-1.5 rounded-lg border border-ink-200 text-sm focus:outline-none focus:border-brand-500"
+              >
+              <option value="">+ เพิ่มสิทธิ์เข้าระบบ…</option>
+              {access.grantable.map((g) => (
+              <option key={g.subsystem_id} value={g.subsystem_id}>
+              {g.subsystem_name}
+              </option>
+              ))}
+              </select>
+              <button
+              onClick={grant}
+              disabled={!grantSel || busy === "grant"}
+              className="px-3 py-1.5 rounded-lg bg-brand-600 text-white text-sm font-semibold hover:bg-brand-700 disabled:opacity-40"
+              >
+              เพิ่ม
+              </button>
               </div>
-
-              {/* right */}
-              <div className="space-y-5">
-                {/* Quick Actions */}
-                <section className="bg-white rounded-xl border border-ink-200 shadow-sm p-4">
-                  <h3 className="text-sm font-bold text-ink-700 mb-3">Quick Actions</h3>
-                  <div className="space-y-1.5">
-                    {[
-                      { label: "บังคับ Logout ทุกอุปกรณ์", desc: "ปิด session ทั้งหมด", onClick: forceLogout, disabled: activeSessions.length === 0, danger: false },
-                      { label: "Reset Passkey", desc: "ลบ passkey ทั้งหมด", onClick: resetPasskeys, disabled: (passkeys?.count ?? 0) === 0, danger: false },
-                      { label: "เปลี่ยนสถานะ / แก้ไข", desc: "ระงับ / เปิดใช้งาน", onClick: () => setEditOpen(true), disabled: false, danger: false },
-                      { label: "ดู Audit Log", desc: "สิ่งที่ผู้ใช้นี้ทำเอง", onClick: () => router.push(`/audit?actor_id=${id}&actor_email=${encodeURIComponent(u.email)}`), disabled: false, danger: false },
-                      { label: "ลบผู้ใช้", desc: "soft delete", onClick: removeUser, disabled: u.status === "deleted", danger: true },
-                    ].map((a) => (
-                      <button
-                        key={a.label}
-                        onClick={a.onClick}
-                        disabled={a.disabled}
-                        className={`w-full text-left px-3 py-2.5 rounded-lg border transition disabled:opacity-40 ${
-                          a.danger
-                            ? "border-red-200 hover:bg-red-50"
-                            : "border-ink-100 hover:bg-ink-50"
-                        }`}
-                      >
-                        <div className={`text-sm font-semibold ${a.danger ? "text-red-700" : "text-ink-800"}`}>
-                          {a.label}
-                        </div>
-                        <div className="text-[11px] text-ink-400">{a.desc}</div>
-                      </button>
-                    ))}
-                  </div>
-                </section>
-
-                {/* Passkeys & MFA */}
-                <section className="bg-white rounded-xl border border-ink-200 shadow-sm">
-                  <div className="px-4 py-3.5 border-b border-ink-100 flex items-center justify-between">
-                    <h3 className="text-sm font-bold text-ink-700">Passkeys &amp; MFA</h3>
-                    <span className="text-xs text-ink-400">{passkeys?.count ?? 0} รายการ</span>
-                  </div>
-                  <div className="p-4 space-y-2">
-                    {!passkeys || passkeys.passkeys.length === 0 ? (
-                      <div className="text-sm text-ink-500 text-center py-4">ยังไม่มี Passkey</div>
-                    ) : (
-                      passkeys.passkeys.map((pk) => (
-                        <div key={pk.id} className="flex items-center gap-3 px-3 py-2 rounded-lg border border-ink-100">
-                          <span className="text-lg">{pk.device_type === "platform" ? "💻" : "🔑"}</span>
-                          <div className="flex-1 min-w-0">
-                            <div className="text-sm font-medium text-ink-900 truncate">{pk.device_name}</div>
-                            <div className="text-[11px] text-ink-400">ใช้ล่าสุด {relTime(pk.last_used_at)}</div>
-                          </div>
-                        </div>
-                      ))
-                    )}
-                    <div className="flex items-center justify-between pt-2 text-xs">
-                      <span className="text-ink-500">Backup codes</span>
-                      <Badge tone={(passkeys?.backup_codes.remaining ?? 0) > 0 ? "good" : "warn"}>
-                        เหลือ {passkeys?.backup_codes.remaining ?? 0}/{passkeys?.backup_codes.total ?? 0}
-                      </Badge>
-                    </div>
-                  </div>
-                </section>
-
-                {/* Credential Management + Recovery Ready */}
-                <section className="bg-white rounded-xl border border-ink-200 shadow-sm">
-                  <div className="px-4 py-3.5 border-b border-ink-100 flex items-center justify-between">
-                    <h3 className="text-sm font-bold text-ink-700">Authentication Methods</h3>
-                    {creds && (
-                      <Badge tone={creds.recovery_ready ? "good" : "warn"}>
-                        {creds.recovery_ready ? "✓ Recovery Ready" : "⚠ ไม่พร้อมกู้"}
-                      </Badge>
-                    )}
-                  </div>
-                  <div className="p-4 space-y-1.5">
-                    {!creds ? (
-                      <div className="text-sm text-ink-400 text-center py-3">—</div>
-                    ) : (
-                      creds.credentials.map((c, i) => (
-                        <div
-                          key={c.id || `${c.credential_type}-${i}`}
-                          className="flex items-center gap-2.5 px-3 py-2 rounded-lg border border-ink-100 text-xs"
-                        >
-                          <span className="text-base">
-                            {c.credential_type === "GOOGLE"
-                              ? "🔵"
-                              : c.credential_type === "TOTP"
-                                ? "🔐"
-                                : "🔑"}
-                          </span>
-                          <div className="flex-1 min-w-0">
-                            <div className="font-semibold text-ink-800 truncate">
-                              {c.credential_type}{" "}
-                              <span className="font-normal text-ink-400">{c.label}</span>
-                            </div>
-                          </div>
-                          <Badge
-                            tone={
-                              c.status === "ACTIVE" || c.status === "verified"
-                                ? "good"
-                                : c.status === "SUSPENDED"
-                                  ? "warn"
-                                  : "default"
-                            }
-                          >
-                            {c.status}
-                          </Badge>
-                        </div>
-                      ))
-                    )}
-                  </div>
-                </section>
+              )}
               </div>
-            </div>
-
-            {/* ── bottom 3-col ── */}
-            <div className="grid lg:grid-cols-3 gap-5">
+              {u.status !== "active" && (
+              <div className="mx-5 mt-3 px-3 py-2 rounded-lg bg-amber-50 border border-amber-200 text-[12px] text-amber-800">
+              บัญชีสถานะ <b>{u.status}</b> — ถูกบล็อกจากทุกระบบย่อยโดยอัตโนมัติ
+              (นโยบายทุกแบบต้องการสถานะ <code>active</code>) จนกว่าจะเปลี่ยนกลับเป็น active
+              </div>
+              )}
+              <div className="divide-y divide-ink-100">
+              {subsystems.length === 0 ? (
+              <Empty title="ยังไม่มีสิทธิ์เข้าระบบย่อย" hint="เพิ่มได้จากช่อง &quot;เพิ่มสิทธิ์เข้าระบบย่อย&quot; ด้านบน" />
+              ) : (
+              subsystems.map((s) => (
+              <div key={s.subsystem_id} className="px-5 py-3 flex items-center gap-3">
+              <div className="flex-1 min-w-0">
+              <div className="font-medium text-ink-900 flex items-center gap-2">
+              {s.subsystem_name}
+              {s.role && <Badge tone="brand">{s.role}</Badge>}
+              {s.source === "policy" && <Badge tone="default">นโยบาย</Badge>}
+              </div>
+              <div className="text-xs text-ink-500 mt-0.5">{s.reason}</div>
+              {s.scopes.length > 0 && (
+              <div className="flex flex-wrap gap-1 mt-1.5">
+              {s.scopes.slice(0, 5).map((sc) => (
+              <span
+              key={sc}
+              className="text-[10px] px-1.5 py-0.5 rounded bg-ink-100 text-ink-600 font-mono"
+              >
+              {sc}
+              </span>
+              ))}
+              {s.scopes.length > 5 && (
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-ink-50 text-ink-400">
+              +{s.scopes.length - 5}
+              </span>
+              )}
+              </div>
+              )}
+              </div>
+              {s.can_revoke ? (
+              <button
+              onClick={() => revoke(s.subsystem_id, s.subsystem_name)}
+              disabled={busy === "revoke:" + s.subsystem_id}
+              className="px-3 py-1.5 rounded-lg bg-red-600 text-white text-xs font-semibold hover:bg-red-700 disabled:opacity-50 shrink-0"
+              >
+              {busy === "revoke:" + s.subsystem_id ? "กำลังถอน…" : "ถอนสิทธิ์"}
+              </button>
+              ) : (
+              <span className="text-[11px] text-ink-400 shrink-0" title="เข้าได้ตามนโยบาย — ถอนรายคนไม่ได้">
+              ถอนรายคนไม่ได้
+              </span>
+              )}
+              </div>
+              ))
+              )}
+              </div>
+              </section>
+              {/* Quick Actions */}
+              <section className="cx-panel">
+              <h3>Quick Actions</h3>
+              <div className="cx-quick-actions">
+              {[
+              { label: "บังคับ Logout ทุกอุปกรณ์", desc: "ปิด session ทั้งหมด", onClick: forceLogout, disabled: activeSessions.length === 0, danger: false },
+              { label: "Reset Passkey", desc: "ลบ passkey ทั้งหมด", onClick: resetPasskeys, disabled: (passkeys?.count ?? 0) === 0, danger: false },
+              { label: "เปลี่ยนสถานะ / แก้ไข", desc: "ระงับ / เปิดใช้งาน", onClick: () => setEditOpen(true), disabled: false, danger: false },
+              { label: "ดู Audit Log", desc: "สิ่งที่ผู้ใช้นี้ทำเอง", onClick: () => router.push(`/audit?actor_id=${id}&actor_email=${encodeURIComponent(u.email)}`), disabled: false, danger: false },
+              { label: "ลบผู้ใช้", desc: "soft delete", onClick: removeUser, disabled: u.status === "deleted", danger: true },
+              ].map((a) => (
+              <button
+              key={a.label}
+              onClick={a.onClick}
+              disabled={a.disabled}
+              className="disabled:opacity-40"
+              >
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true">
+              <circle cx="12" cy="12" r="9" />
+              <path d="M12 8v8M8 12h8" />
+              </svg>
+              <span>
+              <b style={a.danger ? { color: "#b20f38" } : undefined}>{a.label}</b>
+              <small>{a.desc}</small>
+              </span>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+              <path d="m9 18 6-6-6-6" />
+              </svg>
+              </button>
+              ))}
+              </div>
+              </section>
               {/* Active Sessions */}
-              <section className="bg-white rounded-xl border border-ink-200 shadow-sm p-4">
-                <h3 className="text-sm font-bold text-ink-700 mb-3">
-                  Active Sessions <span className="text-ink-400 font-normal">({activeSessions.length})</span>
-                </h3>
-                <div className="space-y-2">
-                  {activeSessions.length === 0 ? (
-                    <div className="text-sm text-ink-500 text-center py-4">ไม่มี session ออนไลน์</div>
-                  ) : (
-                    activeSessions.slice(0, 5).map((s) => (
-                      <div key={s.id} className="flex items-center gap-3 px-3 py-2 rounded-lg border border-ink-100 text-xs">
-                        <span className="text-lg">{s.device_type === "mobile" ? "📱" : "💻"}</span>
-                        <div className="flex-1 min-w-0">
-                          <div className="font-medium text-ink-900 truncate">
-                            {s.browser || "—"} · {s.os_name || "—"}
-                          </div>
-                          <div className="text-ink-400 truncate">
-                            {s.ip || "—"}
-                            {s.geo_country && ` · ${s.geo_country}`} · {s.subsystem_name}
-                          </div>
-                        </div>
-                        <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
-                      </div>
-                    ))
-                  )}
-                </div>
+              <section className="cx-panel">
+              <h3>
+              Active Sessions <span className="cx-sub">({activeSessions.length})</span>
+              </h3>
+              <div className="cx-body space-y-2">
+              {activeSessions.length === 0 ? (
+              <Empty sm title="ไม่มี session ออนไลน์" hint="อุปกรณ์ที่ล็อกอินค้างอยู่จะแสดงที่นี่" />
+              ) : (
+              activeSessions.slice(0, 5).map((s) => (
+              <div key={s.id} className="flex items-center gap-3 px-3 py-2 rounded-lg border border-ink-100 text-xs">
+              <span className="text-lg">{s.device_type === "mobile" ? "📱" : "💻"}</span>
+              <div className="flex-1 min-w-0">
+              <div className="font-medium text-ink-900 truncate">
+              {s.browser || "—"} · {s.os_name || "—"}
+              </div>
+              <div className="text-ink-400 truncate">
+              {s.ip || "—"}
+              {s.geo_country && ` · ${s.geo_country}`} · {s.subsystem_name}
+              </div>
+              </div>
+              <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
+              </div>
+              ))
+              )}
+              </div>
               </section>
-
               {/* Access Overview donut */}
-              <section className="bg-white rounded-xl border border-ink-200 shadow-sm p-4">
-                <h3 className="text-sm font-bold text-ink-700 mb-3">Access Overview</h3>
-                <div className="flex items-center gap-4">
-                  <Donut segments={donutSegs} total={allScopes.length} />
-                  <div className="space-y-1.5 text-xs flex-1">
-                    {donutSegs.map((seg) => (
-                      <div key={seg.label} className="flex items-center gap-2">
-                        <span className="w-2.5 h-2.5 rounded-full" style={{ background: seg.color }} />
-                        <span className="text-ink-600 flex-1">{seg.label}</span>
-                        <span className="text-ink-900 font-semibold">{seg.value}</span>
-                        <span className="text-ink-400 w-9 text-right">
-                          {allScopes.length ? Math.round((seg.value / allScopes.length) * 100) : 0}%
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
+              <section className="cx-panel">
+              <h3>Access Overview</h3>
+              <div className="flex items-center gap-4">
+              <Donut segments={donutSegs} total={allScopes.length} />
+              <div className="space-y-1.5 text-xs flex-1">
+              {donutSegs.map((seg) => (
+              <div key={seg.label} className="flex items-center gap-2">
+              <span className="w-2.5 h-2.5 rounded-full" style={{ background: seg.color }} />
+              <span className="text-ink-600 flex-1">{seg.label}</span>
+              <span className="text-ink-900 font-semibold">{seg.value}</span>
+              <span className="text-ink-400 w-9 text-right">
+              {allScopes.length ? Math.round((seg.value / allScopes.length) * 100) : 0}%
+              </span>
+              </div>
+              ))}
+              </div>
+              </div>
               </section>
-
               {/* Risk Factors */}
-              <section className="bg-white rounded-xl border border-ink-200 shadow-sm p-4">
-                <h3 className="text-sm font-bold text-ink-700 mb-3">
-                  Risk Factors <span className="text-ink-400 font-normal">(login ล่าสุด)</span>
-                </h3>
-                <div className="space-y-2">
-                  {riskFactors.length === 0 ? (
-                    <div className="text-sm text-ink-500 text-center py-4">
-                      ไม่มีปัจจัยเสี่ยง — session ล่าสุดปกติ
-                    </div>
-                  ) : (
-                    riskFactors.slice(0, 5).map((rf, i) => (
-                      <div key={i} className="flex items-center gap-2 px-3 py-2 rounded-lg border border-ink-100 text-xs">
-                        <span className="text-amber-500">⚠</span>
-                        <span className="text-ink-700 flex-1">{rf}</span>
-                      </div>
-                    ))
-                  )}
-                </div>
+              <section className="cx-panel">
+              <h3>
+              Risk Factors <span className="cx-sub">(login ล่าสุด)</span>
+              </h3>
+              <div className="cx-body space-y-2">
+              {riskFactors.length === 0 ? (
+              <Empty sm title="ไม่มีปัจจัยเสี่ยง" hint="session ล่าสุดผ่านเกณฑ์ทุกชั้น" />
+              ) : (
+              riskFactors.slice(0, 5).map((rf, i) => (
+              <div key={i} className="flex items-center gap-2 px-3 py-2 rounded-lg border border-ink-100 text-xs">
+              <span className="text-amber-500">⚠</span>
+              <span className="text-ink-700 flex-1">{rf}</span>
+              </div>
+              ))
+              )}
+              </div>
+              </section>
+              {/* Passkeys & MFA */}
+              <section className="cx-panel">
+              <div className="px-4 py-3.5 border-b border-ink-100 flex items-center justify-between">
+              <h3>Passkeys &amp; MFA</h3>
+              <span className="text-xs text-ink-400">{passkeys?.count ?? 0} รายการ</span>
+              </div>
+              <div className="p-4 space-y-2">
+              {!passkeys || passkeys.passkeys.length === 0 ? (
+              <Empty sm title="ยังไม่มี Passkey" hint="ผู้ใช้ยังไม่ได้ลงทะเบียนอุปกรณ์" />
+              ) : (
+              passkeys.passkeys.map((pk) => (
+              <div key={pk.id} className="flex items-center gap-3 px-3 py-2 rounded-lg border border-ink-100">
+              <span className="text-lg">{pk.device_type === "platform" ? "💻" : "🔑"}</span>
+              <div className="flex-1 min-w-0">
+              <div className="text-sm font-medium text-ink-900 truncate">{pk.device_name}</div>
+              <div className="text-[11px] text-ink-400">ใช้ล่าสุด {relTime(pk.last_used_at)}</div>
+              </div>
+              </div>
+              ))
+              )}
+              <div className="flex items-center justify-between pt-2 text-xs">
+              <span className="text-ink-500">Backup codes</span>
+              <Badge tone={(passkeys?.backup_codes.remaining ?? 0) > 0 ? "good" : "warn"}>
+              เหลือ {passkeys?.backup_codes.remaining ?? 0}/{passkeys?.backup_codes.total ?? 0}
+              </Badge>
+              </div>
+              </div>
+              </section>
+              {/* Credential Management + Recovery Ready */}
+              <section className="cx-panel cx-span2">
+              <div className="px-4 py-3.5 border-b border-ink-100 flex items-center justify-between">
+              <h3>Authentication Methods</h3>
+              {creds && (
+              <Badge tone={creds.recovery_ready ? "good" : "warn"}>
+              {creds.recovery_ready ? "✓ Recovery Ready" : "⚠ ไม่พร้อมกู้"}
+              </Badge>
+              )}
+              </div>
+              <div className="p-4 space-y-1.5">
+              {!creds ? (
+              <Empty sm title="ยังไม่มีวิธียืนยันตัวตน" hint="Passkey หรือบัญชี Google ที่ผูกไว้จะแสดงที่นี่" />
+              ) : (
+              creds.credentials.map((c, i) => (
+              <div
+              key={c.id || `${c.credential_type}-${i}`}
+              className="flex items-center gap-2.5 px-3 py-2 rounded-lg border border-ink-100 text-xs"
+              >
+              <span className="text-base">
+              {c.credential_type === "GOOGLE"
+              ? "🔵"
+              : c.credential_type === "TOTP"
+              ? "🔐"
+              : "🔑"}
+              </span>
+              <div className="flex-1 min-w-0">
+              <div className="font-semibold text-ink-800 truncate">
+              {c.credential_type}{" "}
+              <span className="font-normal text-ink-400">{c.label}</span>
+              </div>
+              </div>
+              <Badge
+              tone={
+              c.status === "ACTIVE" || c.status === "verified"
+              ? "good"
+              : c.status === "SUSPENDED"
+              ? "warn"
+              : "default"
+              }
+              >
+              {c.status}
+              </Badge>
+              </div>
+              ))
+              )}
+              </div>
+              </section>
+              {/* Recent Login & Risk */}
+              <section className="cx-panel cx-span3">
+              <div className="px-5 py-4 border-b border-ink-100">
+              <h3>Recent Login &amp; Risk Events</h3>
+              </div>
+              <div className="divide-y divide-ink-100">
+              {sessions.length === 0 ? (
+              <Empty title="ยังไม่มีการเข้าใช้งาน" hint="เหตุการณ์ login และคะแนนความเสี่ยงจะแสดงที่นี่" />
+              ) : (
+              sessions.slice(0, 8).map((s) => {
+              const r = riskLabel(s.risk_score);
+              return (
+              <div key={s.id} className="px-5 py-2.5 flex items-center gap-3 text-xs">
+              <span
+              className="w-2 h-2 rounded-full shrink-0"
+              style={{ background: s.online ? "#10b981" : "#cbd5e1" }}
+              />
+              <div className="w-28 shrink-0 text-ink-400">{relTime(s.created_at)}</div>
+              <div className="flex-1 min-w-0">
+              <div className="font-medium text-ink-900 truncate">
+              {s.subsystem_name}
+              <span className="cx-sub"> · {s.login_method || "—"}</span>
+              </div>
+              <div className="text-ink-500 truncate">
+              {s.ip || "—"}
+              {s.geo_country && ` · ${s.geo_country}`}
+              {s.browser && ` · ${s.browser}`}
+              </div>
+              </div>
+              {s.risk_score !== null && (
+              <span className="font-mono text-ink-400">{s.risk_score.toFixed(2)}</span>
+              )}
+              {s.decision && (
+              <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold shrink-0 ${r.tone}`}>
+              {s.decision}
+              </span>
+              )}
+              </div>
+              );
+              })
+              )}
+              </div>
               </section>
             </div>
           </>
@@ -774,6 +788,6 @@ export default function UserDetailPage({ params }: { params: { id: string } }) {
           }}
         />
       )}
-    </>
+    </div>
   );
 }

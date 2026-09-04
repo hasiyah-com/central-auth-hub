@@ -212,8 +212,8 @@ export function AccountView() {
                 <span className="font-mono text-ink-800">{me?.email || "—"}</span>
               </p>
               <p className="text-[11px] text-ink-400 mt-1 max-w-md leading-relaxed">
-                เปลี่ยนได้ถ้าลืมรหัส Gmail / บัญชีถูกปิด / เปลี่ยนอีเมล — ข้อมูลและสิทธิ์
-                เดิมอยู่ครบ (ต้องยืนยันด้วย Passkey ก่อน แล้วเลือกบัญชี Google ใหม่)
+                {/* เปลี่ยนได้ถ้าลืมรหัส Gmail / บัญชีถูกปิด / เปลี่ยนอีเมล — ข้อมูลและสิทธิ์
+                เดิมอยู่ครบ (ต้องยืนยันด้วย Passkey ก่อน แล้วเลือกบัญชี Google ใหม่) */}
               </p>
             </div>
             <button

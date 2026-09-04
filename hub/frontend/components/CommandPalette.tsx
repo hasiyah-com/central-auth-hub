@@ -1,17 +1,14 @@
 "use client";
 
 /**
- * Command palette (⌘K / Ctrl+K) — quick-nav ไปหน้าใน console
+ * Command palette (⌘K / Ctrl+K) — ค้นเมนู + ค้นข้อมูลจริง
  *
- * ใช้รายการเมนูชุดเดียวกับ Sidebar (ADMIN_NAV / DEV_NAV) จึงไม่ต้อง sync สองที่
- * และกรองตามสิทธิ์จริงของผู้ใช้เหมือน Sidebar (admin / developer)
+ * 2 แหล่ง:
+ *  1. เมนู  — จาก ADMIN_NAV / DEV_NAV ชุดเดียวกับ Sidebar (กรองฝั่ง client, ทันที)
+ *  2. ข้อมูล — GET /admin/search (ผู้ใช้ / ระบบย่อย / IP) เรียกเมื่อพิมพ์ >= 2 ตัว
+ *              debounce 250ms + ยกเลิกคำขอเก่าด้วย AbortController กันผลลัพธ์สลับลำดับ
  *
- * ธีม: console เป็นพื้นดาร์ก จึงใช้สำนวนสีชุดเดียวกับ Sidebar —
- * พาเนลใช้ --canvas-panel (#111726) ให้ดู "ลอย" เหนือพื้นหน้า, เส้นขอบ white/10,
- * ตัวอักษร ink-100/400/500 และไฮไลต์ด้วย brand-500
- *
- * ตั้งใจให้ทำงานจริง ไม่ใช่ช่องค้นหาหลอก — ถ้าอนาคตมี global search ฝั่ง backend
- * ค่อยต่อยอดจากที่นี่
+ * ผลลัพธ์ข้อมูลแสดงเฉพาะ admin (endpoint กัน RBAC อยู่แล้ว — ฝั่ง UI ไม่เรียกซ้ำถ้าไม่ใช่ admin)
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -24,13 +21,61 @@ type Me = {
   is_hub_admin: boolean;
 };
 
+type SearchUser = {
+  id: string;
+  email: string;
+  full_name: string | null;
+  user_type: string | null;
+  identifier: string | null;
+  status: string | null;
+};
+
+type SearchSub = {
+  id: string;
+  name: string;
+  client_id: string;
+  status: string | null;
+};
+
+type SearchIp = { ip: string; sessions: number; last_seen: string | null };
+
+type SearchResp = {
+  query: string;
+  users: SearchUser[];
+  subsystems: SearchSub[];
+  ips: SearchIp[];
+};
+
+type Row =
+  | { kind: "nav"; key: string; href: string; label: string; hint: string }
+  | { kind: "user"; key: string; href: string; label: string; hint: string }
+  | { kind: "subsystem"; key: string; href: string; label: string; hint: string }
+  | { kind: "ip"; key: string; href: string; label: string; hint: string };
+
+const GROUP_LABEL: Record<Row["kind"], string> = {
+  nav: "เมนู",
+  user: "ผู้ใช้งาน",
+  subsystem: "ระบบย่อย",
+  ip: "IP address",
+};
+
+const GROUP_TAG: Record<Row["kind"], string> = {
+  nav: "NAV",
+  user: "USER",
+  subsystem: "SUB",
+  ip: "IP",
+};
+
 export function CommandPalette() {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
   const [cursor, setCursor] = useState(0);
   const [me, setMe] = useState<Me | null>(null);
+  const [remote, setRemote] = useState<SearchResp | null>(null);
+  const [loading, setLoading] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     fetch("/api/me", { credentials: "include" })
@@ -56,7 +101,7 @@ export function CommandPalette() {
     if (open) {
       setQ("");
       setCursor(0);
-      // รอ modal mount ก่อนโฟกัส
+      setRemote(null);
       setTimeout(() => inputRef.current?.focus(), 0);
     }
   }, [open]);
@@ -65,23 +110,95 @@ export function CommandPalette() {
   const isDeveloper =
     !!me && ["teacher", "staff", "admin"].includes(me.user_type || "");
 
-  const items: NavItem[] = useMemo(() => {
+  // ── ค้นข้อมูลจริง (debounce + ยกเลิกคำขอเก่า) ──
+  useEffect(() => {
+    const term = q.trim();
+    if (!open || !isAdmin || term.length < 2) {
+      setRemote(null);
+      setLoading(false);
+      return;
+    }
+    const ctrl = new AbortController();
+    setLoading(true);
+    const t = setTimeout(() => {
+      fetch(`/api/proxy/admin/search?q=${encodeURIComponent(term)}&limit=5`, {
+        credentials: "include",
+        signal: ctrl.signal,
+      })
+        .then((r) => (r.ok ? r.json() : null))
+        .then((d: SearchResp | null) => {
+          setRemote(d);
+          setLoading(false);
+        })
+        .catch((e) => {
+          if ((e as Error).name !== "AbortError") setLoading(false);
+        });
+    }, 250);
+    return () => {
+      clearTimeout(t);
+      ctrl.abort();
+    };
+  }, [q, open, isAdmin]);
+
+  const navItems: NavItem[] = useMemo(() => {
     const list: NavItem[] = [];
     if (isAdmin) list.push(...ADMIN_NAV);
     if (isDeveloper) list.push(...DEV_NAV);
     return list;
   }, [isAdmin, isDeveloper]);
 
-  const results = useMemo(() => {
+  const rows: Row[] = useMemo(() => {
     const needle = q.trim().toLowerCase();
-    if (!needle) return items;
-    return items.filter(
-      (i) =>
-        i.label.toLowerCase().includes(needle) ||
-        i.href.toLowerCase().includes(needle) ||
-        i.glyph.toLowerCase().includes(needle)
-    );
-  }, [items, q]);
+    const navRows: Row[] = navItems
+      .filter(
+        (i) =>
+          !needle ||
+          i.label.toLowerCase().includes(needle) ||
+          i.href.toLowerCase().includes(needle) ||
+          (i.keywords || "").toLowerCase().includes(needle)
+      )
+      .map((i) => ({
+        kind: "nav" as const,
+        key: `nav:${i.href}`,
+        href: i.href,
+        label: i.label,
+        hint: i.href,
+      }));
+
+    const out: Row[] = [...navRows];
+    if (remote) {
+      for (const u of remote.users) {
+        out.push({
+          kind: "user",
+          key: `user:${u.id}`,
+          href: `/users/${u.id}`,
+          label: u.full_name || u.email,
+          hint: [u.email, u.identifier, u.user_type].filter(Boolean).join(" · "),
+        });
+      }
+      for (const s of remote.subsystems) {
+        out.push({
+          kind: "subsystem",
+          key: `sub:${s.id}`,
+          href: `/subsystems/${s.id}`,
+          label: s.name,
+          hint: [s.client_id, s.status].filter(Boolean).join(" · "),
+        });
+      }
+      for (const ip of remote.ips) {
+        out.push({
+          kind: "ip",
+          key: `ip:${ip.ip}`,
+          href: `/activity?q=${encodeURIComponent(ip.ip)}`,
+          label: ip.ip,
+          hint: `${ip.sessions} session`,
+        });
+      }
+    }
+    return out;
+  }, [navItems, q, remote]);
+
+  useEffect(() => setCursor(0), [rows.length]);
 
   const go = useCallback(
     (href: string) => {
@@ -91,94 +208,133 @@ export function CommandPalette() {
     [router]
   );
 
+  // เลื่อนแถวที่เลือกให้อยู่ในสายตา
+  useEffect(() => {
+    const el = listRef.current?.querySelector<HTMLElement>(`[data-idx="${cursor}"]`);
+    el?.scrollIntoView({ block: "nearest" });
+  }, [cursor]);
+
   if (!open) return null;
+
+  let lastKind: Row["kind"] | null = null;
 
   return (
     <div
-      className="fixed inset-0 z-[60] flex items-start justify-center bg-ink-900/75 p-4 pt-[12vh] backdrop-blur-sm"
+      className="fixed inset-0 z-[60] flex items-start justify-center bg-ink-900/50 p-4 pt-[12vh] backdrop-blur-sm"
       onClick={() => setOpen(false)}
       role="dialog"
       aria-modal="true"
-      aria-label="ค้นหาเมนู"
+      aria-label="ค้นหา"
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="w-full max-w-lg overflow-hidden rounded-2xl border border-white/10 bg-[#111726] shadow-2xl"
+        className="w-full max-w-xl overflow-hidden rounded-2xl border border-ink-200 bg-white shadow-2xl"
       >
-        <div className="flex items-center gap-3 border-b border-white/[.08] px-4 py-3">
-          <span className="font-mono text-[10px] uppercase tracking-[.16em] text-ink-500">
-            go to
-          </span>
+        <div className="flex items-center gap-3 border-b border-ink-200 px-4 py-3">
+          <svg
+            viewBox="0 0 18 18"
+            className="h-4 w-4 shrink-0 text-ink-400"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+          >
+            <circle cx="8" cy="8" r="5.2" />
+            <path d="M11.9 11.9 15.5 15.5" />
+          </svg>
           <input
             ref={inputRef}
             value={q}
-            onChange={(e) => {
-              setQ(e.target.value);
-              setCursor(0);
-            }}
+            onChange={(e) => setQ(e.target.value)}
             onKeyDown={(e) => {
               if (e.key === "ArrowDown") {
                 e.preventDefault();
-                setCursor((c) => Math.min(c + 1, results.length - 1));
+                setCursor((c) => Math.min(c + 1, rows.length - 1));
               } else if (e.key === "ArrowUp") {
                 e.preventDefault();
                 setCursor((c) => Math.max(c - 1, 0));
-              } else if (e.key === "Enter" && results[cursor]) {
+              } else if (e.key === "Enter" && rows[cursor]) {
                 e.preventDefault();
-                go(results[cursor].href);
+                go(rows[cursor].href);
               }
             }}
-            placeholder="พิมพ์ชื่อหน้า เช่น ผู้ใช้ / audit / ml"
-            className="w-full bg-transparent text-sm text-ink-100 outline-none placeholder:text-ink-500"
+            placeholder={
+              isAdmin ? "ค้นหาเมนู, ผู้ใช้, client ID, IP…" : "ค้นหาเมนู…"
+            }
+            className="w-full bg-transparent text-sm text-ink-900 outline-none placeholder:text-ink-400"
           />
-          <kbd className="rounded border border-white/15 px-1.5 py-0.5 font-mono text-[9px] text-ink-400">
+          {loading && (
+            <span className="font-mono text-[9px] uppercase tracking-wider text-ink-400">
+              กำลังค้น…
+            </span>
+          )}
+          <kbd className="rounded border border-ink-200 px-1.5 py-0.5 font-mono text-[9px] text-ink-400">
             ESC
           </kbd>
         </div>
 
-        <div className="max-h-[52vh] overflow-y-auto py-1">
-          {results.length === 0 ? (
-            <div className="px-4 py-8 text-center text-sm text-ink-500">
-              ไม่พบเมนูที่ตรงกับ &ldquo;{q}&rdquo;
+        <div ref={listRef} className="max-h-[54vh] overflow-y-auto py-1">
+          {rows.length === 0 ? (
+            <div className="px-4 py-10 text-center text-sm text-ink-400">
+              {q.trim().length < 2
+                ? "พิมพ์อย่างน้อย 2 ตัวอักษรเพื่อค้นข้อมูล"
+                : loading
+                  ? "กำลังค้น…"
+                  : `ไม่พบผลลัพธ์สำหรับ “${q.trim()}”`}
             </div>
           ) : (
-            results.map((item, i) => (
-              <button
-                key={item.href}
-                onMouseEnter={() => setCursor(i)}
-                onClick={() => go(item.href)}
-                className={clsx(
-                  "flex w-full items-center gap-3 border-l-2 px-4 py-2.5 text-left transition-colors",
-                  i === cursor
-                    ? "border-brand-500 bg-brand-500/10"
-                    : "border-transparent hover:bg-white/[.04]"
-                )}
-              >
-                <span
-                  className={clsx(
-                    "grid h-6 w-6 shrink-0 place-items-center rounded border font-mono text-[9px] font-semibold",
-                    i === cursor
-                      ? "border-brand-500/40 bg-brand-500/10 text-brand-500"
-                      : "border-white/10 text-ink-500"
+            rows.map((r, i) => {
+              const header = r.kind !== lastKind ? GROUP_LABEL[r.kind] : null;
+              lastKind = r.kind;
+              return (
+                <div key={r.key}>
+                  {header && (
+                    <div className="px-4 pb-1 pt-3 font-mono text-[9px] uppercase tracking-[.18em] text-ink-400">
+                      {header}
+                    </div>
                   )}
-                >
-                  {item.glyph}
-                </span>
-                <span className="flex-1 truncate text-sm font-medium text-ink-100">
-                  {item.label}
-                </span>
-                <span className="truncate font-mono text-[10px] text-ink-500">
-                  {item.href}
-                </span>
-              </button>
-            ))
+                  <button
+                    data-idx={i}
+                    onMouseEnter={() => setCursor(i)}
+                    onClick={() => go(r.href)}
+                    className={clsx(
+                      "flex w-full items-center gap-3 border-l-2 px-4 py-2.5 text-left transition-colors",
+                      i === cursor
+                        ? "border-brand-500 bg-brand-50"
+                        : "border-transparent hover:bg-ink-50"
+                    )}
+                  >
+                    <span
+                      className={clsx(
+                        "w-10 shrink-0 rounded border px-1 py-0.5 text-center font-mono text-[8px] font-bold uppercase tracking-wider",
+                        i === cursor
+                          ? "border-brand-500/40 bg-brand-500/10 text-brand-700"
+                          : "border-ink-200 text-ink-400"
+                      )}
+                    >
+                      {GROUP_TAG[r.kind]}
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm font-medium text-ink-900">
+                        {r.label}
+                      </span>
+                      {r.hint && (
+                        <span className="block truncate font-mono text-[10px] text-ink-400">
+                          {r.hint}
+                        </span>
+                      )}
+                    </span>
+                  </button>
+                </div>
+              );
+            })
           )}
         </div>
 
-        <div className="flex items-center gap-3 border-t border-white/[.08] px-4 py-2 font-mono text-[9px] uppercase tracking-wider text-ink-500">
+        <div className="flex items-center gap-3 border-t border-ink-200 px-4 py-2 font-mono text-[9px] uppercase tracking-wider text-ink-400">
           <span>↑↓ เลือก</span>
-          <span>↵ ไป</span>
-          <span className="ml-auto">{results.length} รายการ</span>
+          <span>↵ เปิด</span>
+          <span className="ml-auto">{rows.length} รายการ</span>
         </div>
       </div>
     </div>

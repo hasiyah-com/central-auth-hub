@@ -38,6 +38,15 @@ type Props = {
   valueSuffix?: string;
   /** แสดง legend ด้านบน (ค่า default = แสดงเมื่อมีมากกว่า 1 เส้น) */
   showLegend?: boolean;
+  /**
+   * แสดง marker สี่เหลี่ยมรายจุด — ปิดเมื่อจุดเยอะ (เช่น latency 288 จุด/24ชม.)
+   * ไม่งั้น marker ทับกันจนกลายเป็นแถบทึบ อ่านรูปทรงของเส้นไม่ออก
+   */
+  showMarkers?: boolean;
+  /** ระบายพื้นที่ใต้เส้น (โทนเดียวกับเส้น จาง ๆ) — เหมาะกับกราฟช่วงเวลา */
+  area?: boolean;
+  /** ความหนาเส้น (ค่า default 2.5 — ลดลงเมื่อจุดถี่) */
+  strokeWidth?: number;
 };
 
 /** ปัดขึ้นเป็นเลขกลม (1 / 2 / 2.5 / 5 / 10 × 10^k) */
@@ -86,6 +95,9 @@ export function LineChart({
   ticks = 5,
   valueSuffix = "",
   showLegend,
+  showMarkers = true,
+  area = false,
+  strokeWidth = 2.5,
 }: Props) {
   if (labels.length === 0 || series.length === 0) {
     return (
@@ -191,6 +203,23 @@ export function LineChart({
         {/* เส้น + marker ของแต่ละ series */}
         {series.map((s) => (
           <g key={s.name}>
+            {/* พื้นที่ใต้เส้น — วาดก่อนเส้นเพื่อให้เส้นทับอยู่ด้านบน */}
+            {area &&
+              segments(s.values).map((seg, si) =>
+                seg.length > 1 ? (
+                  <polygon
+                    key={`area-${si}`}
+                    points={
+                      `${x(seg[0].i)},${PAD.top + plotH} ` +
+                      seg.map((p) => `${x(p.i)},${y(p.v)}`).join(" ") +
+                      ` ${x(seg[seg.length - 1].i)},${PAD.top + plotH}`
+                    }
+                    fill={s.color}
+                    fillOpacity={0.1}
+                    stroke="none"
+                  />
+                ) : null
+              )}
             {segments(s.values).map((seg, si) =>
               seg.length > 1 ? (
                 <polyline
@@ -198,13 +227,14 @@ export function LineChart({
                   points={seg.map((p) => `${x(p.i)},${y(p.v)}`).join(" ")}
                   fill="none"
                   stroke={s.color}
-                  strokeWidth={2.5}
+                  strokeWidth={strokeWidth}
                   strokeLinejoin="round"
                   strokeLinecap="round"
                 />
               ) : null
             )}
-            {s.values.map((v, i) =>
+            {showMarkers &&
+              s.values.map((v, i) =>
               v === null || v === undefined ? null : (
                 <g key={`pt-${i}`}>
                   <rect

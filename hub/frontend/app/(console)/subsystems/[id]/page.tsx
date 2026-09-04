@@ -7,8 +7,12 @@ import { DataTable, type Column } from "@/components/DataTable";
 import { Badge } from "@/components/Badge";
 import { SlidePanel } from "@/components/SlidePanel";
 import { LineChart } from "@/components/LineChart";
+import { LatencyBandChart } from "@/components/LatencyBandChart";
 import { clientFetch } from "@/lib/api";
 import { mutateWithStepup, runWithStepup } from "@/lib/passkey";
+// design system ที่ port จากดีไซน์ตัวจริง — .sc = ชุด cx-* ของหน้าคอนโซล
+import "../../../signal-room.css";
+import "../../../signal-console.css";
 import { AccessPolicyCard } from "./_components/AccessPolicyCard";
 
 /** ดึงข้อความ error ที่อ่านได้ — รองรับ detail เป็น object (no_passkey) + ยกเลิก Passkey */
@@ -106,6 +110,14 @@ const HEALTH_TONE: Record<
   },
 };
 
+// สีของค่า health ใน hero metric (ตาม token SOC)
+const HEALTH_HERO: Record<string, string> = {
+  online: "up",
+  degraded: "slow",
+  down: "down",
+  unknown: "",
+};
+
 type RotateSecretResponse = {
   client_id: string;
   secret_delivery: "email" | "url";  // pragma: allowlist secret
@@ -188,14 +200,6 @@ type ActiveSessionsResponse = {
   subsystem: { id: string; name: string };
   count: number;
   sessions: ActiveSession[];
-};
-
-const DEVICE_ICON: Record<string, string> = {
-  desktop: "💻",
-  mobile: "📱",
-  tablet: "📟",
-  bot: "🤖",
-  unknown: "❓",
 };
 
 function formatDuration(sec: number): string {
@@ -946,7 +950,7 @@ export default function SubsystemDetailPage({
             className="font-mono text-xs px-2 py-0.5 rounded hover:bg-ink-100 cursor-pointer text-ink-900"
             title="คลิกเพื่อแก้ role"
           >
-            {u.role_in_sub || "user"} <span className="text-ink-400">✎</span>
+            {u.role_in_sub || "user"}
           </button>
         );
       },
@@ -1024,7 +1028,7 @@ export default function SubsystemDetailPage({
     }
     if (a.action.startsWith("user_force_revoked_")) {
       if (level) parts.push(`ระดับ: ${level}`);
-      if (wd === true) parts.push("✓ webhook ส่งถึง subsystem");
+      if (wd === true) parts.push("webhook ส่งถึง subsystem");
       else if (wd === false) parts.push("✗ webhook ส่งไม่ถึง");
     }
     // whitelist_role_changed / bulk metadata
@@ -1160,126 +1164,128 @@ export default function SubsystemDetailPage({
       {verifying && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40">
           <div className="bg-white rounded-2xl px-6 py-5 shadow-xl flex items-center gap-3 text-sm text-ink-700">
-            <span className="animate-pulse text-lg">🔐</span>
             กำลังยืนยันด้วย Passkey… ทำตามที่อุปกรณ์แจ้ง
           </div>
         </div>
       )}
       <Topbar title={sub.name} />
-      <main className="p-8 max-w-7xl mx-auto w-full space-y-6">
-        {/* Breadcrumb + status hero */}
-        <div className="flex items-end justify-between gap-4 flex-wrap">
-          <div>
-            <Link
-              href="/subsystems"
-              className="text-xs text-ink-500 hover:text-brand-600 underline"
+      <div className="sc">
+      <section className="cx-command">
+        <div>
+          <span>
+            <span className="cx-dot">
+              <i />
+            </span>
+            control surface
+          </span>
+          <h1>Subsystem Detail</h1>
+        </div>
+        <div className="cx-command-actions">
+          <span
+            className={`cx-hero-status${
+              sub.status === "suspended"
+                ? " danger"
+                : sub.status === "pending"
+                ? " warn"
+                : ""
+            }`}
+          >
+            {sub.status.toUpperCase()}
+          </span>
+          <button onClick={openEditModal} className="cx-hero-btn">
+            แก้ไข
+          </button>
+          <button
+            onClick={rotateSecret}
+            disabled={rotateBusy}
+            className="cx-hero-btn warn"
+            title="หมุน client_secret ใหม่ (เก่ายังใช้ได้ 24 ชม.)"
+          >
+            {rotateBusy ? "…" : "หมุน secret"}
+          </button>
+          <button
+            onClick={() => setTransferOpen(true)}
+            className="cx-hero-btn"
+            title="โอน ownership ให้ developer อีกคน"
+          >
+            โอนเจ้าของ
+          </button>
+          {sub.status === "active" && (
+            <button
+              onClick={suspendSubsystem}
+              disabled={ctlBusy}
+              className="cx-hero-btn danger"
             >
-              ← กลับไป Subsystems
-            </Link>
-            <h2 className="mt-2 text-2xl font-extrabold text-ink-900">
+              {ctlBusy ? "…" : "ระงับระบบ"}
+            </button>
+          )}
+          {sub.status === "suspended" && (
+            <button
+              onClick={resumeSubsystem}
+              disabled={ctlBusy}
+              className="cx-hero-btn ok"
+            >
+              {ctlBusy ? "…" : "เปิดใช้งาน"}
+            </button>
+          )}
+        </div>
+      </section>
+
+      <main className="cx-document">
+        <Link
+          href="/subsystems"
+          className="cx-user-breadcrumb"
+        >
+          ← กลับไป Subsystems
+        </Link>
+
+        {/* ── Hero identity ── */}
+        <section className="cx-identity-hero">
+          <div>
+            <span>subsystem</span>
+            <h2>
               {sub.name}
+              {sub.description && <small>{sub.description}</small>}
             </h2>
-            {sub.description && (
-              <p className="mt-1 text-sm text-ink-500 max-w-2xl">
-                {sub.description}
-              </p>
+            <code>client_id · {sub.client_id}</code>
+            {(sub.created_at || sub.approved_at) && (
+              <span className="cx-hero-dates">
+                {sub.created_at &&
+                  `สร้าง ${new Date(sub.created_at).toISOString().slice(0, 10)}`}
+                {sub.approved_at &&
+                  ` · อนุมัติ ${new Date(sub.approved_at)
+                    .toISOString()
+                    .slice(0, 10)}`}
+              </span>
             )}
           </div>
-          <div className="flex flex-col items-end gap-2">
-            <div className="flex items-center gap-2">
-              <Badge tone={STATUS_TONE[sub.status] || "default"}>
-                ● {sub.status.toUpperCase()}
-              </Badge>
-              {sub.health && (
-                <span
-                  className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold border ${
-                    HEALTH_TONE[sub.health.status]?.bg
-                  } ${HEALTH_TONE[sub.health.status]?.color}`}
-                  title={
-                    sub.health.error ||
-                    `latency ${sub.health.latency_ms ?? "?"}ms · checked ${
-                      sub.health.checked_at?.slice(11, 16) || "?"
-                    } UTC`
-                  }
-                >
-                  {HEALTH_TONE[sub.health.status]?.emoji}{" "}
-                  {HEALTH_TONE[sub.health.status]?.label}
-                  {sub.health.latency_ms != null && (
-                    <span className="font-mono opacity-70">
-                      · {sub.health.latency_ms}ms
-                    </span>
-                  )}
-                </span>
-              )}
-            </div>
-            <div className="flex flex-wrap gap-2 items-center justify-end">
-              <button
-                onClick={openEditModal}
-                className="px-3 py-1.5 rounded-lg border border-ink-200 hover:bg-ink-50 text-xs font-semibold text-ink-700 transition"
-              >
-                ✎ แก้ไข
-              </button>
-              <button
-                onClick={rotateSecret}
-                disabled={rotateBusy}
-                className="px-3 py-1.5 rounded-lg border border-amber-200 hover:bg-amber-50 text-xs font-semibold text-amber-700 disabled:opacity-50 transition"
-                title="หมุน client_secret ใหม่ (เก่ายังใช้ได้ 24 ชม.)"
-              >
-                {rotateBusy ? "…" : "🔑 Rotate Secret"}
-              </button>
-              <button
-                onClick={() => setTransferOpen(true)}
-                className="px-3 py-1.5 rounded-lg border border-ink-200 hover:bg-ink-50 text-xs font-semibold text-ink-700 transition"
-                title="โอน ownership ให้ developer อีกคน"
-              >
-                ↦ โอนเจ้าของ
-              </button>
-              {sub.status === "active" && (
-                <button
-                  onClick={suspendSubsystem}
-                  disabled={ctlBusy}
-                  className="px-3 py-1.5 rounded-lg bg-rose-50 hover:bg-rose-100 border border-rose-200 text-xs font-semibold text-rose-700 disabled:opacity-50 transition"
-                >
-                  {ctlBusy ? "…" : "⏸ ระงับ"}
-                </button>
-              )}
-              {sub.status === "suspended" && (
-                <button
-                  onClick={resumeSubsystem}
-                  disabled={ctlBusy}
-                  className="px-3 py-1.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-xs font-semibold text-emerald-700 disabled:opacity-50 transition"
-                >
-                  {ctlBusy ? "…" : "▶ เปิดใช้งาน"}
-                </button>
-              )}
-            </div>
-            <div className="text-[11px] text-ink-400 font-mono">
-              {sub.created_at &&
-                `สร้าง ${new Date(sub.created_at).toISOString().slice(0, 10)}`}
-              {sub.approved_at &&
-                ` · อนุมัติ ${new Date(sub.approved_at).toISOString().slice(0, 10)}`}
-            </div>
+          <div className="cx-hero-metrics">
+            <span>
+              health
+              <b className={HEALTH_HERO[sub.health?.status || "unknown"] || ""}>
+                {sub.health?.latency_ms != null
+                  ? `${sub.health.latency_ms}ms`
+                  : HEALTH_TONE[sub.health?.status || "unknown"]?.label || "—"}
+              </b>
+            </span>
+            <span>
+              whitelist
+              <b>{sub.whitelist_count}</b>
+            </span>
+            <span>
+              owner
+              <b>{sub.owner_email || "—"}</b>
+            </span>
           </div>
-        </div>
+        </section>
 
-        {msg && (
-          <div
-            className={
-              "p-3 rounded-lg text-sm " +
-              (msg.kind === "ok"
-                ? "bg-emerald-50 border border-emerald-200 text-emerald-700"
-                : "bg-rose-50 border border-rose-200 text-rose-700")
-            }
-          >
-            {msg.text}
-          </div>
-        )}
+        {msg && <div className={`cx-msg ${msg.kind}`}>{msg.text}</div>}
 
         {/* Grace period banner */}
         {sub.previous_secret_expires_at &&
           parseUTC(sub.previous_secret_expires_at) > new Date() && (
             <div className="p-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-sm">
-              🔑 secret เก่ายังใช้ได้ — หมดอายุ{" "}
+              secret เก่ายังใช้ได้ — หมดอายุ{" "}
               <span className="font-mono font-semibold">
                 {parseUTC(sub.previous_secret_expires_at).toLocaleString(
                   "th-TH",
@@ -1297,10 +1303,7 @@ export default function SubsystemDetailPage({
         {/* ── Section 0: KPI 7 วันล่าสุด ─────────────────── */}
         {stats && (
           <section>
-            <h3 className="text-xs font-bold text-ink-500 uppercase tracking-wider mb-3">
-              ภาพรวม · 7 วันล่าสุด
-            </h3>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="cx-kpis four">
               <KpiCard
                 label="Login total"
                 value={stats.total_logins.toLocaleString("en-US")}
@@ -1318,6 +1321,7 @@ export default function SubsystemDetailPage({
               />
               <KpiCard
                 label="Block / would_block"
+                sub="7 วันล่าสุด"
                 value={(
                   (stats.decision_breakdown.block || 0) +
                   (stats.decision_breakdown.would_block || 0)
@@ -1329,10 +1333,15 @@ export default function SubsystemDetailPage({
             {stats.daily.length > 0 && (() => {
               const max = Math.max(...stats.daily.map((x) => x.count), 1);
               return (
-                <div className="mt-4 bg-white rounded-xl border border-ink-200 p-4">
-                  <div className="text-[10px] font-bold text-ink-500 uppercase tracking-wider mb-2">
-                    Login ต่อวัน · max={max}
-                  </div>
+                <section className="cx-panel">
+                  <header>
+                    <div>
+                      <span>daily logins · 7 วัน</span>
+                      <h2>Daily Logins</h2>
+                    </div>
+                    <span className="cx-chip mono">max {max}</span>
+                  </header>
+                  <div className="cx-panel-body">
                   <LineChart
                     labels={stats.daily.map((d) => d.date.slice(5))}
                     series={[
@@ -1345,30 +1354,25 @@ export default function SubsystemDetailPage({
                     height={170}
                     valueSuffix=" logins"
                   />
-                </div>
+                  </div>
+                </section>
               );
             })()}
           </section>
         )}
 
         {/* ── Section 0.5: Health — สถานะ + กราฟ latency ย้อนหลัง ── */}
-        <section>
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-xs font-bold text-ink-500 uppercase tracking-wider">
-              สถานะและความพร้อมใช้งาน · Health
-              <span className="hidden lg:inline normal-case font-normal text-ink-400 text-[10px]">
-                {" "}
-                · Hub ping /health ของ subsystem ทุก 5 นาที
-              </span>
-            </h3>
-            <button
-              onClick={loadHealthHistory}
-              className="text-[11px] text-ink-500 hover:text-brand-600 underline"
-            >
-              ⟳ refresh
+        <section className="cx-panel">
+          <header>
+            <div>
+              <span>health · ping ทุก 5 นาที</span>
+              <h2>Health & Availability</h2>
+            </div>
+            <button onClick={loadHealthHistory} className="cx-refresh">
+              refresh
             </button>
-          </div>
-
+          </header>
+          <div className="cx-panel-body">
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
             {/* สถานะปัจจุบัน */}
             <div className="bg-white rounded-xl border border-ink-200 shadow-sm p-5">
@@ -1376,9 +1380,6 @@ export default function SubsystemDetailPage({
               {sub.health ? (
                 <>
                   <div className="flex items-center gap-2 mt-1">
-                    <span className="text-2xl">
-                      {HEALTH_TONE[sub.health.status]?.emoji}
-                    </span>
                     <span
                       className={`text-lg font-extrabold ${
                         HEALTH_TONE[sub.health.status]?.color
@@ -1467,34 +1468,26 @@ export default function SubsystemDetailPage({
           </div>
 
           {/* กราฟ latency — ข้อมูลจริงจาก health loop */}
-          <div className="mt-3 bg-white rounded-xl border border-ink-200 p-4">
-            <div className="text-[10px] font-bold text-ink-500 uppercase tracking-wider mb-2">
-              Response time (ms) · ทุก 5 นาที
+          <div className="mt-3 bg-white border border-ink-200 p-4">
+            <div className="text-[10px] font-mono font-semibold text-ink-500 uppercase tracking-wider mb-2">
+              Response time · min–max band
             </div>
             {healthHist && healthHist.points.length > 0 ? (
-              <LineChart
-                labels={healthHist.points.map((p) =>
-                  p.at
-                    ? parseUTC(p.at).toLocaleTimeString("th-TH", {
-                        timeZone: "Asia/Bangkok",
-                        hour: "2-digit",
-                        minute: "2-digit",
-                        hour12: false,
-                      })
-                    : "—"
-                )}
-                series={[
-                  {
-                    name: "latency (ms)",
-                    color: "#6366f1",
-                    values: healthHist.points.map((p) =>
-                      typeof p.latency_ms === "number" ? p.latency_ms : null
-                    ),
-                  },
-                ]}
+              <LatencyBandChart
+                points={healthHist.points.map((p) => ({
+                  at: p.at ?? null,
+                  latency_ms:
+                    typeof p.latency_ms === "number" ? p.latency_ms : null,
+                }))}
                 height={200}
-                showValues={false}
-                valueSuffix=" ms"
+                formatLabel={(at) =>
+                  parseUTC(at).toLocaleTimeString("th-TH", {
+                    timeZone: "Asia/Bangkok",
+                    hour: "2-digit",
+                    minute: "2-digit",
+                    hour12: false,
+                  })
+                }
               />
             ) : (
               <div className="text-sm text-ink-400 text-center py-8">
@@ -1502,18 +1495,22 @@ export default function SubsystemDetailPage({
               </div>
             )}
             <div className="mt-2 text-[11px] text-ink-400">
-              เก็บสูงสุด 288 จุด (~24 ชม.) — จุดที่ขาดคือรอบที่ ping ไม่สำเร็จ
-              (เส้นขาดช่วง ไม่ลากข้าม)
+              แถบอ่อน = ช่วง min–max · เส้นทึบ = median — ยุบจาก 288 จุด (~24 ชม.)
+              เป็นช่วงละ ~24 นาที · ช่องว่างคือรอบที่ ping ไม่สำเร็จ
             </div>
+          </div>
           </div>
         </section>
 
         {/* ── Section 1: Identity card ───────────────────── */}
-        <section>
-          <h3 className="text-xs font-bold text-ink-500 uppercase tracking-wider mb-3">
-            ข้อมูล OAuth Client
-          </h3>
-          <div className="bg-white rounded-xl border border-ink-200 shadow-sm p-6 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-5">
+        <section className="cx-panel">
+          <header>
+            <div>
+              <span>oauth client</span>
+              <h2>OAuth Client</h2>
+            </div>
+          </header>
+          <div className="cx-panel-body grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-5">
             <Field label="Client ID" mono value={sub.client_id} />
             <Field label="เจ้าของ" value={sub.owner_email || "—"} />
 
@@ -1524,7 +1521,7 @@ export default function SubsystemDetailPage({
                   {scopes.map((s) => (
                     <span
                       key={s}
-                      className="px-2 py-0.5 rounded bg-brand-50 text-brand-700 text-[11px] font-mono font-semibold border border-brand-100"
+                      className="px-2 py-0.5 bg-brand-50 text-brand-700 text-[11px] font-mono font-semibold"
                     >
                       {s}
                     </span>
@@ -1550,7 +1547,7 @@ export default function SubsystemDetailPage({
                   {sub.redirect_uris.map((u) => (
                     <li
                       key={u}
-                      className="font-mono text-[12px] text-ink-700 bg-ink-50 px-3 py-2 rounded border border-ink-100 break-all"
+                      className="font-mono text-[12px] text-ink-700 break-all"
                     >
                       {u}
                     </li>
@@ -1566,31 +1563,24 @@ export default function SubsystemDetailPage({
         </section>
 
         {/* ── Section 1.5: Active Users ──────────────────── */}
-        <section>
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-xs font-bold text-ink-500 uppercase tracking-wider">
-              <span className="inline-flex items-center gap-2">
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-sky-500"></span>
-                Session ที่ยังใช้งานได้{" "}
+        <section className="cx-panel cx-active-panel">
+          <header>
+            <div>
+              <span>active sessions · realtime</span>
+              <h2>
+                Active Sessions{" "}
                 {active && (
                   <span className="text-sky-600 font-extrabold tabular-nums">
                     ({active.count})
                   </span>
                 )}
-                <span className="hidden lg:inline normal-case font-normal text-ink-400 text-[10px]">
-                  · ค่าประมาณจากอายุ session (~60น) — Hub มองไม่เห็นการใช้งานจริงในระบบย่อย
-                </span>
-              </span>
-            </h3>
-            <button
-              onClick={loadActive}
-              className="text-[11px] text-ink-500 hover:text-brand-600 underline"
-              title="Refresh"
-            >
-              ⟳ refresh (auto 30s)
+                </h2>
+            </div>
+            <button onClick={loadActive} className="cx-refresh" title="Refresh">
+              refresh · auto 30s
             </button>
-          </div>
-          <div className="bg-white rounded-xl border border-ink-200 shadow-sm overflow-hidden">
+          </header>
+          <div className="overflow-hidden">
             {active === null ? (
               <div className="p-6 text-center text-ink-400 text-sm">
                 กำลังโหลด…
@@ -1632,9 +1622,6 @@ export default function SubsystemDetailPage({
                           </Badge>
                         </td>
                         <td className="px-4 py-3 text-xs text-ink-700">
-                          <span className="text-base mr-1">
-                            {DEVICE_ICON[s.device_type || "unknown"] || "❓"}
-                          </span>
                           {[s.browser, s.os_name].filter(Boolean).join(" · ") ||
                             "—"}
                         </td>
@@ -1683,7 +1670,7 @@ export default function SubsystemDetailPage({
                           >
                             {revokingId === s.session_id
                               ? "…"
-                              : "⛔ Revoke ▾"}
+                              : "Revoke ▾"}
                           </button>
                         </td>
                       </tr>
@@ -1709,14 +1696,18 @@ export default function SubsystemDetailPage({
         />
 
         {/* ── Section 2: Whitelist ───────────────────────── */}
-        <section>
-          <h3 className="text-xs font-bold text-ink-500 uppercase tracking-wider mb-3">
-            Whitelist · ผู้ใช้ที่มีสิทธิ์เข้า subsystem นี้
-          </h3>
+        <section className="cx-panel">
+          <header>
+            <div>
+              <span>access whitelist</span>
+              <h2>Whitelist</h2>
+            </div>
+          </header>
+          <div className="cx-panel-body">
 
           {whitelistError && (
             <div className="mb-3 p-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-xs">
-              ⚠ {whitelistError}
+              {whitelistError}
             </div>
           )}
 
@@ -1769,7 +1760,7 @@ export default function SubsystemDetailPage({
           <div className="mb-3 bg-white rounded-xl border border-dashed border-ink-300 p-4 flex flex-wrap items-center gap-3">
             <div className="flex-1 min-w-[200px]">
               <div className="text-xs font-bold text-ink-700">
-                📄 อัปโหลด CSV
+                อัปโหลด CSV
               </div>
               <div className="text-[11px] text-ink-500 mt-0.5">
                 {/* CSV header: <code className="font-mono">email,role,note</code> —
@@ -1797,7 +1788,7 @@ export default function SubsystemDetailPage({
           {csvResult && (
             <div className="mb-3 p-4 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm">
               <div className="font-semibold mb-1">
-                ✓ Upload สำเร็จ — เพิ่ม {csvResult.added} คน, ข้าม{" "}
+                Upload สำเร็จ — เพิ่ม {csvResult.added} คน, ข้าม{" "}
                 {csvResult.skipped} คน
               </div>
               {csvResult.skipped_details.length > 0 && (
@@ -1871,17 +1862,16 @@ export default function SubsystemDetailPage({
               whitelistError ? "ไม่มีข้อมูลที่แสดงได้" : "ยังไม่มี user ใน whitelist"
             }
           />
+          </div>
         </section>
 
         {/* ── Section 3: Activity ────────────────────────── */}
-        <section>
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-xs font-bold text-ink-500 uppercase tracking-wider">
-              Audit · กิจกรรมที่เกิดกับ subsystem นี้{" "}
-              <span className="text-ink-400 font-normal">
-                · {auditTotal.toLocaleString("en-US")} รายการ
-              </span>
-            </h3>
+        <section className="cx-panel">
+          <header>
+            <div>
+              <span>audit trail · {auditTotal.toLocaleString("en-US")} รายการ</span>
+              <h2>Audit Trail</h2>
+            </div>
             {auditTotal > AUDIT_PAGE && (
               <div className="flex items-center gap-2 text-xs">
                 <button
@@ -1905,7 +1895,7 @@ export default function SubsystemDetailPage({
                 </button>
               </div>
             )}
-          </div>
+          </header>
           <DataTable
             columns={auditCols}
             rows={(audit || []) as Array<AuditItem & Record<string, unknown>>}
@@ -1913,9 +1903,7 @@ export default function SubsystemDetailPage({
           />
         </section>
 
-        <div className="pt-4 text-center text-[11px] text-ink-400 font-mono">
-          subsystem_id: {sub.id}
-        </div>
+        <div className="cx-page-foot">subsystem_id · {sub.id}</div>
       </main>
 
       {/* ── Revoke level dropdown (floating, escapes table overflow) ── */}
@@ -2008,7 +1996,7 @@ export default function SubsystemDetailPage({
                 />
               </div>
               <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-3">
-                ⚠ หลังโอนแล้ว <strong>คุณจะเข้าหน้านี้ไม่ได้</strong> —
+                หลังโอนแล้ว <strong>คุณจะเข้าหน้านี้ไม่ได้</strong> —
                 เจ้าของใหม่จะจัดการ whitelist แทน
               </div>
             </div>
@@ -2046,7 +2034,7 @@ export default function SubsystemDetailPage({
           >
             <div className="px-6 py-4 border-b border-ink-100 flex items-center justify-between">
               <h3 className="text-lg font-extrabold text-ink-900">
-                🔑 Rotate Secret สำเร็จ
+                Rotate Secret สำเร็จ
               </h3>
               <button
                 onClick={() => setRotateResult(null)}
@@ -2066,7 +2054,7 @@ export default function SubsystemDetailPage({
               ) : (
                 <div className="rounded-lg bg-rose-50 border border-rose-200 p-4 space-y-2">
                   <div className="text-rose-700 text-xs">
-                    ⚠ Email ส่งไม่สำเร็จ — copy ลิงก์นี้เปิดในเบราว์เซอร์ทันที
+                    Email ส่งไม่สำเร็จ — copy ลิงก์นี้เปิดในเบราว์เซอร์ทันที
                   </div>
                   <div className="bg-white border border-rose-200 rounded p-3 font-mono text-[11px] break-all">
                     {rotateResult.secret_retrieval_url}
@@ -2146,7 +2134,7 @@ export default function SubsystemDetailPage({
                 <FieldLabel>
                   Scope ·{" "}
                   <span className="text-amber-700 normal-case">
-                    ⚠ ขยาย scope = ต้อง re-approve
+                    ขยาย scope = ต้อง re-approve
                   </span>
                 </FieldLabel>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -2254,6 +2242,7 @@ export default function SubsystemDetailPage({
           />
         )}
       </SlidePanel>
+      </div>
     </>
   );
 }
@@ -2468,7 +2457,7 @@ function BoolPill({
   if (v === true)
     return (
       <span className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700">
-        ✓ สำเร็จ
+        สำเร็จ
       </span>
     );
   if (v === false)
@@ -2484,36 +2473,28 @@ function KpiCard({
   label,
   value,
   tone = "default",
+  sub,
 }: {
   label: string;
   value: string;
   tone?: "default" | "brand" | "good" | "danger";
+  sub?: string;
 }) {
+  // แถบสีบนหัว KPI — เหลี่ยม ไม่มีพื้นพาสเทล (ตามดีไซน์ SOC)
   const toneClass =
-    tone === "brand"
-      ? "border-brand-200 bg-brand-50/40"
-      : tone === "good"
-      ? "border-emerald-200 bg-emerald-50/40"
+    tone === "good"
+      ? "signal"
       : tone === "danger"
-      ? "border-rose-200 bg-rose-50/40"
-      : "border-ink-200 bg-white";
-  const valueClass =
-    tone === "brand"
-      ? "text-brand-700"
-      : tone === "good"
-      ? "text-emerald-700"
-      : tone === "danger"
-      ? "text-rose-700"
-      : "text-ink-900";
+      ? "danger"
+      : tone === "brand"
+      ? "info"
+      : "";
   return (
-    <div className={`rounded-xl border p-4 ${toneClass}`}>
-      <div className="text-[10px] font-bold uppercase tracking-wider text-ink-500">
-        {label}
-      </div>
-      <div className={`text-2xl font-extrabold tabular-nums mt-1 ${valueClass}`}>
-        {value}
-      </div>
-    </div>
+    <article className={`cx-kpi ${toneClass}`}>
+      <span>{label}</span>
+      <strong className="mono">{value}</strong>
+      {sub && <small className="mono">{sub}</small>}
+    </article>
   );
 }
 
@@ -2532,7 +2513,7 @@ function Field({
       <div
         className={
           mono
-            ? "font-mono text-[13px] text-ink-900 break-all bg-ink-50 px-3 py-2 rounded border border-ink-100"
+            ? "font-mono text-[13px] text-ink-900 break-all"
             : "text-sm text-ink-900"
         }
       >
@@ -2544,7 +2525,7 @@ function Field({
 
 function FieldLabel({ children }: { children: React.ReactNode }) {
   return (
-    <div className="text-[11px] font-bold text-ink-500 uppercase tracking-wider mb-1.5">
+    <div className="text-[10px] font-mono font-semibold text-ink-500 uppercase tracking-wider mb-1.5">
       {children}
     </div>
   );

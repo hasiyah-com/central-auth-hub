@@ -27,13 +27,13 @@ body {
   margin: 0;
   background: var(--paper);
   color: #111827;
-  font-family: "IBM Plex Sans Thai", "Noto Sans Thai", system-ui, sans-serif;
+  font-family: "Sarabun", "Noto Sans Thai", system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
 
 h1, h2, h3, h4 {
-  font-family: "Anuphan", "IBM Plex Sans Thai", system-ui, sans-serif;
+  font-family: "Sarabun", system-ui, sans-serif;
   letter-spacing: -0.025em;
 }
 

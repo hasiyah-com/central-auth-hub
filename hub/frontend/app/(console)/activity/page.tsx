@@ -9,6 +9,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Topbar } from "@/components/Topbar";
 import { clientFetch } from "@/lib/api";
+// design system ที่ port จากดีไซน์ตัวจริง — .sc = ชุด cx-* ของหน้าคอนโซล
+import "../../signal-room.css";
+import "../../signal-console.css";
 
 type Activity = {
   id: string;
@@ -243,74 +246,50 @@ export default function ActivityPage() {
   const stale = !!error && !!data;
 
   return (
-    <>
+    <div className="sc">
       <Topbar title="การเข้าใช้งาน (Realtime)" />
 
-      {/* ── Control bar (dark, mission-control) ── */}
-      <div className="bg-ink-900 text-ink-100 px-8 py-4">
-        <div className="max-w-7xl mx-auto flex flex-wrap items-center gap-4">
-          <div className="flex items-center gap-2">
-            <span className="relative flex h-2.5 w-2.5">
-              {live && (
-                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
-              )}
-              <span
-                className={`relative inline-flex rounded-full h-2.5 w-2.5 ${
-                  live ? "bg-emerald-400" : "bg-ink-500"
-                }`}
-              />
-            </span>
-            <span className="font-mono text-xs tracking-widest uppercase text-emerald-300">
-              {live ? "LIVE" : "PAUSED"}
-            </span>
-          </div>
+      {/* ── Command bar (พื้นเข้ม + ปุ่มช่วงเวลา) ── */}
+      <section className="cx-command">
+        <div>
+          <span>
+            <span className={`cx-dot${live ? "" : " warn"}`}>{live && <i />}</span>
+            control surface
+          </span>
+          <h1>การเข้าใช้งาน (Realtime)</h1>
+        </div>
 
+        <div className="cx-live-actions">
           <button
             onClick={() => setLive((v) => !v)}
-            className="text-xs px-3 py-1.5 rounded-md border border-ink-700 hover:bg-ink-800 transition"
+            className={live ? "active" : ""}
+            title={live ? "หยุดอัปเดตอัตโนมัติ" : "เริ่มอัปเดตอัตโนมัติ"}
           >
-            {live ? "⏸ หยุด" : "▶ เล่น"}
+            {live ? "LIVE" : "PAUSED"}
           </button>
 
-          {/* window selector */}
-          <div className="flex items-center gap-1 bg-ink-800 rounded-lg p-1">
-            {WINDOWS.map((w) => (
-              <button
-                key={w.h}
-                onClick={() => setHours(w.h)}
-                className={`text-xs px-3 py-1 rounded-md transition ${
-                  hours === w.h
-                    ? "bg-brand-600 text-white font-semibold"
-                    : "text-ink-300 hover:text-white"
-                }`}
-              >
-                {w.label}
-              </button>
-            ))}
-          </div>
+          {WINDOWS.map((w) => (
+            <button
+              key={w.h}
+              onClick={() => setHours(w.h)}
+              className={hours === w.h ? "active" : ""}
+            >
+              {w.label}
+            </button>
+          ))}
 
-          <div className="flex-1" />
+          <button onClick={() => load(true)}>รีเฟรช</button>
 
           {lastUpdated && (
-            <span
-              className={`font-mono text-[11px] ${
-                stale ? "text-amber-400 font-bold" : "text-ink-400"
-              }`}
-            >
-              {stale ? "⚠ ค้าง · " : "อัปเดต "}
+            <span className={`cx-chip${stale ? " warn" : " outline"}`}>
+              {stale ? "ค้าง" : "อัปเดต"}{" "}
               {lastUpdated.toLocaleTimeString("th-TH", { hour12: false })}
             </span>
           )}
-          <button
-            onClick={() => load(true)}
-            className="text-xs px-3 py-1.5 rounded-md bg-ink-800 hover:bg-ink-700 transition"
-          >
-            ↻ รีเฟรช
-          </button>
         </div>
-      </div>
+      </section>
 
-      <main className="p-8 max-w-7xl mx-auto w-full">
+      <main className="cx-document">
         {error && (
           <div className="mb-6 p-4 rounded-lg bg-rose-50 border border-rose-200 text-rose-700 text-sm">
             {error}
@@ -318,7 +297,7 @@ export default function ActivityPage() {
         )}
 
         {/* ── KPI strip ── */}
-        <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-6">
+        <section className="cx-kpis five">
           <Kpi label="Session ใช้งานอยู่" value={data?.active_count ?? "—"} accent="#10b981" sub="Hub + ระบบย่อย" pulse={(data?.active_count ?? 0) > 0} />
           <Kpi label="เข้าใช้งาน" value={k?.total ?? "—"} accent="#0ea5e9" sub={`${hours} ชม.ล่าสุด`} />
           <Kpi label="ถูกบล็อก" value={k?.blocked ?? "—"} accent="#e11d48" sub="block / would-block" danger={(k?.blocked ?? 0) > 0} />
@@ -329,30 +308,25 @@ export default function ActivityPage() {
             accent={k?.avg_risk != null ? riskColor(k.avg_risk) : "#64748b"}
             sub="avg risk score"
           />
-        </div>
+        </section>
 
         {/* ── ผู้ใช้ที่กำลังออนไลน์ (ทุกระบบย่อยรวมกัน) ── */}
-        <div
-          className={`mb-6 bg-white rounded-xl border shadow-sm overflow-hidden transition ${
-            stale ? "border-amber-300 opacity-60 grayscale" : "border-emerald-200"
-          }`}
+        <section
+          className={`cx-panel cx-active-panel${stale ? " opacity-60" : ""}`}
           title={stale ? "ข้อมูลอาจไม่เป็นปัจจุบัน — โหลดรอบล่าสุดไม่สำเร็จ" : undefined}
         >
-          <div className="flex items-center gap-2 px-5 py-3 bg-gradient-to-r from-emerald-50 to-white border-b border-emerald-100">
-            <span className="relative flex h-2.5 w-2.5">
-              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
-              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500" />
+          <header>
+            <div>
+              <span>active users · realtime</span>
+              <h2>Active Sessions</h2>
+            </div>
+            <span className="cx-chip signal">
+              <span className="cx-dot">
+                <i />
+              </span>
+              {data?.active_count ?? 0} ONLINE
             </span>
-            <h2 className="text-sm font-extrabold text-emerald-900">
-              Session ที่ใช้งานอยู่
-            </h2>
-            <span className="px-2 py-0.5 rounded-full bg-emerald-600 text-white text-xs font-bold tabular-nums">
-              {data?.active_count ?? 0}
-            </span>
-            <span className="hidden md:inline text-[11px] text-emerald-700/70 ml-1">
-              🟢 Hub = ออนไลน์จริง · 🔵 ระบบย่อย = session ที่ยัง valid (ค่าประมาณ)
-            </span>
-          </div>
+          </header>
           {!data ? (
             <div className="px-5 py-8 text-center text-ink-400 text-sm">กำลังโหลด…</div>
           ) : data.active.length === 0 ? (
@@ -432,21 +406,15 @@ export default function ActivityPage() {
               })}
             </div>
           )}
-        </div>
-
-        {/* ── ประวัติการเข้าใช้งาน ── */}
-        <div className="flex items-center gap-2 mb-3 mt-2">
-          <span className="text-base">📜</span>
-          <h2 className="text-sm font-extrabold text-ink-800">ประวัติการเข้าใช้งาน</h2>
-          {/* <span className="text-[11px] text-ink-400">(ออกจากระบบแล้ว / หมดอายุ)</span> */}
-        </div>
+        </section>
 
         {/* ── Hourly chart ── */}
-        <div className="mb-6 bg-white rounded-xl border border-ink-200 p-5 shadow-sm">
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-xs font-bold text-ink-500 uppercase tracking-wider">
-              ปริมาณการเข้าใช้งานรายชั่วโมง
-            </h2>
+        <section className="cx-panel">
+          <header>
+            <div>
+              <span>hourly volume</span>
+              <h2>Hourly Login Volume</h2>
+            </div>
             <div className="flex items-center gap-3 text-[11px] text-ink-500">
               <span className="flex items-center gap-1">
                 <span className="w-2.5 h-2.5 rounded-sm bg-brand-500 inline-block" /> สำเร็จ
@@ -455,9 +423,11 @@ export default function ActivityPage() {
                 <span className="w-2.5 h-2.5 rounded-sm bg-rose-500 inline-block" /> ถูกบล็อก
               </span>
             </div>
+          </header>
+          <div className="p-4">
+            <HourlyChart hourly={data?.hourly ?? []} />
           </div>
-          <HourlyChart hourly={data?.hourly ?? []} />
-        </div>
+        </section>
 
         {/* ── Filters ── */}
         <div className="mb-4 flex flex-wrap items-center gap-2">
@@ -497,9 +467,16 @@ export default function ActivityPage() {
         </div>
 
         {/* ── Feed table ── */}
-        <div className="bg-white rounded-xl border border-ink-200 shadow-sm overflow-hidden">
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+        <section className="cx-panel">
+          <header>
+            <div>
+              <span>access history</span>
+              <h2>Login History</h2>
+            </div>
+            <span className="cx-chip mono">{data?.total ?? 0} รายการ</span>
+          </header>
+          <div className="cx-table-wrap">
+            <table>
               <thead>
                 <tr className="text-left text-[11px] font-bold text-ink-500 uppercase tracking-wider bg-ink-50 border-b border-ink-200">
                   <th className="px-4 py-3">ผู้ใช้</th>
@@ -622,7 +599,7 @@ export default function ActivityPage() {
               </tbody>
             </table>
           </div>
-        </div>
+        </section>
       </main>
 
       <style jsx>{`
@@ -631,7 +608,7 @@ export default function ActivityPage() {
           to { background-color: rgba(16, 185, 129, 0.06); }
         }
       `}</style>
-    </>
+    </div>
   );
 }
 
@@ -644,20 +621,16 @@ function Kpi({
 }) {
   const colored = danger || pulse;
   return (
-    <div className="bg-white rounded-xl border border-ink-200 p-4 shadow-sm relative overflow-hidden">
-      <div className="absolute left-0 top-0 bottom-0 w-1" style={{ background: accent }} />
-      <div className="text-[11px] font-semibold text-ink-500 uppercase tracking-wider flex items-center gap-1.5">
-        {pulse && <span className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: accent }} />}
+    <article className="cx-kpi" style={{ borderTopColor: accent }}>
+      <span>
+        {pulse && <span className="cx-dot" style={{ background: accent }} />}
         {label}
-      </div>
-      <div
-        className={`text-3xl font-extrabold mt-1 tabular-nums ${colored ? "" : "text-ink-900"}`}
-        style={colored ? { color: accent } : undefined}
-      >
+      </span>
+      <strong className="mono" style={colored ? { color: accent } : undefined}>
         {value}
-      </div>
-      <div className="text-[10px] text-ink-400 mt-0.5 font-mono">{sub}</div>
-    </div>
+      </strong>
+      <small className="mono">{sub}</small>
+    </article>
   );
 }
 

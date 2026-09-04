@@ -1,0 +1,1377 @@
+/* ════════════════════════════════════════════════════════════════════════
+   SIGNAL CONSOLE (cx-*) — design system ของหน้า "ที่ไม่ใช่ dashboard"
+   ที่มา: https://central-auth-hub-signal.furafae.chatgpt.site/activity
+   ค่าทุกตัวดึงจาก computed CSS ของหน้านั้นตรง ๆ
+
+   ทำไมมี 2 ชุด: ดีไซน์ต้นแบบใช้ `.card/.kpi/.document` กับหน้า dashboard
+   ส่วนหน้าอื่น (activity, users, subsystems, …) ใช้ `cx-*` ที่หนาแน่นกว่า
+   — KPI มีเส้นบนหนา 2px, panel มี header สูง 61px, ตารางแถวสูง 54px
+
+   ทุกกฎ scope ใต้ .sc เพื่อไม่ให้รั่วไปหน้าอื่นที่ยังไม่ได้ port
+   token ใช้ร่วมกับ signal-room.css (--sr-*)
+   ════════════════════════════════════════════════════════════════════════ */
+
+/* ── แถบหัวพื้นเข้ม + ปุ่มช่วงเวลา ────────────────────────────────────── */
+
+.sc .cx-command {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  /* align กับ cx-document — กว้างเท่ากัน ไม่ล้นออกด้านข้างตอนจอกว้าง */
+  max-width: 1520px;
+  margin: 0 auto;
+  min-height: 92px;
+  padding: 18px 30px;
+  overflow: hidden;
+  color: #fff;
+  background: #0b101a;
+}
+.sc .cx-command::after {
+  content: "";
+  position: absolute;
+  top: -120px;
+  right: -90px;
+  width: 420px;
+  height: 200px;
+  pointer-events: none;
+  background: radial-gradient(circle, rgba(52, 232, 196, 0.08), transparent 67%);
+}
+.sc .cx-command > div,
+.sc .cx-command > button,
+.sc .cx-command > a {
+  position: relative;
+  z-index: 1;
+}
+.sc .cx-command > div > span {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 7px;
+  letter-spacing: 1.2px;
+  color: #71849b;
+}
+.sc .cx-command h1 {
+  margin: 8px 0 0;
+  font: 800 29px "Sarabun", sans-serif;
+  letter-spacing: -0.6px;
+}
+
+.sc .cx-live-actions {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.sc .cx-live-actions > button {
+  min-width: 34px;
+  height: 31px;
+  padding: 0 9px;
+  font-size: 7px;
+  color: #8293a9;
+  background: #101825;
+  border: 1px solid #293548;
+  cursor: pointer;
+  transition: 0.15s;
+}
+.sc .cx-live-actions > button:hover {
+  color: #cfe0f2;
+  border-color: #3d4c66;
+}
+.sc .cx-live-actions > button.active {
+  color: var(--sr-signal);
+  border-color: rgba(52, 232, 196, 0.4);
+}
+.sc .cx-live-actions > button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* ── พื้นที่เนื้อหา ───────────────────────────────────────────────────── */
+
+.sc .cx-document {
+  max-width: 1520px;
+  margin: auto;
+  padding: 20px 30px 0;
+}
+
+/* ── KPI (เส้นบนหนา 2px เป็นตัวบอกโทน) ───────────────────────────────── */
+
+.sc .cx-kpis {
+  display: grid;
+  gap: 9px;
+  margin-bottom: 10px;
+}
+.sc .cx-kpis.five {
+  grid-template-columns: repeat(5, 1fr);
+}
+.sc .cx-kpis.four {
+  grid-template-columns: repeat(4, 1fr);
+}
+.sc .cx-kpis.three {
+  grid-template-columns: repeat(3, 1fr);
+}
+.sc .cx-kpi {
+  position: relative;
+  min-height: 105px;
+  padding: 15px;
+  background: #fff;
+  border: 1px solid #dce2e8;
+  border-top: 2px solid #9da9b7;
+}
+.sc .cx-kpi.signal {
+  border-top-color: var(--sr-signal-2);
+}
+.sc .cx-kpi.danger {
+  border-top-color: var(--sr-danger);
+}
+.sc .cx-kpi > span {
+  display: block;
+  font-size: 7px;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: #798697;
+}
+.sc .cx-kpi strong {
+  display: block;
+  margin: 8px 0 5px;
+  font-size: 26px;
+  line-height: 1;
+  color: #172335;
+}
+.sc .cx-kpi small {
+  font-size: 6px;
+  color: #9aa5b1;
+}
+
+/* ── Panel ───────────────────────────────────────────────────────────── */
+
+.sc .cx-panel {
+  min-width: 0;
+  margin-bottom: 10px;
+  background: #fff;
+  border: 1px solid #dce2e8;
+}
+.sc .cx-panel.dark {
+  color: #eaf2fc;
+  background: #0f1724;
+  border-color: #253246;
+}
+.sc .cx-panel > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 61px;
+  padding: 11px 15px;
+  border-bottom: 1px solid #e1e6eb;
+}
+.sc .cx-panel.dark > header {
+  border-color: #263449;
+}
+.sc .cx-panel > header span {
+  display: block;
+  font-size: 7px;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: #8592a1;
+}
+.sc .cx-panel > header h2 {
+  margin: 3px 0 0;
+  font: 700 13px "Sarabun", sans-serif;
+}
+/* panel ของ "ผู้ใช้ที่กำลังใช้งาน" — หัวเขียวจาง บอกว่าเป็นข้อมูลสด */
+.sc .cx-active-panel {
+  border-color: #b9e8dd;
+}
+.sc .cx-active-panel > header {
+  background: linear-gradient(90deg, #effaf7, #fff);
+  border-bottom-color: #cceee6;
+}
+.sc .cx-active-panel > header h2 {
+  color: #134e43;
+}
+
+/* ── chip / dot ──────────────────────────────────────────────────────── */
+
+.sc .cx-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 23px;
+  padding: 0 8px;
+  font: 600 7px "IBM Plex Mono", ui-monospace, monospace;
+  white-space: nowrap;
+  color: #617083;
+  background: #f8fafb;
+  border: 1px solid #dbe2e8;
+}
+.sc .cx-chip.signal {
+  color: #087c69;
+  background: #edfaf7;
+  border-color: #a9e9dc;
+}
+.sc .cx-chip.danger {
+  color: #b20f38;
+  background: #fff3f6;
+  border-color: #f0bac7;
+}
+.sc .cx-chip.warn {
+  color: #9a6202;
+  background: #fff9ed;
+  border-color: #eed49e;
+}
+.sc .cx-chip.outline {
+  background: none;
+}
+.sc .cx-chip svg {
+  width: 12px;
+}
+.sc .cx-chip .cx-dot {
+  width: 5px;
+  height: 5px;
+}
+
+.sc .cx-dot {
+  position: relative;
+  display: inline-block;
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--sr-signal);
+  box-shadow: 0 0 8px rgba(52, 232, 196, 0.5);
+}
+.sc .cx-dot i {
+  position: absolute;
+  inset: -4px;
+  border: 1px solid;
+  border-radius: 50%;
+  animation: sr-pulse 2s ease-out infinite;
+}
+.sc .cx-dot.warn {
+  color: var(--sr-warn);
+  background: var(--sr-warn);
+}
+.sc .cx-dot.danger {
+  color: var(--sr-danger);
+  background: var(--sr-danger);
+}
+.sc .cx-dot.info {
+  color: var(--sr-info);
+  background: var(--sr-info);
+}
+
+/* ── toolbar (ค้นหา + ตัวกรอง) ───────────────────────────────────────── */
+
+.sc .cx-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-height: 52px;
+  padding: 9px 12px;
+  background: #fafbfc;
+  border-bottom: 1px solid #e1e6eb;
+}
+.sc .cx-toolbar > label {
+  position: relative;
+  width: min(340px, 45%);
+}
+.sc .cx-toolbar > label > svg {
+  position: absolute;
+  top: 9px;
+  left: 10px;
+  z-index: 1;
+  width: 14px;
+  color: #8491a0;
+}
+.sc .cx-toolbar input,
+.sc .cx-toolbar select {
+  height: 32px;
+  font-size: 8px;
+  background: #fff;
+  border: 1px solid #dbe2e8;
+}
+.sc .cx-toolbar select {
+  min-width: 116px;
+  padding: 0 8px;
+}
+.sc .cx-toolbar > label input {
+  width: 100%;
+  padding-left: 31px;
+}
+
+/* ── ตาราง ───────────────────────────────────────────────────────────── */
+
+.sc .cx-table-wrap {
+  width: 100%;
+  overflow: auto;
+}
+.sc .cx-table-wrap table {
+  width: 100%;
+  min-width: 720px;
+  border-collapse: collapse;
+}
+.sc .cx-table-wrap th {
+  height: 36px;
+  padding: 0 11px;
+  font: 600 6px "IBM Plex Mono", ui-monospace, monospace;
+  letter-spacing: 0.55px;
+  text-align: left;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: #7f8c9c;
+  background: #f8fafb;
+  border-bottom: 1px solid #e1e6eb;
+}
+.sc .cx-table-wrap td {
+  height: 54px;
+  padding: 0 11px;
+  font-size: 8px;
+  border-bottom: 1px solid #edf0f4;
+}
+.sc .cx-table-wrap tbody tr:last-child td {
+  border-bottom: 0;
+}
+.sc .cx-table-wrap .cx-empty {
+  min-height: 150px;
+  border: 0;
+}
+
+/* DataTable (component กลาง) เมื่ออยู่ในหน้าคอนโซล — ปรับให้เข้าระบบ cx-*
+   โดยไม่แก้ตัว component เอง (หน้าอื่นที่ยังไม่ port จะได้ไม่กระทบ) */
+.sc .cx-panel > div[class*="rounded-xl"] {
+  border: 0;
+  border-radius: 0;
+  background: none;
+}
+.sc .cx-panel th {
+  height: 36px;
+  padding: 0 11px;
+  font: 600 6px "IBM Plex Mono", ui-monospace, monospace;
+  letter-spacing: 0.55px;
+  text-transform: uppercase;
+  color: #7f8c9c;
+  background: #f8fafb;
+  border-bottom: 1px solid #e1e6eb;
+}
+.sc .cx-panel td {
+  height: 54px;
+  padding: 0 11px;
+  font-size: 8px;
+  color: #2f3d51;
+  border-bottom: 1px solid #edf0f4;
+}
+.sc .cx-panel tbody tr {
+  background: #fff !important;
+}
+.sc .cx-panel tbody tr:hover {
+  background: #f1faf8 !important;
+}
+
+/* ── แถวตารางแบบคลิกได้ (ใช้กับ directory ต่าง ๆ) ─────────────────────── */
+
+.sc .cx-clickable-row {
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.sc .cx-clickable-row:hover {
+  background: #f1faf8;
+}
+/* ชื่อหลัก + คำอธิบายบรรทัดล่าง */
+.sc .cx-row-link {
+  display: block;
+  font-weight: 700;
+  color: #162337;
+  text-decoration: none;
+}
+.sc .cx-row-link small {
+  display: block;
+  font-size: 7px;
+  font-weight: 400;
+  color: #8491a0;
+}
+/* ค่าเทคนิคในเซลล์ (id, identifier) */
+.sc .cx-data {
+  font-size: 7px;
+  color: #607086;
+}
+/* ปุ่มท้ายแถว (ไปหน้ารายละเอียด) */
+.sc .cx-row-action {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  color: #627389;
+  background: none;
+  border: 1px solid #dbe2e8;
+  cursor: pointer;
+}
+.sc .cx-row-action:hover {
+  color: #087c69;
+  background: #edfaf7;
+  border-color: #8edbcb;
+}
+.sc .cx-row-action svg {
+  width: 14px;
+}
+
+/* ── empty state ─────────────────────────────────────────────────────── */
+
+.sc .cx-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 175px;
+  padding: 24px;
+  color: #8491a0;
+}
+.sc .cx-empty > svg {
+  width: 25px;
+  height: 25px;
+  margin-bottom: 10px;
+  color: #a5b0bc;
+  stroke-width: 1.3px;
+}
+.sc .cx-empty strong {
+  font-size: 10px;
+  color: #536174;
+}
+.sc .cx-empty span {
+  margin-top: 3px;
+  font-size: 7px;
+  color: #9ca7b2;
+}
+
+/* ── footer ──────────────────────────────────────────────────────────── */
+
+.sc .cx-footer {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  min-height: 48px;
+  margin-top: 18px;
+  padding: 0 2px;
+  font-size: 7px;
+  color: #84909f;
+  border-top: 1px solid #dce2e8;
+}
+.sc .cx-footer code {
+  margin: auto;
+}
+.sc .cx-footer span:last-child {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+/* ── responsive ──────────────────────────────────────────────────────── */
+
+@media (max-width: 1120px) {
+  .sc .cx-kpis.five,
+  .sc .cx-kpis.four {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+@media (max-width: 640px) {
+  .sc .cx-command {
+    flex-direction: column;
+    align-items: flex-start;
+    min-height: 0;
+    padding: 20px 16px;
+  }
+  .sc .cx-document {
+    padding: 14px 14px 0;
+  }
+  .sc .cx-kpis.five,
+  .sc .cx-kpis.four,
+  .sc .cx-kpis.three {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+/* ปุ่มหลักบน command bar (เช่น "+ เพิ่มผู้ใช้งาน") — โปร่งบนพื้นเข้ม */
+.sc .cx-add-button {
+  position: relative;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 36px;
+  padding: 0 16px;
+  font-size: 10px;
+  font-weight: 700;
+  color: #e5edf7;
+  background: #172131;
+  border: 1px solid #46566b;
+  text-decoration: none;
+  cursor: pointer;
+  transition: 0.16s;
+}
+.sc .cx-add-button:hover {
+  color: #fff;
+  background: #202c3e;
+  border-color: #718198;
+  transform: translateY(-1px);
+}
+
+/* Badge (component กลาง) ในหน้าคอนโซล — ไม่ใส่กรอบ/พื้นเลย เหลือแต่ตัวอักษรสี
+   ไม่แก้ตัว component เพราะหน้าอื่นยังใช้ทรงแคปซูลมีกรอบอยู่ */
+.sc .cx-panel span[class*="rounded-full"] {
+  border: 0;
+  border-radius: 0;
+  background: none;
+  padding: 0;
+  font: 700 10px "IBM Plex Mono", ui-monospace, monospace;
+  letter-spacing: 0.6px;
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   USER 360° VIEW (/users/[id]) — ที่มา: …/users/current
+   ════════════════════════════════════════════════════════════════════════ */
+
+.sc .cx-kpis.six {
+  grid-template-columns: repeat(6, 1fr);
+}
+
+/* breadcrumb เหนือ hero */
+.sc .cx-user-breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  height: 30px;
+  margin-bottom: 8px;
+  font-size: 7px;
+  color: #8794a3;
+}
+.sc .cx-user-breadcrumb a {
+  font-weight: 700;
+  color: #087c69;
+  text-decoration: none;
+}
+.sc .cx-user-breadcrumb svg {
+  width: 11px;
+}
+
+/* hero: ข้อมูลตัวตน (ซ้าย) + ความเสี่ยงปัจจุบัน (ขวา) บนพื้นเข้ม */
+.sc .cx-user-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(260px, 0.72fr);
+  margin-bottom: 8px;
+  color: #e9f1fa;
+  background: #0f1724;
+  border: 1px solid #253246;
+}
+.sc .cx-user-profile {
+  display: flex;
+  gap: 16px;
+  padding: 18px;
+}
+.sc .cx-user-avatar {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 64px;
+  height: 64px;
+  font-size: 15px;
+  color: #80f1da;
+  background: #11352f;
+  border: 1px solid #296458;
+}
+.sc .cx-user-profile > div > span,
+.sc .cx-risk-card > span {
+  font-size: 6px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: #687d95;
+}
+.sc .cx-user-profile h2 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 3px 0 2px;
+  font: 700 18px "Sarabun", sans-serif;
+}
+.sc .cx-user-profile code {
+  font-size: 7px;
+  color: #8192a8;
+}
+/* ตารางข้อมูล 3 คอลัมน์ */
+.sc .cx-user-profile dl {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(90px, 1fr));
+  gap: 9px 22px;
+  margin: 14px 0 0;
+}
+.sc .cx-user-profile dt {
+  font-size: 6px;
+  color: #687b91;
+}
+.sc .cx-user-profile dd {
+  margin: 2px 0 0;
+  font-size: 8px;
+  font-weight: 600;
+  color: #d9e4f0;
+}
+
+.sc .cx-risk-card {
+  padding: 18px;
+  border-left: 1px solid #29364a;
+}
+.sc .cx-risk-card > div:first-of-type {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin-top: 3px;
+}
+.sc .cx-risk-card strong {
+  font-size: 25px;
+}
+.sc .cx-risk-card small {
+  font-size: 7px;
+  color: #6f8198;
+}
+.sc .cx-risk-card .cx-chip {
+  margin-left: auto;
+}
+/* พื้นที่กราฟความเสี่ยง (เส้น grid + เส้นแบ่งแนวตั้ง) */
+.sc .cx-risk-plot {
+  position: relative;
+  height: 54px;
+  margin-top: 10px;
+  border-bottom: 1px solid #344155;
+  background: repeating-linear-gradient(0deg, transparent, transparent 16px, #253246 17px);
+}
+.sc .cx-risk-plot i {
+  position: absolute;
+  bottom: 0;
+  width: 1px;
+  height: 100%;
+  background: #243145;
+}
+.sc .cx-risk-plot i:nth-child(1) { left: 20%; }
+.sc .cx-risk-plot i:nth-child(2) { left: 40%; }
+.sc .cx-risk-plot i:nth-child(3) { left: 60%; }
+.sc .cx-risk-plot i:nth-child(4) { left: 80%; }
+.sc .cx-risk-plot span {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 6px;
+  color: #52667d;
+}
+
+/* ปุ่มบน command bar ของหน้า detail */
+.sc .cx-command-actions {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.sc .cx-command-actions .cx-chip {
+  height: 34px;
+  padding: 0 11px;
+  letter-spacing: 0.75px;
+  color: #67ecd2;
+  background: #0d2825;
+  border-color: #235a50;
+}
+.sc .cx-command-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 36px;
+  padding: 0 14px;
+  font-size: 9px;
+  font-weight: 700;
+  cursor: pointer;
+  border: 1px solid;
+  transition: 0.16s;
+}
+.sc .cx-command-actions button svg {
+  width: 14px;
+  height: 14px;
+}
+.sc .cx-command-actions .cx-edit-button {
+  color: #e5edf7;
+  background: #172131;
+  border-color: #46566b;
+}
+.sc .cx-command-actions .cx-edit-button:hover {
+  color: #fff;
+  background: #202c3e;
+  border-color: #718198;
+  transform: translateY(-1px);
+}
+.sc .cx-command-actions .cx-suspend-button {
+  color: #ff9bae;
+  background: #2a111b;
+  border-color: #703044;
+}
+.sc .cx-command-actions .cx-suspend-button:hover {
+  color: #ffc1cd;
+  background: #3b1623;
+  border-color: #d64b70;
+  transform: translateY(-1px);
+}
+
+/* tabs */
+.sc .cx-tabs {
+  display: flex;
+  gap: 3px;
+  margin-bottom: 10px;
+  background: #fff;
+  border: 1px solid #dce2e8;
+  border-bottom: 1px solid #dce2e8;
+}
+.sc .cx-tabs button {
+  height: 36px;
+  padding: 0 15px;
+  font-size: 8px;
+  color: #728093;
+  background: none;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+}
+.sc .cx-tabs button.active {
+  font-weight: 700;
+  color: #087c69;
+  border-bottom-color: var(--sr-signal-2);
+}
+
+/* layout เนื้อหาใน tab */
+.sc .cx-user-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 2.1fr) minmax(260px, 0.72fr);
+  gap: 8px;
+}
+.sc .cx-user-bottom {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-top: 8px;
+}
+
+/* Quick actions (คอลัมน์ขวา) */
+.sc .cx-quick-actions > button {
+  display: grid;
+  grid-template-columns: 25px 1fr 14px;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 12px;
+  text-align: left;
+  color: #526277;
+  background: #fff;
+  border: 0;
+  border-top: 1px solid #e5e9ee;
+  cursor: pointer;
+}
+.sc .cx-quick-actions > button:first-child {
+  border-top: 0;
+}
+.sc .cx-quick-actions > button:hover {
+  color: #087c69;
+  background: #f1faf8;
+}
+.sc .cx-quick-actions > button > svg {
+  width: 15px;
+}
+.sc .cx-quick-actions > button b,
+.sc .cx-quick-actions > button small {
+  display: block;
+}
+.sc .cx-quick-actions > button b {
+  font-size: 8px;
+  color: #1c2a3d;
+}
+.sc .cx-quick-actions > button small {
+  margin-top: 1px;
+  font-size: 6px;
+  color: #8995a2;
+}
+
+@media (max-width: 1120px) {
+  .sc .cx-kpis.six { grid-template-columns: repeat(3, 1fr); }
+  .sc .cx-user-hero,
+  .sc .cx-user-layout { grid-template-columns: minmax(0, 1fr); }
+  .sc .cx-risk-card { border-left: 0; border-top: 1px solid #29364a; }
+  .sc .cx-user-bottom { grid-template-columns: 1fr; }
+}
+
+/* ── Empty state ที่ "ตั้งใจ" ไม่ใช่กล่องว่าง ────────────────────────────
+   ปัญหาเดิม: ข้อความลอยกลางการ์ดสูง ๆ ทำให้ดูเหมือนหน้าพัง
+   แก้: ไอคอน + สิ่งที่จะปรากฏตรงนี้ + วิธีทำให้มีข้อมูล และคุมความสูงไม่ให้บาน */
+.sc .cx-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-height: 132px;
+  padding: 20px;
+  text-align: center;
+  color: #8491a0;
+}
+.sc .cx-empty.sm {
+  min-height: 92px;
+  padding: 14px;
+}
+.sc .cx-empty > svg {
+  width: 22px;
+  height: 22px;
+  margin-bottom: 8px;
+  color: #b3bcc7;
+  stroke-width: 1.3;
+}
+.sc .cx-empty strong {
+  font-size: 10px;
+  font-weight: 700;
+  color: #536174;
+}
+.sc .cx-empty span {
+  font-size: 8px;
+  color: #9ca7b2;
+}
+
+/* หัวข้อย่อยของ panel (h3 ที่ไม่ได้อยู่ใน <header>) */
+.sc .cx-panel > h3,
+.sc .cx-panel-title {
+  margin: 0;
+  padding: 12px 14px;
+  font: 700 11px "Sarabun", sans-serif;
+  color: #1c2a3d;
+  border-bottom: 1px solid #e1e6eb;
+}
+
+/* หัวข้อย่อยในการ์ด: ตัวเลข/คำขยายท้ายหัวข้อให้จางลง */
+.sc .cx-panel > h3 .cx-sub {
+  font-weight: 400;
+  color: #93a0ae;
+}
+/* เนื้อการ์ดที่หัวข้อกินขอบบนไปแล้ว */
+.sc .cx-panel > .cx-body {
+  padding: 12px 14px 14px;
+}
+
+/* คอลัมน์ซ้าย/ขวาไม่ต้องยืดเท่ากัน — กันช่องขาวใหญ่ใต้การ์ดที่เนื้อหาสั้น */
+.sc .cx-user-layout {
+  align-items: start;
+}
+
+/* ── ตารางการ์ด 3 คอลัมน์ (หน้า user detail) ─────────────────────────────
+   เดิมแยกเป็น 2-col + 3-col ทำให้คอลัมน์ที่การ์ดน้อยกว่าเหลือช่องขาวใหญ่
+   ใช้ตารางเดียวแล้วให้การ์ดที่เนื้อหายาวกิน 2–3 ช่อง → ทุกแถวเต็มพอดี */
+.sc .cx-grid3 {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+.sc .cx-span2 { grid-column: span 2; }
+.sc .cx-span3 { grid-column: span 3; }
+
+@media (max-width: 1120px) {
+  .sc .cx-grid3 { grid-template-columns: repeat(2, 1fr); }
+  .sc .cx-span2, .sc .cx-span3 { grid-column: span 2; }
+}
+@media (max-width: 700px) {
+  .sc .cx-grid3 { grid-template-columns: 1fr; }
+  .sc .cx-span2, .sc .cx-span3 { grid-column: span 1; }
+}
+
+/* ── การ์ดเต็มบล็อก: เนื้อหายืดเก็บที่ว่าง ไม่ปล่อยขาวค้างก้นการ์ด ────────
+   การ์ดในตารางถูกยืดให้สูงเท่าแถว ถ้าเนื้อหาไม่ยืดตามจะเหลือช่องว่างด้านล่าง */
+.sc .cx-panel {
+  display: flex;
+  flex-direction: column;
+}
+.sc .cx-panel > .cx-body,
+.sc .cx-panel > .cx-table-wrap,
+.sc .cx-panel > .cx-quick-actions {
+  flex: 1 1 auto;
+}
+/* Quick Actions — แถวกระจายเต็มความสูงการ์ดเท่า ๆ กัน */
+.sc .cx-quick-actions {
+  display: flex;
+  flex-direction: column;
+}
+.sc .cx-quick-actions > button {
+  flex: 1 1 0;
+  min-height: 44px;
+}
+
+/* label ของ KPI ตามที่ขอ */
+.sc .cx-kpi > span {
+  font-size: 15px;
+  letter-spacing: 0.3px;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   หน้าระบบย่อย (/subsystems) — ไม่มีไอคอน ขอบเหลี่ยมทั้งหมด
+   ══════════════════════════════════════════════════════════════ */
+
+.sc .cx-kpi.warn {
+  border-top-color: var(--sr-warn);
+}
+.sc .cx-kpi.info {
+  border-top-color: var(--sr-info);
+}
+
+/* ── สลับมุมมอง การ์ด/ตาราง — segmented ทรงเหลี่ยม ── */
+.sc .cx-seg {
+  display: flex;
+  margin-left: auto;
+  border: 1px solid #dbe2e8;
+  background: #fff;
+}
+.sc .cx-seg button {
+  height: 32px;
+  padding: 0 11px;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: #6b7887;
+  font: 600 7px "IBM Plex Mono", ui-monospace, monospace;
+  letter-spacing: 0.9px;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.sc .cx-seg button + button {
+  border-left: 1px solid #e6ebf0;
+}
+.sc .cx-seg button:hover {
+  background: #f2f5f8;
+}
+.sc .cx-seg button.on {
+  background: var(--sr-ink);
+  color: #fff;
+}
+
+/* ── แถบผลลัพธ์ ok / err ── */
+.sc .cx-msg {
+  padding: 9px 13px;
+  border: 1px solid #dce2e8;
+  border-left-width: 2px;
+  background: #fff;
+  font-size: 8px;
+}
+.sc .cx-msg.ok {
+  border-left-color: var(--sr-signal-2);
+  color: #0f7360;
+}
+.sc .cx-msg.err {
+  border-left-color: var(--sr-danger);
+  color: #a3123a;
+}
+
+/* ── ป้ายนโยบายการเข้าถึง (ข้อความล้วน ไม่มีไอคอน) ── */
+.sc .cx-tag {
+  display: inline-block;
+  padding: 2px 6px;
+  border: 1px solid currentColor;
+  font: 600 7px "IBM Plex Mono", ui-monospace, monospace;
+  letter-spacing: 0.7px;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.sc .cx-tag.explicit { color: #5a6675; }
+.sc .cx-tag.all      { color: var(--sr-info); }
+.sc .cx-tag.role     { color: var(--sr-violet); }
+.sc .cx-tag.attribute{ color: #b57b09; }
+
+/* ── สถานะ health ── */
+.sc .cx-health {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font: 600 7px "IBM Plex Mono", ui-monospace, monospace;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+}
+.sc .cx-health i {
+  width: 5px;
+  height: 5px;
+  background: currentColor;
+}
+.sc .cx-health em {
+  font-style: normal;
+  font-weight: 400;
+  color: #8592a1;
+}
+.sc .cx-health.up      { color: var(--sr-signal-2); }
+.sc .cx-health.slow    { color: #b57b09; }
+.sc .cx-health.down    { color: var(--sr-danger); }
+.sc .cx-health.unknown { color: #9aa5b1; }
+
+/* ── มุมมองการ์ด ── */
+.sc .cx-cards {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+@media (max-width: 1180px) {
+  .sc .cx-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 760px) {
+  .sc .cx-cards { grid-template-columns: minmax(0, 1fr); }
+}
+.sc .cx-card {
+  display: flex;
+  flex-direction: column;
+  background: #fff;
+  border: 1px solid #dce2e8;
+  border-top: 2px solid #9da9b7;
+  transition: border-color 0.12s;
+}
+.sc .cx-card.active    { border-top-color: var(--sr-signal-2); }
+.sc .cx-card.pending   { border-top-color: var(--sr-warn); }
+.sc .cx-card.suspended { border-top-color: var(--sr-danger); }
+.sc .cx-card:hover { border-color: #b9c4d0; }
+.sc .cx-card:hover.active    { border-top-color: var(--sr-signal-2); }
+.sc .cx-card:hover.pending   { border-top-color: var(--sr-warn); }
+.sc .cx-card:hover.suspended { border-top-color: var(--sr-danger); }
+
+.sc .cx-card > a {
+  /* min-height + flex: ใบที่ไม่มีคำอธิบายต้องสูงเท่าใบที่มี
+     ไม่งั้นแถว dt/dd ของการ์ดในแถวเดียวกันจะเหลื่อมกัน */
+  display: flex;
+  flex-direction: column;
+  min-height: 78px;
+  padding: 12px 14px 11px;
+  border-bottom: 1px solid #eef1f5;
+  text-decoration: none;
+  color: inherit;
+}
+.sc .cx-card > a b {
+  display: block;
+  font: 700 13px "Sarabun", sans-serif;
+  color: var(--sr-ink);
+}
+.sc .cx-card > a:hover b {
+  color: var(--sr-signal-2);
+}
+.sc .cx-card > a p {
+  margin: 3px 0 0;
+  font-size: 8px;
+  line-height: 1.5;
+  color: #7b8794;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.sc .cx-card > a > span {
+  display: inline-block;
+  align-self: flex-start;
+  margin-top: auto;
+  padding-top: 7px;
+}
+
+/* แถวข้อมูล label ↔ value */
+.sc .cx-card dl {
+  flex: 1;
+  margin: 0;
+  padding: 10px 14px 12px;
+  display: grid;
+  gap: 6px;
+}
+.sc .cx-card dl > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 16px;
+}
+.sc .cx-card dt {
+  font: 600 7px "IBM Plex Mono", ui-monospace, monospace;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: #8592a1;
+  white-space: nowrap;
+}
+.sc .cx-card dd {
+  margin: 0;
+  min-width: 0;
+  font-size: 8px;
+  color: #3d4a5c;
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sc .cx-card dd.mono {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 8px;
+}
+.sc .cx-card dd.num {
+  font: 700 9px "IBM Plex Mono", ui-monospace, monospace;
+  color: var(--sr-ink);
+}
+
+/* ปุ่มอนุมัติ/ปฏิเสธ (เฉพาะ pending) */
+.sc .cx-card footer,
+.sc .cx-approve-pair {
+  display: flex;
+  gap: 6px;
+  padding: 9px 14px 11px;
+  border-top: 1px solid #eef1f5;
+}
+.sc .cx-act {
+  flex: 1;
+  height: 27px;
+  border: 1px solid;
+  border-radius: 0;
+  background: #fff;
+  font: 600 7px "IBM Plex Mono", ui-monospace, monospace;
+  letter-spacing: 0.9px;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.sc .cx-act:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.sc .cx-act.ok {
+  border-color: var(--sr-signal-2);
+  color: #0f7360;
+}
+.sc .cx-act.ok:hover:not(:disabled) {
+  background: var(--sr-signal-2);
+  color: #fff;
+}
+.sc .cx-act.no {
+  border-color: #e5b4c1;
+  color: #a3123a;
+}
+.sc .cx-act.no:hover:not(:disabled) {
+  background: var(--sr-danger);
+  border-color: var(--sr-danger);
+  color: #fff;
+}
+
+/* บรรทัดสรุปจำนวนท้ายหน้า */
+.sc .cx-count {
+  padding: 2px 1px;
+  font: 500 7px "IBM Plex Mono", ui-monospace, monospace;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: #8592a1;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   หน้ารายละเอียดระบบย่อย (/subsystems/[id]) — หน้าเดียวเรียงยาว
+   reskin โครง block ให้เป็นดีไซน์ใหม่ โดยไม่แตะ logic
+   ══════════════════════════════════════════════════════════════ */
+
+/* Hero identity — แถบเข้มเหมือนดีไซน์ต้นทาง */
+.sc .cx-identity-hero {
+  display: flex;
+  align-items: stretch;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 17px;
+  background: var(--sr-ink);
+  border: 1px solid #243248;
+}
+.sc .cx-identity-hero > div:first-child {
+  min-width: 0;
+}
+.sc .cx-identity-hero > div:first-child > span {
+  display: block;
+  font: 600 7px "IBM Plex Mono", ui-monospace, monospace;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: #668097;
+}
+.sc .cx-identity-hero h2 {
+  margin: 5px 0 0;
+  font: 700 19px "Sarabun", sans-serif;
+  color: #fff;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.sc .cx-identity-hero h2 small {
+  font: 500 9px "Sarabun", sans-serif;
+  color: #71839a;
+}
+.sc .cx-identity-hero code {
+  display: inline-block;
+  margin-top: 8px;
+  font: 500 9px "IBM Plex Mono", ui-monospace, monospace;
+  color: #8294a9;
+  word-break: break-all;
+}
+.sc .cx-identity-hero p {
+  margin: 7px 0 0;
+  font-size: 9px;
+  line-height: 1.55;
+  color: #8a99ac;
+  max-width: 560px;
+}
+.sc .cx-hero-metrics {
+  display: flex;
+  align-self: center;
+  flex-shrink: 0;
+}
+.sc .cx-hero-metrics > span {
+  display: block;
+  padding: 8px 16px;
+  border-left: 1px solid #2b3749;
+  font: 600 7px "IBM Plex Mono", ui-monospace, monospace;
+  letter-spacing: 0.9px;
+  text-transform: uppercase;
+  color: #668097;
+}
+.sc .cx-hero-metrics > span b {
+  display: block;
+  margin-top: 4px;
+  font: 700 14px "IBM Plex Mono", ui-monospace, monospace;
+  letter-spacing: 0;
+  text-transform: none;
+  color: #e4edf8;
+}
+.sc .cx-hero-metrics > span b.up { color: var(--sr-signal); }
+.sc .cx-hero-metrics > span b.slow { color: var(--sr-warn); }
+.sc .cx-hero-metrics > span b.down { color: var(--sr-danger); }
+
+/* หัวข้อ section — mono uppercase เหมือน panel header ของดีไซน์ */
+.sc .cx-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 2px 0 9px;
+}
+.sc .cx-section-head h3 {
+  margin: 0;
+  font: 600 8px "IBM Plex Mono", ui-monospace, monospace;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: #6b7887;
+}
+.sc .cx-section-head h3 em {
+  font-style: normal;
+  font-weight: 400;
+  color: #9aa5b1;
+}
+.sc .cx-section-head .cx-refresh {
+  border: 0;
+  background: none;
+  padding: 0;
+  font: 500 7px "IBM Plex Mono", ui-monospace, monospace;
+  letter-spacing: 0.7px;
+  text-transform: uppercase;
+  color: #7b8794;
+  cursor: pointer;
+}
+.sc .cx-section-head .cx-refresh:hover { color: var(--sr-signal-2); }
+
+/* ── Normalization: block ใน .sc ที่ยังใช้ Tailwind ให้เป็นเหลี่ยม + ไม่มีเงา ── */
+.sc [class*="rounded"] { border-radius: 0 !important; }
+.sc [class*="shadow"] { box-shadow: none !important; }
+/* กล่อง "card" พื้นขาว → ขอบ token เดียวกันหมด */
+.sc .bg-white { border-color: #dce2e8 !important; }
+
+/* ปุ่ม action ใน hero (แก้ไข/ระงับ/เปิด/rotate/โอน) — พื้นเข้มกลืนกับแถบ command
+   (ตามค่าจริงของดีไซน์ต้นทาง: navy/maroon-filled ไม่ใช่กล่องขาว) */
+.sc .cx-hero-btn {
+  display: inline-flex;
+  align-items: center;
+  height: 36px;
+  padding: 0 14px;
+  border: 1px solid #46566b;
+  background: #172131;
+  color: #e5edf7;
+  font: 700 9px "Sarabun", sans-serif;
+  cursor: pointer;
+  transition: 0.14s;
+}
+.sc .cx-hero-btn:hover {
+  background: #202d40;
+  border-color: #62748c;
+}
+.sc .cx-hero-btn:disabled { opacity: 0.45; cursor: default; }
+.sc .cx-hero-btn.warn {
+  background: #2a200d;
+  border-color: #6b5a2e;
+  color: #f0c674;
+}
+.sc .cx-hero-btn.warn:hover { background: #362a12; }
+.sc .cx-hero-btn.danger {
+  background: #2a111b;
+  border-color: #703044;
+  color: #ff9bae;
+}
+.sc .cx-hero-btn.danger:hover { background: #371622; }
+.sc .cx-hero-btn.ok {
+  background: #0d2825;
+  border-color: #235a50;
+  color: #67ecd2;
+}
+.sc .cx-hero-btn.ok:hover { background: #103330; }
+
+/* ป้ายสถานะใน hero (ACTIVE/SUSPENDED) — chip เข้มตามดีไซน์ */
+.sc .cx-hero-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 34px;
+  padding: 0 11px;
+  border: 1px solid #235a50;
+  background: #0d2825;
+  color: #67ecd2;
+  font: 600 8px "IBM Plex Mono", ui-monospace, monospace;
+  letter-spacing: 0.75px;
+  text-transform: uppercase;
+}
+.sc .cx-hero-status.warn {
+  border-color: #6b5a2e;
+  background: #2a200d;
+  color: #f0c674;
+}
+.sc .cx-hero-status.danger {
+  border-color: #703044;
+  background: #2a111b;
+  color: #ff9bae;
+}
+
+/* body ของ cx-panel — ใช้กับ section ที่เนื้อหาไม่ใช่ตาราง (การ์ด/ฟอร์ม/กราฟ) */
+.sc .cx-panel-body {
+  padding: 13px 14px;
+}
+/* การ์ดซ้อนใน panel — ลดน้ำหนักขอบ ไม่ให้เป็นกรอบซ้อนกรอบหนา */
+.sc .cx-panel-body .bg-white {
+  border-color: #e8edf2 !important;
+}
+/* วันที่สร้าง/อนุมัติ ใน hero */
+.sc .cx-identity-hero .cx-hero-dates {
+  display: block;
+  margin-top: 7px;
+  font: 500 8px "IBM Plex Mono", ui-monospace, monospace;
+  letter-spacing: 0.4px;
+  color: #5d7089;
+}
+/* แถบท้ายหน้า */
+.sc .cx-page-foot {
+  margin-top: 4px;
+  padding: 11px 14px;
+  border: 1px solid #dce2e8;
+  background: #fff;
+  font: 500 8px "IBM Plex Mono", ui-monospace, monospace;
+  letter-spacing: 0.7px;
+  text-transform: uppercase;
+  color: #8592a1;
+  text-align: center;
+}
