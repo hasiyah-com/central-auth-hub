@@ -173,6 +173,11 @@ def compute_layer_outputs(
         if which == "tune":
             normals = [(None, v) for v in u.tune_normal_ft]
             attacks = u.tune_attacks
+        elif which == "calib":
+            # เฉพาะ normal ของ validation-calibration split — ใช้วัด tail shift ภายใน
+            # validation (calib vs tuning) เพื่อประมาณ margin โดยไม่พึ่ง holdout
+            normals = [(None, v) for v in u.cal_normal_ft]
+            attacks = []
         else:
             normals = u.holdout_normal
             attacks = u.holdout_attacks
@@ -1434,6 +1439,28 @@ def cmd_freeze(args):
             f"{block_override['block_from']} -> {args.deployed_block}"
         )
 
+    # override warn threshold (Round 2b) — ต่างจาก block: warn **ไม่ใช่คันโยกฟรี**
+    # ยก warn ลด warn FPR แต่ลด recall แบบ warn+ (soft) ด้วย · recall@challenge ไม่กระทบ
+    # เลือกจากเกณฑ์ worst-seed บน validation (population variance คือตัวขับ shift ไม่ใช่
+    # in-sample optimism ซึ่งวัดได้ ~0) · ประกาศล่วงหน้าใน RBA_ROUND2_PROTOCOL.md
+    warn_override = None
+    if args.deployed_warn is not None and isinstance(dep_thr, dict):
+        warn_override = {
+            "config": args.deploy_config,
+            "warn_from": dep_thr["warn"],
+            "warn_to": args.deployed_warn,
+            "rationale": (
+                "ยก warn ตามเกณฑ์ worst-seed บน validation (ทน population variance) "
+                "แลก soft-warn recall · enforcement (recall@challenge) ไม่กระทบ"
+            ),
+        }
+        dep_thr = {**dep_thr, "warn": args.deployed_warn}
+        per_config_thresholds[args.deploy_config] = dep_thr
+        print(
+            f"  override warn ของ Config {args.deploy_config}: "
+            f"{warn_override['warn_from']} -> {args.deployed_warn}"
+        )
+
     # reference scores ของ deployed config บน validation-tuning — ใช้ตอน final
     # ทำ tail calibration (validation -> holdout) โดยไม่ต้องเปิด validation ซ้ำ
     # (เก็บควอนไทล์ย่อไว้ ไม่เก็บทุกจุด เพื่อไม่ให้ไฟล์ใหญ่ · เป็นคะแนนของ normal ล้วน)
@@ -1507,6 +1534,7 @@ def cmd_freeze(args):
         "declared_candidate": args.deploy_config,
         "declared_fallback": args.fallback,
         "deployed_block_override": block_override,
+        "deployed_warn_override": warn_override,
         "deployed_config_gamma": per_config_gamma.get(args.deploy_config),
         "deployed_config_thresholds": per_config_thresholds.get(args.deploy_config),
         "l3_mode_implied": (
@@ -1875,6 +1903,12 @@ def main():
         type=float,
         default=None,
         help="override block threshold ของ deployed config (คันโยกฟรีที่พิสูจน์บน validation)",
+    )
+    fz.add_argument(
+        "--deployed-warn",
+        type=float,
+        default=None,
+        help="override warn threshold ของ deployed config (เกณฑ์ worst-seed · แลก soft-warn recall)",
     )
     fz.add_argument(
         "--view",

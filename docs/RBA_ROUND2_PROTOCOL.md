@@ -128,6 +128,32 @@ Round 2 ถือว่า **สำเร็จ** เมื่อ:
 
 ---
 
+## 7b. Round 2b — candidate ที่ยืนยัน (ประกาศล่วงหน้าก่อนเปิด holdout ใหม่)
+
+```
+candidate:      Config B
+gamma:          1.0
+warn_threshold: 0.98      (Round 2b — เกณฑ์ worst-seed บน validation)
+challenge:      0.989833  (คงจาก Round 1)
+block_threshold: 0.9999   (Round 2 — คันโยกฟรี)
+holdout_seeds:  [106, 107, 108, 109, 110]   (ยังไม่เคยเปิด · ไม่ชน 201-205 ของ Round 3)
+fallback:       current production / L3 shadow (ไม่ deploy ถ้าไม่ผ่าน)
+```
+
+**ที่มาของ warn=0.98 (หลักฐานบน validation เท่านั้น):**
+- วัด validation-internal shift (calib->tuning) = **~0** (exceedance ratio 0.79-0.91
+  ทุกขนาด) → shift ไม่ได้มาจาก in-sample optimism
+- ตัวขับจริงคือ **ความแปรปรวนระหว่าง seed (ประชากรผู้ใช้)** — ที่ warn=0.9417 seed
+  44/45/46 มี warn FPR 5-6.2% ที่ขนาด 500/1000 แต่ 42/43 อยู่ 2.6-3.1%
+- เลือกด้วยเกณฑ์ **worst-seed <= 5%**: warn=0.98 ให้ worst-seed 2.88% (margin ~2.1pp)
+- recall (warn+) 0.8961 -> 0.8617 · **recall@challenge 0.7252 ไม่เปลี่ยน** (เสียแค่ soft
+  warn บน subtle_*/campaign ที่ยังถูกจับที่ระดับ challenge/block) · หลักฐาน:
+  `round2b_prefreeze_2026-09-04.md`
+- เลือก 0.98 ไม่ใช่ 0.97 เพราะ holdout ใหม่เป็นประชากรชุดใหม่ที่อาจแย่กว่า 5 seed ของ
+  validation → margin กว้างปลอดภัยกว่า จ่ายแค่ soft-warn -0.6pp
+
+---
+
 ## 7. ผลลัพธ์ (ปิดรอบ 2026-09-04)
 
 **สถานะ: `final_round_2_failed_gate`** — Config B แก้ block สำเร็จ (0.25% → 0.04%)
