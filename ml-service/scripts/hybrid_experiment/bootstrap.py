@@ -316,3 +316,127 @@ def paired_hierarchical_multi(
             "n_boot_effective": len(xs),
         }
     return out
+
+
+def cluster_rate_ci(
+    tree: dict, *, n_boot: int = 2000, seed: int = 0, alpha: float = 0.05
+) -> dict:
+    """CI ของอัตรา k/n (เช่น FPR) โดยสุ่มใหม่ระดับ **ผู้ใช้ -> seed**.
+
+    `tree[user][seed] = {"k": ..., "n": ...}` — สถิติพอเพียงของแต่ละ cell
+
+    **ทำไมต้องมี (วินิจฉัย 6 ก.ย. 2569):** `_final_gate()` เดิมเทียบค่าประมาณจุด
+    กับงบ FPR ตรงๆ ทั้งที่หน่วยอิสระของการทดลองคือผู้ใช้ 12 คน และมีคนหนึ่ง
+    (U01) ครองสัดส่วน FPR เกิน 60% ในบาง seed · Wilson ระดับเหตุการณ์บอกว่า
+    ช่วงกว้าง ~0.7 pp ที่ n=6000 ซึ่งเป็นความมั่นใจที่ไม่มีจริง เพราะถ้าสุ่ม
+    ผู้ใช้ใหม่ค่าจะแกว่งได้หลายเท่า
+
+    **ชั้นที่สุ่มใหม่: ผู้ใช้ และ seed เท่านั้น** — ไม่สุ่มระดับเหตุการณ์ เพราะ
+    ความแปรปรวนของ binomial ที่ n=6000, p=0.01 คือ sd 0.13 pp ขณะที่การกระจาย
+    ระหว่างผู้ใช้ที่วัดได้จริงเกิน 10 pp · การเพิ่มชั้นในสุดจึงไม่เปลี่ยนผล
+    แต่ทำให้ช้าขึ้นมาก (ประกาศไว้ใน `levels_resampled` ให้ผู้อ่านตรวจได้)
+
+    **k = 0 ทุก cell:** bootstrap ของศูนย์ล้วนได้ศูนย์เสมอ -> ขอบบน 0 ซึ่งหลอกว่า
+    "เป็นไปไม่ได้เลย" · ใช้ Wilson **ระดับเหตุการณ์** เป็นขอบบนสำรอง (rule of three
+    บนสิ่งที่สังเกตได้จริง)
+
+    ทำไมไม่ใช้ Wilson ระดับผู้ใช้เหมือน `hierarchical_proportion`: ที่นั่นหน่วยนับคือ
+    แคมเปญซึ่งมีไม่กี่หน่วยต่อคน · ที่นี่หน่วยนับคือเหตุการณ์ปกติซึ่งมีคนละ 1,000
+    การใช้ขอบบนระดับผู้ใช้ (n=12 -> ~26%) จะประกาศว่า "อาจเกินงบ 5%" ทั้งที่สังเกต
+    12,000 เหตุการณ์แล้วไม่พบเลยสักครั้ง ซึ่งไร้ประโยชน์เชิงการตัดสิน
+
+    **ข้อจำกัดที่ต้องประกาศ:** ขอบบนกรณี k=0 ครอบคลุมเฉพาะผู้ใช้ที่**อยู่ในตัวอย่าง**
+    ไม่ได้เผื่อผู้ใช้ประเภทที่ยังไม่เคยเห็น · ถูกบันทึกไว้ใน `caveat`
+    """
+    by_user: dict[str, list] = {}
+    n_cells = 0
+    for user, seeds in tree.items():
+        cells = [{"k": int(c["k"]), "n": int(c["n"])} for c in seeds.values()]
+        if not cells:
+            continue
+        by_user[user] = cells
+        n_cells += len(cells)
+
+    users = list(by_user)
+    tot_k = sum(c["k"] for cs in by_user.values() for c in cs)
+    tot_n = sum(c["n"] for cs in by_user.values() for c in cs)
+    base = {
+        "point": 0.0,
+        "ci_low": 0.0,
+        "ci_high": 0.0,
+        "n_users": len(users),
+        "n_cells": n_cells,
+        "n_events": tot_n,
+        "levels_resampled": ("user", "seed"),
+        "upper_bound_method": "none",
+    }
+    if not users or tot_n == 0:
+        return base
+
+    point = tot_k / tot_n
+    rng = random.Random(seed)
+    dist: list[float] = []
+    for _ in range(n_boot):
+        k_sum = n_sum = 0
+        for _ in range(len(users)):
+            cells = by_user[users[rng.randrange(len(users))]]
+            for _ in range(len(cells)):
+                c = cells[rng.randrange(len(cells))]
+                k_sum += c["k"]
+                n_sum += c["n"]
+        if n_sum:
+            dist.append(k_sum / n_sum)
+    dist.sort()
+    lo = dist[int((alpha / 2) * len(dist))] if dist else point
+    hi = dist[min(len(dist) - 1, int((1 - alpha / 2) * len(dist)))] if dist else point
+    method = "cluster_bootstrap_user_seed"
+    caveat = None
+    if hi == 0.0 and point == 0.0:
+        _, _, hi = wilson(0, tot_n)
+        method = "wilson_fallback_all_zero_event_level"
+        caveat = (
+            "k=0 ทุก cell -> bootstrap ไม่มีสัญญาณให้สุ่ม · ขอบบนมาจาก Wilson "
+            "ระดับเหตุการณ์ ซึ่งครอบคลุมเฉพาะผู้ใช้ในตัวอย่าง ไม่เผื่อผู้ใช้ประเภทใหม่"
+        )
+
+    base.update(
+        {
+            "point": round(point, 8),
+            "ci_low": round(lo, 8),
+            "ci_high": round(hi, 8),
+            "upper_bound_method": method,
+            "caveat": caveat,
+        }
+    )
+    return base
+
+
+def rate_verdict(ci: dict, budget: float) -> dict:
+    """เทียบ CI ของอัตรากับงบ -> verdict **สามทาง** (ไม่ใช่ผ่าน/ไม่ผ่าน).
+
+    เหตุผลที่ต้องมีสามทาง: ค่าจุด 1.18% กับงบ 1.0% ดูเหมือน "ไม่ผ่าน" แต่ถ้า CI
+    ระดับ cluster คร่อมงบอยู่ ข้อมูลยัง **แยกไม่ออก** ว่าเกินจริงหรือไม่ · การ
+    ประกาศ "ไม่ผ่าน" จากค่าจุดคือการสรุปเกินหลักฐาน (บทเรียนเดียวกับ B69)
+
+        passed        ขอบบน <= งบ  -> มั่นใจว่าอยู่ในงบ
+        failed        ขอบล่าง > งบ  -> มั่นใจว่าเกินงบ
+        inconclusive  CI คร่อมงบ    -> ข้อมูลไม่พอตัดสิน
+
+    **inconclusive ต้องไม่ deploy (fail-closed)** — ความซื่อตรงในการรายงานต้อง
+    ไม่ถูกใช้เป็นช่องผ่อนเกณฑ์ความปลอดภัย · `deployable` เป็นจริงเฉพาะ passed
+    """
+    hi, lo = float(ci["ci_high"]), float(ci["ci_low"])
+    if hi <= budget:
+        verdict = "passed"
+    elif lo > budget:
+        verdict = "failed"
+    else:
+        verdict = "inconclusive"
+    return {
+        "verdict": verdict,
+        "deployable": verdict == "passed",
+        "budget": budget,
+        "point": ci["point"],
+        "ci_low": lo,
+        "ci_high": hi,
+    }

@@ -814,17 +814,28 @@ def _record_holdout_open(seeds, git_commit: str) -> None:
     )
 
 
-def _final_gate(results: dict, fz: dict) -> dict:
-    """สร้าง gate verdict ต่องบ FPR ที่ประกาศไว้ — **per-size** pass/fail ต่อ config.
+def _final_gate(results: dict, fz: dict, cells_by_config: dict | None = None) -> dict:
+    """สร้าง gate verdict ต่องบ FPR ที่ประกาศไว้ — **per-size + cluster-aware CI**.
 
     candidate/ fallback ถูกประกาศ**ล่วงหน้า**ใน frozen config · การเลือก config ที่
     ผ่านงบแบบย้อนหลัง (post-hoc) ห้ามทำ — gate แค่ตรวจว่า candidate ที่ประกาศไว้ผ่านไหม
 
     **per-size ไม่ใช่ macro** (ตัดสิน 2026-09-04): `sweep.eligible()` ตอน tune ตรวจ
     ทุกขนาด → gate ต้องใช้มาตรฐานเดียวกัน ไม่งั้น config ที่ผ่าน macro แต่ทะลุงบที่
-    cold-start (size เล็ก) จะถูกนับว่าผ่านทั้งที่ผู้ใช้ประวัติน้อยรับภาระเกินงบ ·
-    macro ยังเก็บไว้เป็นข้อมูลประกอบ แต่ passed ตัดสินจาก per-size
+    cold-start (size เล็ก) จะถูกนับว่าผ่านทั้งที่ผู้ใช้ประวัติน้อยรับภาระเกินงบ
+
+    **cluster-aware CI** (เพิ่ม 2026-09-06): เดิมเทียบ**ค่าประมาณจุด**กับงบตรงๆ ทั้งที่
+    หน่วยอิสระคือผู้ใช้ 12 คน และคนหนึ่งครองสัดส่วน FPR เกิน 60% ในบาง seed → ค่าจุด
+    1.18% เทียบงบ 1.0% ถูกประกาศว่า "ไม่ผ่าน" ทั้งที่ CI ระดับ cluster คร่อมงบอยู่
+    (สรุปเกินหลักฐาน แบบเดียวกับ B69) · ตอนนี้ตัดสินสามทางผ่าน `gate.config_gate()`
+    โดย `inconclusive` = ไม่ deploy (fail-closed) · ผลแบบค่าจุดยังเก็บไว้ใน
+    `point_estimate_*` และ `passed_point_estimate` เพื่อเทียบกับรอบก่อนหน้าได้
+
+    `cells_by_config` เป็น None ได้ (เช่นเรียกจากสคริปต์เก่า) -> ตกกลับไปใช้ค่าจุด
+    อย่างเดียว และประกาศไว้ใน `gate_standard`
     """
+    from hybrid_experiment import gate as GA
+
     budgets = fz.get(
         "fpr_budgets",
         {
@@ -847,16 +858,32 @@ def _final_gate(results: dict, fz: dict) -> dict:
             for lvl in ("warn", "challenge", "block")
             if m[f"{lvl}_fpr"] > budgets[lvl]
         ]
-        per_config[key] = {
+        entry = {
             "warn_fpr": round(m["warn_fpr"], 6),
             "challenge_fpr": round(m["challenge_fpr"], 6),
             "block_fpr": round(m["block_fpr"], 6),
-            "passed": not fails,  # per-size เป็นเกณฑ์ตัดสิน
+            # ผลแบบค่าจุด — ข้อมูลประกอบ ไม่ใช่ตัวตัดสินอีกต่อไป
+            "passed_point_estimate": not fails,
             "violations": fails,
             "macro_passed": not macro_fails,
             "macro_violations": macro_fails,
-            "gate_standard": "per_size",
+            "gate_standard": "per_size_point_estimate",
         }
+        cells = (cells_by_config or {}).get(key)
+        if cells:
+            cg = GA.config_gate(cells, budgets, n_boot=2000, seed=11)
+            entry.update(
+                {
+                    "cluster_gate": cg,
+                    "passed": cg["deployable"],
+                    "verdict": cg["summary"],
+                    "gate_standard": cg["gate_standard"],
+                }
+            )
+        else:
+            entry["passed"] = not fails
+            entry["verdict"] = "ไม่มีสถิติระดับผู้ใช้ — ตัดสินจากค่าจุดเท่านั้น"
+        per_config[key] = entry
     cand_pass = per_config.get(deployed, {}).get("passed", False)
     return {
         "budgets": budgets,
@@ -868,7 +895,8 @@ def _final_gate(results: dict, fz: dict) -> dict:
             f"candidate (Config {deployed}) ผ่าน Final Gate — พร้อมพิจารณา deploy"
             if cand_pass
             else (
-                f"candidate (Config {deployed}) ไม่ผ่าน Final Gate — ไม่มี config ใหม่ "
+                f"candidate (Config {deployed}) ไม่ผ่าน Final Gate "
+                f"({per_config.get(deployed, {}).get('verdict', '')}) — ไม่มี config ใหม่ "
                 "พร้อม deploy · ห้ามเลือก config อื่นที่ผ่านงบแบบย้อนหลัง (post-hoc)"
             )
         ),
@@ -1104,7 +1132,7 @@ def cmd_final(args):
             f"{m['precision']:7.4f} {m['challenge_fpr']:7.4f} "
             f"{m['within_config_l3_counterfactual_unique']:7.4f}"
         )
-    gate = _final_gate(results, fz)
+    gate = _final_gate(results, fz, per_config_cells)
     print(f"\nleakage: {leak_total}")
     print(f"shortcut (final): {final_audit['conclusion']}")
     print(f"\nFINAL GATE — candidate Config {deployed}:")
@@ -1116,6 +1144,16 @@ def cmd_final(args):
             f"  {key}  warn {g['warn_fpr']:.4f} ch {g['challenge_fpr']:.4f} "
             f"blk {g['block_fpr']:.4f}  {mark}{star}"
         )
+        cg = g.get("cluster_gate")
+        if cg:
+            print(f"       cluster CI: {cg['summary']}")
+            for sz, lv in sorted(cg["per_size"].items()):
+                v = lv["challenge"]
+                print(
+                    f"         size {sz:>5} challenge {v['point'] * 100:5.2f}% "
+                    f"[{v['ci_low'] * 100:5.2f}%, {v['ci_high'] * 100:5.2f}%] "
+                    f"งบ {v['budget'] * 100:.2f}% -> {v['verdict']}"
+                )
     print(f"  => {gate['verdict']}")
     if isinstance(tail, dict) and tail.get("benign_exceedance"):
         be = tail["benign_exceedance"]
@@ -1142,7 +1180,7 @@ def cmd_final(args):
                 "leakage": leak_total,
                 "shortcut_audit_final": final_audit,
                 "tail_calibration_deployed": tail,
-                "final_gate": _final_gate(results, fz),
+                "final_gate": gate,
                 "results": results,
                 "metric_definitions": METRIC_DEFINITIONS,
                 "comparison_note": (
@@ -1293,6 +1331,7 @@ SCORING_FILES = [
     "ml-service/scripts/hybrid_experiment/sweep.py",
     "ml-service/scripts/hybrid_experiment/tune.py",
     "ml-service/scripts/hybrid_experiment/audit.py",
+    "ml-service/scripts/hybrid_experiment/gate.py",
     "ml-service/scripts/gen_v3.py",
     "ml-service/scripts/exp_lc_v3.py",
     "ml-service/scripts/lc_l3_sequence.py",

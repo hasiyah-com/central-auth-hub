@@ -98,6 +98,10 @@ class CellStat:
     per_user_challenge_fpr: dict = field(default_factory=dict)
     per_user_block_fpr: dict = field(default_factory=dict)
     per_user_warn_fpr: dict = field(default_factory=dict)
+    # สถิติพอเพียงระดับผู้ใช้ (n, warn, challenge, block) — ต้องเก็บเป็น**จำนวนนับ**
+    # ไม่ใช่อัตรา เพราะ cluster bootstrap ต้องรวม k และ n ข้าม cell ที่สุ่มได้
+    # ก่อนหารเสมอ · ถ้าเก็บเป็นอัตราแล้วเฉลี่ย จะได้ค่าที่ถ่วงน้ำหนักผิด
+    per_user_normal_counts: dict = field(default_factory=dict)
     pooled: dict = field(default_factory=dict)
     within_config_l3_counterfactual_unique: float = 0.0
     campaign: dict = field(default_factory=dict)
@@ -134,6 +138,15 @@ def cell_stat(seed: int, size: int, rows: list[M.EventOutcome]) -> CellStat:
         },
         per_user_warn_fpr={
             u: frac(v, lambda x: act(x) == "warn") for u, v in by_user_nor.items()
+        },
+        per_user_normal_counts={
+            u: {
+                "n": len(v),
+                "warn": sum(1 for x in v if act(x) == "warn"),
+                "challenge": sum(1 for x in v if act(x) in M.CHALLENGED),
+                "block": sum(1 for x in v if act(x) in M.BLOCKED),
+            }
+            for u, v in by_user_nor.items()
         },
         pooled={
             "recall": s.recall,
