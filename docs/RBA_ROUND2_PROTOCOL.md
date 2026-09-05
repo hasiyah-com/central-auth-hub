@@ -132,6 +132,20 @@ Round 2 ถือว่า **สำเร็จ** เมื่อ:
 
 ---
 
+## 7e. Round 2c — ผลลัพธ์ (per-size, 2026-09-04)
+
+**สถานะ: `final_round_2c_failed_gate`** — B ยังตก per-size ที่ **challenge@size50 = 1.18%**
+(ดีขึ้นจาก 2b's 1.23% เพียง 0.05pp) · การยก challenge 0.9898→0.995 จ่าย enforcement
+recall −0.7pp แต่ cold-start challenge FPR แทบไม่ขยับ → **threshold tuning แก้ cold-start
+challenge ไม่ได้อย่างเชื่อถือได้** · root cause = login_velocity rule (L1) ไม่ personalize ·
+ทางแก้จริงต้องแก้ L1 (scope แยก) · holdout [111-115] open_count=1 (spent) ·
+รายงาน: `hub/backend/tests/reports/hybrid_risk_round2c_2026-09-04.md`
+
+**สรุป Round 2 (threshold tuning):** block ✓ + warn ✓ แก้ได้ · cold-start challenge ✗
+แก้ด้วย threshold ไม่ได้ · ไม่มี config ใหม่พร้อม deploy · production ไม่เปลี่ยน · L3 shadow
+
+---
+
 ## 7d. Round 2c — candidate (ประกาศล่วงหน้าก่อนเปิด holdout ใหม่)
 
 ```
