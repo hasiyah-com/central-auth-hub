@@ -132,17 +132,27 @@ Round 2 ถือว่า **สำเร็จ** เมื่อ:
 
 ---
 
-## 7e. Round 2c — ผลลัพธ์ (per-size, 2026-09-04)
+## 7e. Round 2c — ผลลัพธ์ (per-size, 2026-09-04 · **แก้ไข**)
 
-**สถานะ: `final_round_2c_failed_gate`** — B ยังตก per-size ที่ **challenge@size50 = 1.18%**
-(ดีขึ้นจาก 2b's 1.23% เพียง 0.05pp) · การยก challenge 0.9898→0.995 จ่าย enforcement
-recall −0.7pp แต่ cold-start challenge FPR แทบไม่ขยับ → **threshold tuning แก้ cold-start
-challenge ไม่ได้อย่างเชื่อถือได้** · root cause = login_velocity rule (L1) ไม่ personalize ·
-ทางแก้จริงต้องแก้ L1 (scope แยก) · holdout [111-115] open_count=1 (spent) ·
-รายงาน: `hub/backend/tests/reports/hybrid_risk_round2c_2026-09-04.md`
+**สถานะ: `final_round_2c_failed_gate`** — B ตก per-size ที่ **challenge@size50 = 1.18%**
+· ขนาดอื่นผ่านหมด · ไม่มี config ใหม่พร้อม deploy · production ไม่เปลี่ยน · L3 shadow
 
-**สรุป Round 2 (threshold tuning):** block ✓ + warn ✓ แก้ได้ · cold-start challenge ✗
-แก้ด้วย threshold ไม่ได้ · ไม่มี config ใหม่พร้อม deploy · production ไม่เปลี่ยน · L3 shadow
+**⚠️ แก้ข้อสรุปเดิม (2026-09-04):** ฉบับแรกสรุปว่า "threshold tuning หมดทาง" และ
+"root cause = login_velocity" — **เกินหลักฐานทั้งสองข้อ**
+
+- "threshold หมดทาง" มาจากการเทียบ 1.23% (2b) กับ 1.18% (2c) ซึ่งเป็น **คนละ holdout
+  population** → confound · การวัดองค์ประกอบพบว่า **68–78% ของ challenged normal
+  มาจาก score** (threshold ควบคุมได้) · policy floor คงที่ 38 เหตุการณ์ทุกขนาด (0.126%)
+- `login_velocity` **ไม่ใช่ policy floor** — `rule.min_action` ถูก drop ใน `fuse`
+  (ใช้เฉพาะ `policy.min_action`) จึงเป็นแค่ +0.25 คะแนน · ตัวเลข 83% เป็นความถี่ใน
+  `reasons` ไม่ใช่การพิสูจน์เชิงสาเหตุ
+
+**ข้อสรุปที่ตรงหลักฐาน:** **validation 5 seeds ประเมิน population variance ของ
+cold-start ต่ำเกินไปอย่างเป็นระบบ** (worst-seed 0.73% → holdout 1.18%, เกิดซ้ำทั้ง 2b/2c)
+→ ทางแก้คือ **เพิ่มจำนวน validation seeds + เลือก threshold จาก quantile ข้ามประชากร**
+ไม่ใช่ personalize login_velocity
+
+รายงาน: `hub/backend/tests/reports/hybrid_risk_round2c_2026-09-04.md` §2, §3, §8
 
 ---
 
@@ -162,9 +172,9 @@ fallback:        current production / L3 shadow
 - Round 2b ตกที่ cold-start challenge (size 50 macro 1.23% บน holdout) · per-size gate
 - ตัวขับคือ **population variance** ไม่ใช่ cold-start: บางประชากร (s45) challenge FPR
   ~1.5% ทุกขนาด · validation-internal shift ~0
-- **root cause: login_velocity rule (L1) ยิง normal ของ s45** (83% ของ challenged normal)
-  — rule ไม่ personalize velocity ของผู้ใช้ · แก้ตรงต้นเหตุ = personalize L1 (scope แยก
-  เหมือน Round 3) · Round 2c เลือกแก้แบบ threshold ไว้ก่อน (อยู่ใน scope)
+- ~~root cause: login_velocity rule (L1) ยิง normal ของ s45 (83%)~~ **← ข้อความนี้ผิด
+  ถูกแก้แล้ว (ดู §7e)**: `rule.min_action` ถูก drop ใน `fuse` → login_velocity เป็นแค่
+  +0.25 คะแนน ไม่ใช่ floor · "83%" เป็นความถี่ใน `reasons` ไม่ใช่การพิสูจน์เชิงสาเหตุ
 - เกณฑ์ worst-seed per-size: challenge=0.995 ให้ worst-seed (max ทุก seed×size) = 0.73%
   (margin ~0.27pp ใต้ 1%) · challenge=0.992 ไม่พอ (s44·n500 = 1.02%)
 - **ต้นทุน: recall@challenge 0.7252 -> 0.6938 (−3.1pp = enforcement recall จริง)** ·
