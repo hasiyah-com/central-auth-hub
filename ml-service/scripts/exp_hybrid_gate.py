@@ -1475,6 +1475,29 @@ def cmd_freeze(args):
             f"{warn_override['warn_from']} -> {args.deployed_warn}"
         )
 
+    # override challenge threshold (Round 2c) — challenge ผูกกับ enforcement:
+    # ยก challenge ลด challenge FPR แต่ลด recall@challenge (attack เสีย step-up) ·
+    # recall แบบ warn+ ไม่กระทบ (challenge->warn ยัง surface) · เลือกจากเกณฑ์ worst-seed
+    # (population variance ไม่ใช่ cold-start) · root cause คือ login_velocity rule ยิง
+    # normal ของบางประชากร แต่แก้แบบ threshold ไว้ก่อน (L1 personalize เป็น scope แยก)
+    challenge_override = None
+    if args.deployed_challenge is not None and isinstance(dep_thr, dict):
+        challenge_override = {
+            "config": args.deploy_config,
+            "challenge_from": dep_thr["challenge"],
+            "challenge_to": args.deployed_challenge,
+            "rationale": (
+                "ยก challenge ตามเกณฑ์ worst-seed บน validation (population variance) "
+                "แลก enforcement recall · root cause: login_velocity rule ไม่ personalize"
+            ),
+        }
+        dep_thr = {**dep_thr, "challenge": args.deployed_challenge}
+        per_config_thresholds[args.deploy_config] = dep_thr
+        print(
+            f"  override challenge ของ Config {args.deploy_config}: "
+            f"{challenge_override['challenge_from']} -> {args.deployed_challenge}"
+        )
+
     # reference scores ของ deployed config บน validation-tuning — ใช้ตอน final
     # ทำ tail calibration (validation -> holdout) โดยไม่ต้องเปิด validation ซ้ำ
     # (เก็บควอนไทล์ย่อไว้ ไม่เก็บทุกจุด เพื่อไม่ให้ไฟล์ใหญ่ · เป็นคะแนนของ normal ล้วน)
@@ -1549,6 +1572,7 @@ def cmd_freeze(args):
         "declared_fallback": args.fallback,
         "deployed_block_override": block_override,
         "deployed_warn_override": warn_override,
+        "deployed_challenge_override": challenge_override,
         "deployed_config_gamma": per_config_gamma.get(args.deploy_config),
         "deployed_config_thresholds": per_config_thresholds.get(args.deploy_config),
         "l3_mode_implied": (
@@ -1923,6 +1947,12 @@ def main():
         type=float,
         default=None,
         help="override warn threshold ของ deployed config (เกณฑ์ worst-seed · แลก soft-warn recall)",
+    )
+    fz.add_argument(
+        "--deployed-challenge",
+        type=float,
+        default=None,
+        help="override challenge threshold (เกณฑ์ worst-seed · แลก enforcement recall)",
     )
     fz.add_argument(
         "--view",

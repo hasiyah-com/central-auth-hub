@@ -132,6 +132,34 @@ Round 2 ถือว่า **สำเร็จ** เมื่อ:
 
 ---
 
+## 7d. Round 2c — candidate (ประกาศล่วงหน้าก่อนเปิด holdout ใหม่)
+
+```
+candidate:       Config B
+gamma:           1.0
+warn_threshold:  0.98      (Round 2b)
+challenge:       0.995     (Round 2c — เกณฑ์ worst-seed per-size)
+block_threshold: 0.9999    (Round 2)
+holdout_seeds:   [111, 112, 113, 114, 115]   (ยังไม่เคยเปิด · ไม่ชน 106-110 spent / 201-205 Round 3)
+fallback:        current production / L3 shadow
+```
+
+**ที่มาของ challenge=0.995 (validation เท่านั้น):**
+- Round 2b ตกที่ cold-start challenge (size 50 macro 1.23% บน holdout) · per-size gate
+- ตัวขับคือ **population variance** ไม่ใช่ cold-start: บางประชากร (s45) challenge FPR
+  ~1.5% ทุกขนาด · validation-internal shift ~0
+- **root cause: login_velocity rule (L1) ยิง normal ของ s45** (83% ของ challenged normal)
+  — rule ไม่ personalize velocity ของผู้ใช้ · แก้ตรงต้นเหตุ = personalize L1 (scope แยก
+  เหมือน Round 3) · Round 2c เลือกแก้แบบ threshold ไว้ก่อน (อยู่ใน scope)
+- เกณฑ์ worst-seed per-size: challenge=0.995 ให้ worst-seed (max ทุก seed×size) = 0.73%
+  (margin ~0.27pp ใต้ 1%) · challenge=0.992 ไม่พอ (s44·n500 = 1.02%)
+- **ต้นทุน: recall@challenge 0.7252 -> 0.6938 (−3.1pp = enforcement recall จริง)** ·
+  recall แบบ warn+ ไม่กระทบ (challenge->warn ยัง surface) · family ที่เสีย step-up มาก:
+  new_passkey −0.14, subtle_slow_burst −0.14, login_velocity −0.12 · หลักฐาน:
+  `round2c_prefreeze_2026-09-04.md`
+
+---
+
 ## 7c. Round 2b — ผลลัพธ์ (per-size, 2026-09-04)
 
 **สถานะ: `final_round_2b_failed_gate`** — ภายใต้ per-size gate **ไม่มี config ใดผ่าน** ·
