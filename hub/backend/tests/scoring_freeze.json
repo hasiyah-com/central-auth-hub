@@ -1,0 +1,21 @@
+{
+  "frozen_at": "2026-09-07T17:09:13+00:00",
+  "git_commit": "unavailable: [Errno 2] No such file or directory: 'git'",
+  "git_branch": "unavailable: [Errno 2] No such file or directory: 'git'",
+  "reason": "ตรึงตรรกะการให้คะแนนระหว่างรอบทดลองประชากรโปรไฟล์ผู้ใช้ P48 — ผลของรอบนี้ต้องผูกกับระบบเดียวที่ไม่ขยับ (บทเรียน B66)",
+  "scope": "เฉพาะตรรกะการให้คะแนนและการตัดสิน (app/security/*) — generator และ harness ของการทดลอง **ไม่** ถูก freeze เพราะต้องแก้เพื่อเพิ่มโปรไฟล์ผู้ใช้",
+  "unfreeze_when": "รอบ P48 จบ (ขั้นที่ 8-9 ของแผน) หรือมีการตกลงร่วมกันให้เปลี่ยน scoring",
+  "hash_method": "sha256 ของไฟล์หลัง normalize CRLF -> LF",
+  "files": {
+    "app/security/evidence.py": "89d0317acafd622f61b7298f6e0adf41e223e33e09bd1c23e730e6d7bcf14e33",
+    "app/security/policy_gate.py": "f8b982e43c7667d4d424e3a0683df795333eb026938285ee186f045a5269f0bb",
+    "app/security/calibration.py": "0f796215b17e86526e536ad58c544be5599f2879fe791e84bcf5dbd0a0f0c47c",
+    "app/security/rule_engine.py": "d775ba9908624842c134f31fd62af16255062fe4eb3de83375d8e085fdb72873",
+    "app/security/behavior_profiling.py": "f8659bf7fb7771c51d0c574a14baaca2bd8d7716d9e8b74d13dd0b7732f7d855",
+    "app/security/risk_evidence.py": "afda6b7407067fcf5a983d7cbdf35fd4fd611693880632c0d5c67d00ca5719a9",
+    "app/security/risk_fusion.py": "74b1f24d91f3d32762e2de7e4ab2a65123eef5e11c7940c2955dc801cd8f1744",
+    "app/security/risk_aggregator.py": "51c2a61257481a07b6818ad5be6eb90e6aaa0e5fd036f91e6aa67ca9fd957b22",
+    "app/security/iforest_scorer.py": "40f8f959c0f1e6741e209db77e9224e7278eea99c6fc603da8d3966c8ed6f398",
+    "app/security/risk_engine.py": "218291bb9688d3ad8cff9969f9b80f32796abd39a8b99ed9210861c23129ee3c"
+  }
+}

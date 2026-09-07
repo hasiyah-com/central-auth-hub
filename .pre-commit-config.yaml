@@ -33,6 +33,7 @@ repos:
             \.git/.*|
             \.secrets\.baseline|
             docs/sample_whitelist\.csv|
+            hub/backend/tests/scoring_freeze\.json|
             .*\.pyc
           )$
 
