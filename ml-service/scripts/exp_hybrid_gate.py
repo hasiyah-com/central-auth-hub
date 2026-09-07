@@ -164,9 +164,14 @@ class EventCtx:
 
 
 def compute_layer_outputs(
-    splits, point_model, seq_models, which: str
+    splits, point_model, seq_models, which: str, l3_cache: dict | None = None
 ) -> list[EventCtx]:
-    """เรียก Policy Gate + L1 + L2 + L3 ครั้งเดียวต่อเหตุการณ์."""
+    """เรียก Policy Gate + L1 + L2 + L3 ครั้งเดียวต่อเหตุการณ์.
+
+    `l3_cache` ใช้ตอนกวาดพารามิเตอร์ของ **L2** — คะแนน L3 (point/sequence) ไม่ขึ้นกับ
+    พารามิเตอร์เหล่านั้นเลย จึงคำนวณครั้งเดียวแล้วใช้ซ้ำได้ · แคชผูกกับ
+    `(alias, which)` ซึ่งกำหนด `pairs` ที่ใช้เป๊ะ · **ห้ามใช้ข้าม splits/โมเดล**
+    """
     out: list[EventCtx] = []
     for alias, u in splits.items():
         model, base, prof, train_res = seq_models[alias]
@@ -183,10 +188,17 @@ def compute_layer_outputs(
             attacks = u.holdout_attacks
 
         for is_atk, pairs in ((False, normals), (True, attacks)):
-            seq = sequence_score(
-                model, base, prof, train_res, [(r or {}, v) for r, v in pairs]
-            )
-            pts = point_scores(point_model, [v for _, v in pairs])
+            ck = (alias, which, is_atk)
+            cached = l3_cache.get(ck) if l3_cache is not None else None
+            if cached is not None:
+                seq, pts = cached
+            else:
+                seq = sequence_score(
+                    model, base, prof, train_res, [(r or {}, v) for r, v in pairs]
+                )
+                pts = point_scores(point_model, [v for _, v in pairs])
+                if l3_cache is not None:
+                    l3_cache[ck] = (seq, pts)
             for (raw, vec), sq, pt in zip(pairs, seq, pts):
                 raw = raw or {}
                 t0 = time.perf_counter()
@@ -278,11 +290,18 @@ def fit_all(splits, size, raw_users, ecdf_layers=True):
     seq_models = {
         a: fit_sequence_model(u, size, raw_users[a]) for a, u in splits.items()
     }
-    ecdf = DS.ECDF()
     if not ecdf_layers:
-        return point_model, seq_models, ecdf
+        return point_model, seq_models, DS.ECDF()
+    return point_model, seq_models, fit_ecdf(splits, point_model, seq_models)
 
-    # ── ECDF จาก calibration split (normal ล้วน) ──
+
+def fit_ecdf(splits, point_model, seq_models) -> "DS.ECDF":
+    """fit ECDF จาก **calibration split เท่านั้น**.
+
+    แยกออกมาเพราะการกวาดพารามิเตอร์ของ L2 เปลี่ยนคะแนน behavior -> ต้อง refit ECDF
+    ทุกจุดในกริด แต่โมเดล point/sequence ไม่เปลี่ยน จึง fit ครั้งเดียวพอ
+    """
+    ecdf = DS.ECDF()
     rule_s, beh_s, pt_s, sq_s = [], [], [], []
     for alias, u in splits.items():
         model, base, prof, train_res = seq_models[alias]
@@ -301,7 +320,7 @@ def fit_all(splits, size, raw_users, ecdf_layers=True):
     ecdf.fit("behavior", beh_s)
     ecdf.fit("anomaly_point", pt_s)
     ecdf.fit("anomaly_sequence", sq_s)
-    return point_model, seq_models, ecdf
+    return ecdf
 
 
 # ══════════════════════════ คำสั่ง ══════════════════════════

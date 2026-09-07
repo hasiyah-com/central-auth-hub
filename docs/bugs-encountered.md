@@ -439,6 +439,17 @@
 
 ---
 
+**B70. ฟิลด์ที่ประกาศว่าเป็น "policy floor" แต่ไม่มีผลจริง — และไม่มีเทสจับมาหลายเดือน**
+- อาการ: `BehaviorResult.min_action` ถูกตั้งเป็น `"challenge"` เมื่อผู้ใช้เข้า subsystem ที่ไม่เคยใช้ พร้อมคอมเมนต์ในโค้ดว่า "เหตุการณ์แน่นอน ไม่ใช่แค่คะแนน → policy floor" · ผู้อ่านโค้ด (รวมถึงผมเองตอนวิเคราะห์ Round 2c) เชื่อว่ามีการบังคับ step-up จริง
+- สาเหตุ: ชั้นรวมผลที่ production ใช้จริงอ่านเฉพาะ `PolicyOutcome.min_action` จาก Policy Gate (ซึ่งมาจาก `SCORE_RULES_SPEC` ที่ `kind == "policy_floor"`) · `behavior.min_action` ถูกอ่านโดย `risk_aggregator.aggregate()` เท่านั้น ซึ่ง **ไม่มี caller ใน production** (`risk_engine` ใช้ `fuse`) — เหลือแค่เทสและ harness เก่า
+- **หลักฐาน:** วัดบนข้อมูลจริง (U01 · seed 46 · size 50) — ใน 81 เหตุการณ์ปกติที่ถูก challenge ได้ `policy min_action distribution: {None: 81}` · floor ไม่เคยถูกใช้เลยสักครั้ง
+- **ทำไมไม่ "ต่อสายให้ทำงาน":** ถ้าทำให้มีผลจริงจะบังคับ challenge ทุกครั้งที่เข้าระบบใหม่ — ของ U01 คือ 10.6% ของ login ทั้งหมด · การเปลี่ยน dead field ให้เป็น enforcement โดยไม่ผ่าน validation อันตรายกว่าการลบ
+- **ปัญหาพ่วงที่พบตอนตรวจ:** เทสที่ยืนยันพฤติกรรม L2 หลายไฟล์ (`test_behavior_rarity`, `test_rule_engine_v2_signals`, `test_tier2_catches_evasive`, `test_scope_conformance`) วัดผ่าน `aggregate()` ซึ่งไม่ใช่เส้นทางที่ production ใช้ → เทส "ผ่าน" ได้ทั้งที่พฤติกรรมจริงต่างออกไป (อาการเดียวกับ B66)
+- **กฎ:** (1) ฟิลด์ที่สื่อว่า "บังคับ" ต้องมีเทสพิสูจน์ว่ามีผล **บนเส้นทางที่ production เรียกจริง** ไม่ใช่แค่ผ่าน aggregator ที่ไม่มีใครเรียก (2) ชั้นหลักฐาน (L1/L2/L3) ต้องไม่มีฟิลด์ในแกน access decision เลย — มีเมื่อไรจะมีคนเชื่อว่ามันทำงาน (3) ก่อนลบฟิลด์ ต้องค้น consumer ทั้ง repo + ตรวจว่าไม่ถูกเปิดเผยใน API/schema (ตรวจแล้ว: ไม่มี)
+- **Verify:** `tests/test_l2_evidence_only.py` (L2 ไม่มีฟิลด์ในแกน access + Policy Gate `min_action` ของจริงยังอยู่ครบ)
+
+---
+
 ## วิธีเพิ่ม bug ใหม่
 
 1. เพิ่มที่ section ที่เหมาะสม (สร้าง section ใหม่ถ้าจำเป็น)

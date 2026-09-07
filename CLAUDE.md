@@ -652,6 +652,10 @@ docker compose exec ml-service python -m scripts.train_model
 → **กฎ:** (1) วัด/optimize ความเร็วบน **validation หรือข้อมูลสังเคราะห์** ห้ามรัน `final` บน holdout จริงเพื่อจับเวลา (2) `cmd_final` มี **holdout ledger** (`holdout_ledger.json`) บันทึกถาวรว่า seed ใดเปิดแล้ว → ปฏิเสธเปิดซ้ำเว้นแต่ `--reopen-spent-holdout` (ห้ามลบ entry) (3) รอบถัดไปใช้ seed ชุดใหม่เสมอ
 → **Verify:** `_load_holdout_ledger`/`_record_holdout_open` ใน `exp_hybrid_gate.py` · `tests/reports/hybrid_risk_round2_2026-09-04.md` §5
 
+**B70. ชั้นหลักฐานห้ามมีฟิลด์ในแกน access decision — มีเมื่อไรจะมีคนเชื่อว่ามันทำงาน** — `BehaviorResult.min_action` ถูกตั้งเป็น `challenge` พร้อมคอมเมนต์ว่า "policy floor" แต่เส้นทางจริงของ production อ่านเฉพาะ `PolicyOutcome.min_action` · วัดจริงได้ `{None: 81}` จาก 81 เหตุการณ์ที่ถูก challenge → ไม่เคยมีผลเลย และไม่มีเทสจับเพราะเทสที่ยืนยันพฤติกรรม L2 วัดผ่าน `aggregate()` ที่ไม่มี caller ใน production (อาการเดียวกับ B66)
+→ **กฎ:** L1/L2/L3 คืน**หลักฐาน**เท่านั้น · ฟิลด์ที่สื่อว่า "บังคับ" ต้องมีเทสพิสูจน์บน**เส้นทางที่ production เรียกจริง** · ห้าม "ต่อสาย" dead field ให้กลายเป็น enforcement โดยไม่ผ่าน validation
+→ **Verify:** `tests/test_l2_evidence_only.py`
+
 ### หมวดบั๊กเพิ่มเติม (ดูรายละเอียดใน `docs/bugs-encountered.md`)
 
 | Section | Range | Theme |
@@ -669,7 +673,7 @@ docker compose exec ml-service python -m scripts.train_model
 | 🚨 Risk-Triggered MFA (Week 9-10) | B44-B48 | Hard block threshold at finalizer, Force-enroll OTP gate, Browser unsupported → Recovery, atomic consume, runtime grace period |
 | 🧠 ML Feature Expansion (Week 10-11) | B49 | Feature reorder ลืม sync rule_engine.FEAT (score มั่ว) + train/serve skew (synthetic ≠ ค่าจริง) |
 | 🎓 Subsystem C (เกรด) + SOC Dashboard + User 360 (Week 10-11) | B50-B55 | Access policy ขัด docstring (teacher login ไม่ได้), falsy-zero KPI (`\|\|` กับ 0 จริง), force-logout ขาด webhook back-channel, relative-time parse naive-UTC เป็น local (+7ชม.), health-check เข้า `localhost:PORT` จาก container ไม่ได้ (503 gate), subsystem ใหม่ลืม session_cookie_secure |
-| 🧪 Measurement Integrity / Explainability (Week 12-13) | B64-B68 | การทดลองวัดคนละคอนฟิกกับ production (12.5% ของการตัดสิน), SHAP เสื่อมก่อนคะแนนอิ่มตัว, `--replace-text` ไม่แตะไฟล์ ZIP, redactor+scanner จุดบอดร่วม, optimize `final` เผลอเปิด holdout ซ้ำ (single-open พัง) |
+| 🧪 Measurement Integrity / Explainability (Week 12-13) | B64-B70 | การทดลองวัดคนละคอนฟิกกับ production (12.5% ของการตัดสิน), SHAP เสื่อมก่อนคะแนนอิ่มตัว, `--replace-text` ไม่แตะไฟล์ ZIP, redactor+scanner จุดบอดร่วม, optimize `final` เผลอเปิด holdout ซ้ำ (single-open พัง), สรุปผลจากการเทียบสอง holdout คนละประชากร, ฟิลด์ที่ประกาศว่าเป็น policy floor แต่ไม่มีผลจริง |
 
 ### วิธีเพิ่ม bug ใหม่
 

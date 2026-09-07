@@ -70,9 +70,10 @@ def test_mixed_user_not_penalized():
 
 # ── soft เท่านั้น — ห้ามตั้ง policy floor (การยกระดับสิทธิ์เกิดชอบธรรมได้) ──
 def test_soft_only_no_floor():
+    """ยิงเดี่ยวต้องไม่ถึง warn เอง — และไม่มีฟิลด์บังคับ action ใด ๆ (B70)."""
     r = evaluate_behavior(vec(0.8), HUB_ONLY, subsystem_id="SUB_A")
-    assert r.min_action is None
-    assert r.score < 0.5, "ยิงเดี่ยวต้องไม่ถึง warn เอง"
+    assert not hasattr(r, "min_action")
+    assert r.score < 0.5
 
 
 # ── ไม่มี scope_history (profile เก่า) → ไม่พัง ──
