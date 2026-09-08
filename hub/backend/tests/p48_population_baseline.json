@@ -1,0 +1,7 @@
+{
+  "purpose": "hash ของประชากร P48 ทุกฟิลด์ **ยกเว้น incidents** — บันทึกไว้ก่อน amendment #2 เพื่อพิสูจน์ว่า amendment แตะฟิลด์เดียว ถ้าลำดับการสุ่มขยับ ค่านี้จะเปลี่ยน",
+  "pop_seed": 480906,
+  "n_profiles": 48,
+  "excluded_field": "incidents",
+  "sha256": "18e710108a7b4da60132dec8dfbf1fb3d7e422850e7c2b37bb02f9e0e1245024"
+}

@@ -34,6 +34,7 @@ repos:
             \.secrets\.baseline|
             docs/sample_whitelist\.csv|
             hub/backend/tests/scoring_freeze\.json|
+            hub/backend/tests/p48_population_baseline\.json|
             .*\.pyc
           )$
 
