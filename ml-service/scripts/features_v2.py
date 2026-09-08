@@ -83,7 +83,7 @@ def browser_family(row: dict) -> str:
 def is_new_subsystem(row: dict, trusted: list[dict]) -> float:
     """ผู้ใช้เข้า subsystem ที่ไม่เคยใช้มาก่อนหรือไม่.
 
-    ⚠️ ตัวนี้ **ไม่อยู่ใน 23 ฟีเจอร์** ของ production — เพิ่มเป็นคอลัมน์ทดลองเพื่อวัดว่า
+    ตัวนี้ **ไม่อยู่ใน 23 ฟีเจอร์** ของ production — เพิ่มเป็นคอลัมน์ทดลองเพื่อวัดว่า
     ถ้ามีฟีเจอร์นี้จะจับ subsystem_lateral ได้ดีขึ้นแค่ไหน (ตอนนี้จับไม่ได้เลย เพราะ
     active_subsystem_count นับแค่ session ที่ 'เปิดพร้อมกัน' ไม่ได้บอกว่า 'ไม่เคยใช้')
     โมเดลยังเทรนด้วย 23 ฟีเจอร์เท่าเดิม — คอลัมน์นี้ไม่เข้า FEATURES (B49 ไม่กระทบ)
@@ -407,7 +407,7 @@ def main() -> None:
 
     n_norm = len(out) - n_attack
     print(
-        f"✅ features_v2.csv — {len(out)} แถว ({n_norm} normal / {n_attack} attack) × {len(FEATURES)} ฟีเจอร์"
+        f"features_v2.csv — {len(out)} แถว ({n_norm} normal / {n_attack} attack) × {len(FEATURES)} ฟีเจอร์"
     )
     const = [f for f in FEATURES if len({r[f] for r in out}) == 1]
     print(f"   ฟีเจอร์ที่เป็นค่าคงที่ (ไม่มีสัญญาณ): {const}")

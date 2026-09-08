@@ -10,7 +10,7 @@ challenge 0.995 แค่ 0.0005 -> FPR ของผู้ใช้คนเด�
 
 **โครงสร้างที่ทดลอง:** `family = WEIGHT * max(C_nov * N, C_scope * S)`
 
-⚠️ **ตัวแปรนี้ถูกปฏิเสธและถอนออกจาก production แล้ว** (6 ก.ย. 2569) — การทดลอง
+**ตัวแปรนี้ถูกปฏิเสธและถอนออกจาก production แล้ว** (6 ก.ย. 2569) — การทดลอง
 บน validation พบว่าประโยชน์ด้าน FPR สูงสุด 0.08 pp ซึ่ง **แยกไม่ออกจากศูนย์** ใน
 paired test ขณะที่ recall ของ `subtle_quiet_lateral` ตก 6.7 pp อย่างมีนัย
 (ดู `tests/reports/l2_subsystem_family_grid_2026-09-06.md`)

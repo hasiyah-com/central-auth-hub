@@ -33,7 +33,7 @@ DIMS = 6  # [gap_log, scope, passkey_age_log, weekday_usage, hours_from_typical,
 #   W=5  unique 1.3% @ FPR 0.6%   <- ดีที่สุด
 #   W=10 unique 0.9% @ FPR 0.9%
 #   W=5+10 (36 มิติ) แย่กว่าทั้งคู่ (signal dilution เหมือน Config G)
-# ⚠️ เคยวัดได้ว่า W=10 ให้ 4.18% แต่เป็น artifact จาก window ที่คร่อมข้าม attack family
+# เคยวัดได้ว่า W=10 ให้ 4.18% แต่เป็น artifact จาก window ที่คร่อมข้าม attack family
 WINDOW = 5
 MAX_HISTORY = 2000  # กันหน่วยความจำ/เวลา fit
 # calibrate จาก threshold sweep บน holdout (tests/reports/exp_thr_and_gaps_2026-08-26.md):

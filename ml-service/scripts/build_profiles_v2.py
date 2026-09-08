@@ -31,7 +31,7 @@ from pathlib import Path
 DATA = Path(__file__).resolve().parents[1] / "data"
 DEFAULT_USERS_XLSX = Path.home() / "Downloads" / "users.xlsx"
 
-# ⚠️ PII: alias -> email จริง เก็บนอก git (ดู roster_v2.example.json สำหรับรูปแบบ)
+# PII: alias -> email จริง เก็บนอก git (ดู roster_v2.example.json สำหรับรูปแบบ)
 ROSTER = DATA / "roster_v2.json"
 
 SEED = 42
@@ -195,7 +195,7 @@ def render_device(key: str, rng: random.Random, drift: float) -> dict:
 
 
 # ── โปรไฟล์ 12 คน (ตรงกับ blueprint) ────────────────────────────────────────
-# 🔵 = ค่าที่วัดจาก login_sessions จริง
+# = ค่าที่วัดจาก login_sessions จริง
 SPEC: list[dict] = [
     dict(
         alias="U01",
@@ -1199,7 +1199,7 @@ def main() -> None:
     ap.add_argument("--seed", type=int, default=SEED)
     args = ap.parse_args()
     if not args.users.exists():
-        raise SystemExit(f"❌ ไม่พบ users.xlsx ที่ {args.users} — ระบุด้วย --users")
+        raise SystemExit(f"ไม่พบ users.xlsx ที่ {args.users} — ระบุด้วย --users")
 
     SEED = args.seed
     if args.rows > 0:
@@ -1211,7 +1211,7 @@ def main() -> None:
 
     if not ROSTER.exists():
         raise SystemExit(
-            f"❌ ไม่พบ {ROSTER}\n"
+            f"ไม่พบ {ROSTER}\n"
             "   ไฟล์นี้ map alias -> email จริง และถูก gitignore ไว้ (เป็น PII)\n"
             f"   คัดลอกจาก {ROSTER.with_name('roster_v2.example.json')} แล้วใส่อีเมลจริง"
         )
@@ -1222,7 +1222,7 @@ def main() -> None:
     ids = load_identities(args.users)
     missing = [p["email"] for p in SPEC if p["email"] not in ids]
     if missing:
-        raise SystemExit(f"❌ ไม่พบ email เหล่านี้ใน users.xlsx: {missing}")
+        raise SystemExit(f"ไม่พบ email เหล่านี้ใน users.xlsx: {missing}")
 
     DATA.mkdir(parents=True, exist_ok=True)
     rng = random.Random(SEED)
@@ -1273,9 +1273,9 @@ def main() -> None:
         json.dump(meta, f, ensure_ascii=False, indent=2)
 
     n_atk = sum(1 for r in attack_rows if r["row_kind"] == "attack")
-    print(f"✅ profiles_v2.json  — {len(profiles)} โปรไฟล์")
-    print(f"✅ logins_v2.csv     — {len(normal_rows)} แถว (staggered + nat_burst)")
-    print(f"✅ attacks_v2.csv    — {n_atk} attack + {len(attack_rows) - n_atk} context")
+    print(f"profiles_v2.json  — {len(profiles)} โปรไฟล์")
+    print(f"logins_v2.csv     — {len(normal_rows)} แถว (staggered + nat_burst)")
+    print(f"attacks_v2.csv    — {n_atk} attack + {len(attack_rows) - n_atk} context")
     print(
         f"   ช่วง {meta['window']['start']} .. {meta['window']['end']} · IP {IP} · ไม่มี geo"
     )

@@ -312,10 +312,10 @@ def _report(acc, seeds):
         dm, de = marg(c)
         df = _agg(acc, c, 5000, "cfpr")[0] - _agg(acc, "A_no_l3", 5000, "cfpr")[0]
         verdict = (
-            "✅ คุ้ม (≥3pp)"
+            "คุ้ม (≥3pp)"
             if dm * 100 >= 3
             else (
-                "⚠️ CI คร่อม 0 → shadow-only"
+                "CI คร่อม 0 → shadow-only"
                 if abs(dm) * 100 < de * 100 or dm <= 0
                 else "เล็กน้อย"
             )

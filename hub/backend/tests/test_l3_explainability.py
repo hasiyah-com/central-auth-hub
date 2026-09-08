@@ -14,7 +14,7 @@
 จึงเปลี่ยนคำอธิบายหลักเป็น robust deviation รายมิติ (คำนวณตรงจากข้อมูล ไม่ผ่านโมเดล)
 และเปลี่ยนชื่อ SHAP เป็น `model_attribution` พร้อมคำเตือนว่าไม่ใช่สาเหตุ
 
-⚠️ ตัวเลขเพดาน 0.743853 เป็นค่าของ **โมเดลที่ fit จาก fixture นี้ + คอนฟิกนี้ +
+ตัวเลขเพดาน 0.743853 เป็นค่าของ **โมเดลที่ fit จาก fixture นี้ + คอนฟิกนี้ +
 ทิศทางการทดลองนี้** ไม่ใช่เพดานสากลของ IsolationForest ทุกตัว
 
 Run: docker compose exec hub-backend pytest tests/test_l3_explainability.py -v -s

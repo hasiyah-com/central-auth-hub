@@ -192,7 +192,7 @@ def render(a: dict, days: int | None) -> str:
         "| การตรวจ | ผล |",
         "|---|---|",
         f"| session ที่ L3 รั่วเข้าแกน access (reason หรือค่าใน decision) | "
-        f"**{len(a['violations'])}** {'✅ ไม่มี' if not a['violations'] else '❌ ต้องสอบสวนทันที'} |",
+        f"**{len(a['violations'])}** {'ไม่มี' if not a['violations'] else 'ต้องสอบสวนทันที'} |",
     ]
 
     L += ["", "## 4. ภาระ SOC (alert ที่ L3 เพิ่ม)", ""]
@@ -210,7 +210,7 @@ def render(a: dict, days: int | None) -> str:
 
     L += [
         "",
-        "## 5. 🔑 Tier reachability — ผู้ใช้จริงสะสม history ถึงเกณฑ์ไหม",
+        "## 5. Tier reachability — ผู้ใช้จริงสะสม history ถึงเกณฑ์ไหม",
         "",
         "L3 ต้องมี history ต่อคนถึงเกณฑ์จึงจะทำงาน — ถ้า traffic จริงไปไม่ถึง",
         "ตัวเลข offline ทั้งหมดก็ไม่มีความหมายในทางปฏิบัติ",
@@ -260,11 +260,11 @@ def render(a: dict, days: int | None) -> str:
         "| เกณฑ์ | ต้องได้ | ผลตอนนี้ |",
         "|---|---|---|",
         f"| เหตุการณ์ที่ eligible เพียงพอ | ≥ {GATE_MIN_EVENTS:,} | "
-        f"{a['eligible']:,} {'✅' if a['eligible'] >= GATE_MIN_EVENTS else '❌ ยังไม่พอ'} |",
+        f"{a['eligible']:,} {'' if a['eligible'] >= GATE_MIN_EVENTS else 'ยังไม่พอ'} |",
         f"| L3 ยิงบน traffic ปกติ | ≤ {GATE_MAX_L3_FPR * 100:.0f}% | "
         f"{_pct(a['fired'], a['eligible'])} |",
         "| L3 ไม่เปลี่ยน challenge/block | 0 ครั้ง | "
-        f"{len(a['violations'])} {'✅' if not a['violations'] else '❌'} |",
+        f"{len(a['violations'])} {'' if not a['violations'] else ''} |",
         f"| L3 เห็นสิ่งที่ L1/L2 ไม่เห็น | ≥ {GATE_MIN_UNIQUE * 100:.0f}% | "
         "ต้องมี label เหตุการณ์จริงก่อนถึงวัดได้ |",
         "",
@@ -276,7 +276,7 @@ def render(a: dict, days: int | None) -> str:
     # ── ข้อสรุปคำนวณจากข้อมูล ไม่ใช่เขียนตายตัว ──
     if a["eligible"] == 0:
         L += [
-            "### 🔬 รอบนี้เป็น **functional smoke test** ไม่ใช่การวัดประสิทธิภาพ",
+            "### รอบนี้เป็น **functional smoke test** ไม่ใช่การวัดประสิทธิภาพ",
             "",
             f"Production replay รอบนี้มีเพียง **{a['with_contract']:,} เหตุการณ์** และ "
             f"**eligible {a['eligible']}/{a['with_contract']}** "
@@ -291,9 +291,9 @@ def render(a: dict, days: int | None) -> str:
             "",
             "**สิ่งที่รอบนี้ยืนยัน _ไม่ได้_:**",
             "",
-            "- ❌ recall / FPR / precision ของ L3 บน traffic จริง",
-            "- ❌ ภาระ alert ที่ SOC จะได้รับจริง",
-            "- ❌ ว่า L3 เห็นสิ่งที่ L1/L2 ไม่เห็นหรือไม่",
+            "- recall / FPR / precision ของ L3 บน traffic จริง",
+            "- ภาระ alert ที่ SOC จะได้รับจริง",
+            "- ว่า L3 เห็นสิ่งที่ L1/L2 ไม่เห็นหรือไม่",
             "",
             "ตัวเลขประสิทธิภาพทุกตัวที่อ้างอิงได้ตอนนี้ **มาจากข้อมูลจำลองเท่านั้น**",
             "",
@@ -310,7 +310,7 @@ def render(a: dict, days: int | None) -> str:
         med = rates[len(rates) // 2]
         yrs = (L3.TIER_WARN / med / 365) if med else float("inf")
         L += [
-            "### ⚠️ ข้อจำกัดเชิงโครงสร้างที่พบจากข้อมูลจริง",
+            "### ข้อจำกัดเชิงโครงสร้างที่พบจากข้อมูลจริง",
             "",
             f"ที่อัตรา login มัธยฐาน **{med:.2f} ครั้ง/วัน/คน** ผู้ใช้ทั่วไปต้องใช้เวลา "
             f"**~{yrs:.1f} ปี** จึงจะสะสม history ถึงเกณฑ์ `warn` ({L3.TIER_WARN:,} เหตุการณ์)",
