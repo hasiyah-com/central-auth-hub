@@ -39,6 +39,7 @@ import build_profiles_v2 as BP  # noqa: E402
 import exp_hybrid_gate as X  # noqa: E402
 import gen_v3 as G3  # noqa: E402
 import population_p48 as P48  # noqa: E402
+import population_p48_t2 as P48T2  # noqa: E402
 from hybrid_experiment import bootstrap as BS  # noqa: E402
 from hybrid_experiment import configs as CFG  # noqa: E402
 from hybrid_experiment import dataset as DS  # noqa: E402
@@ -147,13 +148,16 @@ def size_report(
 
 
 def run(args) -> int:
-    roster_path = BP.DATA / "roster_p48.json"
+    pop_mod = P48T2 if args.population == "p48t2" else P48
+    roster_path = BP.DATA / (
+        "roster_p48_t2.json" if args.population == "p48t2" else "roster_p48.json"
+    )
     if not roster_path.exists():
         print(f"ยังไม่มี {roster_path} — รัน population_p48.py ก่อน")
         return 1
     roster = json.loads(roster_path.read_text(encoding="utf-8"))
-    pop = P48.generate_population()
-    val_profiles, hold_profiles = P48.split_population(pop)
+    pop = pop_mod.generate_population()
+    val_profiles, hold_profiles = pop_mod.split_population(pop)
     held = {p["alias"] for p in hold_profiles}
 
     if args.population == "l12":
@@ -217,7 +221,7 @@ def run(args) -> int:
                 "population": args.population,
                 "holdout_opened": False,
                 "holdout_profiles_untouched": sorted(held),
-                "pop_seed": P48.POP_SEED,
+                "pop_seed": pop_mod.POP_SEED,
                 "seeds": args.seeds,
                 "sizes": args.sizes,
                 "budgets": BUDGETS,
@@ -265,7 +269,7 @@ def main() -> int:
     ap.add_argument("--users", type=Path, default=BP.DEFAULT_USERS_XLSX)
     ap.add_argument(
         "--population",
-        choices=("p48", "l12"),
+        choices=("p48", "p48t2", "l12"),
         default="p48",
         help="l12 = stratum อ้างอิง 12 โปรไฟล์เดิม (pre-registration §2)",
     )

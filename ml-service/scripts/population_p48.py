@@ -134,10 +134,10 @@ def _incidents(rng: random.Random) -> int:
     return 0
 
 
-def _one_profile(rng: random.Random, index: int) -> dict:
+def _one_profile(rng: random.Random, index: int, prefix: str = "P") -> dict:
     methods, passkey = _methods_and_passkey(rng)
     return dict(
-        alias=f"P{index + 1:02d}",
+        alias=f"{prefix}{index + 1:02d}",
         rows=rng.randint(40, 160),
         hour_peaks=_hour_peaks(rng),
         hour_spread=rng.uniform(1.5, 4.5),
@@ -159,10 +159,16 @@ def _one_profile(rng: random.Random, index: int) -> dict:
     )
 
 
-def generate_population(pop_seed: int = POP_SEED, n: int = N_TOTAL) -> list[dict]:
-    """สร้างประชากรตามการแจกแจงที่ประกาศไว้ — deterministic ต่อ `pop_seed`."""
+def generate_population(
+    pop_seed: int = POP_SEED, n: int = N_TOTAL, alias_prefix: str = "P"
+) -> list[dict]:
+    """สร้างประชากรตามการแจกแจงที่ประกาศไว้ — deterministic ต่อ `pop_seed`.
+
+    `alias_prefix` มีไว้ให้ประชากรรุ่นถัดไปใช้ชื่อที่ไม่ชนกับรุ่นก่อน
+    (เช่น P48-T2 ใช้ `T`) · ค่าเริ่มต้นคงพฤติกรรมเดิมทุกประการ
+    """
     rng = random.Random(pop_seed)
-    return [_one_profile(rng, i) for i in range(n)]
+    return [_one_profile(rng, i, alias_prefix) for i in range(n)]
 
 
 def split_population(

@@ -515,16 +515,63 @@ def pick_hour(rng: random.Random, p: dict, burst: bool) -> float:
     )
 
 
+def weekend_weight(p: float, n_weekday: int, n_weekend: int) -> float:
+    """แปลง **สัดส่วนเป้าหมาย** ของ login วันหยุด -> น้ำหนักต่อวันหยุด (B71).
+
+    ต้องแปลงก่อนใช้ เพราะน้ำหนักกับสัดส่วนไม่ใช่สิ่งเดียวกัน — ถ้าใส่สัดส่วนลงไป
+    เป็นน้ำหนักตรง ๆ จะได้ `(n_we x p) / (n_wd + n_we x p)` ซึ่งต่ำกว่าเป้าหมายเสมอ
+    และมีเพดานที่สัดส่วนวันหยุดในปฏิทิน (8/30 = 0.267) แม้ตั้ง p = 1.0
+    ทำให้สร้างผู้ใช้ที่ทำงานวันหยุดเป็นหลักไม่ได้เลย
+
+        p x n_wd
+        ---------- = w_weekend      (วันธรรมดามีน้ำหนัก 1.0)
+        (1-p) x n_we
+
+    ตรวจ: 30 วัน (ธรรมดา 22 · หยุด 8) ต้องการ p = 0.30
+          w = (0.30 x 22) / (0.70 x 8) = 1.1786
+          สัดส่วนที่ได้ = (8 x 1.1786) / (22 + 8 x 1.1786) = 0.300
+    """
+    if not 0.0 <= p <= 1.0:
+        raise ValueError(f"weekend_rate ต้องอยู่ใน [0, 1] — ได้ {p}")
+    if p == 0.0:
+        return 0.0
+    if n_weekend == 0:
+        raise ValueError("ช่วงเวลานี้ไม่มีวันหยุด — สร้างสัดส่วนวันหยุดที่ต้องการไม่ได้")
+    if p == 1.0:
+        if n_weekday == 0:
+            return 1.0  # มีแต่วันหยุดอยู่แล้ว
+        return float("inf")  # ผู้เรียกต้องตีความเป็น "เฉพาะวันหยุด"
+    if n_weekday == 0:
+        raise ValueError(
+            f"ช่วงเวลานี้ไม่มีวันธรรมดา — สัดส่วนวันหยุดจะเป็น 1.0 เสมอ ตั้ง p = {p} ไม่ได้"
+        )
+    return (p * n_weekday) / ((1.0 - p) * n_weekend)
+
+
 def spread_over_days(rng: random.Random, total: int, weekend_rate: float) -> list[int]:
-    """แจก `total` login ลง 30 วัน โดยวันหยุดมีน้ำหนักตาม weekend_rate (คุมยอดรวมให้เป๊ะ)."""
-    w = []
-    for d in range(DAYS):
-        day = START + timedelta(days=d)
-        w.append(max(weekend_rate, 0.001) if day.weekday() >= 5 else 1.0)
+    """แจก `total` login ลง `DAYS` วัน โดย **สัดส่วน**ของวันหยุดเข้าใกล้ `weekend_rate`.
+
+    B71 — เดิมใส่ `weekend_rate` เป็นน้ำหนักตรง ๆ ทำให้สัดส่วนที่ได้จริงต่ำกว่า
+    ที่ประกาศ 0.27–0.37 เท่า · ตอนนี้แปลงเป็นน้ำหนักด้วย `weekend_weight()` ก่อน
+    """
+    days = [START + timedelta(days=d) for d in range(DAYS)]
+    is_we = [d.weekday() >= 5 for d in days]
+    n_we = sum(is_we)
+    n_wd = DAYS - n_we
+
+    w_we = weekend_weight(weekend_rate, n_wd, n_we)
+    if w_we == float("inf"):  # p = 1.0 -> เฉพาะวันหยุด
+        w = [1.0 if we else 0.0 for we in is_we]
+    else:
+        w = [w_we if we else 1.0 for we in is_we]
+
     total_w = sum(w)
+    if total_w <= 0:
+        raise ValueError("น้ำหนักรวมเป็นศูนย์ — แจกวันไม่ได้")
+    probs = [x / total_w for x in w]
     counts = [0] * DAYS
     for _ in range(total):
-        counts[rng.choices(range(DAYS), weights=[x / total_w for x in w], k=1)[0]] += 1
+        counts[rng.choices(range(DAYS), weights=probs, k=1)[0]] += 1
     return counts
 
 

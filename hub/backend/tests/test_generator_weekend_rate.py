@@ -106,3 +106,54 @@ def test_generator_can_represent_observed_real_user_behaviour():
         f"เพดานของ generator = {best:.4f} ต่ำกว่าพฤติกรรมจริงที่ {target} — "
         "ไม่มีค่าพารามิเตอร์ใดสร้างผู้ใช้แบบนี้ได้"
     )
+
+
+# ══════════════ boundary — เพิ่มหลังแก้ B71 ══════════════
+def test_zero_rate_produces_no_weekend_logins():
+    counts = BP.spread_over_days(random.Random(1), N, 0.0)
+    wk = sum(
+        c for d, c in enumerate(counts) if (BP.START + timedelta(days=d)).weekday() >= 5
+    )
+    assert wk == 0, f"p = 0 ต้องไม่มี login วันหยุดเลย แต่ได้ {wk}"
+
+
+def test_rate_one_produces_only_weekend_logins():
+    counts = BP.spread_over_days(random.Random(1), N, 1.0)
+    wd = sum(
+        c for d, c in enumerate(counts) if (BP.START + timedelta(days=d)).weekday() < 5
+    )
+    assert wd == 0, f"p = 1 ต้องมีแต่ login วันหยุด แต่มีวันธรรมดา {wd}"
+
+
+def test_weekend_weight_matches_the_closed_form():
+    """ตรวจสูตรแปลงกับค่าที่คำนวณด้วยมือในรายงานบั๊ก."""
+    assert BP.weekend_weight(0.30, 22, 8) == pytest.approx(1.1786, abs=1e-4)
+    assert BP.weekend_weight(0.0, 22, 8) == 0.0
+    assert BP.weekend_weight(1.0, 22, 8) == float("inf")
+
+
+def test_window_without_weekend_fails_loudly():
+    """ช่วงที่ไม่มีวันหยุดต้องพังพร้อมข้อความชัดเจน ไม่ใช่คืนค่าที่ผิดเงียบ ๆ."""
+    with pytest.raises(ValueError, match="ไม่มีวันหยุด"):
+        BP.weekend_weight(0.30, 5, 0)
+
+
+def test_window_without_weekday_fails_loudly():
+    with pytest.raises(ValueError, match="ไม่มีวันธรรมดา"):
+        BP.weekend_weight(0.30, 0, 8)
+
+
+def test_rate_outside_unit_interval_is_rejected():
+    for bad in (-0.01, 1.01):
+        with pytest.raises(ValueError, match=r"\[0, 1\]"):
+            BP.weekend_weight(bad, 22, 8)
+
+
+@pytest.mark.parametrize(
+    "target,lo,hi",
+    [(0.05, 0.03, 0.07), (0.15, 0.13, 0.17), (0.30, 0.28, 0.32), (0.40, 0.38, 0.42)],
+)
+def test_acceptance_bands_from_bug_report(target, lo, hi):
+    """ช่วงที่ยอมรับตามที่ตกลงไว้ใน tests/reports/generator_weekend_rate_bug_2026-09-09.md."""
+    got = observed_weekend_share(target)
+    assert lo <= got <= hi, f"target {target} -> ได้ {got:.4f} นอกช่วง [{lo}, {hi}]"

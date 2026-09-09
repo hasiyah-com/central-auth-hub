@@ -29,6 +29,7 @@ if str(ML) not in sys.path:
 import build_profiles_v2 as BP  # noqa: E402
 import gen_v3 as G3  # noqa: E402
 import population_p48 as P48  # noqa: E402
+import population_p48_t2 as P48T2  # noqa: E402
 from hybrid_experiment import audit as AU  # noqa: E402
 from hybrid_experiment import dataset as DS  # noqa: E402
 
@@ -46,13 +47,16 @@ SIZES = [50, 100, 500, 1000, 5000]
 
 
 def run(args) -> int:
-    roster_path = BP.DATA / "roster_p48.json"
+    pop_mod = P48T2 if args.population == "p48t2" else P48
+    roster_path = BP.DATA / (
+        "roster_p48_t2.json" if args.population == "p48t2" else "roster_p48.json"
+    )
     if not roster_path.exists():
         print(f"ยังไม่มี {roster_path} — รัน population_p48.py ก่อน")
         return 1
     roster = json.loads(roster_path.read_text(encoding="utf-8"))
-    pop = P48.generate_population()
-    val_profiles, hold_profiles = P48.split_population(pop)
+    pop = pop_mod.generate_population()
+    val_profiles, hold_profiles = pop_mod.split_population(pop)
     held_aliases = {p["alias"] for p in hold_profiles}
 
     print(
@@ -95,7 +99,8 @@ def run(args) -> int:
     summary["splits_audited"] = ["validation_tuning"]
     summary["leakage"] = {**leak_total, "clean": leak_total["overlapping_rows"] == 0}
     summary["population"] = {
-        "pop_seed": P48.POP_SEED,
+        "population": args.population,
+        "pop_seed": pop_mod.POP_SEED,
         "validation_profiles": [p["alias"] for p in val_profiles],
         "holdout_profiles_untouched": sorted(held_aliases),
     }
@@ -127,10 +132,12 @@ def main() -> int:
     ap.add_argument("--seeds", type=int, nargs="+", default=SEEDS_P48)
     ap.add_argument("--sizes", type=int, nargs="+", default=SIZES)
     ap.add_argument("--users", type=Path, default=BP.DEFAULT_USERS_XLSX)
-    ap.add_argument(
-        "--out", type=Path, default=BP.DATA / "hybrid_experiment" / "audit_p48.json"
-    )
-    return run(ap.parse_args())
+    ap.add_argument("--population", choices=("p48", "p48t2"), default="p48")
+    ap.add_argument("--out", type=Path, default=None)
+    a = ap.parse_args()
+    if a.out is None:
+        a.out = BP.DATA / "hybrid_experiment" / f"audit_{a.population}.json"
+    return run(a)
 
 
 if __name__ == "__main__":
