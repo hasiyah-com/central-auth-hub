@@ -222,7 +222,7 @@ def calibration_error(rows: list[EventOutcome], bins: int = 10) -> float:
 
 
 def score_only_ranking(rows: list[EventOutcome], target_fpr: float) -> dict:
-    """⚠️ **การวิเคราะห์ ranking เท่านั้น — ไม่ใช่จุดทำงานที่ระบบทำได้จริง**.
+    """**การวิเคราะห์ ranking เท่านั้น — ไม่ใช่จุดทำงานที่ระบบทำได้จริง**.
 
     ตัดที่คะแนนดิบล้วน จึงข้าม Policy Gate · min_action · L3 solo cap ทั้งหมด
     ค่าที่ได้บอกได้แค่ว่า "คะแนนของ config นี้จัดอันดับ attack เหนือ normal ได้ดีแค่ไหน"
