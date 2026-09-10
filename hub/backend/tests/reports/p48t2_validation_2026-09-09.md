@@ -17,8 +17,12 @@
 | P48 รุ่นเดิม | เก็บเป็นหลักฐาน ไม่เขียนทับ |
 | P48-T2 | รอบ validation แยกต่างหาก |
 
-โปรไฟล์ที่สงวนไว้ (ไม่เคยถูกเปิด):
-`T05 T22 T43 T30 T33 T04 T18 T11 T09 T01 T42 T10 T17 T19 T23 T13`
+โปรไฟล์ที่สงวนไว้ (ไม่เคยถูกเปิด) — **16 alias ครบตาม frozen split ใน
+`ml-service/scripts/population_p48_t2.py`** ไม่ใช่ช่วงย่อ:
+
+```
+T05 T22 T43 T30 T33 T04 T18 T11 T09 T01 T42 T10 T17 T19 T23 T13
+```
 
 ---
 
@@ -273,7 +277,14 @@ tests/test_scope_conformance.py::test_scope3_monitoring_requires_admin    401 �
 ```
 holdout_opened: false
 holdout_profiles_untouched: 16
+
+T05 T22 T43 T30 T33 T04 T18 T11 T09 T01 T42 T10 T17 T19 T23 T13
 ```
+
+รายชื่อทั้ง 16 alias เขียนไว้ครบทั้งในหัวรายงาน ในบล็อกนี้ และในฟิลด์
+`holdout_profiles_untouched` ของ `p48t2_validation.json` · แหล่งความจริงคือ
+`split_population()` ใน `population_p48_t2.py` ซึ่ง deterministic ที่ `POP_SEED = 490909`
+และล็อกไว้ใน pre-registration §2.1
 
 ไม่มีสคริปต์ใดในรอบนี้อ่านค่าจากโปรไฟล์ holdout · ทั้ง audit และ validation มี
 assert กันไว้ · holdout ledger ยังไม่มี entry ของ seed ชุด `[401–405]`
@@ -384,6 +395,39 @@ challenge ได้ `inconclusive` ทั้งสองรอบทุกขน
 `p48t2_provenance.json` บันทึก `git_commit = c4ac910f800ad42e52f5b61a308405dbac1894c8`
 พร้อม sha256 ของไฟล์ต้นทาง 20 ไฟล์ และ fingerprint ของ scoring freeze
 โดยมี `recorded_before_reading_results: true`
+
+### สำเนาสำรอง
+
+sha256 พิสูจน์ได้แค่ว่าไฟล์ในอนาคตตรงกับไฟล์ที่ใช้ **กู้ไฟล์ที่หายไม่ได้** จึงเก็บสำเนา
+ทั้ง 4 ไฟล์พร้อม `SHA256SUMS` ไว้สองที่ ซึ่งเป็นพื้นที่เดียวกับ backup ฐานข้อมูล
+(`scripts/backup.sh`) และอยู่นอก git ทั้งคู่
+
+```
+backups/experiments/p48t2-validation-inconclusive/                         เครื่องนี้ (gitignored)
+~/OneDrive/cah-backups/experiments/p48t2-validation-inconclusive/          บัญชี OneDrive ของเจ้าของโปรเจกต์
+```
+
+ตรวจแล้วว่าทั้ง 4 ไฟล์ **ไม่มีอีเมลหรือตัวตนจริง** — ผู้ใช้อ้างด้วย alias `T01–T48` เท่านั้น
+ส่วน `roster_p48_t2.json` ที่ผูก alias กับบัญชีจริง **ไม่ได้สำรองไว้ด้วย** เพราะสร้างใหม่ได้
+จากไฟล์รายชื่อผู้ใช้
+
+**ตรวจสำเนา**
+
+```bash
+cd ~/OneDrive/cah-backups/experiments/p48t2-validation-inconclusive
+sha256sum -c SHA256SUMS
+```
+
+**สร้างใหม่จากโค้ดที่ tag** — ใช้เมื่อสำเนาทั้งสองที่หาย ผลที่ได้ต้องตรงกับตัวเลขในรายงาน
+ส่วน sha256 ของ `p48t2_provenance.json` จะต่างไปเพราะมีเวลาที่บันทึกอยู่ในไฟล์
+
+```bash
+git checkout p48t2-validation-inconclusive
+cd ml-service/scripts
+python population_p48_t2.py --summary-out ../data/hybrid_experiment/population_p48_t2_summary.json
+python audit_p48_generator.py --population p48t2 --seeds 401 402 403 404 405
+python exp_p48_validation.py --population p48t2 --seeds 401 402 403 404 405     --out ../data/hybrid_experiment/p48t2_validation.json
+```
 
 ### ความสัมพันธ์กับ evidence manifest ของ P48
 
