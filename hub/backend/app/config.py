@@ -133,6 +133,15 @@ class Settings(BaseSettings):
     l4_threshold_challenge: float = 0.70
     l4_threshold_block: float = 0.85
 
+    # ── Expert Label Workflow — ที่มาของคอนฟิกที่ shadow กำลังรัน ──
+    # ประทับลงทุก alert group ตอนสร้าง · ว่าง = ยังไม่มี shadow epoch ที่ประกาศ
+    # ซึ่งทำให้ทุกกลุ่ม eligible_for_production_metrics = false โดยอัตโนมัติ
+    shadow_epoch_id: str | None = None
+    risk_config_id: str | None = None
+    calibration_version: str | None = None
+    calibration_sha256: str | None = None
+    scoring_commit: str | None = None
+
     # GeoIP (MaxMind GeoLite2 offline DB) — fail-safe ถ้าไฟล์หาย
     # ดาวน์โหลดฟรีที่ https://www.maxmind.com/en/geolite2/signup
     geoip_db_path: str = "/app/data/GeoLite2-Country.mmdb"

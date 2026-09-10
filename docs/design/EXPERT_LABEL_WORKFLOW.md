@@ -1,7 +1,10 @@
 # ออกแบบ Expert Label Workflow
 
 ร่าง 9 ก.ย. 2569 · ขั้นที่ 4 ของแผนก่อน deploy Shadow
-**เอกสารออกแบบ — ยังไม่สร้าง** ต้องตกลงก่อนลงมือ
+**ส่วน backend สร้างแล้ว 10 ก.ย. 2569** ตามค่าที่ล็อกไว้ — schema จริงเป็น 3 ตาราง ดู §12
+Backend Expert Label Workflow พร้อมสำหรับ integration testing แต่ยังไม่เปิดใช้งาน
+operational review บน production (ยังไม่มี UI, retention และการ sync บน production)
+(§3 ด้านล่างคือร่างเดิมแบบ 2 ตาราง เก็บไว้เป็นประวัติการออกแบบ)
 
 ---
 
@@ -305,3 +308,97 @@ double-review pool                          >= 30 รายการ
 4. **จะเก็บ `ml_feedback` เดิมไว้เฉย ๆ หรือ migrate** 8 แถวเข้ามาในโครงใหม่
    (ผมเสนอให้เก็บไว้เฉย ๆ และไม่นำมารวม เพราะ label เดิมไม่ได้ผ่าน blind review)
 5. **รอบสอง unblinded จะทำไหม** — มีประโยชน์เรื่อง calibration แต่เพิ่มงานผู้ตรวจเท่าตัว
+
+---
+
+## 12. สิ่งที่สร้างจริง (10 ก.ย. 2569)
+
+ผลทดสอบ: `hub/backend/tests/reports/expert_label_workflow_2026-09-10.md`
+
+### 12.1 ค่าที่ล็อกไว้ก่อนสร้าง (ตอบคำถาม §11)
+
+| ประเด็น | ข้อสรุป |
+|---|---|
+| หน่วยที่ตรวจ | alert group `(user_id, primary_signal, 30 นาที)` |
+| เหตุการณ์ในกลุ่ม | เก็บ `session_ids` ครบ |
+| ผู้เชี่ยวชาญ | อย่างน้อย 2 คน |
+| รอบแรก | blind — ไม่เห็นคะแนนและคำตัดสินของโมเดล |
+| รอบสอง | ทำ · เปิดข้อมูลโมเดลได้หลังล็อก label รอบแรก |
+| double review | อย่างน้อย 30 กลุ่ม |
+| label ขั้นต่ำ | อย่างน้อย 100 กลุ่ม |
+| ผู้ใช้ภายนอก | อย่างน้อย 20 คน |
+| การกระจุกตัว | ผู้ใช้คนเดียวไม่เกิน 40% |
+| ตาราง feedback เดิม 8 แถว | เก็บไว้ ไม่ migrate ไม่นำมารวม |
+| ผลไม่ถึงขั้นต่ำ | รายงานเชิงพรรณนาเท่านั้น ห้ามอ้าง production FPR |
+
+### 12.2 Schema — 3 ตาราง (แทน §3)
+
+| ตาราง | เขียนโดย | การบังคับที่ฐานข้อมูล |
+|---|---|---|
+| `expert_alert_groups` | ระบบ (sync) | CHECK provenance · CHECK eligible ได้เมื่อ external และมี `risk_config_id` + `scoring_commit` |
+| `system_dispositions` | ระบบ ครั้งเดียวตอนสร้างกลุ่ม | trigger ปฏิเสธ UPDATE · `group_id` UNIQUE |
+| `expert_reviews` | ผู้ตรวจ | trigger ปฏิเสธ UPDATE · `supersedes_id` UNIQUE · FK แบบ composite `(supersedes_id, group_id, reviewer_id, round)` — แก้ข้ามกลุ่ม ข้ามผู้ตรวจ หรือข้ามรอบไม่ได้ · unique index บางส่วน — label ต้นทางได้แถวเดียวต่อ (กลุ่ม, ผู้ตรวจ, รอบ) · CHECK รอบ 1 ต้อง `model_output_visible = false` รอบ 2 ต้อง `true` · CHECK verdict / confidence |
+
+แยก `system_dispositions` ออกมาเป็นตารางของตัวเอง เพื่อให้ "สิ่งที่ระบบทำ" ไม่มีเส้นทาง
+เขียนจากผู้ตรวจเลย ไม่ใช่แค่ไม่มีปุ่ม
+
+**ข้อบังคับอื่นที่ระดับฐานข้อมูล**
+
+- FK ทั้งหมดเป็น NO ACTION — ลบผู้ใช้ กลุ่ม หรือ label ที่ยังถูกอ้างอยู่จะถูกปฏิเสธ ไม่มี
+  cascade · ลบ login session ได้ แต่กลุ่มและ snapshot ใน `system_dispositions.model_output`
+  ยังอยู่ครบ (`session_ids` เป็น JSON ไม่มี FK โดยตั้งใจ)
+- `created_at` ใช้ `timezone('utc', now())` ไม่ขึ้นกับ timezone ของ session
+
+**สิ่งที่บังคับได้เฉพาะใน service**
+
+- รอบสองต้องมี label รอบแรกของผู้ตรวจคนเดียวกัน และต้องเปิดดูผลของโมเดลก่อน
+  (หลักฐานการเปิดดูอยู่ใน audit log ซึ่งไม่มี FK ไปยังตารางนี้)
+
+**ข้อจำกัด** — แอปเชื่อมต่อฐานข้อมูลด้วย role ที่เป็น superuser ในสภาพแวดล้อม dev ซึ่งสั่ง
+`ALTER TABLE ... DISABLE TRIGGER` ได้ · trigger กันการ UPDATE จากเส้นทางปกติของแอปทุก
+เส้นทาง แต่ไม่กันผู้ที่มีสิทธิ์ DDL · การแยก role ที่ไม่มีสิทธิ์ DDL เป็นงานของ production
+
+migration: `hub/backend/alembic/versions/e5f6a7b8c9d0_expert_label_workflow.py`
+
+### 12.3 API — `/admin/expert-review` (hub admin เท่านั้น)
+
+| method | path | หน้าที่ |
+|---|---|---|
+| POST | `/groups/sync` | ระบบสร้างกลุ่มจาก `would_*` ในหน้าต่างที่ปิดแล้ว |
+| GET | `/queue/next` | งานถัดไป: adjudication > second review > primary |
+| GET | `/groups/{id}` | รอบแรก blind |
+| GET | `/groups/{id}/unblinded` | รอบสอง · ต้องมี label รอบแรกของตัวเองก่อน |
+| POST | `/groups/{id}/reviews` | ให้ label (append-only) |
+| GET | `/metrics` | สถิติเชิงพรรณนา + readiness gate |
+
+ไม่มี PUT / PATCH / DELETE และไม่มี endpoint เขียน `system_dispositions` หรือ
+`login_sessions` — มีเทสตรวจรายการ route ทั้งหมดเทียบกับชุดที่อนุญาต
+
+### 12.4 การตัดสินใจระหว่างสร้างที่แบบเดิมไม่ได้ระบุ
+
+| ประเด็น | ที่เลือก | เหตุผล |
+|---|---|---|
+| provenance `test` | user agent มี `pytest` หรือ `testclient` | แถวจากชุดทดสอบใช้ user agent แบบนี้ |
+| ลำดับ provenance | demo > test > unknown > local > external | ข้อแรกที่เข้าเงื่อนไขชนะ · กลุ่มเป็น external ได้เมื่อทุกเหตุการณ์เป็น external |
+| การตรวจ local | `ipaddress` (loopback / private / link-local) | prefix `172.1` ในสคริปต์เทียบ distribution จัด 172.100.x ผิดเป็น local |
+| reason code | ชื่อสัญญาณหน้าข้อความ ตัดค่าตัวเลขทิ้ง | เหตุเดียวกันที่ค่าต่างเล็กน้อยต้องอยู่กลุ่มเดียวกัน |
+| หน้าต่าง | tumbling ปัดลง 30 นาที · สร้างเฉพาะหน้าต่างที่ปิดแล้ว | เนื้อหากลุ่มไม่เปลี่ยนหลังผู้ตรวจเริ่มดู |
+| สุ่ม double review | sha256 ของ `group_key` mod 100 < 30 | deterministic ผู้ตรวจเลือกเองไม่ได้ |
+| การล็อกรอบแรก | ล็อกเมื่อผู้ตรวจ **เปิดดู** ผลของโมเดล ไม่ใช่เมื่อส่ง label รอบสอง | ถ้าล็อกตอนส่ง จะเปิดดูแล้วกลับไปแก้รอบแรกได้ · หลักฐานการเปิดดูคือ audit log |
+| รอบสอง | ต้องเปิดดูผลของโมเดลก่อนส่ง | ให้ `model_output_visible = true` เป็นความจริง |
+| เห็นต่างในกลุ่มเดียวกัน | ใช้ `suspicious` แทน `confirmed_attack` | อ้างน้อยกว่าเมื่อยังไม่มีฉันทามติ |
+| label ขั้นต่ำ 100 | นับเฉพาะกลุ่มที่ label ใช้ในชุด FPR ได้ | ไม่นับ `insufficient_context` และกลุ่มที่รอ adjudication |
+| การกระจุกตัว 40% | สัดส่วน login จากภายนอกของผู้ใช้คนเดียว | เป็นตัวส่วนของ FPR |
+| alias | HMAC ของ user_id ด้วย `SECRET_KEY` | คงที่ต่อผู้ใช้ ย้อนกลับเป็นตัวตนไม่ได้ |
+| สัญญาณเชิงพรรณนา | คำนวณใหม่จากประวัติ 90 วัน ไม่ได้แปลงจาก reason ของโมเดล | reason ของโมเดลมีคะแนนติดมา (`+0.40`) |
+| เวลาห่างจากปกติ | ต้องมีประวัติอย่างน้อย 5 ครั้ง · แสดงเมื่อห่างตั้งแต่ 3 ชั่วโมง | cold start เดียวกับ feature extraction |
+
+### 12.5 สิ่งที่ยังไม่ได้สร้าง
+
+| ส่วน | สถานะ |
+|---|---|
+| หน้า UI ใน console | ยังไม่สร้าง — ใช้ผ่าน API ได้ |
+| ขอดู IP เต็มพร้อม audit (§6) | ยังไม่สร้าง |
+| retention 180 วัน (§6) | ยังไม่สร้าง · ต้องทำเป็น DELETE + เก็บสถิติแยก เพราะ trigger ปฏิเสธ UPDATE |
+| การคำนวณ production FPR | **ตั้งใจไม่สร้าง** — ต้องเป็นรอบวิเคราะห์ที่ประกาศล่วงหน้าหลังผ่าน readiness gate |
+| shadow epoch | ยังไม่มี · `risk_config_id` และ `scoring_commit` ว่าง จึงไม่มีกลุ่มใด eligible |

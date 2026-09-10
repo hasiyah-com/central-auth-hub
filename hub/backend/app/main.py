@@ -27,6 +27,7 @@ from app.routers import (  # noqa: E402
     users,
     admin,
     ml_admin,
+    expert_review,
     api_alerts,
     ip_blacklist,
     auth,
@@ -40,6 +41,7 @@ from app.routers import (  # noqa: E402
     totp,
     recovery,
     account_security,
+    reports,
 )
 from app.services.jwt_service import get_jwks  # noqa: E402
 from app.services.request_id import RequestIdMiddleware  # noqa: E402
@@ -210,6 +212,9 @@ app.include_router(users.router, prefix="/admin/users", tags=["Admin: Users"])
 app.include_router(admin.router, prefix="/admin", tags=["Admin"])
 app.include_router(ml_admin.router, prefix="/admin/ml", tags=["Admin · ML"])
 app.include_router(
+    expert_review.router, prefix="/admin/expert-review", tags=["Admin · Expert Review"]
+)
+app.include_router(
     api_alerts.router, prefix="/admin/api-alerts", tags=["Admin · API Alerts"]
 )
 app.include_router(
@@ -226,6 +231,7 @@ app.include_router(
 app.include_router(totp.router, tags=["Account · TOTP"])
 app.include_router(recovery.router, tags=["Recovery Ticket"])
 app.include_router(account_security.router, tags=["Account · Security"])
+app.include_router(reports.router, prefix="/admin/reports", tags=["Admin: Reports"])
 
 
 # ============ JWKS endpoint (OIDC discovery standard path) ============
