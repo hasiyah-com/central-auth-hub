@@ -283,7 +283,6 @@ export default function UserDetailPage({ params }: { params: { id: string } }) {
       {verifying && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40">
           <div className="bg-white border border-ink-200 px-6 py-5 flex items-center gap-3 text-sm text-ink-700">
-            <span className="animate-pulse text-lg">🔐</span>
             กำลังยืนยันด้วย Passkey…
           </div>
         </div>
@@ -298,7 +297,7 @@ export default function UserDetailPage({ params }: { params: { id: string } }) {
             </span>
             control surface
           </span>
-          <h1>รายละเอียดผู้ใช้งาน</h1>
+          <h1>User Detail</h1>
         </div>
 
         <div className="cx-command-actions">
@@ -587,7 +586,7 @@ export default function UserDetailPage({ params }: { params: { id: string } }) {
               ) : (
               activeSessions.slice(0, 5).map((s) => (
               <div key={s.id} className="flex items-center gap-3 px-3 py-2 rounded-lg border border-ink-100 text-xs">
-              <span className="text-lg">{s.device_type === "mobile" ? "📱" : "💻"}</span>
+              <span className="text-lg">{s.device_type === "mobile" ? "" : ""}</span>
               <div className="flex-1 min-w-0">
               <div className="font-medium text-ink-900 truncate">
               {s.browser || "—"} · {s.os_name || "—"}
@@ -606,20 +605,22 @@ export default function UserDetailPage({ params }: { params: { id: string } }) {
               {/* Access Overview donut */}
               <section className="cx-panel">
               <h3>Access Overview</h3>
-              <div className="flex items-center gap-4">
+              <div className="cx-donut-body">
               <Donut segments={donutSegs} total={allScopes.length} />
-              <div className="space-y-1.5 text-xs flex-1">
+              <dl className="cx-donut-legend">
               {donutSegs.map((seg) => (
-              <div key={seg.label} className="flex items-center gap-2">
-              <span className="w-2.5 h-2.5 rounded-full" style={{ background: seg.color }} />
-              <span className="text-ink-600 flex-1">{seg.label}</span>
-              <span className="text-ink-900 font-semibold">{seg.value}</span>
-              <span className="text-ink-400 w-9 text-right">
+              <div key={seg.label}>
+              <dt>
+              <i style={{ background: seg.color }} />
+              {seg.label}
+              </dt>
+              <dd>{seg.value}</dd>
+              <dd className="pct">
               {allScopes.length ? Math.round((seg.value / allScopes.length) * 100) : 0}%
-              </span>
+              </dd>
               </div>
               ))}
-              </div>
+              </dl>
               </div>
               </section>
               {/* Risk Factors */}
@@ -633,7 +634,6 @@ export default function UserDetailPage({ params }: { params: { id: string } }) {
               ) : (
               riskFactors.slice(0, 5).map((rf, i) => (
               <div key={i} className="flex items-center gap-2 px-3 py-2 rounded-lg border border-ink-100 text-xs">
-              <span className="text-amber-500">⚠</span>
               <span className="text-ink-700 flex-1">{rf}</span>
               </div>
               ))
@@ -652,7 +652,7 @@ export default function UserDetailPage({ params }: { params: { id: string } }) {
               ) : (
               passkeys.passkeys.map((pk) => (
               <div key={pk.id} className="flex items-center gap-3 px-3 py-2 rounded-lg border border-ink-100">
-              <span className="text-lg">{pk.device_type === "platform" ? "💻" : "🔑"}</span>
+              <span className="text-lg">{pk.device_type === "platform" ? "" : ""}</span>
               <div className="flex-1 min-w-0">
               <div className="text-sm font-medium text-ink-900 truncate">{pk.device_name}</div>
               <div className="text-[11px] text-ink-400">ใช้ล่าสุด {relTime(pk.last_used_at)}</div>
@@ -674,7 +674,7 @@ export default function UserDetailPage({ params }: { params: { id: string } }) {
               <h3>Authentication Methods</h3>
               {creds && (
               <Badge tone={creds.recovery_ready ? "good" : "warn"}>
-              {creds.recovery_ready ? "✓ Recovery Ready" : "⚠ ไม่พร้อมกู้"}
+              {creds.recovery_ready ? "Recovery Ready" : "ไม่พร้อมกู้"}
               </Badge>
               )}
               </div>
@@ -689,10 +689,10 @@ export default function UserDetailPage({ params }: { params: { id: string } }) {
               >
               <span className="text-base">
               {c.credential_type === "GOOGLE"
-              ? "🔵"
+              ? ""
               : c.credential_type === "TOTP"
-              ? "🔐"
-              : "🔑"}
+              ? ""
+              : ""}
               </span>
               <div className="flex-1 min-w-0">
               <div className="font-semibold text-ink-800 truncate">

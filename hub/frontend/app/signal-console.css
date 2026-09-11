@@ -48,14 +48,15 @@
   display: flex;
   align-items: center;
   gap: 7px;
-  font-size: 7px;
-  letter-spacing: 1.2px;
-  color: #71849b;
+  font:500 11px "IBM Plex Mono", ui-monospace, monospace;
+  letter-spacing: 1px;
+  color: #8ca0b9;
 }
 .sc .cx-command h1 {
-  margin: 8px 0 0;
-  font: 800 29px "Sarabun", sans-serif;
+  margin: 6px 0 0;
+  font: 800 26px "Sarabun", sans-serif;
   letter-spacing: -0.6px;
+  line-height: 1.15;
 }
 
 .sc .cx-live-actions {
@@ -69,7 +70,7 @@
   min-width: 34px;
   height: 31px;
   padding: 0 9px;
-  font-size: 7px;
+  font-size: 10.5px;
   color: #8293a9;
   background: #101825;
   border: 1px solid #293548;
@@ -115,8 +116,9 @@
 }
 .sc .cx-kpi {
   position: relative;
-  min-height: 105px;
-  padding: 15px;
+  /* ไม่ล็อก min-height — ให้สูงตามเนื้อหา (grid stretch ทำให้ทุกใบในแถวเท่ากันเอง)
+     ของเดิม 105px เหลือที่ว่างใต้ตัวเลขโดยไม่มีอะไรอยู่ */
+  padding: 13px 15px 12px;
   background: #fff;
   border: 1px solid #dce2e8;
   border-top: 2px solid #9da9b7;
@@ -129,20 +131,20 @@
 }
 .sc .cx-kpi > span {
   display: block;
-  font-size: 7px;
+  font-size: 10.5px;
   letter-spacing: 0.8px;
   text-transform: uppercase;
   color: #798697;
 }
 .sc .cx-kpi strong {
   display: block;
-  margin: 8px 0 5px;
+  margin: 6px 0 4px;
   font-size: 26px;
   line-height: 1;
   color: #172335;
 }
 .sc .cx-kpi small {
-  font-size: 6px;
+  font-size: 12px;
   color: #9aa5b1;
 }
 
@@ -173,14 +175,14 @@
 }
 .sc .cx-panel > header span {
   display: block;
-  font-size: 7px;
+  font-size: 10.5px;
   letter-spacing: 0.8px;
   text-transform: uppercase;
   color: #8592a1;
 }
 .sc .cx-panel > header h2 {
   margin: 3px 0 0;
-  font: 700 13px "Sarabun", sans-serif;
+  font: 700 15px "Sarabun", sans-serif;
 }
 /* panel ของ "ผู้ใช้ที่กำลังใช้งาน" — หัวเขียวจาง บอกว่าเป็นข้อมูลสด */
 .sc .cx-active-panel {
@@ -202,7 +204,7 @@
   gap: 6px;
   min-height: 23px;
   padding: 0 8px;
-  font: 600 7px "IBM Plex Mono", ui-monospace, monospace;
+  font:500 10.5px "IBM Plex Mono", ui-monospace, monospace;
   white-space: nowrap;
   color: #617083;
   background: #f8fafb;
@@ -291,7 +293,7 @@
 .sc .cx-toolbar input,
 .sc .cx-toolbar select {
   height: 32px;
-  font-size: 8px;
+  font-size: 11px;
   background: #fff;
   border: 1px solid #dbe2e8;
 }
@@ -318,7 +320,7 @@
 .sc .cx-table-wrap th {
   height: 36px;
   padding: 0 11px;
-  font: 600 6px "IBM Plex Mono", ui-monospace, monospace;
+  font:500 10px "IBM Plex Mono", ui-monospace, monospace;
   letter-spacing: 0.55px;
   text-align: left;
   text-transform: uppercase;
@@ -330,7 +332,7 @@
 .sc .cx-table-wrap td {
   height: 54px;
   padding: 0 11px;
-  font-size: 8px;
+  font-size: 11px;
   border-bottom: 1px solid #edf0f4;
 }
 .sc .cx-table-wrap tbody tr:last-child td {
@@ -351,7 +353,7 @@
 .sc .cx-panel th {
   height: 36px;
   padding: 0 11px;
-  font: 600 6px "IBM Plex Mono", ui-monospace, monospace;
+  font:500 10px "IBM Plex Mono", ui-monospace, monospace;
   letter-spacing: 0.55px;
   text-transform: uppercase;
   color: #7f8c9c;
@@ -361,7 +363,7 @@
 .sc .cx-panel td {
   height: 54px;
   padding: 0 11px;
-  font-size: 8px;
+  font-size: 11px;
   color: #2f3d51;
   border-bottom: 1px solid #edf0f4;
 }
@@ -384,19 +386,19 @@
 /* ชื่อหลัก + คำอธิบายบรรทัดล่าง */
 .sc .cx-row-link {
   display: block;
-  font-weight: 700;
+  font-weight:500;
   color: #162337;
   text-decoration: none;
 }
 .sc .cx-row-link small {
   display: block;
-  font-size: 7px;
+  font-size: 10.5px;
   font-weight: 400;
   color: #8491a0;
 }
 /* ค่าเทคนิคในเซลล์ (id, identifier) */
 .sc .cx-data {
-  font-size: 7px;
+  font-size: 10.5px;
   color: #607086;
 }
 /* ปุ่มท้ายแถว (ไปหน้ารายละเอียด) */
@@ -438,12 +440,12 @@
   stroke-width: 1.3px;
 }
 .sc .cx-empty strong {
-  font-size: 10px;
+  font-size: 12.5px;
   color: #536174;
 }
 .sc .cx-empty span {
   margin-top: 3px;
-  font-size: 7px;
+  font-size: 10.5px;
   color: #9ca7b2;
 }
 
@@ -456,7 +458,7 @@
   min-height: 48px;
   margin-top: 18px;
   padding: 0 2px;
-  font-size: 7px;
+  font-size: 10.5px;
   color: #84909f;
   border-top: 1px solid #dce2e8;
 }
@@ -503,8 +505,8 @@
   gap: 7px;
   height: 36px;
   padding: 0 16px;
-  font-size: 10px;
-  font-weight: 700;
+  font-size: 12.5px;
+  font-weight:500;
   color: #e5edf7;
   background: #172131;
   border: 1px solid #46566b;
@@ -526,7 +528,7 @@
   border-radius: 0;
   background: none;
   padding: 0;
-  font: 700 10px "IBM Plex Mono", ui-monospace, monospace;
+  font:500 12.5px "IBM Plex Mono", ui-monospace, monospace;
   letter-spacing: 0.6px;
 }
 
@@ -545,11 +547,11 @@
   gap: 5px;
   height: 30px;
   margin-bottom: 8px;
-  font-size: 7px;
+  font-size: 10.5px;
   color: #8794a3;
 }
 .sc .cx-user-breadcrumb a {
-  font-weight: 700;
+  font-weight:500;
   color: #087c69;
   text-decoration: none;
 }
@@ -584,7 +586,7 @@
 }
 .sc .cx-user-profile > div > span,
 .sc .cx-risk-card > span {
-  font-size: 6px;
+  font-size: 10px;
   letter-spacing: 1px;
   text-transform: uppercase;
   color: #687d95;
@@ -597,7 +599,7 @@
   font: 700 18px "Sarabun", sans-serif;
 }
 .sc .cx-user-profile code {
-  font-size: 7px;
+  font-size: 10.5px;
   color: #8192a8;
 }
 /* ตารางข้อมูล 3 คอลัมน์ */
@@ -608,13 +610,13 @@
   margin: 14px 0 0;
 }
 .sc .cx-user-profile dt {
-  font-size: 6px;
+  font-size: 10px;
   color: #687b91;
 }
 .sc .cx-user-profile dd {
   margin: 2px 0 0;
-  font-size: 8px;
-  font-weight: 600;
+  font-size: 11px;
+  font-weight:500;
   color: #d9e4f0;
 }
 
@@ -632,7 +634,7 @@
   font-size: 25px;
 }
 .sc .cx-risk-card small {
-  font-size: 7px;
+  font-size: 10.5px;
   color: #6f8198;
 }
 .sc .cx-risk-card .cx-chip {
@@ -662,7 +664,7 @@
   inset: 0;
   display: grid;
   place-items: center;
-  font-size: 6px;
+  font-size: 10px;
   color: #52667d;
 }
 
@@ -688,8 +690,8 @@
   gap: 7px;
   height: 36px;
   padding: 0 14px;
-  font-size: 9px;
-  font-weight: 700;
+  font-size: 12px;
+  font-weight:500;
   cursor: pointer;
   border: 1px solid;
   transition: 0.16s;
@@ -733,7 +735,7 @@
 .sc .cx-tabs button {
   height: 36px;
   padding: 0 15px;
-  font-size: 8px;
+  font-size: 11px;
   color: #728093;
   background: none;
   border: 0;
@@ -741,7 +743,7 @@
   cursor: pointer;
 }
 .sc .cx-tabs button.active {
-  font-weight: 700;
+  font-weight:500;
   color: #087c69;
   border-bottom-color: var(--sr-signal-2);
 }
@@ -789,12 +791,12 @@
   display: block;
 }
 .sc .cx-quick-actions > button b {
-  font-size: 8px;
+  font-size: 11px;
   color: #1c2a3d;
 }
 .sc .cx-quick-actions > button small {
   margin-top: 1px;
-  font-size: 6px;
+  font-size: 10px;
   color: #8995a2;
 }
 
@@ -832,12 +834,12 @@
   stroke-width: 1.3;
 }
 .sc .cx-empty strong {
-  font-size: 10px;
-  font-weight: 700;
+  font-size: 12.5px;
+  font-weight:500;
   color: #536174;
 }
 .sc .cx-empty span {
-  font-size: 8px;
+  font-size: 11px;
   color: #9ca7b2;
 }
 
@@ -938,7 +940,7 @@
   border-radius: 0;
   background: none;
   color: #6b7887;
-  font: 600 7px "IBM Plex Mono", ui-monospace, monospace;
+  font:500 10.5px "IBM Plex Mono", ui-monospace, monospace;
   letter-spacing: 0.9px;
   text-transform: uppercase;
   cursor: pointer;
@@ -961,7 +963,7 @@
   border: 1px solid #dce2e8;
   border-left-width: 2px;
   background: #fff;
-  font-size: 8px;
+  font-size: 11px;
 }
 .sc .cx-msg.ok {
   border-left-color: var(--sr-signal-2);
@@ -977,7 +979,7 @@
   display: inline-block;
   padding: 2px 6px;
   border: 1px solid currentColor;
-  font: 600 7px "IBM Plex Mono", ui-monospace, monospace;
+  font:500 10.5px "IBM Plex Mono", ui-monospace, monospace;
   letter-spacing: 0.7px;
   text-transform: uppercase;
   white-space: nowrap;
@@ -992,7 +994,7 @@
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  font: 600 7px "IBM Plex Mono", ui-monospace, monospace;
+  font:500 10.5px "IBM Plex Mono", ui-monospace, monospace;
   letter-spacing: 0.6px;
   text-transform: uppercase;
 }
@@ -1052,7 +1054,7 @@
 }
 .sc .cx-card > a b {
   display: block;
-  font: 700 13px "Sarabun", sans-serif;
+  font:500 13px "Sarabun", sans-serif;
   color: var(--sr-ink);
 }
 .sc .cx-card > a:hover b {
@@ -1060,7 +1062,7 @@
 }
 .sc .cx-card > a p {
   margin: 3px 0 0;
-  font-size: 8px;
+  font-size: 11px;
   line-height: 1.5;
   color: #7b8794;
   display: -webkit-box;
@@ -1091,7 +1093,7 @@
   min-height: 16px;
 }
 .sc .cx-card dt {
-  font: 600 7px "IBM Plex Mono", ui-monospace, monospace;
+  font:500 10.5px "IBM Plex Mono", ui-monospace, monospace;
   letter-spacing: 0.8px;
   text-transform: uppercase;
   color: #8592a1;
@@ -1100,7 +1102,7 @@
 .sc .cx-card dd {
   margin: 0;
   min-width: 0;
-  font-size: 8px;
+  font-size: 11px;
   color: #3d4a5c;
   text-align: right;
   overflow: hidden;
@@ -1109,10 +1111,10 @@
 }
 .sc .cx-card dd.mono {
   font-family: "IBM Plex Mono", ui-monospace, monospace;
-  font-size: 8px;
+  font-size: 11px;
 }
 .sc .cx-card dd.num {
-  font: 700 9px "IBM Plex Mono", ui-monospace, monospace;
+  font:500 12px "IBM Plex Mono", ui-monospace, monospace;
   color: var(--sr-ink);
 }
 
@@ -1130,7 +1132,7 @@
   border: 1px solid;
   border-radius: 0;
   background: #fff;
-  font: 600 7px "IBM Plex Mono", ui-monospace, monospace;
+  font:500 10.5px "IBM Plex Mono", ui-monospace, monospace;
   letter-spacing: 0.9px;
   text-transform: uppercase;
   cursor: pointer;
@@ -1161,7 +1163,7 @@
 /* บรรทัดสรุปจำนวนท้ายหน้า */
 .sc .cx-count {
   padding: 2px 1px;
-  font: 500 7px "IBM Plex Mono", ui-monospace, monospace;
+  font: 500 10.5px "IBM Plex Mono", ui-monospace, monospace;
   letter-spacing: 0.8px;
   text-transform: uppercase;
   color: #8592a1;
@@ -1188,7 +1190,7 @@
 }
 .sc .cx-identity-hero > div:first-child > span {
   display: block;
-  font: 600 7px "IBM Plex Mono", ui-monospace, monospace;
+  font:500 10.5px "IBM Plex Mono", ui-monospace, monospace;
   letter-spacing: 1px;
   text-transform: uppercase;
   color: #668097;
@@ -1203,19 +1205,19 @@
   flex-wrap: wrap;
 }
 .sc .cx-identity-hero h2 small {
-  font: 500 9px "Sarabun", sans-serif;
+  font: 500 12px "Sarabun", sans-serif;
   color: #71839a;
 }
 .sc .cx-identity-hero code {
   display: inline-block;
   margin-top: 8px;
-  font: 500 9px "IBM Plex Mono", ui-monospace, monospace;
+  font: 500 12px "IBM Plex Mono", ui-monospace, monospace;
   color: #8294a9;
   word-break: break-all;
 }
 .sc .cx-identity-hero p {
   margin: 7px 0 0;
-  font-size: 9px;
+  font-size: 12px;
   line-height: 1.55;
   color: #8a99ac;
   max-width: 560px;
@@ -1229,7 +1231,7 @@
   display: block;
   padding: 8px 16px;
   border-left: 1px solid #2b3749;
-  font: 600 7px "IBM Plex Mono", ui-monospace, monospace;
+  font:500 10.5px "IBM Plex Mono", ui-monospace, monospace;
   letter-spacing: 0.9px;
   text-transform: uppercase;
   color: #668097;
@@ -1237,7 +1239,7 @@
 .sc .cx-hero-metrics > span b {
   display: block;
   margin-top: 4px;
-  font: 700 14px "IBM Plex Mono", ui-monospace, monospace;
+  font:500 14px "IBM Plex Mono", ui-monospace, monospace;
   letter-spacing: 0;
   text-transform: none;
   color: #e4edf8;
@@ -1256,7 +1258,7 @@
 }
 .sc .cx-section-head h3 {
   margin: 0;
-  font: 600 8px "IBM Plex Mono", ui-monospace, monospace;
+  font: 600 11px "IBM Plex Mono", ui-monospace, monospace;
   letter-spacing: 1px;
   text-transform: uppercase;
   color: #6b7887;
@@ -1270,7 +1272,7 @@
   border: 0;
   background: none;
   padding: 0;
-  font: 500 7px "IBM Plex Mono", ui-monospace, monospace;
+  font: 500 10.5px "IBM Plex Mono", ui-monospace, monospace;
   letter-spacing: 0.7px;
   text-transform: uppercase;
   color: #7b8794;
@@ -1294,7 +1296,7 @@
   border: 1px solid #46566b;
   background: #172131;
   color: #e5edf7;
-  font: 700 9px "Sarabun", sans-serif;
+  font:500 12px "Sarabun", sans-serif;
   cursor: pointer;
   transition: 0.14s;
 }
@@ -1332,7 +1334,7 @@
   border: 1px solid #235a50;
   background: #0d2825;
   color: #67ecd2;
-  font: 600 8px "IBM Plex Mono", ui-monospace, monospace;
+  font:500 11px "IBM Plex Mono", ui-monospace, monospace;
   letter-spacing: 0.75px;
   text-transform: uppercase;
 }
@@ -1359,7 +1361,7 @@
 .sc .cx-identity-hero .cx-hero-dates {
   display: block;
   margin-top: 7px;
-  font: 500 8px "IBM Plex Mono", ui-monospace, monospace;
+  font: 500 11px "IBM Plex Mono", ui-monospace, monospace;
   letter-spacing: 0.4px;
   color: #5d7089;
 }
@@ -1369,9 +1371,2338 @@
   padding: 11px 14px;
   border: 1px solid #dce2e8;
   background: #fff;
-  font: 500 8px "IBM Plex Mono", ui-monospace, monospace;
+  font: 500 11px "IBM Plex Mono", ui-monospace, monospace;
   letter-spacing: 0.7px;
   text-transform: uppercase;
   color: #8592a1;
   text-align: center;
+}
+
+/* เพิ่มความอ่านง่ายของหน้า Incidents */
+.sc .cx-table-wrap th,
+.sc .cx-panel th {
+  font-size: 12px;
+}
+
+.sc .cx-table-wrap td,
+.sc .cx-panel td {
+  font-size: 11px;
+}
+
+.sc .cx-incident-link b {
+  font-size: 11px;
+}
+
+.sc .cx-incident-link code,
+.sc .cx-incident-row td small {
+  font-size: 12px;
+}
+
+.sc .cx-incident-guide li > span {
+  font-size: 12px;
+}
+
+.sc .cx-incident-guide b {
+  font-size: 11px;
+}
+
+.sc .cx-incident-guide small {
+  font-size: 12px;
+}
+
+.sc .cx-data,
+.sc .cx-row-link small,
+.sc .cx-count {
+  font-size: 12px;
+}
+/* ════════════════════════════════════════════════════════════════════════
+   ACCOUNT (บัญชีของฉัน) — port จาก MyAccount-styles.css ที่ผู้ใช้ส่งมา
+   ตัด 2 บล็อกที่ไม่มีข้อมูลจริงรองรับออกตามที่ตกลง (ตัวเลือก A):
+     - RECENT SESSION (ไม่มี endpoint ให้ user ดู session ตัวเอง)
+     - ACCOUNT STATUS / LAST SIGN-IN ใน facts strip (ไม่มีใน /auth/me)
+   facts strip จึงใช้ข้อมูลที่มีจริงแทน: ROLE / PASSKEY / รหัสสำรอง
+   ════════════════════════════════════════════════════════════════════════ */
+
+.sc .cx-account-cover {
+  display: grid;
+  grid-template-columns: 68px minmax(230px, 1fr) auto;
+  align-items: center;
+  gap: 16px;
+  min-height: 122px;
+  margin-bottom: 10px;
+  padding: 19px 21px;
+  color: #edf4fb;
+  background: #101824;
+  border: 1px solid #273448;
+  border-top: 2px solid var(--sr-signal);
+}
+.sc .cx-account-avatar {
+  display: grid;
+  place-items: center;
+  width: 54px;
+  height: 54px;
+  font-size: 13px;
+  color: #9df8e6;
+  background: #123a35;
+}
+.sc .cx-account-cover .cx-account-avatar {
+  width: 62px;
+  height: 62px;
+  font-size: 16px;
+  color: #8ff3df;
+  background: #17332f;
+  border: 1px solid #2b625a;
+}
+.sc .cx-account-title > span {
+  font-size: 10.5px;
+  letter-spacing: 1px;
+  color: #6f8299;
+}
+.sc .cx-account-title h2 {
+  margin: 4px 0 5px;
+  font: 800 21px "Sarabun", sans-serif;
+}
+.sc .cx-account-title p {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 12px;
+  color: #91a1b5;
+}
+.sc .cx-account-title p svg {
+  width: 13px;
+}
+.sc .cx-account-facts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(120px, 1fr));
+  border: 1px solid #2a374a;
+}
+.sc .cx-account-facts > span {
+  min-height: 62px;
+  padding: 11px 14px;
+  border-left: 1px solid #2a374a;
+}
+.sc .cx-account-facts > span:first-child {
+  border-left: 0;
+}
+.sc .cx-account-facts small,
+.sc .cx-account-facts b {
+  display: block;
+}
+.sc .cx-account-facts small {
+  font-size: 10px;
+  letter-spacing: 0.8px;
+  color: #647890;
+}
+.sc .cx-account-facts b {
+  margin-top: 7px;
+  font-size: 12px;
+  white-space: nowrap;
+  color: #dfe9f5;
+}
+.sc .cx-account-facts b.signal {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: #74e8cf;
+}
+
+.sc .cx-account-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.7fr) minmax(310px, 0.75fr);
+  gap: 10px;
+}
+.sc .cx-account-main,
+.sc .cx-account-side {
+  min-width: 0;
+}
+
+/* วิธีเข้าสู่ระบบ */
+.sc .cx-account-security > header {
+  border-left: 3px solid var(--sr-signal-2);
+}
+.sc .cx-account-security .cx-security-count {
+  padding: 6px 8px;
+  font-size: 10.5px;
+  color: #0b8f77;
+  background: #edf9f6;
+  border: 1px solid #bce9df;
+}
+.sc .cx-method-list > div {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr) auto 82px;
+  align-items: center;
+  gap: 12px;
+  min-height: 68px;
+  padding: 9px 15px;
+  border-bottom: 1px solid #e4e9ee;
+}
+.sc .cx-method-list > div:last-child {
+  border-bottom: 0;
+}
+.sc .cx-method-list i {
+  display: grid;
+  place-items: center;
+  width: 37px;
+  height: 37px;
+  font-style: normal;
+  color: #08997f;
+  background: #edf8f5;
+}
+.sc .cx-method-list i.authenticator {
+  color: #6258bd;
+  background: #f2f1fb;
+}
+.sc .cx-method-list i.google {
+  color: #3669e8;
+  background: #f2f5fa;
+  font:500 14px "Sarabun", sans-serif;
+}
+.sc .cx-method-list i svg {
+  width: 17px;
+}
+.sc .cx-method-list span b,
+.sc .cx-method-list span small {
+  display: block;
+}
+.sc .cx-method-list span b {
+  font-size: 12.5px;
+  color: #172235;
+}
+.sc .cx-method-list span small {
+  margin-top: 3px;
+  font-size: 10.5px;
+  color: #7c899a;
+}
+.sc .cx-method-list > div > button {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 2px;
+  border: 0;
+  background: transparent;
+  font-size: 11px;
+  color: #5e6e82;
+  cursor: pointer;
+}
+.sc .cx-method-list > div > button:hover {
+  color: #087c69;
+}
+.sc .cx-method-list > div > button svg {
+  width: 13px;
+}
+.sc .cx-add-method {
+  display: grid;
+  grid-template-columns: 28px 1fr 18px;
+  align-items: center;
+  gap: 7px;
+  width: calc(100% - 30px);
+  min-height: 57px;
+  margin: 13px 15px;
+  text-align: left;
+  color: #546477;
+  background: #f8fafb;
+  border: 1px dashed #bfcbd6;
+  cursor: pointer;
+}
+.sc .cx-add-method:hover {
+  border-color: var(--sr-signal-2);
+  background: #f2fbf9;
+}
+.sc .cx-add-method > svg {
+  width: 15px;
+}
+.sc .cx-add-method > svg:last-child {
+  justify-self: end;
+}
+.sc .cx-add-method b,
+.sc .cx-add-method small {
+  display: block;
+}
+.sc .cx-add-method b {
+  font-size: 12px;
+  color: #1c293a;
+}
+.sc .cx-add-method small {
+  margin-top: 2px;
+  font-size: 10.5px;
+  color: #8491a1;
+}
+
+/* PROFILE */
+.sc .cx-account-profile dl {
+  margin: 0;
+}
+.sc .cx-account-profile dl > div {
+  display: grid;
+  grid-template-columns: 105px minmax(0, 1fr);
+  gap: 10px;
+  padding: 11px 14px;
+  border-bottom: 1px solid #e7ebef;
+}
+.sc .cx-account-profile dl > div:last-child {
+  border-bottom: 0;
+}
+.sc .cx-account-profile dt {
+  font-size: 10.5px;
+  color: #7c8999;
+}
+.sc .cx-account-profile dd {
+  margin: 0;
+  font-size: 11px;
+  font-weight:500;
+  color: #1b2839;
+  overflow-wrap: anywhere;
+}
+
+/* SECURITY POLICY */
+.sc .cx-account-policy > header > svg {
+  width: 17px;
+  color: #7c8998;
+}
+.sc .cx-trust-window {
+  display: grid;
+  grid-template-columns: 28px 1fr auto;
+  align-items: center;
+  gap: 8px;
+  min-height: 60px;
+  padding: 10px 14px;
+}
+.sc .cx-trust-window > svg {
+  width: 16px;
+  color: #617289;
+}
+.sc .cx-trust-window span b,
+.sc .cx-trust-window span small {
+  display: block;
+}
+.sc .cx-trust-window span b {
+  font-size: 12px;
+  color: #172436;
+}
+.sc .cx-trust-window span small {
+  margin-top: 3px;
+  font-size: 10.5px;
+  color: #8592a1;
+}
+.sc .cx-trust-window > strong {
+  font-size: 11px;
+  color: #0a8c75;
+}
+
+/* ACCOUNT RECOVERY */
+.sc .cx-account-recovery > div {
+  display: grid;
+  grid-template-columns: 30px 1fr auto;
+  align-items: center;
+  gap: 8px;
+  min-height: 69px;
+  padding: 11px 14px;
+}
+.sc .cx-account-recovery > div > svg {
+  width: 18px;
+  color: #0aa186;
+}
+.sc .cx-account-recovery span b,
+.sc .cx-account-recovery span small {
+  display: block;
+}
+.sc .cx-account-recovery span b {
+  font-size: 12px;
+}
+.sc .cx-account-recovery span small {
+  margin-top: 3px;
+  font-size: 10.5px;
+  color: #8592a1;
+}
+
+/* responsive — breakpoint ตามไฟล์ต้นฉบับ */
+@media (max-width: 1180px) {
+  .sc .cx-account-cover {
+    grid-template-columns: 68px 1fr;
+  }
+  .sc .cx-account-facts {
+    grid-column: 1 / 3;
+  }
+  .sc .cx-account-layout {
+    grid-template-columns: 1fr 340px;
+  }
+  .sc .cx-method-list > div {
+    grid-template-columns: 40px minmax(0, 1fr) auto;
+  }
+  .sc .cx-method-list > div > button {
+    display: none;
+  }
+}
+@media (max-width: 860px) {
+  .sc .cx-account-layout {
+    grid-template-columns: 1fr;
+  }
+  .sc .cx-account-side {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+  .sc .cx-account-profile {
+    grid-row: span 2;
+  }
+  .sc .cx-account-recovery {
+    align-self: start;
+  }
+}
+@media (max-width: 620px) {
+  .sc .cx-account-cover {
+    display: block;
+    padding: 16px;
+  }
+  .sc .cx-account-cover .cx-account-avatar {
+    margin-bottom: 12px;
+  }
+  .sc .cx-account-facts {
+    grid-template-columns: 1fr;
+    margin-top: 15px;
+  }
+  .sc .cx-account-facts > span {
+    min-height: 50px;
+    border-left: 0;
+    border-top: 1px solid #2a374a;
+  }
+  .sc .cx-account-facts > span:first-child {
+    border-top: 0;
+  }
+  .sc .cx-account-side {
+    display: block;
+  }
+  .sc .cx-method-list > div {
+    grid-template-columns: 37px minmax(0, 1fr);
+  }
+  .sc .cx-method-list .cx-chip {
+    grid-column: 2;
+    justify-self: start;
+  }
+}
+
+
+/* ── น้ำหนักตัวอักษร: เนื้อหาไม่หนา หัวข้อหลักเท่านั้นที่หนา ──
+   strong/b/th หนาโดยดีฟอลต์ของเบราว์เซอร์ ต้อง reset ตรงนี้ ไม่งั้น
+   ต่อให้ไม่มี font-weight ใน CSS ก็ยังหนาอยู่ */
+.sc strong,
+.sc b,
+.sc th,
+.sc dt {
+  font-weight: 500;
+}
+.sc h1,
+.sc h2 {
+  font-weight: 700;
+}
+.sc .cx-command h1 {
+  font-weight: 800;
+}
+
+/* utility bold ของ Tailwind ที่ยังเหลือในเซลล์ตาราง/ป้าย — ทำให้ไม่หนาเช่นกัน */
+.sc .font-bold,
+.sc .font-semibold,
+.sc .font-extrabold {
+  font-weight: 500;
+}
+
+/* ── ส่วนที่ดีไซน์ต้นแบบไม่มี: UI จัดการ Passkey จริง ─────────────────────
+   ดีไซน์แสดงแค่ "รายการวิธีเข้าสู่ระบบ" แบบ read-only แต่ของจริงต้องเพิ่ม/ลบ/
+   เปลี่ยนชื่ออุปกรณ์ได้ จึงเติมปุ่ม + ฟอร์ม + แถบข้อความในภาษาเดียวกับ cx-*
+   (ขอบเหลี่ยม, mono label, เขียว --sr-signal เป็นสีเน้น) */
+
+.sc .cx-panel-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  padding: 0 11px;
+  font: 500 12px "Sarabun", sans-serif;
+  white-space: nowrap;
+  color: #46586e;
+  background: #fff;
+  border: 1px solid #dbe2e8;
+  cursor: pointer;
+  transition: 0.16s;
+}
+.sc .cx-panel-action:hover:not(:disabled) {
+  color: #087c69;
+  background: #edfaf7;
+  border-color: #8edbcb;
+}
+.sc .cx-panel-action:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.sc .cx-panel-action svg {
+  width: 13px;
+}
+
+.sc button.cx-primary {
+  color: #eafffa;
+  background: #0d6f5e;
+  border-color: #0d6f5e;
+}
+.sc button.cx-primary:hover:not(:disabled) {
+  color: #fff;
+  background: #0a5b4d;
+  border-color: #0a5b4d;
+}
+
+.sc .cx-passkey-list {
+  display: flex;
+  flex-direction: column;
+}
+
+/* ฟอร์มเพิ่ม passkey — ท้าย panel, พื้นเทาจางแยกจากรายการด้านบน */
+.sc .cx-add-form {
+  padding: 13px 15px;
+  background: #f7f9fb;
+  border-top: 1px solid #e1e6eb;
+}
+.sc .cx-add-form label {
+  display: block;
+  margin-bottom: 7px;
+  font: 500 10.5px "IBM Plex Mono", ui-monospace, monospace;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: #71808f;
+}
+.sc .cx-add-form > div {
+  display: flex;
+  gap: 7px;
+}
+.sc .cx-add-form input {
+  flex: 1;
+  min-width: 0;
+  min-height: 32px;
+  padding: 0 11px;
+  font: 400 11px "Sarabun", sans-serif;
+  color: #1b2533;
+  background: #fff;
+  border: 1px solid #cdd6df;
+  outline: none;
+}
+.sc .cx-add-form input:focus {
+  border-color: #6ec9b6;
+}
+.sc .cx-add-form button {
+  min-height: 32px;
+  padding: 0 14px;
+  font: 500 12.5px "Sarabun", sans-serif;
+  color: #46586e;
+  background: #fff;
+  border: 1px solid #dbe2e8;
+  cursor: pointer;
+}
+.sc .cx-add-form button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.sc .cx-inline-error,
+.sc .cx-inline-warn {
+  margin: 0;
+  padding: 10px 15px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  border-top: 1px solid #e1e6eb;
+}
+.sc .cx-inline-error {
+  color: #8f2437;
+  background: #fdf2f4;
+  border-left: 3px solid #d3465e;
+}
+.sc .cx-inline-warn {
+  color: #7c5312;
+  background: #fdf8ee;
+  border-left: 3px solid #d9a13a;
+}
+.sc .cx-inline-error a {
+  color: inherit;
+  text-decoration: underline;
+}
+
+/* ── แถวอุปกรณ์ Passkey (PasskeyCard) ────────────────────────────────────
+   เดิมเป็น Tailwind ขอบมน (rounded-xl) คนละภาษากับ cx-* — แปลงเป็นแถวเหลี่ยม
+   คั่นด้วยเส้น 1px เหมือน cx-method-list ให้บล็อกเดียวกันดูเป็นชุดเดียว */
+
+.sc .cx-pk-row {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 15px;
+  border-bottom: 1px solid #eef1f4;
+}
+.sc .cx-pk-row:last-child {
+  border-bottom: 0;
+}
+.sc .cx-pk-row > i {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  color: #0d7d6a;
+  background: #eafaf6;
+  border: 1px solid #c6e9e0;
+}
+/* security key = ฮาร์ดแวร์ภายนอก ใช้สีน้ำเงินแยกจาก platform (ในเครื่อง) */
+.sc .cx-pk-row > i.roaming {
+  color: #2760a8;
+  background: #eef4fc;
+  border-color: #cbdcf2;
+}
+.sc .cx-pk-row > i svg {
+  width: 17px;
+}
+
+.sc .cx-pk-name {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+.sc .cx-pk-name > b {
+  overflow: hidden;
+  font: 600 11px "Sarabun", sans-serif;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: #16202e;
+}
+.sc .cx-pk-meta {
+  margin-top: 3px;
+  font: 400 12px "IBM Plex Mono", ui-monospace, monospace;
+  color: #7b8899;
+}
+.sc .cx-pk-meta .warn {
+  color: #9a6a12;
+}
+.sc .cx-pk-error {
+  margin-top: 4px;
+  font-size: 12px;
+  color: #b3374c;
+}
+
+.sc .cx-pk-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.sc .cx-pk-icon {
+  display: grid;
+  place-items: center;
+  width: 27px;
+  height: 27px;
+  color: #75849a;
+  background: #fff;
+  border: 1px solid #e0e6ec;
+  cursor: pointer;
+  transition: 0.16s;
+}
+.sc .cx-pk-icon:hover:not(:disabled) {
+  color: #087c69;
+  background: #edfaf7;
+  border-color: #8edbcb;
+}
+.sc .cx-pk-icon.danger:hover:not(:disabled) {
+  color: #b3374c;
+  background: #fdf2f4;
+  border-color: #eabac4;
+}
+.sc .cx-pk-icon:disabled {
+  color: #c3ccd6;
+  cursor: not-allowed;
+}
+.sc .cx-pk-icon svg {
+  width: 14px;
+}
+
+/* ยืนยันลบ — อยู่ในแถวเดิม ไม่เด้ง dialog (ลดการขัดจังหวะ) */
+.sc .cx-pk-confirm {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  white-space: nowrap;
+  color: #6b7a8c;
+}
+.sc .cx-pk-confirm button {
+  padding: 4px 9px;
+  font: 500 12px "Sarabun", sans-serif;
+  background: #fff;
+  border: 1px solid #e0e6ec;
+  cursor: pointer;
+}
+.sc .cx-pk-confirm button.danger {
+  color: #b3374c;
+  border-color: #eabac4;
+}
+.sc .cx-pk-confirm button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* เปลี่ยนชื่อแบบ inline */
+.sc .cx-pk-rename {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.sc .cx-pk-rename input {
+  flex: 1;
+  min-width: 0;
+  min-height: 29px;
+  padding: 0 9px;
+  font: 400 11px "Sarabun", sans-serif;
+  color: #1b2533;
+  background: #fff;
+  border: 1px solid #6ec9b6;
+  outline: none;
+}
+.sc .cx-pk-rename button {
+  min-height: 29px;
+  padding: 0 11px;
+  font: 500 12px "Sarabun", sans-serif;
+  color: #46586e;
+  background: #fff;
+  border: 1px solid #e0e6ec;
+  cursor: pointer;
+}
+.sc .cx-pk-rename button.cx-primary {
+  color: #eafffa;
+  background: #0d6f5e;
+  border-color: #0d6f5e;
+}
+.sc .cx-pk-rename button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* ── Authenticator (TOTP) + นโยบายยืนยันตัวตน ในหน้า /account ────────────
+   สองการ์ดนี้เดิมเป็น Tailwind (rounded-xl, p-6) — ย้ายมาใช้ cx-panel
+   ให้เข้าชุดกับบล็อกอื่น ส่วน toggle ใช้ทรงแคปซูลเหมือน .sr .auth-switch */
+
+.sc .cx-setting-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 12px 15px;
+  border-bottom: 1px solid #eef1f4;
+}
+.sc .cx-setting-row:last-child {
+  border-bottom: 0;
+}
+.sc .cx-setting-row > div {
+  min-width: 0;
+}
+.sc .cx-setting-row b {
+  display: block;
+  font: 600 11px "Sarabun", sans-serif;
+  color: #16202e;
+}
+.sc .cx-setting-row small {
+  display: block;
+  margin-top: 3px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #7b8899;
+}
+
+.sc .cx-switch {
+  position: relative;
+  flex: none;
+  width: 32px;
+  height: 18px;
+  padding: 0;
+  background: #d7dde5;
+  border: 0;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.sc .cx-switch[aria-checked="true"] {
+  background: var(--sr-signal-2);
+}
+.sc .cx-switch > i {
+  position: absolute;
+  top: 1px;
+  left: 1px;
+  width: 16px;
+  height: 16px;
+  background: #fff;
+  border-radius: 50%;
+  transition: transform 0.15s;
+}
+.sc .cx-switch[aria-checked="true"] > i {
+  transform: translateX(14px);
+}
+.sc .cx-switch:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ตัวเลือกปัจจัยที่ใช้ก่อน — segmented เต็มความกว้าง */
+.sc .cx-factor-pick {
+  display: flex;
+  margin-top: 9px;
+  border: 1px solid #dbe2e8;
+}
+.sc .cx-factor-pick button {
+  flex: 1;
+  height: 32px;
+  font: 500 12.5px "Sarabun", sans-serif;
+  color: #6b7887;
+  background: #fff;
+  border: 0;
+  cursor: pointer;
+  transition: 0.12s;
+}
+.sc .cx-factor-pick button + button {
+  border-left: 1px solid #e6ebf0;
+}
+.sc .cx-factor-pick button.on {
+  color: #fff;
+  background: var(--sr-ink);
+}
+.sc .cx-factor-pick button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+/* ขั้นตอนผูกแอป Authenticator */
+.sc .cx-totp-enroll {
+  padding: 13px 15px;
+  background: #f7f9fb;
+  border-top: 1px solid #e1e6eb;
+}
+.sc .cx-totp-step {
+  margin: 0 0 9px;
+  font: 500 12.5px "Sarabun", sans-serif;
+  color: #3c4a5c;
+}
+.sc .cx-totp-qr {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 13px;
+}
+.sc .cx-totp-qr > div:first-child {
+  padding: 8px;
+  background: #fff;
+  border: 1px solid #dbe2e8;
+}
+.sc .cx-totp-secret small {
+  display: block;
+  margin-bottom: 5px;
+  font: 500 10.5px "IBM Plex Mono", ui-monospace, monospace;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: #7b8899;
+}
+.sc .cx-totp-secret code {
+  display: inline-block;
+  max-width: 230px;
+  padding: 5px 8px;
+  font: 400 12.5px "IBM Plex Mono", ui-monospace, monospace;
+  word-break: break-all;
+  color: #16202e;
+  background: #eef2f6;
+  border: 1px solid #dde4ea;
+}
+.sc .cx-totp-code {
+  display: flex;
+  gap: 7px;
+}
+.sc .cx-totp-code input {
+  width: 116px;
+  min-height: 32px;
+  padding: 0 11px;
+  font: 400 14px "IBM Plex Mono", ui-monospace, monospace;
+  letter-spacing: 3px;
+  text-align: center;
+  color: #16202e;
+  background: #fff;
+  border: 1px solid #cdd6df;
+  outline: none;
+}
+.sc .cx-totp-code input:focus {
+  border-color: #6ec9b6;
+}
+.sc .cx-totp-code button {
+  min-height: 32px;
+  padding: 0 14px;
+  font: 500 12.5px "Sarabun", sans-serif;
+  color: #46586e;
+  background: #fff;
+  border: 1px solid #dbe2e8;
+  cursor: pointer;
+}
+.sc .cx-totp-code button.cx-primary {
+  color: #eafffa;
+  background: #0d6f5e;
+  border-color: #0d6f5e;
+}
+.sc .cx-totp-code button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* แถบปุ่มท้าย panel */
+.sc .cx-panel-foot {
+  display: flex;
+  gap: 7px;
+  padding: 12px 15px;
+  border-top: 1px solid #eef1f4;
+}
+.sc .cx-panel-foot .danger {
+  color: #b3374c;
+  border-color: #eabac4;
+}
+.sc .cx-panel-foot .danger:hover:not(:disabled) {
+  color: #8f2437;
+  background: #fdf2f4;
+  border-color: #d99faf;
+}
+
+/* overlay ระหว่างรอผู้ใช้แตะ authenticator */
+.sc .cx-verify-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  background: rgba(9, 14, 22, 0.45);
+}
+.sc .cx-verify-overlay > div {
+  padding: 19px 26px;
+  font-size: 12px;
+  color: #16202e;
+  background: #fff;
+  border: 1px solid #dbe2e8;
+}
+
+
+/* ══════════════════════════════════════════════════════════════
+   หน้า Audit Log — port จากต้นแบบดีไซน์ (console.css)
+   ปรับให้เข้าระบบ: scope .sc, ฟอนต์ Sarabun, ขอบเหลี่ยม,
+   เนื้อหาไม่ใช้ตัวหนา (เหลือเฉพาะ h1/h2)
+   ══════════════════════════════════════════════════════════════ */
+.sc .cx-audit-actions{display:flex;align-items:center;gap:8px;position:relative;z-index:2}.sc .cx-audit-actions .cx-chip{height:35px;border-color:#246056;background:#102823;color:#70ebd3;font-size:11px}.sc .cx-audit-actions button{height:35px;border-radius:0;border-color:#45546a;background:#141d2a;color:#edf3fa;font-size:13px}.sc .cx-audit-status{min-height:0;display:grid;grid-template-columns:minmax(350px,1fr) auto;align-items:stretch;margin-bottom:12px;background:#101824;color:#eaf2fb;border:1px solid #263448;border-top:2px solid var(--sr-signal-2)}.sc .cx-audit-status-copy{display:flex;align-items:center;gap:15px;padding:11px 18px}.sc .cx-audit-seal{width:48px;height:48px;display:grid;place-items:center;background:#15352f;border:1px solid #2c6259;color:#6eebd2;flex:none}.sc .cx-audit-seal svg{width:22px}.sc .cx-audit-status-copy small{color:#6d829a;font-size:12px;letter-spacing:1px}.sc .cx-audit-status-copy h2{margin:5px 0 3px;font:800 17px "Sarabun",sans-serif}.sc .cx-audit-status-copy p{margin:0;color:#8192a7;font-size:12px}.sc .cx-audit-summary{display:grid;grid-template-columns:repeat(4,minmax(105px,1fr));border-left:1px solid #29364a}.sc .cx-audit-summary>span{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:9px 14px;border-left:1px solid #29364a;text-align:center}.sc .cx-audit-summary>span:first-child{border-left:0}.sc .cx-audit-summary small{color:#8292a6;font-size:10.5px}.sc .cx-audit-summary b{margin-top:3px;font-size:17px}.sc .cx-audit-summary b.signal{color:#55ddc2}.sc .cx-audit-summary b.danger{color:#ff6d8d}.sc .cx-audit-workspace{display:grid;grid-template-columns:minmax(0,1.65fr) minmax(330px,.62fr);gap:12px}.sc .cx-audit-log>header,.sc .cx-audit-detail>header{min-height:64px}.sc .cx-audit-log>header h2,.sc .cx-audit-detail>header h2{font-size:16px}.sc .cx-audit-log>header span,.sc .cx-audit-detail>header span{font-size:12px}.sc .cx-audit-count{padding:6px 9px;border:1px solid #d5dee6;background:#f8fafb;color:#607185!important}.sc .cx-audit-toolbar{min-height:58px;display:flex;align-items:center;gap:7px;padding:10px 12px;border-bottom:1px solid #e1e6eb;background:#fafbfc}.sc .cx-audit-toolbar label{height:36px;display:flex;align-items:center;gap:8px;min-width:260px;flex:1;padding:0 10px;border:1px solid #d5dde5;background:#fff}.sc .cx-audit-toolbar label svg{width:16px;color:#7d8b9b}.sc .cx-audit-toolbar input{width:100%;border:0;outline:0;background:transparent;font-size:13px}.sc .cx-audit-toolbar>button{height:36px;padding:0 11px;border:1px solid #d5dde5;background:#fff;color:#5d6c7e;font-size:12px;white-space:nowrap}.sc .cx-audit-toolbar>button.active{border-color:#49bba6;background:#eefaf7;color:#087864}.sc .cx-audit-table-head,.sc .cx-audit-rows>button{display:grid;grid-template-columns:145px minmax(170px,1.15fr) minmax(130px,.8fr) minmax(160px,1fr) 100px 18px;align-items:center;gap:10px}.sc .cx-audit-table-head{min-height:38px;padding:0 14px;background:#f5f7f9;border-bottom:1px solid #dfe5ea;color:#7e8b9a;font-size:11px;letter-spacing:.45px}.sc .cx-audit-rows>button{width:100%;min-height:71px;padding:9px 14px;border:0;border-bottom:1px solid #e4e9ed;background:#fff;color:#172335;text-align:left;transition:.14s}.sc .cx-audit-rows>button:hover{background:#f8fbfb}.sc .cx-audit-rows>button.selected{background:#f0faf7;box-shadow:inset 3px 0 #10aa8d}.sc .cx-audit-rows>button>svg{width:16px;color:#91a0af}.sc .cx-audit-rows time b,.sc .cx-audit-rows time small,.sc .cx-audit-rows .actor b,.sc .cx-audit-rows .actor small,.sc .cx-audit-rows .target b,.sc .cx-audit-rows .target small,.sc .cx-audit-rows>button>span:nth-child(3) small{display:block}.sc .cx-audit-rows time b,.sc .cx-audit-rows .actor b,.sc .cx-audit-rows .target b{font-size:13px}.sc .cx-audit-rows time small,.sc .cx-audit-rows .actor small,.sc .cx-audit-rows .target small,.sc .cx-audit-rows>button>span:nth-child(3) small{margin-top:4px;color:#8492a2;font-size:11px}.sc .cx-audit-rows>button>span:nth-child(3)>i{display:inline-flex;padding:4px 6px;border:1px solid #ced8e2;background:#f7f9fb;color:#4f6074;font:500 10px "IBM Plex Mono";font-style:normal}.sc .cx-audit-rows>button>span:nth-child(3)>i.signal{border-color:#a7e3d8;background:#eefaf7;color:#087966}.sc .cx-audit-rows>button>span:nth-child(3)>i.warn{border-color:#edd39d;background:#fff9ed;color:#956000}.sc .cx-audit-rows>button>span:nth-child(3)>i.danger{border-color:#f1b5c4;background:#fff3f6;color:#b7133d}.sc .cx-audit-rows>button>span:nth-child(3)>i.info{border-color:#bbcee6;background:#f3f7fc;color:#305f99}.sc .cx-audit-rows .result{display:flex;align-items:center;gap:7px;font-size:12px;font-weight:500}.sc .cx-audit-rows .result.signal,.sc .cx-audit-rows .result.info{color:#087966}.sc .cx-audit-rows .result.warn{color:#956000}.sc .cx-audit-rows .result.danger{color:#b7133d}.sc .cx-audit-pagination{min-height:48px;display:flex;align-items:center;justify-content:space-between;padding:8px 13px;color:#748295;font-size:12px}.sc .cx-audit-pagination>div{display:flex;align-items:center;gap:8px}.sc .cx-audit-pagination button{height:30px;padding:0 9px;border:1px solid #d7dfe7;background:#fff;color:#526276;font-size:12px}.sc .cx-audit-pagination button:disabled{color:#acb5bf;background:#f5f7f9}.sc .cx-audit-pagination b{font-size:11px}.sc .cx-audit-detail{height:max-content;position:sticky;top:67px}.sc .cx-audit-detail>header{align-items:flex-start}.sc .cx-audit-detail>header .cx-chip{flex:none;white-space:nowrap}.sc .cx-audit-detail-id{padding:15px;border-bottom:1px solid #e4e9ee;background:#f8fafb}.sc .cx-audit-detail-id>small,.sc .cx-audit-detail-id>b,.sc .cx-audit-detail-id>span{display:block}.sc .cx-audit-detail-id>small{color:#8190a0;font-size:11px}.sc .cx-audit-detail-id>b{margin:5px 0 8px;font-size:13px;line-height:1.4;word-break:break-word;color:#172335}.sc .cx-audit-detail-id>span{display:block;color:#8190a0;font-size:10.5px;word-break:break-all}.sc .cx-audit-detail-id svg{width:15px}.sc .cx-audit-detail dl{margin:0}.sc .cx-audit-detail dl>div{display:grid;grid-template-columns:105px minmax(0,1fr);gap:10px;padding:10px 14px;border-bottom:1px solid #e8ecef}.sc .cx-audit-detail dt{color:#7b8998;font-size:12px}.sc .cx-audit-detail dd{margin:0;font-size:13px;overflow-wrap:anywhere}.sc .cx-audit-detail dd small{display:block;margin-top:3px;color:#8391a1;font-size:11px}.sc .cx-audit-json{margin:13px;padding:12px;background:#101824;color:#ced9e6}.sc .cx-audit-json>span{display:block;margin-bottom:8px;color:#65d9c3;font-size:11px}.sc .cx-audit-json code{font-size:12px;line-height:1.55;overflow-wrap:anywhere}.sc .cx-audit-hash{display:grid;grid-template-columns:1fr 18px 1fr;align-items:center;gap:6px;margin:0 13px 13px;padding:11px;border:1px solid #dce3e9}.sc .cx-audit-hash>svg{width:15px;color:#8c99a7}.sc .cx-audit-hash small,.sc .cx-audit-hash code{display:block}.sc .cx-audit-hash small{color:#8492a2;font-size:10px}.sc .cx-audit-hash code{margin-top:4px;font-size:12px;color:#2b3d52}
+@media(max-width:1240px){
+.sc .cx-audit-status{grid-template-columns:1fr}.sc .cx-audit-summary{border-left:0;border-top:1px solid #29364a}.sc .cx-audit-workspace{grid-template-columns:1fr}.sc .cx-audit-detail{position:static;display:grid;grid-template-columns:1fr 1fr}.sc .cx-audit-detail>header{grid-column:1/3}.sc .cx-audit-detail-id{border-right:1px solid #e4e9ee}.sc .cx-audit-detail dl{grid-column:2;grid-row:2/4}.sc .cx-audit-detail .cx-audit-json,.sc .cx-audit-detail .cx-audit-hash{grid-column:1}.sc .cx-audit-table-head,.sc .cx-audit-rows>button{grid-template-columns:135px minmax(170px,1fr) minmax(130px,.8fr) minmax(150px,1fr) 90px 16px}
+}
+@media(max-width:800px){
+.sc .cx-audit-status-copy{align-items:flex-start}.sc .cx-audit-summary{grid-template-columns:1fr 1fr}.sc .cx-audit-summary>span:nth-child(3){border-left:0}.sc .cx-audit-summary>span:nth-child(n+3){border-top:1px solid #29364a}.sc .cx-audit-toolbar{overflow:auto}.sc .cx-audit-toolbar label{min-width:260px}.sc .cx-audit-table-head{display:none}.sc .cx-audit-rows>button{grid-template-columns:125px 1fr 18px;gap:8px}.sc .cx-audit-rows>button>span:nth-child(3),.sc .cx-audit-rows>button .target,.sc .cx-audit-rows>button .result{grid-column:2}.sc .cx-audit-rows>button>svg{grid-column:3;grid-row:1}.sc .cx-audit-detail{display:block}.sc .cx-audit-detail>header{display:flex}.sc .cx-audit-detail-id{border-right:0}.sc .cx-audit-pagination{align-items:flex-start;gap:8px;flex-direction:column}
+}
+@media(max-width:520px){
+.sc .cx-audit-actions .cx-chip{display:none}.sc .cx-audit-status-copy{padding:15px}.sc .cx-audit-seal{width:40px;height:40px}.sc .cx-audit-status-copy h2{font-size:15px}.sc .cx-audit-summary b{font-size:19px}.sc .cx-audit-rows>button{grid-template-columns:1fr 18px}.sc .cx-audit-rows time{grid-column:1}.sc .cx-audit-rows .actor,.sc .cx-audit-rows>button>span:nth-child(3),.sc .cx-audit-rows>button .target,.sc .cx-audit-rows>button .result{grid-column:1}.sc .cx-audit-rows>button>svg{grid-column:2;grid-row:1}
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   หน้าลงทะเบียนระบบย่อย (/developer/subsystems/new)
+   port จากดีไซน์ Signal Console — Anuphan ถูกแทนด้วย Sarabun (ฟอนต์โปรเจกต์)
+   ════════════════════════════════════════════════════════════════════════ */
+
+.sc .cx-register-progress {
+  min-height: 70px;
+  display: grid;
+  grid-template-columns: 1fr 22px 1fr 22px 1fr;
+  align-items: center;
+  margin-bottom: 12px;
+  padding: 10px 16px;
+  background: #fff;
+  border: 1px solid #dce2e8;
+  border-top: 2px solid #15b99b;
+}
+.sc .cx-register-progress > div {
+  display: grid;
+  grid-template-columns: 34px 1fr;
+  grid-template-rows: auto auto;
+  align-items: center;
+  gap: 1px 10px;
+  color: #7f8c9c;
+}
+.sc .cx-register-progress > div > span {
+  grid-row: 1/3;
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border: 1px solid #d8e0e7;
+  background: #f7f9fb;
+  color: #8190a0;
+  font-size: 11px;
+}
+.sc .cx-register-progress > div > b {
+  align-self: end;
+  color: #344256;
+  font-size: 13px;
+}
+.sc .cx-register-progress > div > small {
+  align-self: start;
+  font-size: 11px;
+}
+.sc .cx-register-progress > div.active > span {
+  border-color: #8edecf;
+  background: #eaf9f5;
+  color: #087b67;
+}
+.sc .cx-register-progress > div.active > b {
+  color: #0b806c;
+}
+.sc .cx-register-progress > svg {
+  width: 16px;
+  color: #aab4be;
+}
+
+.sc .cx-register-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.65fr) minmax(300px, 0.52fr);
+  align-items: start;
+  gap: 12px;
+}
+.sc .cx-register-form {
+  margin: 0;
+}
+.sc .cx-register-form > header {
+  min-height: 68px;
+  padding: 13px 18px;
+}
+.sc .cx-register-form > header span {
+  font-size: 10px;
+  letter-spacing: 1px;
+}
+.sc .cx-register-form > header h2 {
+  font-size: 17px;
+}
+.sc .cx-register-form > header .cx-chip {
+  font-size: 10px;
+}
+
+.sc .cx-register-section {
+  display: grid;
+  grid-template-columns: 210px minmax(0, 1fr);
+  gap: 22px;
+  padding: 20px 18px;
+  border-bottom: 1px solid #e2e7ec;
+}
+.sc .cx-register-section-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+}
+.sc .cx-register-section-head > i {
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  flex: none;
+  border: 1px solid #cce6e1;
+  background: #f0faf7;
+  color: #0b8a73;
+  font-style: normal;
+}
+.sc .cx-register-section-head > i svg {
+  width: 17px;
+}
+.sc .cx-register-section-head small,
+.sc .cx-register-section-head h3,
+.sc .cx-register-section-head p {
+  display: block;
+}
+.sc .cx-register-section-head small {
+  color: #729184;
+  font-size: 9px;
+  letter-spacing: 0.8px;
+}
+.sc .cx-register-section-head h3 {
+  margin: 4px 0 3px;
+  font: 700 14px "Sarabun", sans-serif;
+}
+.sc .cx-register-section-head p {
+  margin: 0;
+  color: #8290a0;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.sc .cx-register-fields {
+  display: grid;
+  gap: 14px;
+  align-content: start;
+}
+.sc .cx-register-fields.two {
+  grid-template-columns: 1fr 1fr;
+}
+.sc .cx-register-fields label {
+  display: block;
+}
+.sc .cx-register-fields label > span {
+  display: block;
+  margin-bottom: 7px;
+  color: #27364a;
+  font-size: 12px;
+  font-weight: 700;
+}
+.sc .cx-register-fields label > span b {
+  color: #d7204f;
+}
+.sc .cx-register-fields label > span em {
+  font-style: normal;
+  font-weight: 400;
+  color: #8a97a5;
+}
+.sc .cx-register-fields input,
+.sc .cx-register-fields textarea {
+  width: 100%;
+  padding: 0 12px;
+  border: 1px solid #cfd8e1;
+  border-radius: 0;
+  background: #fff;
+  color: #172335;
+  font: 400 13px "Sarabun", sans-serif;
+  outline: 0;
+  box-shadow: none;
+}
+.sc .cx-register-fields input.mono,
+.sc .cx-register-fields textarea.mono {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 12px;
+}
+.sc .cx-register-fields input {
+  height: 40px;
+}
+.sc .cx-register-fields input[readonly] {
+  background: #f5f7f9;
+  color: #728093;
+}
+.sc .cx-register-fields textarea {
+  min-height: 86px;
+  padding: 11px 12px;
+  resize: vertical;
+  line-height: 1.65;
+}
+.sc .cx-register-fields input:focus,
+.sc .cx-register-fields textarea:focus {
+  border-color: #18a98e;
+  box-shadow: 0 0 0 2px rgba(24, 169, 142, 0.1);
+}
+.sc .cx-register-fields label > small {
+  display: block;
+  margin-top: 6px;
+  color: #8391a0;
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+/* ตาราง scope — การ์ด checkbox 2 คอลัมน์ */
+.sc .cx-scope-grid {
+  grid-column: 2;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin: 0 0 14px;
+  padding: 0;
+  border: 0;
+}
+.sc .cx-scope-grid > label {
+  min-height: 70px;
+  display: grid;
+  grid-template-columns: 18px 1fr 18px;
+  align-items: center;
+  gap: 9px;
+  padding: 11px;
+  border: 1px solid #d9e0e7;
+  background: #fafbfc;
+  cursor: pointer;
+  transition: 0.14s;
+}
+.sc .cx-scope-grid > label:hover {
+  border-color: #a7cfc7;
+  background: #f6fbfa;
+}
+.sc .cx-scope-grid > label.selected {
+  border-color: #78d5c4;
+  background: #eefaf7;
+  box-shadow: inset 3px 0 #13ae91;
+}
+.sc .cx-scope-grid input {
+  width: 15px;
+  height: 15px;
+  accent-color: #0fa98d;
+}
+.sc .cx-scope-grid label > span {
+  min-width: 0;
+}
+.sc .cx-scope-grid code,
+.sc .cx-scope-grid b,
+.sc .cx-scope-grid small {
+  display: block;
+}
+.sc .cx-scope-grid code {
+  color: #087c69;
+  font: 400 11px "IBM Plex Mono", ui-monospace, monospace;
+}
+.sc .cx-scope-grid b {
+  margin-top: 2px;
+  color: #27364a;
+  font-size: 12px;
+}
+.sc .cx-scope-grid small {
+  margin-top: 2px;
+  color: #7e8d9d;
+  font-size: 10px;
+  line-height: 1.4;
+}
+.sc .cx-scope-grid label > svg {
+  width: 16px;
+  color: #b6c0ca;
+}
+.sc .cx-scope-grid label.selected > svg {
+  color: #0da889;
+}
+
+/* นโยบายการเข้าถึง — เลือกได้ทีละอัน (radio) ทรงเดียวกับการ์ด scope */
+.sc .cx-policy-grid {
+  grid-column: 2;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin: 0 0 14px;
+  padding: 0;
+  border: 0;
+}
+.sc .cx-policy-grid > label {
+  min-height: 62px;
+  display: grid;
+  grid-template-columns: 18px 1fr;
+  align-items: center;
+  gap: 9px;
+  padding: 11px;
+  border: 1px solid #d9e0e7;
+  background: #fafbfc;
+  cursor: pointer;
+  transition: 0.14s;
+}
+.sc .cx-policy-grid > label:hover {
+  border-color: #a7cfc7;
+  background: #f6fbfa;
+}
+.sc .cx-policy-grid > label.selected {
+  border-color: #78d5c4;
+  background: #eefaf7;
+  box-shadow: inset 3px 0 #13ae91;
+}
+.sc .cx-policy-grid input {
+  width: 15px;
+  height: 15px;
+  accent-color: #0fa98d;
+}
+.sc .cx-policy-grid b,
+.sc .cx-policy-grid small {
+  display: block;
+}
+.sc .cx-policy-grid b {
+  color: #27364a;
+  font-size: 12px;
+}
+.sc .cx-policy-grid small {
+  margin-top: 2px;
+  color: #7e8d9d;
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+/* ช่องตั้งค่าเพิ่มของ policy (role chips / faculty+major) */
+.sc .cx-policy-config {
+  grid-column: 2;
+  margin-bottom: 14px;
+  padding: 12px;
+  background: #f7f9fb;
+  border: 1px solid #e2e7ec;
+}
+.sc .cx-policy-config > span {
+  display: block;
+  margin-bottom: 9px;
+  font: 500 7px "IBM Plex Mono", ui-monospace, monospace;
+  letter-spacing: 0.9px;
+  text-transform: uppercase;
+  color: #71808f;
+}
+.sc .cx-policy-config .cx-register-fields {
+  gap: 9px;
+}
+.sc .cx-role-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.sc .cx-role-chips button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 28px;
+  padding: 0 11px;
+  font: 500 11px "IBM Plex Mono", ui-monospace, monospace;
+  color: #63728a;
+  background: #fff;
+  border: 1px solid #d9e0e7;
+  cursor: pointer;
+  transition: 0.14s;
+}
+.sc .cx-role-chips button:hover {
+  border-color: #a7cfc7;
+}
+.sc .cx-role-chips button.on {
+  color: #087c69;
+  background: #eefaf7;
+  border-color: #78d5c4;
+}
+.sc .cx-role-chips button svg {
+  width: 12px;
+}
+
+.sc .cx-register-form-actions {
+  min-height: 65px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 18px;
+  background: #f8fafb;
+}
+.sc .cx-register-form-actions > a {
+  color: #596a7e;
+  font-size: 12px;
+  text-decoration: none;
+}
+.sc .cx-register-form-actions > a:hover {
+  color: #087c69;
+}
+.sc .cx-register-form-actions > span {
+  margin-left: auto;
+  color: #8a97a5;
+  font-size: 10px;
+  text-align: right;
+}
+.sc .cx-register-form-actions button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 40px;
+  padding: 0 16px;
+  border-radius: 0;
+  font: 500 12px "Sarabun", sans-serif;
+  color: #eafffa;
+  background: #0d6f5e;
+  border: 1px solid #0d6f5e;
+  cursor: pointer;
+}
+.sc .cx-register-form-actions button:hover:not(:disabled) {
+  background: #0a5b4d;
+  border-color: #0a5b4d;
+}
+.sc .cx-register-form-actions button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.sc .cx-register-form-actions button svg {
+  width: 16px;
+}
+
+/* ── คอลัมน์ขวา: สรุปคำขอ (พื้นเข้ม) + เช็กลิสต์ ── */
+
+.sc .cx-register-side {
+  display: grid;
+  gap: 12px;
+  position: sticky;
+  top: 67px;
+  align-content: start;
+}
+.sc .cx-register-summary {
+  background: #101824;
+  color: #ecf3fa;
+  border: 1px solid #263449;
+  border-top: 3px solid #36ddbd;
+}
+.sc .cx-register-summary > header {
+  padding: 17px 18px;
+  border-bottom: 1px solid #29374a;
+}
+.sc .cx-register-summary > header span {
+  display: block;
+  color: #68d9c3;
+  font-size: 9px;
+  letter-spacing: 1.1px;
+  text-transform: uppercase;
+}
+.sc .cx-register-summary > header h2 {
+  margin: 5px 0 0;
+  font: 800 18px "Sarabun", sans-serif;
+}
+.sc .cx-register-readiness {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 14px;
+  padding: 11px;
+  border: 1px solid #2c5a53;
+  background: #142b2a;
+}
+.sc .cx-register-readiness.pending {
+  border-color: #5c4a20;
+  background: #292315;
+}
+.sc .cx-register-readiness > span {
+  width: 31px;
+  height: 31px;
+  display: grid;
+  place-items: center;
+  flex: none;
+  background: #1a403a;
+  color: #68e5cd;
+}
+.sc .cx-register-readiness.pending > span {
+  background: #3c3117;
+  color: #f2c25e;
+}
+.sc .cx-register-readiness svg {
+  width: 17px;
+}
+.sc .cx-register-readiness b,
+.sc .cx-register-readiness small {
+  display: block;
+}
+.sc .cx-register-readiness b {
+  font-size: 12px;
+}
+.sc .cx-register-readiness small {
+  margin-top: 3px;
+  color: #849aab;
+  font-size: 10px;
+  line-height: 1.45;
+}
+.sc .cx-register-summary dl {
+  margin: 0 14px;
+  border-top: 1px solid #293649;
+}
+.sc .cx-register-summary dl > div {
+  min-height: 43px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  border-bottom: 1px solid #293649;
+}
+.sc .cx-register-summary dt {
+  color: #8192a6;
+  font-size: 11px;
+}
+.sc .cx-register-summary dd {
+  margin: 0;
+  text-align: right;
+  font-size: 11px;
+  font-weight: 700;
+}
+.sc .cx-register-summary dd .cx-dot {
+  margin-right: 7px;
+}
+
+.sc .cx-secret-warning {
+  display: flex;
+  gap: 10px;
+  margin: 14px;
+  padding: 13px;
+  border-left: 3px solid #f3ac21;
+  background: #211e18;
+}
+.sc .cx-secret-warning > svg {
+  width: 19px;
+  flex: none;
+  color: #f4b42f;
+}
+.sc .cx-secret-warning b {
+  font-size: 12px;
+  color: #f7d99f;
+}
+.sc .cx-secret-warning p {
+  margin: 5px 0 0;
+  color: #ad9f87;
+  font-size: 10px;
+  line-height: 1.55;
+}
+
+.sc .cx-register-checklist {
+  padding: 16px 17px;
+  background: #fff;
+  border: 1px solid #dce2e8;
+}
+.sc .cx-register-checklist > span {
+  display: block;
+  color: #8492a2;
+  font-size: 9px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+}
+.sc .cx-register-checklist h3 {
+  margin: 4px 0 11px;
+  font: 700 14px "Sarabun", sans-serif;
+}
+.sc .cx-register-checklist ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.sc .cx-register-checklist li {
+  min-height: 35px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-top: 1px solid #e5eaee;
+  color: #526276;
+  font-size: 11px;
+}
+.sc .cx-register-checklist li svg {
+  width: 14px;
+  flex: none;
+  color: #0aa789;
+}
+.sc .cx-register-checklist li.todo {
+  color: #93a0af;
+}
+.sc .cx-register-checklist li.todo svg {
+  color: #c2cbd4;
+}
+
+/* ── หน้าผลลัพธ์หลังลงทะเบียนสำเร็จ ────────────────────────────────────
+   ดีไซน์ต้นแบบไม่มีหน้านี้ (จบที่ "ส่งคำขอ") แต่ของจริงต้องส่งมอบ client_id,
+   API key และลิงก์รับ secret แบบใช้ครั้งเดียว จึงต่อยอดจากภาษาเดียวกัน */
+
+.sc .cx-done-hero {
+  display: grid;
+  grid-template-columns: 46px minmax(0, 1fr);
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 10px;
+  padding: 18px 20px;
+  color: #edf4fb;
+  background: #101824;
+  border: 1px solid #273448;
+  border-top: 2px solid var(--sr-signal);
+}
+.sc .cx-done-hero > i {
+  width: 46px;
+  height: 46px;
+  display: grid;
+  place-items: center;
+  color: #8ff3df;
+  background: #17332f;
+  border: 1px solid #2b625a;
+}
+.sc .cx-done-hero > i svg {
+  width: 22px;
+}
+.sc .cx-done-hero span {
+  display: block;
+  font: 500 8px "IBM Plex Mono", ui-monospace, monospace;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: #6f8299;
+}
+.sc .cx-done-hero h2 {
+  margin: 5px 0 3px;
+  font: 800 19px "Sarabun", sans-serif;
+}
+.sc .cx-done-hero p {
+  margin: 0;
+  color: #91a1b5;
+  font-size: 11px;
+}
+
+.sc .cx-done-ids {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  border: 1px solid #dce2e8;
+  background: #fff;
+}
+.sc .cx-done-ids > div {
+  min-height: 64px;
+  padding: 12px 15px;
+  border-left: 1px solid #e6ebf0;
+}
+.sc .cx-done-ids > div:first-child {
+  border-left: 0;
+}
+.sc .cx-done-ids small {
+  display: block;
+  font: 500 7px "IBM Plex Mono", ui-monospace, monospace;
+  letter-spacing: 0.9px;
+  text-transform: uppercase;
+  color: #7b8899;
+}
+.sc .cx-done-ids code {
+  display: block;
+  margin-top: 7px;
+  font: 400 12px "IBM Plex Mono", ui-monospace, monospace;
+  word-break: break-all;
+  color: #16202e;
+}
+
+/* กล่องค่าที่ต้องคัดลอกทันที (API key / ลิงก์รับ secret / webhook endpoint) */
+.sc .cx-reveal {
+  margin: 0 15px 13px;
+  padding: 11px 12px;
+  font: 400 11px "IBM Plex Mono", ui-monospace, monospace;
+  word-break: break-all;
+  color: #16202e;
+  background: #f4f7f9;
+  border: 1px solid #dde4ea;
+}
+.sc .cx-panel .cx-note {
+  margin: 0;
+  padding: 11px 15px 13px;
+  color: #6b7a8c;
+  font-size: 10px;
+  line-height: 1.6;
+}
+.sc .cx-panel .cx-note code {
+  padding: 1px 5px;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  background: #eef2f6;
+}
+.sc .cx-done-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+.sc .cx-done-actions a {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 40px;
+  padding: 0 16px;
+  font: 500 12px "Sarabun", sans-serif;
+  text-decoration: none;
+  color: #46586e;
+  background: #fff;
+  border: 1px solid #dbe2e8;
+}
+.sc .cx-done-actions a.primary {
+  color: #eafffa;
+  background: #0d6f5e;
+  border-color: #0d6f5e;
+}
+.sc .cx-done-actions a:hover {
+  border-color: #8edbcb;
+}
+.sc .cx-done-actions a.primary:hover {
+  background: #0a5b4d;
+  border-color: #0a5b4d;
+}
+
+@media (max-width: 1120px) {
+  .sc .cx-register-layout {
+    grid-template-columns: 1fr;
+  }
+  .sc .cx-register-side {
+    position: static;
+    grid-template-columns: 1fr 1fr;
+  }
+  .sc .cx-register-section {
+    grid-template-columns: 180px minmax(0, 1fr);
+  }
+}
+@media (max-width: 760px) {
+  .sc .cx-register-progress {
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+  .sc .cx-register-progress > svg {
+    display: none;
+  }
+  .sc .cx-register-progress > div {
+    display: none;
+  }
+  .sc .cx-register-progress > div.active {
+    display: grid;
+  }
+  .sc .cx-register-section {
+    grid-template-columns: 1fr;
+    gap: 14px;
+    padding: 17px 14px;
+  }
+  .sc .cx-register-fields.two,
+  .sc .cx-scope-grid,
+  .sc .cx-policy-grid,
+  .sc .cx-register-side,
+  .sc .cx-done-ids {
+    grid-template-columns: 1fr;
+  }
+  .sc .cx-scope-grid,
+  .sc .cx-policy-grid,
+  .sc .cx-policy-config {
+    grid-column: 1;
+  }
+  .sc .cx-done-ids > div {
+    border-left: 0;
+    border-top: 1px solid #e6ebf0;
+  }
+  .sc .cx-done-ids > div:first-child {
+    border-top: 0;
+  }
+  .sc .cx-register-form-actions {
+    flex-wrap: wrap;
+  }
+  .sc .cx-register-form-actions > span {
+    order: 3;
+    width: 100%;
+    margin-left: 0;
+    text-align: left;
+  }
+  .sc .cx-register-form-actions button {
+    margin-left: auto;
+  }
+}
+
+/* ── Access Overview (donut + legend) ในหน้า User 360 ──
+   การ์ดอยู่ใน cx-grid3 ที่แถวยืดเท่ากัน — เนื้อหาสั้นกว่าการ์ดข้างๆ
+   จึงต้องให้ body กินพื้นที่ที่เหลือแล้วจัดกึ่งกลาง ไม่ให้เหลือช่องว่างค้างด้านล่าง */
+.sc .cx-panel > .cx-donut-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  padding: 14px;
+}
+.sc .cx-donut-body > svg {
+  flex: none;
+}
+.sc .cx-donut-legend {
+  flex: 1;
+  min-width: 0;
+  max-width: 190px;
+  margin: 0;
+  display: grid;
+  gap: 9px;
+}
+.sc .cx-donut-legend > div {
+  display: grid;
+  grid-template-columns: 1fr auto 34px;
+  align-items: center;
+  gap: 8px;
+}
+.sc .cx-donut-legend dt {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  overflow: hidden;
+  color: #5b6b7d;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sc .cx-donut-legend dt i {
+  width: 8px;
+  height: 8px;
+  flex: none;
+}
+.sc .cx-donut-legend dd {
+  margin: 0;
+  font: 500 12px "IBM Plex Mono", ui-monospace, monospace;
+  color: #172335;
+  text-align: right;
+}
+.sc .cx-donut-legend dd.pct {
+  color: #9aa5b1;
+  font-size: 10.5px;
+}
+
+/* คำอธิบาย policy ที่ไม่มีช่องให้กรอก (explicit / all) — ไม่ใช่ chip */
+.sc .cx-policy-note {
+  margin: 0;
+  color: #6b7a8c;
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+/* ── หน้า Approvals (คำขอแก้ไขจาก developer) ─────────────────────────── */
+.sc .cx-req-list {
+  display: grid;
+  gap: 9px;
+  padding: 12px 14px;
+}
+.sc .cx-req {
+  border: 1px solid #dce2e8;
+  border-left: 2px solid #9da9b7;
+  background: #fff;
+}
+.sc .cx-req-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 11px 14px;
+  border-bottom: 1px solid #eef1f5;
+}
+.sc .cx-req-head > div:first-child {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+}
+.sc .cx-req-head b {
+  font-weight: 500;
+  font-size: 12.5px;
+  color: #172335;
+}
+.sc .cx-req-actions {
+  display: flex;
+  gap: 6px;
+  flex: none;
+}
+.sc .cx-req-actions .cx-act {
+  min-width: 84px;
+}
+/* ข้อมูลคำขอ — label/value เรียงคอลัมน์ ไม่ปนเป็นประโยคเดียว */
+.sc .cx-req-meta {
+  margin: 0;
+  padding: 11px 14px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 9px 18px;
+}
+.sc .cx-req-meta > div {
+  min-width: 0;
+}
+.sc .cx-req-meta dt {
+  font: 500 10.5px "IBM Plex Mono", ui-monospace, monospace;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: #8592a1;
+}
+.sc .cx-req-meta dd {
+  margin: 3px 0 0;
+  overflow: hidden;
+  font-size: 12px;
+  color: #3d4a5c;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sc .cx-req-payload,
+.sc .cx-req-note {
+  margin: 0 14px 12px;
+  padding: 9px 11px;
+  border: 1px solid #e6ebf0;
+  background: #f8fafb;
+}
+.sc .cx-req-payload > span,
+.sc .cx-req-note > span {
+  display: block;
+  margin-bottom: 5px;
+  font-size: 10px;
+  letter-spacing: 0.7px;
+  text-transform: uppercase;
+  color: #8592a1;
+}
+.sc .cx-req-payload code {
+  display: block;
+  overflow-x: auto;
+  color: #1b2b3f;
+  font: 400 11px/1.55 "IBM Plex Mono", ui-monospace, monospace;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.sc .cx-req-note {
+  border-color: #eed49e;
+  background: #fff9ed;
+  color: #7a5502;
+  font-size: 12px;
+}
+
+/* ══════════════════════════════════════════════════════════════
+   รายงานรายเดือนสำหรับผู้บริหาร (/reports/monthly)
+   ══════════════════════════════════════════════════════════════ */
+.sc .cx-report-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.sc .cx-report-controls input[type="month"] {
+  height: 36px;
+  padding: 0 10px;
+  border: 1px solid #46566b;
+  border-radius: 0;
+  background: #172131;
+  color: #e5edf7;
+  font: 500 12px "IBM Plex Mono", ui-monospace, monospace;
+  color-scheme: dark;
+}
+.sc .cx-report-controls .cx-add-button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.sc .cx-report-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 20px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+  padding: 14px 16px;
+  border: 1px solid #dce2e8;
+  border-top: 2px solid var(--sr-signal-2);
+  background: #fff;
+}
+.sc .cx-report-head > div > span {
+  display: block;
+  font-size: 10.5px;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: #8592a1;
+}
+.sc .cx-report-head h2 {
+  margin: 4px 0 0;
+  font: 700 20px "Sarabun", sans-serif;
+  color: #172335;
+}
+.sc .cx-report-head dl {
+  display: flex;
+  gap: 22px;
+  margin: 0;
+}
+.sc .cx-report-head dt {
+  font: 500 10.5px "IBM Plex Mono", ui-monospace, monospace;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: #8592a1;
+}
+.sc .cx-report-head dd {
+  margin: 3px 0 0;
+  font-size: 12px;
+  color: #3d4a5c;
+}
+
+.sc .cx-delta {
+  display: block;
+  margin-top: 2px;
+}
+.sc .cx-delta.good {
+  color: #0f7360;
+}
+.sc .cx-delta.bad {
+  color: #b20f38;
+}
+
+.sc .cx-report-facts {
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+}
+.sc .cx-report-facts > div {
+  padding: 11px 15px;
+  border-right: 1px solid #eef1f5;
+  border-bottom: 1px solid #eef1f5;
+}
+.sc .cx-report-facts > div:nth-child(3n) {
+  border-right: 0;
+}
+.sc .cx-report-facts dt {
+  font-size: 11px;
+  color: #7b8794;
+}
+.sc .cx-report-facts dd {
+  margin: 4px 0 0;
+  font-size: 17px;
+  color: #172335;
+}
+
+.sc .cx-report-legend {
+  display: flex;
+  gap: 12px;
+  font-size: 10.5px;
+  color: #6b7887;
+}
+/* ต้องชนะ .cx-panel > header span (display:block + uppercase ของหัวแผง) */
+.sc .cx-panel > header .cx-report-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  letter-spacing: 0;
+  text-transform: none;
+  color: #6b7887;
+}
+.sc .cx-report-legend i,
+.sc .cx-report-chart i {
+  display: block;
+}
+.sc .cx-report-legend i {
+  width: 8px;
+  height: 8px;
+}
+.sc .cx-report-legend .allow,
+.sc .cx-report-chart .allow { background: #34e8c4; }
+.sc .cx-report-legend .challenge,
+.sc .cx-report-chart .challenge { background: #fbbf24; }
+.sc .cx-report-legend .block,
+.sc .cx-report-chart .block { background: #f43f5e; }
+
+.sc .cx-report-chart {
+  padding: 14px 16px 10px;
+}
+.sc .cx-report-chart .bars {
+  height: 170px;
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  border-bottom: 1px solid #dce2e8;
+}
+.sc .cx-report-chart .bar {
+  flex: 1;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+}
+.sc .cx-report-chart .empty {
+  height: 2px;
+  background: #eef1f5;
+}
+.sc .cx-report-chart .axis {
+  display: flex;
+  gap: 3px;
+  margin-top: 5px;
+  font-size: 10px;
+  color: #9aa5b1;
+}
+.sc .cx-report-chart .axis span {
+  flex: 1;
+  text-align: center;
+}
+
+.sc .cx-report-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.sc .cx-report-table th {
+  height: 34px;
+  padding: 0 15px;
+  text-align: left;
+  font: 500 10.5px "IBM Plex Mono", ui-monospace, monospace;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: #7f8c9c;
+  background: #f6f8fa;
+  border-bottom: 1px solid #e1e6eb;
+}
+.sc .cx-report-table td {
+  height: 40px;
+  padding: 0 15px;
+  font-size: 12px;
+  color: #3d4a5c;
+  border-bottom: 1px solid #eef1f5;
+}
+.sc .cx-report-table .num {
+  text-align: right;
+}
+.sc .cx-report-note {
+  margin: 0 0 16px;
+  font-size: 11px;
+  color: #8592a1;
+}
+
+/* ── รายงานฉบับเต็ม: หมวดแบบเอกสาร ── */
+.sc .cx-report-controls > small {
+  font-size: 11px;
+  color: #93a3b8;
+}
+.sc .cx-rep-section {
+  margin-bottom: 10px;
+  background: #fff;
+  border: 1px solid #dce2e8;
+}
+.sc .cx-rep-section > h3 {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin: 0;
+  padding: 11px 15px;
+  font: 700 15px "Sarabun", sans-serif;
+  color: #172335;
+  border-bottom: 1px solid #e1e6eb;
+}
+.sc .cx-rep-section > h3 > span {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--sr-signal-2);
+}
+.sc .cx-rep-section > h3 > small {
+  margin-left: auto;
+  font: 400 10.5px "IBM Plex Mono", ui-monospace, monospace;
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  color: #8592a1;
+}
+.sc .cx-rep-body {
+  padding: 14px 15px;
+}
+.sc .cx-rep-body.flush {
+  padding: 0;
+}
+.sc .cx-rep-sub {
+  margin: 14px 0 6px;
+  font: 500 12px "Sarabun", sans-serif;
+  color: #586579;
+}
+.sc .cx-rep-body > .cx-rep-sub:first-child {
+  margin-top: 0;
+}
+.sc .cx-rep-sub.pad {
+  margin: 0;
+  padding: 12px 15px 8px;
+  border-top: 1px solid #e1e6eb;
+}
+.sc .cx-rep-text {
+  font-size: 13.5px;
+  line-height: 1.8;
+  color: #2b3748;
+  white-space: pre-wrap;
+}
+.sc .cx-rep-text[contenteditable] {
+  outline: 1px dashed transparent;
+  outline-offset: 3px;
+}
+.sc .cx-rep-text[contenteditable]:hover {
+  outline-color: #c4ccd6;
+}
+.sc .cx-rep-text[contenteditable]:focus {
+  outline-color: var(--sr-signal-2);
+}
+.sc .cx-rep-text:empty::before {
+  content: attr(data-placeholder);
+  color: #a9b3bf;
+}
+.sc .cx-rep-findings {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.sc .cx-rep-findings li {
+  display: grid;
+  grid-template-columns: 52px 1fr;
+  gap: 10px;
+  align-items: baseline;
+  padding: 7px 0;
+  font-size: 13px;
+  line-height: 1.6;
+  color: #2b3748;
+  border-top: 1px solid #eef1f5;
+}
+.sc .cx-tag {
+  display: inline-block;
+  min-width: 46px;
+  padding: 1px 6px;
+  font-size: 10.5px;
+  text-align: center;
+  white-space: nowrap;
+  border: 1px solid #dce2e8;
+  background: #f3f5f8;
+  color: #4f5d6e;
+}
+.sc .cx-tag.critical {
+  border-color: #f5c2cc;
+  background: #fff1f3;
+  color: #b20f38;
+}
+.sc .cx-tag.warn {
+  border-color: #f3d99a;
+  background: #fff8e6;
+  color: #8a5a00;
+}
+.sc .cx-kpis.eight {
+  grid-template-columns: repeat(4, 1fr);
+  margin-bottom: 0;
+}
+.sc .cx-rep-chart-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 15px 0;
+}
+.sc .cx-rep-chart-head .cx-rep-sub {
+  margin: 0;
+}
+.sc .cx-rep-chart-head .cx-report-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.sc .cx-rep-grid2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  border-top: 1px solid #e1e6eb;
+}
+.sc .cx-rep-grid2 > table + table {
+  border-left: 1px solid #e1e6eb;
+}
+.sc .cx-report-table td.wrap {
+  height: auto;
+  padding: 9px 15px;
+  line-height: 1.6;
+}
+.sc .cx-report-table td.muted {
+  color: #6b7887;
+}
+.sc .cx-report-table td.bad {
+  color: #b20f38;
+}
+.sc .cx-report-table .nowrap {
+  white-space: nowrap;
+}
+.sc .cx-report-table .idx {
+  width: 36px;
+  text-align: center;
+}
+.sc .cx-report-table tr.current td {
+  background: #f3fbf9;
+}
+.sc .cx-report-table tfoot td {
+  height: 38px;
+  padding: 0 15px;
+  font-size: 12px;
+  color: #172335;
+  background: #f6f8fa;
+  border-top: 1px solid #e1e6eb;
+}
+.sc .cx-rep-recs td.wrap .cx-rep-text {
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+.sc .cx-rep-priority {
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+}
+.sc .cx-rep-mini {
+  height: 26px;
+  padding: 0 10px;
+  font-size: 11px;
+  color: #3d4a5c;
+  background: #fff;
+  border: 1px solid #c9d1da;
+  border-radius: 0;
+  cursor: pointer;
+}
+.sc .cx-rep-mini:hover {
+  border-color: #8592a1;
+}
+.sc .cx-rep-actions {
+  padding: 10px 15px;
+  border-top: 1px solid #eef1f5;
+}
+.sc .cx-rep-empty {
+  margin: 0;
+  padding: 14px 15px;
+  font-size: 12px;
+  color: #8592a1;
+}
+.sc .cx-rep-limits {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 12.5px;
+  line-height: 1.8;
+  color: #3d4a5c;
+}
+.sc .cx-rep-footer {
+  margin: 4px 0 18px;
+  font-size: 11px;
+  color: #8592a1;
+  text-align: center;
+}
+@media (max-width: 900px) {
+  .sc .cx-kpis.eight,
+  .sc .cx-rep-grid2 {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+/* ── พิมพ์ / บันทึก PDF ──
+   ซ่อนทุกอย่างนอกเนื้อหารายงาน (sidebar, topbar, ปุ่ม) โดยไม่ต้องรู้โครง layout
+   แล้วจัดหน้า A4 พื้นขาว ไม่ตัดแผงข้ามหน้า */
+@media print {
+  @page {
+    size: A4;
+    margin: 14mm 12mm;
+  }
+  body * {
+    visibility: hidden;
+  }
+  .sc .cx-report,
+  .sc .cx-report * {
+    visibility: visible;
+  }
+  .sc .cx-report {
+    position: absolute;
+    inset: 0 auto auto 0;
+    width: 100%;
+    max-width: none;
+    padding: 0;
+  }
+  .sc .no-print {
+    display: none !important;
+  }
+  .sc .cx-panel,
+  .sc .cx-kpi,
+  .sc .cx-report-head {
+    break-inside: avoid;
+    box-shadow: none;
+  }
+  /* A4 แคบกว่าจอ → กัน media query ตัดคอลัมน์ KPI / ตาราง 2 ฝั่ง */
+  .sc .cx-kpis.five {
+    grid-template-columns: repeat(5, 1fr);
+  }
+  .sc .cx-kpis.eight {
+    grid-template-columns: repeat(4, 1fr);
+  }
+  .sc .cx-rep-grid2 {
+    grid-template-columns: 1fr 1fr;
+  }
+  .sc .cx-report-chart .bars {
+    height: 130px;
+  }
+  /* หลายหน้า: หมวดข้ามหน้าได้ แต่หัวหมวดไม่ค้างท้ายหน้า และแถวตารางไม่ถูกตัดครึ่ง */
+  .sc .cx-rep-section > h3 {
+    break-after: avoid;
+  }
+  .sc .cx-report-table tr,
+  .sc .cx-rep-findings li {
+    break-inside: avoid;
+  }
+  .sc .cx-rep-text[contenteditable] {
+    outline: none;
+  }
+  .sc .cx-tag.critical,
+  .sc .cx-tag.warn,
+  .sc .cx-report-table tr.current td,
+  .sc .cx-report-table th,
+  .sc .cx-report-table tfoot td {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .sc .cx-report-chart .allow,
+  .sc .cx-report-chart .challenge,
+  .sc .cx-report-chart .block,
+  .sc .cx-report-legend i {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
 }

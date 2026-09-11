@@ -228,7 +228,7 @@ export default function SubsystemsPage() {
 
   return (
     <div className="sc">
-      <Topbar title="ระบบย่อย" />
+      <Topbar title="Subsystems" />
 
       <section className="cx-command">
         <div>

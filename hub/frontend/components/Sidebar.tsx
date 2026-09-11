@@ -39,7 +39,8 @@ export type IconKey =
   | "bell"
   | "user"
   | "terminal"
-  | "plus";
+  | "plus"
+  | "settings";
 
 export type NavItem = {
   href: string;
@@ -60,6 +61,7 @@ const ADMIN_COMMAND: NavItem[] = [
   { href: "/users", label: "Users", keywords: "ผู้ใช้งาน ผู้ใช้ รายชื่อ", glyph: "ID", icon: "users" },
   { href: "/subsystems", label: "Subsystems", keywords: "ระบบย่อย", glyph: "SS", icon: "network" },
   { href: "/pending-requests", label: "Approvals", keywords: "คำขอ อนุมัติ", glyph: "RQ", icon: "inbox" },
+  { href: "/reports/monthly", label: "Monthly Report", keywords: "รายงาน รายเดือน ผู้บริหาร", glyph: "MR", icon: "file" },
 ];
 
 const ADMIN_SECURITY: NavItem[] = [
@@ -95,6 +97,12 @@ type NotifCount = {
 /** ไอคอนเส้น 16px — stroke ตามสีข้อความปัจจุบัน */
 function Icon({ name }: { name: IconKey }) {
   const p: Record<IconKey, React.ReactNode> = {
+    settings: (
+      <>
+        <circle cx="9" cy="9" r="2.6" />
+        <path d="M9 1.6v1.8M9 14.6v1.8M1.6 9h1.8M14.6 9h1.8M3.8 3.8l1.3 1.3M12.9 12.9l1.3 1.3M14.2 3.8l-1.3 1.3M5.1 12.9l-1.3 1.3" />
+      </>
+    ),
     grid: (
       <>
         <rect x="2.5" y="2.5" width="5" height="5" rx="1" />
@@ -230,6 +238,40 @@ export function Sidebar() {
 
   const isAdmin = me?.is_hub_admin === true || me?.user_type === "admin";
   const isDeveloper = ["teacher", "staff", "admin"].includes(me?.user_type || "");
+  // admin เห็นทั้ง 2 กลุ่ม — /account (Security) กับ /developer/account เป็นหน้าเดียวกัน
+  // (ทั้งคู่ render <AccountView/>) จึงเหลือไว้อันเดียวไม่ให้ "My Account" ซ้ำในเมนู
+  // ตัวย่อจากชื่อ — ถ้าไม่มีชื่อใช้ตัวแรกของอีเมล
+  const initials = (() => {
+    const src = me?.full_name?.trim() || me?.email || "";
+    const parts = src.split(/[\s.@_-]+/).filter(Boolean);
+    return (parts.length >= 2
+      ? parts[0][0] + parts[1][0]
+      : src.slice(0, 2)
+    ).toUpperCase() || "—";
+  })();
+  const roleLabel = me?.is_hub_admin
+    ? "Super Admin"
+    : me?.user_type === "teacher"
+      ? "Teacher"
+      : me?.user_type === "staff"
+        ? "Staff"
+        : me?.user_type === "admin"
+          ? "Admin"
+          : "—";
+  // admin ใช้ /account ส่วน teacher/staff ใช้ /developer/account (middleware กัน /account/security ไว้)
+  const accountHref = isAdmin ? "/account" : "/developer/account";
+
+  /**
+   * เมนูกลุ่ม Developer ที่แสดงจริงใน sidebar — ซ่อน 2 รายการที่ซ้ำทางเข้า:
+   *   /developer/subsystems/new  หน้า My Subsystems มีปุ่ม "ลงทะเบียนระบบใหม่" อยู่แล้ว
+   *   /developer/account         admin มี /account ใน Security อยู่แล้ว (หน้าเดียวกัน)
+   * ทั้งคู่ยังค้นเจอใน CommandPalette และเข้าตรงด้วย URL ได้ตามเดิม
+   */
+  const devItems = DEV_NAV.filter(
+    (i) =>
+      i.href !== "/developer/subsystems/new" &&
+      (isAdmin ? i.href !== "/developer/account" : true)
+  );
   const unread = notif?.unread_by_category || {};
   const badgeFor = (href: string) => {
     if (href === "/notifications") return notif?.unread ?? notif?.total;
@@ -284,7 +326,7 @@ export function Sidebar() {
         )}
         {isDeveloper && (
           <div className={isAdmin ? "mt-5" : ""}>
-            <NavGroup title="Developer" items={DEV_NAV} pathname={pathname} badgeFor={badgeFor} />
+            <NavGroup title="Developer" items={devItems} pathname={pathname} badgeFor={badgeFor} />
           </div>
         )}
         {!me && (
@@ -294,13 +336,15 @@ export function Sidebar() {
         )}
       </nav>
 
-      <div className="border-t border-white/[.08] px-5 py-4">
-        <div className="flex items-center gap-2 font-mono text-[9px] uppercase tracking-[.16em] text-ink-500">
-          <span className="signal-dot !h-1.5 !w-1.5" />
-          systems monitored
-        </div>
-        <div className="mt-2 font-mono text-[9px] text-ink-600">OAuth 2.0 · OIDC · RBAC · RBA</div>
-      </div>
+      {/* โปรไฟล์ผู้ใช้ท้าย sidebar — คลิกไปหน้าบัญชีของตัวเองตามบทบาท */}
+      <Link href={accountHref} className="sb-profile" title="บัญชีของฉัน">
+        <span className="sb-profile-avatar mono">{initials}</span>
+        <span className="sb-profile-name">
+          <b>{me?.full_name || me?.email?.split("@")[0] || "—"}</b>
+          <small>{roleLabel}</small>
+        </span>
+        <Icon name="settings" />
+      </Link>
     </>
   );
 

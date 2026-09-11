@@ -88,25 +88,25 @@ const HEALTH_TONE: Record<
     label: "ONLINE",
     bg: "bg-emerald-100 border-emerald-300",
     color: "text-emerald-800",
-    emoji: "🟢",
+    emoji: "",
   },
   degraded: {
     label: "DEGRADED",
     bg: "bg-amber-100 border-amber-300",
     color: "text-amber-800",
-    emoji: "🟡",
+    emoji: "",
   },
   down: {
     label: "DOWN",
     bg: "bg-rose-100 border-rose-300",
     color: "text-rose-800",
-    emoji: "🔴",
+    emoji: "",
   },
   unknown: {
     label: "UNKNOWN",
     bg: "bg-ink-100 border-ink-200",
     color: "text-ink-600",
-    emoji: "⚪",
+    emoji: "",
   },
 };
 
@@ -820,9 +820,9 @@ export default function SubsystemDetailPage({
           </div>
           <Link
             href="/subsystems"
-            className="inline-block px-4 py-2 rounded-lg bg-ink-900 text-white text-sm hover:bg-ink-800"
+            className="cx-back"
           >
-            ← กลับไปหน้ารายการ
+            Subsystems
           </Link>
         </main>
       </>
@@ -880,7 +880,7 @@ export default function SubsystemDetailPage({
                   className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider bg-rose-100 text-rose-700 border border-rose-200"
                   title="user ถูกลบที่ Hub — sessions ถูกตัด + whitelist ถูก revoke"
                 >
-                  🚫 deleted
+                  deleted
                 </span>
               )}
             </div>
@@ -932,14 +932,14 @@ export default function SubsystemDetailPage({
                 className="px-2 py-1 rounded bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-semibold"
                 title="บันทึก (Enter)"
               >
-                ✓
+                บันทึก
               </button>
               <button
                 onClick={cancelEditRole}
                 className="px-2 py-1 rounded bg-ink-200 hover:bg-ink-300 text-ink-700 text-[11px] font-semibold"
                 title="ยกเลิก (Esc)"
               >
-                ✕
+                ยกเลิก
               </button>
             </div>
           );
@@ -1009,9 +1009,9 @@ export default function SubsystemDetailPage({
     change_request_approved: "อนุมัติคำขอ",
     change_request_rejected: "ปฏิเสธคำขอ",
     change_request_admin_auto_approved: "Admin auto-approve",
-    user_force_revoked_notify: "🔔 บังคับ logout (แจ้ง)",
-    user_force_revoked_challenge: "🛡️ บังคับ logout (ต้อง confirm ก่อน login)",
-    user_force_revoked_ban: "🚫 บังคับ logout + แบนถาวร",
+    user_force_revoked_notify: "บังคับ logout (แจ้ง)",
+    user_force_revoked_challenge: "บังคับ logout (ต้อง confirm ก่อน login)",
+    user_force_revoked_ban: "บังคับ logout + แบนถาวร",
   };
   const labelFor = (action: string) => ACTION_LABELS[action] || action;
 
@@ -1029,7 +1029,7 @@ export default function SubsystemDetailPage({
     if (a.action.startsWith("user_force_revoked_")) {
       if (level) parts.push(`ระดับ: ${level}`);
       if (wd === true) parts.push("webhook ส่งถึง subsystem");
-      else if (wd === false) parts.push("✗ webhook ส่งไม่ถึง");
+      else if (wd === false) parts.push("webhook ส่งไม่ถึง");
     }
     // whitelist_role_changed / bulk metadata
     const removed = m.removed_user_id as string | undefined;
@@ -1234,9 +1234,9 @@ export default function SubsystemDetailPage({
       <main className="cx-document">
         <Link
           href="/subsystems"
-          className="cx-user-breadcrumb"
+          className="cx-back"
         >
-          ← กลับไป Subsystems
+          Subsystems
         </Link>
 
         {/* ── Hero identity ── */}
@@ -1929,7 +1929,7 @@ export default function SubsystemDetailPage({
                 className="w-full px-3 py-2 hover:bg-amber-50 border-b border-ink-100 text-left"
               >
                 <div className="text-[12px] font-bold text-amber-700">
-                  📧 Notify only
+                  Notify only
                 </div>
                 <div className="text-[10px] text-ink-500 mt-0.5">
                   เตะออก + email แจ้ง · login ใหม่ได้ทันที
@@ -1942,7 +1942,7 @@ export default function SubsystemDetailPage({
                 className="w-full px-3 py-2 hover:bg-rose-50 border-b border-ink-100 text-left"
               >
                 <div className="text-[12px] font-bold text-rose-700">
-                  🔒 Require email confirm
+                  Require email confirm
                 </div>
                 <div className="text-[10px] text-ink-500 mt-0.5">
                   ต้องคลิก link ใน email ก่อน login ใหม่ (15 นาที)
@@ -1953,7 +1953,7 @@ export default function SubsystemDetailPage({
                 className="w-full px-3 py-2 hover:bg-ink-100 text-left"
               >
                 <div className="text-[12px] font-bold text-ink-900">
-                  🛑 Revoke + Ban
+                  Revoke + Ban
                 </div>
                 <div className="text-[10px] text-ink-500 mt-0.5">
                   ลบจาก whitelist · login ใหม่ไม่ได้
@@ -2038,16 +2038,16 @@ export default function SubsystemDetailPage({
               </h3>
               <button
                 onClick={() => setRotateResult(null)}
-                className="text-ink-400 hover:text-ink-700 text-xl"
+                className="text-ink-400 hover:text-ink-700 text-sm"
               >
-                ✕
+                ปิด
               </button>
             </div>
             <div className="p-6 space-y-4 text-sm">
               <p className="text-ink-700">{rotateResult.message}</p>
               {viaEmail ? (
                 <div className="rounded-lg bg-brand-50 border border-brand-200 p-4">
-                  📧 ลิงก์ดู client_secret ส่งไปที่{" "}
+                  ลิงก์ดู client_secret ส่งไปที่{" "}
                   <strong>{rotateResult.secret_sent_to}</strong> — ใช้ได้ครั้งเดียว
                   หมดอายุใน 15 นาที
                 </div>
@@ -2105,9 +2105,9 @@ export default function SubsystemDetailPage({
               </h3>
               <button
                 onClick={() => setEditOpen(false)}
-                className="text-ink-400 hover:text-ink-700 text-xl"
+                className="text-ink-400 hover:text-ink-700 text-sm"
               >
-                ✕
+                ปิด
               </button>
             </div>
             <div className="p-6 space-y-4">
@@ -2361,7 +2361,7 @@ function AuditDetailBody({
       {/* User target (ถ้ามี) */}
       {(userEmail || userName || userId) && (
         <div>
-          <div className="text-xs font-bold text-ink-900 mb-2">👤 ผู้ใช้ที่เป็นเป้าหมาย</div>
+          <div className="text-xs font-bold text-ink-900 mb-2">ผู้ใช้ที่เป็นเป้าหมาย</div>
           <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 space-y-1.5">
             {userName && (
               <div className="text-xs">
@@ -2388,7 +2388,7 @@ function AuditDetailBody({
       {/* Outcome (force-revoke specific) */}
       {entry.action.startsWith("user_force_revoked_") && (
         <div>
-          <div className="text-xs font-bold text-ink-900 mb-2">🚨 ผลการเตะ</div>
+          <div className="text-xs font-bold text-ink-900 mb-2">ผลการเตะ</div>
           <div className="grid grid-cols-1 gap-2">
             {level && (
               <AuditRow label="ระดับ">
@@ -2429,8 +2429,7 @@ function AuditDetailBody({
       {metaKeys.length > 0 && (
         <details className="rounded-lg border border-ink-200 bg-ink-50 group">
           <summary className="px-3 py-2 cursor-pointer text-xs font-semibold text-ink-700 hover:text-ink-900 list-none flex items-center justify-between">
-            <span>📋 Raw metadata ({metaKeys.length} fields)</span>
-            <span className="text-ink-400 group-open:rotate-90 transition-transform">▶</span>
+            <span>Raw metadata ({metaKeys.length} fields)</span>
           </summary>
           <pre className="px-3 py-2 border-t border-ink-200 bg-white text-[10px] font-mono text-ink-700 overflow-x-auto whitespace-pre-wrap break-all max-h-80 overflow-y-auto">
             {JSON.stringify(m, null, 2)}
@@ -2463,7 +2462,7 @@ function BoolPill({
   if (v === false)
     return (
       <span className="inline-flex items-center gap-1 text-xs font-semibold text-rose-700">
-        ✗ ไม่สำเร็จ
+        ไม่สำเร็จ
       </span>
     );
   return <span className="text-xs text-ink-400">{unknownLabel}</span>;

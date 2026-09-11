@@ -141,7 +141,7 @@ export default function UsersPage() {
 
   return (
     <div className="sc">
-      <Topbar title="ผู้ใช้งาน" />
+      <Topbar title="Users" />
 
       <section className="cx-command">
         <div>

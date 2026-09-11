@@ -144,6 +144,9 @@ export function CommandPalette() {
     const list: NavItem[] = [];
     if (isAdmin) list.push(...ADMIN_NAV);
     if (isDeveloper) list.push(...DEV_NAV);
+    // admin ได้ทั้ง 2 ชุด — /account กับ /developer/account เป็นหน้าเดียวกัน
+    // ถ้าไม่ตัด จะขึ้น "My Account" ซ้ำใน ⌘K
+    if (isAdmin) return list.filter((i) => i.href !== "/developer/account");
     return list;
   }, [isAdmin, isDeveloper]);
 

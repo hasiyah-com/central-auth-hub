@@ -190,7 +190,7 @@ function SubsystemCell({ row }: { row: Anomaly }) {
     return (
       <div>
         <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-brand-100 text-brand-700 text-xs font-semibold">
-          🏛️ ระบบหลัก
+          ระบบหลัก
         </div>
         <div className="text-[10px] text-ink-400 mt-0.5">Hub-direct</div>
       </div>
@@ -198,14 +198,14 @@ function SubsystemCell({ row }: { row: Anomaly }) {
   }
   // มี icon ตามชื่อระบบ
   const icon = /หอพัก/i.test(row.subsystem_name)
-    ? "🏠"
+    ? ""
     : /ห้องสมุด|library/i.test(row.subsystem_name)
-    ? "📚"
-    : "🧩";
+    ? ""
+    : "";
   return (
     <div>
       <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-ink-100 text-ink-800 text-xs font-semibold">
-        <span>{icon}</span>
+        {icon && <span>{icon}</span>}
         <span>{row.subsystem_name}</span>
       </div>
       <div className="text-[10px] text-ink-400 mt-0.5">OAuth subsystem</div>
@@ -271,7 +271,7 @@ function DeviceCell({ row }: { row: BaseRow }) {
   const parts = [row.browser, row.os_name].filter(Boolean);
   return (
     <div className="flex items-center gap-2">
-      <span className="text-base">{icon}</span>
+      {icon && <span className="text-base">{icon}</span>}
       <div className="text-xs text-ink-600">
         {parts.length > 0 ? parts.join(" · ") : "—"}
       </div>

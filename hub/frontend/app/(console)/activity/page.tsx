@@ -68,11 +68,11 @@ const WINDOWS = [
 ];
 
 const CHANNEL_META: Record<string, { icon: string; label: string; cls: string }> = {
-  google: { icon: "🔵", label: "Google", cls: "bg-blue-50 text-blue-700 border-blue-200" },
-  passkey: { icon: "🔑", label: "Passkey", cls: "bg-emerald-50 text-emerald-700 border-emerald-200" },
-  discoverable: { icon: "🔓", label: "Passkey", cls: "bg-emerald-50 text-emerald-700 border-emerald-200" },
-  line: { icon: "🟢", label: "LINE", cls: "bg-green-50 text-green-700 border-green-200" },
-  hub_direct: { icon: "🏛️", label: "Hub", cls: "bg-ink-100 text-ink-600 border-ink-200" },
+  google: { icon: "", label: "Google", cls: "bg-blue-50 text-blue-700 border-blue-200" },
+  passkey: { icon: "", label: "Passkey", cls: "bg-emerald-50 text-emerald-700 border-emerald-200" },
+  discoverable: { icon: "", label: "Passkey", cls: "bg-emerald-50 text-emerald-700 border-emerald-200" },
+  line: { icon: "", label: "LINE", cls: "bg-green-50 text-green-700 border-green-200" },
+  hub_direct: { icon: "", label: "Hub", cls: "bg-ink-100 text-ink-600 border-ink-200" },
   unknown: { icon: "•", label: "—", cls: "bg-ink-100 text-ink-400 border-ink-200" },
 };
 
@@ -247,7 +247,7 @@ export default function ActivityPage() {
 
   return (
     <div className="sc">
-      <Topbar title="การเข้าใช้งาน (Realtime)" />
+      <Topbar title="Activity" />
 
       {/* ── Command bar (พื้นเข้ม + ปุ่มช่วงเวลา) ── */}
       <section className="cx-command">
@@ -256,7 +256,7 @@ export default function ActivityPage() {
             <span className={`cx-dot${live ? "" : " warn"}`}>{live && <i />}</span>
             control surface
           </span>
-          <h1>การเข้าใช้งาน (Realtime)</h1>
+          <h1>Activity</h1>
         </div>
 
         <div className="cx-live-actions">
@@ -358,10 +358,11 @@ export default function ActivityPage() {
                           it.session_kind === "hub" ? "bg-emerald-500" : "bg-sky-500"
                         }`}
                       />
-                      {it.subsystem_name ? `🧩 ${it.subsystem_name}` : "🏛️ Hub-direct"}
+                      {it.subsystem_name ? `${it.subsystem_name}` : "Hub-direct"}
                     </div>
                     <span className={`hidden lg:inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[11px] font-semibold ${ch.cls}`}>
-                      <span>{ch.icon}</span>{ch.label}
+                      {ch.icon && <span>{ch.icon}</span>}
+                      {ch.label}
                     </span>
                     <div className="hidden xl:flex items-center gap-1.5 w-24">
                       <div className="flex-1 h-1.5 rounded-full bg-ink-100 overflow-hidden">
@@ -531,18 +532,19 @@ export default function ActivityPage() {
                       <td className="px-4 py-3">
                         {it.subsystem_name ? (
                           <span className="inline-flex items-center gap-1 text-ink-700">
-                            🧩 {it.subsystem_name}
+                            {it.subsystem_name}
                           </span>
                         ) : (
                           <span className="inline-flex items-center gap-1 text-ink-400 text-xs">
-                            🏛️ Hub-direct
+                            Hub-direct
                           </span>
                         )}
                       </td>
                       {/* channel */}
                       <td className="px-4 py-3">
                         <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full border text-[11px] font-semibold ${ch.cls}`}>
-                          <span>{ch.icon}</span>{ch.label}
+                          {ch.icon && <span>{ch.icon}</span>}
+                      {ch.label}
                         </span>
                       </td>
                       {/* risk meter */}
@@ -577,7 +579,7 @@ export default function ActivityPage() {
                         <div className="font-mono text-[10px] text-ink-400 flex items-center gap-1">
                           {it.ip || "—"}
                           {it.is_attack_ip && (
-                            <span className="px-1 rounded bg-rose-100 text-rose-700 font-bold">⚠ blacklist</span>
+                            <span className="px-1 rounded bg-rose-100 text-rose-700 font-bold">blacklist</span>
                           )}
                         </div>
                       </td>

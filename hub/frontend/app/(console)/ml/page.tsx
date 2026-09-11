@@ -1,238 +1,166 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Topbar } from "@/components/Topbar";
-import { StatsCard } from "@/components/StatsCard";
-import { Badge } from "@/components/Badge";
 import { SlidePanel } from "@/components/SlidePanel";
 import { clientFetch } from "@/lib/api";
-import { ScoreHistogram } from "./_components/ScoreHistogram";
 import { AnomalyTable } from "./_components/AnomalyTable";
 import { SessionDetailPanel } from "./_components/SessionDetailPanel";
-import type { Overview, Anomaly } from "./_types";
+import type { Anomaly, Overview } from "./_types";
+import styles from "./ml-dashboard.module.css";
 
 type SortMode = "score" | "recent";
 
+const LAYERS = [
+  { id: "L1", name: "Rules", detail: "Policy signals", state: "ACTIVE" },
+  { id: "L2", name: "Behavior", detail: "User baseline", state: "ACTIVE" },
+  { id: "L3", name: "Isolation Forest", detail: "Anomaly signal", state: "SHADOW" },
+  { id: "L4", name: "Aggregate", detail: "Access decision", state: "ACTIVE" },
+] as const;
+
 export default function MLPage() {
-  const [ov, setOv] = useState<Overview | null>(null);
+  const [overview, setOverview] = useState<Overview | null>(null);
   const [days, setDays] = useState(7);
   const [sortMode, setSortMode] = useState<SortMode>("recent");
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<Anomaly | null>(null);
 
   const load = useCallback(() => {
-    setOv(null);
+    setOverview(null);
     setError(null);
-    // sort=recent → เห็น session ใหม่ทุกครั้ง / sort=score → top anomalies เดิม
-    clientFetch<Overview>(
-      `/admin/ml/overview?days=${days}&sort=${sortMode}&limit=50`
-    )
-      .then(setOv)
-      .catch((e) => setError(e.detail || "โหลด ML overview ไม่สำเร็จ"));
+    clientFetch<Overview>(`/admin/ml/overview?days=${days}&sort=${sortMode}&limit=50`)
+      .then(setOverview)
+      .catch((reason) => setError(reason.detail || "โหลดข้อมูล ML ไม่สำเร็จ"));
   }, [days, sortMode]);
 
   useEffect(load, [load]);
 
-  const fmt = (n: number) => n.toLocaleString("en-US");
-  const dec = ov?.data.decision_breakdown ?? {};
-  const total = ov?.data.total_logins ?? 0;
-  const anomalyCount =
-    (dec.mfa ?? 0) +
-    (dec.block ?? 0) +
-    (dec.would_mfa ?? 0) +
-    (dec.would_block ?? 0);
-  const anomalyRate = total > 0 ? ((anomalyCount / total) * 100).toFixed(1) : "0.0";
+  const metrics = useMemo(() => {
+    const decisions = overview?.data.decision_breakdown ?? {};
+    const total = overview?.data.total_logins ?? 0;
+    const challenged = (decisions.mfa ?? 0) + (decisions.challenge ?? 0) +
+      (decisions.would_mfa ?? 0) + (decisions.would_challenge ?? 0);
+    const blocked = (decisions.block ?? 0) + (decisions.would_block ?? 0);
+    const flagged = challenged + blocked + (decisions.warn ?? 0) + (decisions.would_warn ?? 0);
+    return { decisions, total, challenged, blocked, anomalyRate: total ? (flagged / total) * 100 : 0 };
+  }, [overview]);
 
   return (
     <>
-      <Topbar title="ML / ความผิดปกติ" />
-      <main className="p-8 max-w-7xl mx-auto w-full">
-        {/* Header + window selector */}
-        <div className="mb-6 flex items-end justify-between gap-4 flex-wrap">
-          <div>
-            <h2 className="text-sm font-bold text-ink-500 uppercase tracking-wider">
-              HYBRID 4 Layer · Anomaly Detection
-            </h2>
-            <p className="text-xs text-ink-400 mt-1">
-              {/* ทุก login session ผ่าน ML scoring (12 features, Shadow Mode) */}
-              {ov && (
-                <>
-                  {" "}· window {ov.data.range.from.slice(0, 10)} →{" "}
-                  {ov.data.range.to.slice(0, 10)}
-                </>
-              )}
-            </p>
+      <Topbar title="ML / Anomaly" />
+      <main className={styles.page}>
+        <section className={styles.runtime}>
+          <div className={styles.runtimeIntro}>
+            <div className={styles.eyebrow}><span className={styles.liveDot} /> MODEL RUNTIME</div>
+            <h1>4-Layer Risk Engine</h1>
+            <p>ติดตามคะแนนความเสี่ยงและผลการตัดสินใจของทุก Login Session</p>
           </div>
-          <div className="flex items-center gap-3">
-            {ov && (
-              <Badge tone={ov.meta.shadow_mode ? "warn" : "danger"}>
-                {ov.meta.shadow_mode ? "◐ SHADOW MODE" : "● ENFORCING"}
-              </Badge>
-            )}
-            <select
-              value={days}
-              onChange={(e) => setDays(Number(e.target.value))}
-              className="px-3 py-2 rounded-lg border border-ink-200 bg-white text-sm focus:outline-none focus:border-brand-500"
-            >
-              <option value={1}>1 วันล่าสุด</option>
-              <option value={7}>7 วันล่าสุด</option>
-              <option value={30}>30 วันล่าสุด</option>
-              <option value={90}>90 วันล่าสุด</option>
-            </select>
+          <div className={styles.runtimeState}>
+            <span className={overview ? styles.online : error ? styles.offline : styles.loading}>
+              <i /> {overview ? "ONLINE" : error ? "UNAVAILABLE" : "CONNECTING"}
+            </span>
+            <strong>{overview?.meta.shadow_mode ? "SHADOW MODE" : "POLICY MODE"}</strong>
+          </div>
+        </section>
+
+        {/* ไปป์ไลน์ 4 ชั้น — แยกเป็นบล็อกของตัวเอง เต็มความกว้าง */}
+        <section className={styles.pipeline}>
+          {LAYERS.map((layer, index) => {
+            const isShadow = layer.state === "SHADOW";
+            return (
+              <div
+                className={isShadow ? `${styles.layer} ${styles.layerShadow}` : styles.layer}
+                key={layer.id}
+              >
+                <span className={styles.layerId}>{layer.id}</span>
+                {/* ชื่อบรรทัดบน / คำอธิบาย+สถานะบรรทัดล่าง */}
+                <b>{layer.name}</b>
+                <div className={styles.layerMeta}>
+                  <small>{layer.detail}</small>
+                  <em className={isShadow ? styles.shadow : styles.active}>{layer.state}</em>
+                </div>
+                {index < LAYERS.length - 1 && (
+                  <span className={styles.connector} aria-hidden="true" />
+                )}
+              </div>
+            );
+          })}
+        </section>
+
+        <div className={styles.toolbar}>
+          <div><span className={styles.eyebrow}>RISK OPERATIONS</span><h2>ภาพรวมการประเมินความเสี่ยง</h2></div>
+          <div className={styles.toolbarActions}>
+            <span className={styles.rangeText}>{overview ? `${formatDate(overview.data.range.from)} – ${formatDate(overview.data.range.to)}` : "กำลังอ่านช่วงข้อมูล"}</span>
+            <label><span className="sr-only">ช่วงเวลา</span><select value={days} onChange={(event) => setDays(Number(event.target.value))}><option value={1}>24 ชั่วโมง</option><option value={7}>7 วัน</option><option value={30}>30 วัน</option><option value={90}>90 วัน</option></select></label>
+            <button type="button" onClick={load}>รีเฟรช</button>
           </div>
         </div>
 
-        {error && (
-          <div className="mb-6 p-4 rounded-lg bg-rose-50 border border-rose-200 text-rose-700 text-sm">
-            {error}
-          </div>
-        )}
+        {error && <div className={styles.error} role="alert"><span>{error}</span><button type="button" onClick={load}>ลองใหม่</button></div>}
 
-        {!ov && !error && (
-          <div className="text-ink-400 text-sm">กำลังโหลด…</div>
-        )}
-
-        {ov && (
+        {!overview && !error ? <LoadingState /> : overview && (
           <>
-            {/* KPI cards */}
-            <section className="mb-8">
-              <h3 className="text-xs font-bold text-ink-500 uppercase tracking-wider mb-3">
-                ภาพรวม
-              </h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                <StatsCard
-                  label="Login ทั้งหมด"
-                  value={fmt(total)}
-                  sub="sessions scored"
-                  icon="🔑"
-                />
-                <StatsCard
-                  label="Anomaly Rate"
-                  value={`${anomalyRate}%`}
-                  sub={`${anomalyCount} / ${total}`}
-                  icon="📈"
-                  tone={Number(anomalyRate) > 5 ? "danger" : "default"}
-                />
-                <StatsCard
-                  label="MFA / would_mfa"
-                  value={fmt((dec.mfa ?? 0) + (dec.would_mfa ?? 0))}
-                  sub={`live ${dec.mfa ?? 0} · shadow ${dec.would_mfa ?? 0}`}
-                  icon="🛡️"
-                  tone="warn"
-                />
-                <StatsCard
-                  label="Block / would_block"
-                  value={fmt((dec.block ?? 0) + (dec.would_block ?? 0))}
-                  sub={`live ${dec.block ?? 0} · shadow ${dec.would_block ?? 0}`}
-                  icon="🚫"
-                  tone="danger"
-                />
-              </div>
+            <section className={styles.kpis} aria-label="ตัวชี้วัด ML">
+              <Metric label="Sessions" value={formatNumber(metrics.total)} detail="ประเมินแล้วทั้งหมด" />
+              <Metric label="Anomaly rate" value={`${metrics.anomalyRate.toFixed(1)}%`} detail="Session ที่ต้องตรวจสอบ" tone={metrics.anomalyRate >= 10 ? "danger" : "default"} />
+              <Metric label="Challenge / MFA" value={formatNumber(metrics.challenged)} detail="รวมผลจริงและ Shadow" tone="warn" />
+              <Metric label="Blocked" value={formatNumber(metrics.blocked)} detail="รวม Block และ Would block" tone="danger" />
             </section>
 
-            {/* Histogram */}
-            <ScoreHistogram histogram={ov.data.score_histogram} />
-
-            {/* Link card → Threshold Tuning */}
-            <section className="mb-8">
-              <Link
-                href="/ml/threshold"
-                className="block bg-white rounded-xl border border-ink-200 shadow-sm p-5 hover:border-brand-400 hover:shadow-md transition group"
-              >
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h3 className="text-xs font-bold text-ink-500 uppercase tracking-wider">
-                      Threshold Tuning
-                    </h3>
-                    <p className="text-sm text-ink-600 mt-1">
-                      Block ={" "}
-                      <span className="font-mono font-bold text-rose-600">
-                        {ov.meta.thresholds.block}
-                      </span>
-                      {" · "}MFA ={" "}
-                      <span className="font-mono font-bold text-amber-600">
-                        {ov.meta.thresholds.mfa}
-                      </span>
-                    </p>
-                  </div>
-                  <span className="text-ink-400 group-hover:text-brand-600 text-lg transition">
-                    &rarr;
-                  </span>
-                </div>
-              </Link>
+            <section className={styles.analytics}>
+              <article className={styles.panel}>
+                <PanelHeader eyebrow="SCORE DISTRIBUTION" title="การกระจายคะแนนความเสี่ยง" meta={`${overview.data.score_histogram.length} ช่วงคะแนน`} />
+                <Histogram rows={overview.data.score_histogram} />
+              </article>
+              <article className={styles.panel}>
+                <PanelHeader eyebrow="DECISION OUTPUT" title="ผลการตัดสินใจ" meta={`${formatNumber(metrics.total)} sessions`} />
+                <DecisionBreakdown decisions={metrics.decisions} total={metrics.total} />
+                <Link className={styles.thresholdLink} href="/ml/threshold"><span><small>THRESHOLD</small><b>ปรับค่าการตัดสินใจ</b></span><code>MFA {overview.meta.thresholds.mfa.toFixed(2)} · BLOCK {overview.meta.thresholds.block.toFixed(2)}</code><span aria-hidden="true">→</span></Link>
+              </article>
             </section>
 
-            {/* Sessions table — toggle Top Anomalies / Recent Sessions */}
-            <section>
-              <div className="flex items-center justify-between mb-3 flex-wrap gap-3">
-                <h3 className="text-xs font-bold text-ink-500 uppercase tracking-wider">
-                  {sortMode === "score"
-                    ? "Top Anomalies"
-                    : "Recent Sessions"}{" "}
-                  · {ov.data.top_anomalies.length} sessions
-                </h3>
-                <div className="inline-flex rounded-lg border border-ink-200 bg-white overflow-hidden text-xs font-semibold">
-                  <button
-                    onClick={() => setSortMode("recent")}
-                    className={
-                      "px-3 py-1.5 transition " +
-                      (sortMode === "recent"
-                        ? "bg-brand-600 text-white"
-                        : "text-ink-600 hover:bg-ink-50")
-                    }
-                  >
-                    🕒 Recent
-                  </button>
-                  <button
-                    onClick={() => setSortMode("score")}
-                    className={
-                      "px-3 py-1.5 transition border-l border-ink-200 " +
-                      (sortMode === "score"
-                        ? "bg-brand-600 text-white"
-                        : "text-ink-600 hover:bg-ink-50")
-                    }
-                  >
-                    🔥 Top Score
-                  </button>
-                </div>
+            <section className={styles.sessions}>
+              <div className={styles.sessionsHeader}>
+                <div><span className={styles.eyebrow}>SESSION EVIDENCE</span><h2>{sortMode === "recent" ? "Session ล่าสุด" : "Session ความเสี่ยงสูง"}</h2><p>เลือกแถวเพื่อดูคะแนนทั้ง 4 ชั้น หลักฐาน และบันทึก Ground Truth</p></div>
+                <div className={styles.sortControl} aria-label="เรียงข้อมูล"><button type="button" className={sortMode === "recent" ? styles.selected : ""} onClick={() => setSortMode("recent")}>ล่าสุด</button><button type="button" className={sortMode === "score" ? styles.selected : ""} onClick={() => setSortMode("score")}>คะแนนสูง</button></div>
               </div>
-              <p className="text-[11px] text-ink-400 mb-2">
-                {sortMode === "score"
-                  ? "เรียงตาม anomaly score สูง→ต่ำ"
-                  : "เรียงตามเวลาล่าสุด"}
-              </p>
-              <AnomalyTable
-                rows={ov.data.top_anomalies}
-                onRowClick={setSelected}
-                emptyMessage={
-                  sortMode === "score"
-                    ? "ไม่มี anomaly ใน window นี้"
-                    : "ไม่มี session ใน window นี้"
-                }
-                showSubsystem
-              />
+              <div className={styles.tableWrap}><AnomalyTable rows={overview.data.top_anomalies} onRowClick={setSelected} emptyMessage="ไม่พบ Session ในช่วงเวลานี้" showSubsystem /></div>
             </section>
           </>
         )}
       </main>
 
-      {/* Slide panel */}
-      <SlidePanel
-        open={!!selected}
-        onClose={() => setSelected(null)}
-        title="Session Detail"
-      >
-        {selected && (
-          <SessionDetailPanel
-            session={selected}
-            onFeedbackSaved={() => {
-              load();
-              setSelected(null);
-            }}
-          />
-        )}
+      <SlidePanel open={!!selected} onClose={() => setSelected(null)} title="Session Detail">
+        {selected && <SessionDetailPanel session={selected} onFeedbackSaved={() => { load(); setSelected(null); }} />}
       </SlidePanel>
     </>
   );
 }
+
+function Metric({ label, value, detail, tone = "default" }: { label: string; value: string; detail: string; tone?: "default" | "warn" | "danger" }) {
+  return <article className={`${styles.metric} ${styles[tone]}`}><span>{label}</span><strong>{value}</strong><small>{detail}</small></article>;
+}
+
+function PanelHeader({ eyebrow, title, meta }: { eyebrow: string; title: string; meta: string }) {
+  return <header className={styles.panelHeader}><div><span>{eyebrow}</span><h3>{title}</h3></div><b>{meta}</b></header>;
+}
+
+function Histogram({ rows }: { rows: Array<{ bucket: string; count: number }> }) {
+  const max = Math.max(...rows.map((row) => row.count), 1);
+  return <div className={styles.histogram}><div className={styles.bars}>{rows.map((row, index) => <div className={styles.bucket} key={row.bucket}><span>{row.count}</span><i><em className={index >= 7 ? styles.blockBar : index >= 4 ? styles.mfaBar : styles.passBar} style={{ height: `${Math.max(3, (row.count / max) * 100)}%` }} /></i><small>{row.bucket}</small></div>)}</div><div className={styles.zones}><span>LOW · PASS</span><span>MFA ZONE</span><span>HIGH · BLOCK</span></div></div>;
+}
+
+function DecisionBreakdown({ decisions, total }: { decisions: Record<string, number>; total: number }) {
+  const groups = [
+    { label: "ALLOW", value: (decisions.allow ?? 0) + (decisions.pass ?? 0), className: styles.passBar },
+    { label: "MFA / CHALLENGE", value: (decisions.mfa ?? 0) + (decisions.challenge ?? 0) + (decisions.would_mfa ?? 0) + (decisions.would_challenge ?? 0), className: styles.mfaBar },
+    { label: "WARN", value: (decisions.warn ?? 0) + (decisions.would_warn ?? 0), className: styles.warnBar },
+    { label: "BLOCK", value: (decisions.block ?? 0) + (decisions.would_block ?? 0), className: styles.blockBar },
+  ];
+  return <div className={styles.decisions}>{groups.map((group) => <div className={styles.decisionRow} key={group.label}><span>{group.label}</span><i><em className={group.className} style={{ width: `${total ? Math.max(2, (group.value / total) * 100) : 0}%` }} /></i><b>{formatNumber(group.value)}</b><small>{total ? `${((group.value / total) * 100).toFixed(0)}%` : "0%"}</small></div>)}</div>;
+}
+
+function LoadingState() { return <div className={styles.loadingState} aria-label="กำลังโหลดข้อมูล ML"><div /><div /><div /><div /></div>; }
+function formatNumber(value: number) { return value.toLocaleString("th-TH"); }
+function formatDate(value: string) { return new Intl.DateTimeFormat("th-TH", { day: "2-digit", month: "short", year: "2-digit", timeZone: "Asia/Bangkok" }).format(new Date(value)); }

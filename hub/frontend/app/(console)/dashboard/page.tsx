@@ -122,10 +122,10 @@ type HealthPoint = { status?: string | null; latency_ms?: number | null };
 type HealthHistory = Record<string, HealthPoint[]>;
 
 const CATEGORY_LABELS: Record<string, { label: string; icon: string }> = {
-  approval_requests: { label: "คำขอ Approve", icon: "📋" },
-  ml_anomaly: { label: "ML Anomaly", icon: "🧠" },
-  api_alerts: { label: "API Alerts", icon: "🛡️" },
-  subsystem_health: { label: "Subsystem ล่ม", icon: "🟢" },
+  approval_requests: { label: "คำขอ Approve", icon: "" },
+  ml_anomaly: { label: "ML Anomaly", icon: "" },
+  api_alerts: { label: "API Alerts", icon: "" },
+  subsystem_health: { label: "Subsystem ล่ม", icon: "" },
 };
 
 type HealthCheckResult = { ok: boolean; subsystems?: number };
@@ -183,6 +183,54 @@ function build24h(hourly: HourBucket[]) {
         hour12: false,
       }),
       b: byHour.get(t) ?? null,
+    });
+  }
+  return slots;
+}
+
+type Range = 24 | 168 | 720;
+const RANGES: { v: Range; label: string; title: string }[] = [
+  { v: 24, label: "24 ชม.", title: "24 ชั่วโมง" },
+  { v: 168, label: "7 วัน", title: "7 วัน" },
+  { v: 720, label: "30 วัน", title: "30 วัน" },
+];
+
+type Slot = { key: number; label: string; b: HourBucket | null };
+
+/** วันที่ตามเวลาไทย (YYYY-MM-DD) — ใช้เป็น key รวม bucket รายชั่วโมงเป็นรายวัน */
+function bkkDay(d: Date) {
+  return d.toLocaleDateString("en-CA", { timeZone: "Asia/Bangkok" });
+}
+
+/**
+ * ช่วง 7/30 วัน — backend ส่ง bucket รายชั่วโมงมาทั้งช่วง (สูงสุด 720 แถว)
+ * รวมเป็นรายวันตามเวลาไทยฝั่ง frontend แทนการเพิ่ม endpoint ใหม่
+ * วันที่ไม่มี login ยังได้ช่องเปล่า กราฟจึงไม่ยุบเหลือไม่กี่แท่ง
+ */
+function buildDaily(hourly: HourBucket[], days: number): Slot[] {
+  const byDay = new Map<string, HourBucket>();
+  for (const b of hourly) {
+    if (!b.hour) continue;
+    const k = bkkDay(toDate(b.hour));
+    const cur = byDay.get(k) ?? { hour: null, count: 0, blocked: 0, challenged: 0 };
+    cur.count += b.count;
+    cur.blocked += b.blocked;
+    cur.challenged += b.challenged ?? 0;
+    byDay.set(k, cur);
+  }
+  const now = Date.now();
+  const slots: Slot[] = [];
+  for (let i = days - 1; i >= 0; i--) {
+    const d = new Date(now - i * 86400_000);
+    const k = bkkDay(d);
+    slots.push({
+      key: d.getTime(),
+      label: d.toLocaleDateString("th-TH", {
+        timeZone: "Asia/Bangkok",
+        day: "2-digit",
+        month: "2-digit",
+      }),
+      b: byDay.get(k) ?? null,
     });
   }
   return slots;
@@ -290,6 +338,8 @@ export default function DashboardPage() {
   const [map, setMap] = useState<MapData | null>(null);
   const [ins, setIns] = useState<Insights | null>(null);
   const [act, setAct] = useState<ActivityResp | null>(null);
+  const [range, setRange] = useState<Range>(24);
+  const [traffic, setTraffic] = useState<HourBucket[] | null>(null);
   const [hist, setHist] = useState<HealthHistory>({});
   const [error, setError] = useState<string | null>(null);
   const [hcBusy, setHcBusy] = useState(false);
@@ -302,6 +352,21 @@ export default function DashboardPage() {
     clientFetch<Insights>("/admin/dashboard/insights?hours=24").then(setIns).catch(() => {});
     clientFetch<ActivityResp>("/admin/activity?hours=24&limit=5").then(setAct).catch(() => {});
   };
+
+  useEffect(() => {
+    let alive = true;
+    const pull = () =>
+      clientFetch<ActivityResp>(`/admin/activity?hours=${range}&limit=1`)
+        .then((r) => alive && setTraffic(r.hourly))
+        .catch(() => {});
+    setTraffic(null);
+    pull();
+    const t = setInterval(pull, 30_000);
+    return () => {
+      alive = false;
+      clearInterval(t);
+    };
+  }, [range]);
 
   const runHealthCheckNow = async () => {
     setHcBusy(true);
@@ -373,7 +438,17 @@ export default function DashboardPage() {
   const successPct =
     k && k.total > 0 ? Math.round(((k.total - k.blocked) / k.total) * 1000) / 10 : null;
   const highRisk = k ? k.blocked + k.challenged : null;
-  const slots = act ? build24h(act.hourly) : null;
+  const daily = range !== 24;
+  const days = range / 24;
+  const slots: Slot[] | null = traffic
+    ? daily
+      ? buildDaily(traffic, days)
+      : build24h(traffic)
+    : null;
+  const rangeTitle = RANGES.find((r) => r.v === range)?.title ?? "24 ชั่วโมง";
+  const labelStep = range === 24 ? 3 : range === 168 ? 1 : 5;
+  const slotText = (s: Slot) => (daily ? s.label : `${s.label}:00`);
+  const trafficTotal = slots ? slots.reduce((a, s) => a + (s.b?.count ?? 0), 0) : 0;
   const maxBar = slots ? Math.max(...slots.map((s) => s.b?.count ?? 0), 1) : 1;
   const peak = slots
     ? slots.reduce((a, b) => ((b.b?.count ?? 0) > (a.b?.count ?? 0) ? b : a))
@@ -397,7 +472,7 @@ export default function DashboardPage() {
 
   return (
     <>
-      <Topbar title="ภาพรวมระบบ" />
+      <Topbar title="Overview" />
       {/* command-bar กินเต็มความกว้าง (ไม่มี padding ครอบ) ส่วนเนื้อหาอยู่ใน .document
           ที่คุมระยะห่างเอง — ช่องไฟระหว่างบล็อก 10px ตามดีไซน์ ไม่ใช่ 20px แบบเดิม */}
       <main className="sr">
@@ -417,7 +492,7 @@ export default function DashboardPage() {
                 </span>
                 live control surface
               </div>
-              <h1>ภาพรวมระบบ</h1>
+              <h1>Overview</h1>
             </div>
 
             <div className="command-actions">
@@ -451,7 +526,7 @@ export default function DashboardPage() {
 
           {hcResult && hcResult.ok && (
             <div className="flex items-center gap-2 border border-brand-500/40 bg-brand-50 px-3 py-2 text-xs text-brand-700">
-              ✓ ตรวจเสร็จ — Hub + {hcResult.subsystems} subsystem
+              ตรวจเสร็จ — Hub + {hcResult.subsystems} subsystem
               <Link href="/notifications" className="ml-1 font-bold underline hover:no-underline">
                 รายงาน →
               </Link>
@@ -459,7 +534,7 @@ export default function DashboardPage() {
           )}
           {hcError && (
             <div className="border border-rose-200 bg-rose-50 px-3 py-2 text-xs text-rose-700">
-              ✗ {hcError}
+              {hcError}
             </div>
           )}
 
@@ -586,7 +661,21 @@ export default function DashboardPage() {
               <div className="card-head chart-card-head">
                 <div>
                   <span className="overline">authentication traffic</span>
-                  <h2>ปริมาณการยืนยันตัวตน · 24 ชั่วโมง</h2>
+                  <h2>ปริมาณการยืนยันตัวตน · {rangeTitle}</h2>
+                </div>
+                <div className="range-switch" role="tablist" aria-label="ช่วงเวลา">
+                  {RANGES.map((r) => (
+                    <button
+                      key={r.v}
+                      type="button"
+                      role="tab"
+                      aria-selected={range === r.v}
+                      className={range === r.v ? "on" : undefined}
+                      onClick={() => setRange(r.v)}
+                    >
+                      {r.label}
+                    </button>
+                  ))}
                 </div>
                 <div className="chart-legend">
                   <span>
@@ -638,7 +727,7 @@ export default function DashboardPage() {
                               <div
                                 key={s.key}
                                 className="flex h-full flex-1 flex-col justify-end"
-                                title={`${s.label}:00 — ${total} ครั้ง (challenge ${challenged} · block ${blocked})`}
+                                title={`${slotText(s)} — ${total} ครั้ง (challenge ${challenged} · block ${blocked})`}
                               >
                                 {total > 0 ? (
                                   <>
@@ -662,7 +751,7 @@ export default function DashboardPage() {
                     <div className="ml-11 mt-1.5 flex gap-[3px] font-mono text-[9px] text-ink-400">
                       {slots.map((s, i) => (
                         <div key={s.key} className="flex-1 text-center">
-                          {i % 3 === 0 ? s.label : ""}
+                          {i % labelStep === 0 ? s.label : ""}
                         </div>
                       ))}
                     </div>
@@ -673,10 +762,18 @@ export default function DashboardPage() {
                       <span>ช่วงสูงสุด</span>
                       <b className="mono">
                         {peak && (peak.b?.count ?? 0) > 0
-                          ? `${peak.label}:00 · ${peak.b?.count}`
+                          ? `${slotText(peak)} · ${peak.b?.count}`
                           : "ยังไม่มี"}
                       </b>
                     </div>
+                    {daily ? (
+                    <div>
+                      <span>เฉลี่ยต่อวัน</span>
+                      <b className="mono">
+                        {(trafficTotal / days).toFixed(1)} ครั้ง
+                      </b>
+                    </div>
+                    ) : (
                     <div>
                       <span>เทียบเมื่อวาน</span>
                       <b
@@ -693,6 +790,7 @@ export default function DashboardPage() {
                           : `${ins.logins.change_pct >= 0 ? "+" : ""}${ins.logins.change_pct}%`}
                       </b>
                     </div>
+                    )}
                     <div>
                       <span>blocked peak</span>
                       <b
@@ -701,7 +799,7 @@ export default function DashboardPage() {
                         }`}
                       >
                         {blockedPeak && (blockedPeak.b?.blocked ?? 0) > 0
-                          ? `${blockedPeak.b?.blocked} events · ${blockedPeak.label}:00`
+                          ? `${blockedPeak.b?.blocked} events · ${slotText(blockedPeak)}`
                           : "0 events"}
                       </b>
                     </div>
@@ -874,7 +972,7 @@ export default function DashboardPage() {
                                     className="ml-1 text-rose-600"
                                     title="IP อยู่ใน blacklist"
                                   >
-                                    ⚠
+
                                   </span>
                                 )}
                               </td>

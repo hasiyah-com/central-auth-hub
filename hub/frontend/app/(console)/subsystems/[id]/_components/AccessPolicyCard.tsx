@@ -23,10 +23,10 @@ type Props = {
 const USER_TYPES = ["student", "teacher", "staff", "admin"];
 
 const POLICY_META: Record<string, { label: string; desc: string; icon: string }> = {
-  explicit: { label: " Whitelist", desc: "เฉพาะรายชื่อ CSV", icon: "📋" },
-  all: { label: "All Users", desc: "ผู้ใช้ทุกคนที่ active เข้าได้", icon: "🌐" },
-  role: { label: "Role", desc: "เฉพาะ Role ที่เลือก", icon: "👥" },
-  attribute: { label: "Attribute", desc: "เฉพาะคณะ/สาขา", icon: "🎯" },
+  explicit: { label: " Whitelist", desc: "เฉพาะรายชื่อ CSV", icon: "" },
+  all: { label: "All Users", desc: "ผู้ใช้ทุกคนที่ active เข้าได้", icon: "" },
+  role: { label: "Role", desc: "เฉพาะ Role ที่เลือก", icon: "" },
+  attribute: { label: "Attribute", desc: "เฉพาะคณะ/สาขา", icon: "" },
 };
 
 function errText(e: unknown, fb: string): string {
@@ -121,7 +121,6 @@ export function AccessPolicyCard({ subId, policy, config, apiKeyPrefix, onReload
       {verifying && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40">
           <div className="bg-white rounded-2xl px-6 py-5 shadow-xl flex items-center gap-3 text-sm text-ink-700">
-            <span className="animate-pulse text-lg">🔐</span>
             กำลังยืนยันด้วย Passkey…
           </div>
         </div>
@@ -143,7 +142,7 @@ export function AccessPolicyCard({ subId, policy, config, apiKeyPrefix, onReload
               (draft === key ? "border-brand-400 bg-brand-50" : "border-ink-200 hover:border-ink-300")
             }
           >
-            <span className="text-xl leading-none">{m.icon}</span>
+            {m.icon && <span className="text-xl leading-none">{m.icon}</span>}
             <div className="min-w-0">
               <div className="text-sm font-bold text-ink-900">{m.label}</div>
               <div className="text-[11px] text-ink-500 mt-0.5 leading-snug">{m.desc}</div>
@@ -170,12 +169,12 @@ export function AccessPolicyCard({ subId, policy, config, apiKeyPrefix, onReload
                     : "bg-white border-ink-200 text-ink-500 hover:border-ink-300")
                 }
               >
-                {roles.includes(r) ? "✓ " : ""}{r}
+                {r}
               </button>
             ))}
           </div>
           {roles.length === 0 && (
-            <div className="text-[11px] text-rose-600 mt-2">⚠️ ต้องเลือกอย่างน้อย 1 บทบาท</div>
+            <div className="text-[11px] text-rose-600 mt-2">ต้องเลือกอย่างน้อย 1 บทบาท</div>
           )}
         </div>
       )}
@@ -211,7 +210,7 @@ export function AccessPolicyCard({ subId, policy, config, apiKeyPrefix, onReload
       )}
       {draft === "all" && (
         <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-3">
-          ⚠️ ผู้ใช้ <strong>ทุกคน</strong> ที่ active เข้าได้ — ใช้ Whitelist เป็น deny-list เพื่อ ban รายคน
+          ผู้ใช้ <strong>ทุกคน</strong> ที่ active เข้าได้ — ใช้ Whitelist เป็น deny-list เพื่อ ban รายคน
         </div>
       )}
 
@@ -224,7 +223,7 @@ export function AccessPolicyCard({ subId, policy, config, apiKeyPrefix, onReload
               : "text-rose-700 bg-rose-50 border-rose-200")
           }
         >
-          {msg.kind === "ok" ? "✓ " : "✗ "}{msg.text}
+          {msg.text}
         </div>
       )}
 
@@ -240,7 +239,7 @@ export function AccessPolicyCard({ subId, policy, config, apiKeyPrefix, onReload
       <div className="pt-4 border-t border-ink-100">
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div>
-            <h4 className="text-sm font-bold text-ink-800">🔑 Roster API key</h4>
+            <h4 className="text-sm font-bold text-ink-800">Roster API key</h4>
             <p className="text-[11px] text-ink-500 mt-0.5">
               {/* ดึงรายชื่อผู้ใช้ที่เข้าได้ (GET /api/v1/roster) — ใช้ตอน subsystem สร้าง record ล่วงหน้า */}
             </p>
@@ -250,7 +249,7 @@ export function AccessPolicyCard({ subId, policy, config, apiKeyPrefix, onReload
             disabled={rotating}
             className="px-3 py-1.5 rounded-lg border border-ink-200 hover:bg-ink-50 text-xs font-semibold text-ink-700 disabled:opacity-50"
           >
-            {rotating ? "…" : apiKeyPrefix ? "🔄 ออก key ใหม่" : "+ สร้าง key"}
+            {rotating ? "…" : apiKeyPrefix ? "ออก key ใหม่" : "+ สร้าง key"}
           </button>
         </div>
         <div className="mt-2 font-mono text-xs text-ink-500">
@@ -260,7 +259,7 @@ export function AccessPolicyCard({ subId, policy, config, apiKeyPrefix, onReload
         {newKey && (
           <div className="mt-2 p-3 rounded-lg bg-emerald-50 border border-emerald-200">
             <div className="text-[11px] font-bold text-emerald-800 mb-1">
-              ✓ API key ใหม่ — แสดงครั้งเดียว เก็บไว้ให้ดี
+              API key ใหม่ — แสดงครั้งเดียว เก็บไว้ให้ดี
             </div>
             <div className="flex items-center gap-2">
               <code className="flex-1 font-mono text-xs bg-white rounded px-2 py-1.5 border border-emerald-200 break-all">

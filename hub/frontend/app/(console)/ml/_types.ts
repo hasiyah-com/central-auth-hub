@@ -142,11 +142,11 @@ export const FEEDBACK_LABELS = [
 
 // Device type → icon mapping
 export const DEVICE_ICON: Record<string, string> = {
-  desktop: "💻",
-  mobile: "📱",
-  tablet: "📟",
-  bot: "🤖",
-  unknown: "❓",
+  desktop: "",
+  mobile: "",
+  tablet: "",
+  bot: "",
+  unknown: "",
 };
 
 // Feature name → ป้ายภาษาไทย (อ่านง่ายใน SHAP/risk breakdown)

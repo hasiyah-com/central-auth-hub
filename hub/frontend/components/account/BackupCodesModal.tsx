@@ -113,7 +113,6 @@ export function BackupCodesModal({ codes, onAcknowledged }: Props) {
       <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full max-h-[95vh] overflow-y-auto">
         <div className="px-6 py-5 border-b border-gray-200">
           <div className="flex items-center gap-3">
-            <span className="text-3xl">🔑</span>
             <div>
               <h2 className="text-xl font-bold text-gray-900">
                 Backup Codes ของคุณ
@@ -127,7 +126,7 @@ export function BackupCodesModal({ codes, onAcknowledged }: Props) {
 
         <div className="px-6 py-5 space-y-4">
           <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 text-sm text-amber-900">
-            <strong className="font-semibold">⚠️ ใช้กรณีฉุกเฉินเท่านั้น:</strong>{" "}
+            <strong className="font-semibold">ใช้กรณีฉุกเฉินเท่านั้น:</strong>{" "}
             ถ้าทำ Passkey หาย (เปลี่ยนมือถือ, อุปกรณ์พัง) ใช้ codes เหล่านี้
             กู้บัญชีได้. แต่ละ code ใช้ได้ครั้งเดียว.
           </div>
@@ -155,7 +154,7 @@ export function BackupCodesModal({ codes, onAcknowledged }: Props) {
                   : "bg-gray-900 text-white hover:bg-gray-800"
               }`}
             >
-              {copied ? "✓ คัดลอกแล้ว" : "📋 คัดลอก"}
+              {copied ? "คัดลอกแล้ว" : "คัดลอก"}
             </button>
             <button
               onClick={handleDownload}
@@ -165,7 +164,7 @@ export function BackupCodesModal({ codes, onAcknowledged }: Props) {
                   : "bg-gray-900 text-white hover:bg-gray-800"
               }`}
             >
-              {downloaded ? "✓ ดาวน์โหลดแล้ว" : "💾 ดาวน์โหลด (.txt)"}
+              {downloaded ? "ดาวน์โหลดแล้ว" : "ดาวน์โหลด (.txt)"}
             </button>
           </div>
 

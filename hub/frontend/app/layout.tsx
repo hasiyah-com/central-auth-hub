@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import StepupTotpProvider from "@/components/StepupTotpProvider";
+import "./signal-dashboard.css";
 
 export const metadata: Metadata = {
   title: "Central Auth Hub — Signal Room",

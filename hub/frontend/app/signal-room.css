@@ -44,7 +44,7 @@
 }
 
 .sr .overline {
-  font: 600 7px "IBM Plex Mono", ui-monospace, monospace;
+  font:500 7px "IBM Plex Mono", ui-monospace, monospace;
   letter-spacing: 1px;
   color: #8591a1;
 }
@@ -113,8 +113,8 @@
   gap: 24px;
   /* เตี้ยลงจากดีไซน์ต้นแบบ (165px) — เนื้อหามีแค่ 2 บรรทัด สูงขนาดนั้นดูโล่ง
      padding แนวนอน = 32px เท่ากับ .dashboard-stack เพื่อให้หัวเรื่องตรงแนวกับการ์ดข้างล่าง */
-  min-height: 104px;
-  padding: 22px 32px;
+  min-height: 92px;
+  padding: 18px 32px;
   overflow: hidden;
   color: #fff;
   background: var(--sr-canvas-deep);
@@ -147,8 +147,8 @@
 .sr .live-label {
   display: flex;
   align-items: center;
-  gap: 8px;
-  font: 600 8px "IBM Plex Mono", ui-monospace, monospace;
+  gap: 7px;
+  font:500 8px "IBM Plex Mono", ui-monospace, monospace;
   letter-spacing: 1px;
   color: #8ca0b9;
 }
@@ -200,7 +200,7 @@
   padding: 0 15px;
   border: 0;
   font-size: 9px;
-  font-weight: 700;
+  font-weight:500;
   color: #07120f;
   cursor: pointer;
   background: linear-gradient(135deg, var(--sr-signal), #5bf4d7);
@@ -301,7 +301,7 @@
   background: none;
   color: #785116;
   font-size: 9px;
-  font-weight: 700;
+  font-weight:500;
   cursor: pointer;
 }
 .sr .attention-banner .link-button span {
@@ -364,7 +364,7 @@
   color: #7f8b9b;
 }
 .sr .kpi-head span {
-  font: 600 7px "IBM Plex Mono", ui-monospace, monospace;
+  font:500 7px "IBM Plex Mono", ui-monospace, monospace;
   letter-spacing: 0.7px;
   /* ดีไซน์เขียนหัวข้อเป็นตัวใหญ่ในตัว HTML เอง — ทำที่ CSS แทนจะได้ไม่ต้องแก้ข้อความทุกจุด */
   text-transform: uppercase;
@@ -376,7 +376,7 @@
 .sr .kpi > strong {
   display: block;
   margin: 7px 0 4px;
-  font: 700 27px "Sarabun", sans-serif;
+  font:500 27px "Sarabun", sans-serif;
   letter-spacing: -1px;
 }
 .sr .kpi > p {
@@ -387,7 +387,7 @@
 }
 .sr .kpi > p b {
   color: var(--sr-signal-2);
-  font-weight: 600;
+  font-weight:500;
 }
 .sr .kpi p .signal-dot {
   width: 5px;
@@ -549,7 +549,7 @@
 .sr .method-icon.google {
   color: #4285f4;
   background: #f3f6fb;
-  font: 700 14px Arial, sans-serif;
+  font:500 14px Arial, sans-serif;
 }
 .sr .auth-method strong,
 .sr .auth-method span {
@@ -861,7 +861,7 @@
 }
 .sr th {
   padding: 8px 11px;
-  font: 600 7px "IBM Plex Mono", ui-monospace, monospace;
+  font:500 7px "IBM Plex Mono", ui-monospace, monospace;
   letter-spacing: 0.5px;
   text-align: left;
   color: #8591a0;
@@ -923,7 +923,7 @@
   align-items: center;
   gap: 4px;
   padding: 3px 6px;
-  font: 600 7px "IBM Plex Mono", ui-monospace, monospace;
+  font:500 7px "IBM Plex Mono", ui-monospace, monospace;
   border-radius: 10px;
 }
 .sr .decision i {
@@ -1076,7 +1076,7 @@
   display: flex;
   align-items: center;
   gap: 5px;
-  font: 600 7px "IBM Plex Mono", ui-monospace, monospace;
+  font:500 7px "IBM Plex Mono", ui-monospace, monospace;
   color: var(--sr-signal);
 }
 .sr .engine-status b .signal-dot {
@@ -1299,7 +1299,7 @@
   height: 34px;
   border: 0;
   font-size: 8px;
-  font-weight: 600;
+  font-weight:500;
   color: #435269;
   background: #fafbfc;
   cursor: pointer;
@@ -1412,4 +1412,60 @@
   .sr .kpi-grid {
     grid-template-columns: repeat(2, 1fr);
   }
+}
+
+
+/* เนื้อหาไม่หนา — หัวข้อหลักเท่านั้น (ดู signal-console.css) */
+.sr strong,
+.sr b,
+.sr th {
+  font-weight: 500;
+}
+.sr h1,
+.sr h2 {
+  font-weight: 700;
+}
+.sr .command-copy h1 {
+  font-weight: 800;
+}
+
+.sr .font-bold,
+.sr .font-semibold,
+.sr .font-extrabold {
+  font-weight: 500;
+}
+
+/* ── ปุ่มเลือกช่วงเวลาของกราฟ traffic (24 ชม. / 7 วัน / 30 วัน) ── */
+.sr .chart-card-head {
+  gap: 14px;
+}
+.sr .chart-card-head > div:first-child {
+  margin-right: auto;
+}
+.sr .range-switch {
+  display: inline-flex;
+  flex: none;
+  border: 1px solid var(--sr-ink-200);
+  background: #fff;
+}
+.sr .range-switch button {
+  height: 26px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: #6b7887;
+  font: 500 10.5px "IBM Plex Mono", ui-monospace, monospace;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.sr .range-switch button + button {
+  border-left: 1px solid var(--sr-ink-200);
+}
+.sr .range-switch button:hover {
+  background: #f2f5f8;
+}
+.sr .range-switch button.on {
+  background: var(--sr-ink);
+  color: #fff;
 }

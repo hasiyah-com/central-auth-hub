@@ -136,7 +136,6 @@ export function LoginMethodsCard() {
       {verifying && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40">
           <div className="bg-white border border-ink-200 px-6 py-5 flex items-center gap-3 text-sm text-ink-700">
-            <span className="animate-pulse text-lg">🔐</span>
             กำลังยืนยันด้วย Passkey… ทำตามที่อุปกรณ์แจ้ง
           </div>
         </div>
@@ -215,7 +214,7 @@ export function LoginMethodsCard() {
         <div className="px-4 pb-4 pt-3">
           {noneSelected && (
           <div className="mb-3 text-xs text-rose-700 bg-rose-50 border border-rose-200 p-2.5">
-            ⚠️ ต้องเปิดอย่างน้อย 1 วิธี — ไม่งั้นจะไม่มีใคร login เข้าระบบได้
+            ต้องเปิดอย่างน้อย 1 วิธี — ไม่งั้นจะไม่มีใคร login เข้าระบบได้
           </div>
         )}
 
@@ -228,7 +227,6 @@ export function LoginMethodsCard() {
                 : "text-rose-700 bg-rose-50 border-rose-200")
             }
           >
-            {msg.kind === "ok" ? "✓ " : "✗ "}
             {msg.text}
           </div>
         )}

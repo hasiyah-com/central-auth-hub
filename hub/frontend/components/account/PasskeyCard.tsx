@@ -1,15 +1,17 @@
 "use client";
 
 /**
- * PasskeyCard — one passkey row with inline rename + delete confirm (Phase 3).
+ * PasskeyCard — แถวอุปกรณ์ Passkey หนึ่งตัว + เปลี่ยนชื่อ/ลบแบบ inline (Phase 3).
+ *
+ * สไตล์ใช้ cx-pk-* (signal-console.css) ให้เข้าชุดกับ panel อื่นในหน้า /account
+ * — ต้องอยู่ใต้ `.sc` ซึ่ง AccountView ครอบให้แล้ว
+ *
+ * ไอคอนเป็น inline SVG: ของเดิมใช้ emoji แล้วถูกตัดออกตามกฎโปรเจกต์
+ * เหลือปุ่มเปล่า กดได้แต่มองไม่เห็น
  */
 
 import { useState } from "react";
-import {
-  deletePasskey,
-  renamePasskey,
-  type PasskeyInfo,
-} from "@/lib/passkey";
+import { deletePasskey, renamePasskey, type PasskeyInfo } from "@/lib/passkey";
 
 function relTime(iso: string | null): string {
   if (!iso) return "ยังไม่เคยใช้";
@@ -24,6 +26,72 @@ function relTime(iso: string | null): string {
   if (day < 30) return `${day} วันที่แล้ว`;
   return d.toLocaleDateString("th-TH");
 }
+
+/** อุปกรณ์ในเครื่อง (Touch ID / Windows Hello) */
+const IconDevice = () => (
+  <svg
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.8"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <rect x="5" y="2" width="14" height="20" rx="2" />
+    <path d="M12 18h.01" />
+  </svg>
+);
+
+/** กุญแจฮาร์ดแวร์ภายนอก (YubiKey ฯลฯ) */
+const IconKey = () => (
+  <svg
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.8"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <circle cx="7.5" cy="15.5" r="4.5" />
+    <path d="m10.7 12.3 8.3-8.3" />
+    <path d="m17 5 3 3" />
+    <path d="m14 8 3 3" />
+  </svg>
+);
+
+const IconPencil = () => (
+  <svg
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.8"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M12 20h9" />
+    <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z" />
+  </svg>
+);
+
+const IconTrash = () => (
+  <svg
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.8"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M3 6h18" />
+    <path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2" />
+    <path d="M19 6v14a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V6" />
+    <path d="M10 11v6M14 11v6" />
+  </svg>
+);
 
 type Props = {
   pk: PasskeyInfo;
@@ -81,127 +149,108 @@ export function PasskeyCard({ pk, isLast, onChanged }: Props) {
     }
   };
 
-  return (
-    <div className="flex items-center gap-4 px-4 py-3 rounded-xl border border-gray-200 bg-white">
-      <div
-        className={`w-10 h-10 rounded-lg grid place-items-center text-lg flex-none ${
-          isPlatform
-            ? "bg-emerald-50 text-emerald-600"
-            : "bg-blue-50 text-blue-600"
-        }`}
-      >
-        {isPlatform ? "💻" : "🔑"}
-      </div>
+  const cancelEdit = () => {
+    setEditing(false);
+    setName(pk.device_name);
+  };
 
-      <div className="flex-1 min-w-0">
+  return (
+    <div className="cx-pk-row">
+      <i className={isPlatform ? undefined : "roaming"}>
+        {isPlatform ? <IconDevice /> : <IconKey />}
+      </i>
+
+      <div>
         {editing ? (
-          <div className="flex items-center gap-2">
+          <div className="cx-pk-rename">
             <input
               value={name}
               onChange={(e) => setName(e.target.value)}
               autoFocus
               maxLength={100}
               disabled={busy}
+              aria-label="ชื่ออุปกรณ์"
               onKeyDown={(e) => {
                 if (e.key === "Enter") save();
-                if (e.key === "Escape") {
-                  setEditing(false);
-                  setName(pk.device_name);
-                }
+                if (e.key === "Escape") cancelEdit();
               }}
-              className="px-2 py-1 border border-emerald-300 rounded text-sm w-48 focus:ring-2 focus:ring-emerald-500"
             />
             <button
+              type="button"
+              className="cx-primary"
               onClick={save}
               disabled={busy}
-              className="text-emerald-600 text-sm font-medium hover:text-emerald-700"
             >
               บันทึก
             </button>
-            <button
-              onClick={() => {
-                setEditing(false);
-                setName(pk.device_name);
-              }}
-              disabled={busy}
-              className="text-gray-400 text-sm hover:text-gray-600"
-            >
+            <button type="button" onClick={cancelEdit} disabled={busy}>
               ยกเลิก
             </button>
           </div>
         ) : (
           <>
-            <div className="flex items-center gap-2">
-              <span className="font-medium text-gray-900 truncate">
-                {pk.device_name}
-              </span>
-              <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-500">
+            <div className="cx-pk-name">
+              <b>{pk.device_name}</b>
+              <span className="cx-chip">
                 {isPlatform ? "platform" : "security key"}
               </span>
             </div>
-            <div className="text-xs text-gray-500 mt-0.5">
+            <div className="cx-pk-meta">
               ใช้ล่าสุด {relTime(pk.last_used_at)}
               {pk.last_used_country ? ` · ${pk.last_used_country}` : ""}
               {pk.counter_regression_count > 0 && (
-                <span className="text-amber-600">
-                  {" "}· ⚠ counter regression {pk.counter_regression_count}
+                <span className="warn">
+                  {" "}
+                  · counter regression {pk.counter_regression_count}
                 </span>
               )}
             </div>
-            {error && (
-              <div className="text-xs text-red-600 mt-1">{error}</div>
-            )}
+            {error && <div className="cx-pk-error">{error}</div>}
           </>
         )}
       </div>
 
       {!editing && (
-        <div className="flex items-center gap-2 flex-none">
+        <div className="cx-pk-actions">
           {confirming ? (
-            <>
-              <span className="text-xs text-gray-500">แน่ใจ?</span>
+            <div className="cx-pk-confirm">
+              <span>ลบอุปกรณ์นี้?</span>
               <button
+                type="button"
+                className="danger"
                 onClick={remove}
                 disabled={busy}
-                className="text-red-600 text-sm font-medium hover:text-red-700"
               >
                 ลบ
               </button>
               <button
+                type="button"
                 onClick={() => setConfirming(false)}
                 disabled={busy}
-                className="text-gray-400 text-sm hover:text-gray-600"
               >
                 ไม่
               </button>
-            </>
+            </div>
           ) : (
             <>
               <button
+                type="button"
+                className="cx-pk-icon"
                 onClick={() => setEditing(true)}
-                className="text-gray-400 hover:text-gray-700 text-sm"
                 title="เปลี่ยนชื่อ"
+                aria-label="เปลี่ยนชื่ออุปกรณ์"
               >
-                ✏️
+                <IconPencil />
               </button>
               <button
-                onClick={() => {
-                  if (isLast) {
-                    setError(
-                      "ลบ Passkey ตัวสุดท้ายไม่ได้ — ต้องเหลืออย่างน้อย 1 ตัว"
-                    );
-                    return;
-                  }
-                  setConfirming(true);
-                }}
-                className={`text-sm ${
-                  isLast
-                    ? "text-gray-300 cursor-not-allowed"
-                    : "text-gray-400 hover:text-red-600"
-                }`}
-                title={isLast ? "ลบตัวสุดท้ายไม่ได้" : "ลบ"}
+                type="button"
+                className="cx-pk-icon danger"
+                onClick={() => setConfirming(true)}
+                disabled={isLast}
+                title={isLast ? "ลบตัวสุดท้ายไม่ได้ — ต้องเหลืออย่างน้อย 1 ตัว" : "ลบ"}
+                aria-label="ลบอุปกรณ์"
               >
-                🗑️
+                <IconTrash />
               </button>
             </>
           )}
