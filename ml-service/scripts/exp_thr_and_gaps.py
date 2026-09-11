@@ -148,7 +148,7 @@ def main():
         print(f"  {q:>10}{f * 100:>11.2f}%{u * 100:>11.2f}%")
         L.append(
             f"| {q} | {f * 100:.2f}±{e * 100:.2f}% | {u * 100:.2f}±{ue * 100:.2f}% "
-            f"| {'✅' if ok else '❌'} |"
+            f"| {'' if ok else ''} |"
         )
     if best:
         L.append(

@@ -494,7 +494,7 @@ def update_user(
         if db.query(User).filter(User.email == new_email, User.id != user.id).first():
             raise HTTPException(status_code=409, detail="email นี้มีอยู่แล้ว")
         data["email"] = new_email
-        # ⚠️ admin เปลี่ยน email → ต้องเคลียร์ google_sub เดิมด้วย ไม่งั้น login ครั้งหน้า
+        # admin เปลี่ยน email → ต้องเคลียร์ google_sub เดิมด้วย ไม่งั้น login ครั้งหน้า
         # Google ส่ง sub ใหม่ (คนละอันกับที่ผูกไว้) → โดน mismatch guard (auth.py) บล็อกถาวร.
         # set NULL → login ครั้งหน้า re-bind sub ใหม่ (TOFU) + reset email_verified
         if new_email != (user.email or "").lower():

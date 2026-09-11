@@ -40,7 +40,7 @@ async def main() -> None:
             .all()
         )
         if not sessions:
-            print("⚠️  ไม่มี login_sessions — ข้าม")
+            print(" ไม่มี login_sessions — ข้าม")
             return
 
         normal_scores: list[float] = []
@@ -108,7 +108,7 @@ async def main() -> None:
             return sum(xs) / len(xs) if xs else 0.0
 
         # ── console ──
-        print(f"\n📊 Real-data evaluation — {len(sessions)} sessions (errors={errors})")
+        print(f"\nReal-data evaluation — {len(sessions)} sessions (errors={errors})")
         print(f"   normal (label=0): {n_normal}  · attack (label=1): {n_attack}")
         print(f"   FPR (decision challenge/block): {fpr:.1%} ({fp}/{n_normal})")
         print(
@@ -155,7 +155,7 @@ async def main() -> None:
             "- ขั้นต่อไป (2.2): สะสม label จาก admin → eval recall ได้",
         ]
         path.write_text("\n".join(lines), encoding="utf-8")
-        print(f"\n💾 report: {path}")
+        print(f"\nreport: {path}")
     finally:
         db.close()
 

@@ -126,7 +126,7 @@ def send_secret_retrieval_email(
               </table>
 
               <div style="background:#fef3ef; border:1px solid #fecaca; border-radius:10px; padding:14px 16px; margin:20px 0; font-size:13px; color:#b54324; line-height:1.55;">
-                <strong>⚠ คำเตือนความปลอดภัย</strong><br>
+                <strong>คำเตือนความปลอดภัย</strong><br>
                 • secret จะแสดงเพียงครั้งเดียว — copy ใส่ <code style="font-family:'JetBrains Mono',monospace;">.env</code> ของระบบย่อยทันที<br>
                 • ถ้าลืม secret ต้องลงทะเบียนระบบใหม่ทั้งหมด<br>
                 • อย่า forward email นี้ให้ผู้อื่น
@@ -211,7 +211,7 @@ def send_revoke_notification(
 <table role="presentation" cellpadding="0" cellspacing="0" width="560" style="max-width:560px;background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 4px 12px rgba(15,23,42,0.08);">
   <tr><td style="background:linear-gradient(135deg,#f59e0b 0%,#b45309 100%);padding:32px;color:#fff;">
     <div style="font-size:11px;letter-spacing:0.18em;text-transform:uppercase;opacity:0.85;">Central Auth Hub · Security Notice</div>
-    <div style="font-size:22px;font-weight:800;margin-top:6px;">⚠ Session ถูกปิดโดย Admin</div>
+    <div style="font-size:22px;font-weight:800;margin-top:6px;">Session ถูกปิดโดย Admin</div>
   </td></tr>
   <tr><td style="padding:28px 32px;">
     <p style="margin:0 0 12px;font-size:15px;">สวัสดีคุณ <strong>{name}</strong>,</p>
@@ -269,7 +269,6 @@ def send_change_request_decision(
     is_approved = decision == "approved"
     color = "#15803d" if is_approved else "#b91c1c"
     bg = "#dcfce7" if is_approved else "#fee2e2"
-    icon = "✅" if is_approved else "🛑"
     label = "Approved" if is_approved else "Rejected"
     type_label_map = {
         "rotate_secret": "Rotate Client Secret",  # pragma: allowlist secret
@@ -293,7 +292,6 @@ def send_change_request_decision(
 <tr><td align="center">
 <table role="presentation" cellpadding="0" cellspacing="0" width="560" style="max-width:560px;background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 4px 12px rgba(15,23,42,0.08);">
   <tr><td style="background:{bg};padding:32px;text-align:center;">
-    <div style="font-size:48px;line-height:1;">{icon}</div>
     <div style="font-size:22px;font-weight:800;color:{color};margin-top:10px;">Change Request {label}</div>
   </td></tr>
   <tr><td style="padding:24px 32px;">
@@ -326,7 +324,7 @@ Reviewed by: {reviewer_email}
 """
     return _send_html_email(
         to=to_email,
-        subject=f"[Central Auth Hub] {icon} {label}: {type_label} — {subsystem_name}",
+        subject=f"[Central Auth Hub] {label}: {type_label} — {subsystem_name}",
         html=html,
         text_fallback=text,
     )
@@ -350,7 +348,7 @@ def send_identity_challenge(
 <table role="presentation" cellpadding="0" cellspacing="0" width="560" style="max-width:560px;background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 4px 12px rgba(15,23,42,0.08);">
   <tr><td style="background:linear-gradient(135deg,#dc2626 0%,#7f1d1d 100%);padding:32px;color:#fff;">
     <div style="font-size:11px;letter-spacing:0.18em;text-transform:uppercase;opacity:0.85;">Central Auth Hub · Identity Verification Required</div>
-    <div style="font-size:22px;font-weight:800;margin-top:6px;">🔒 ยืนยันตัวตนเพื่อ login ต่อ</div>
+    <div style="font-size:22px;font-weight:800;margin-top:6px;">ยืนยันตัวตนเพื่อ login ต่อ</div>
   </td></tr>
   <tr><td style="padding:28px 32px;">
     <p style="margin:0 0 12px;font-size:15px;">สวัสดีคุณ <strong>{name}</strong>,</p>
@@ -370,7 +368,7 @@ def send_identity_challenge(
       </td></tr>
     </table>
     <div style="background:#fef2f2;border:1px solid #fecaca;border-radius:10px;padding:14px 16px;margin:20px 0;font-size:13px;color:#991b1b;">
-      <strong>⚠ ถ้าไม่ใช่คุณที่กำลังพยายาม login:</strong>
+      <strong>ถ้าไม่ใช่คุณที่กำลังพยายาม login:</strong>
       <ol style="margin:6px 0 0 18px;padding:0;line-height:1.7;">
         <li>อย่าคลิกปุ่มด้านบน</li>
         <li>เปลี่ยนรหัสผ่าน Google ทันที + เปิด 2FA</li>

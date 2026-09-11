@@ -50,7 +50,7 @@ def base_login(last, dt, **over):
 
 def main():
     if not SRC.exists():
-        print(f"❌ ไม่พบ {SRC} — รัน pipe_clean.py ก่อน")
+        print(f"ไม่พบ {SRC} — รัน pipe_clean.py ก่อน")
         return
     by_user = defaultdict(list)
     for r in csv.DictReader(open(SRC, encoding="utf-8")):
@@ -147,7 +147,7 @@ def main():
 
     from collections import Counter
 
-    print("✅ สร้างพฤติกรรมผิดปกติต่อคนเสร็จ")
+    print("สร้างพฤติกรรมผิดปกติต่อคนเสร็จ")
     print(f"   anomaly rows: {len(anom)} | users: {len(combined)}")
     print(f"   แยกชนิด: {dict(Counter(a['anomaly_type'] for a in anom))}")
     print(f"   → {OUT}")

@@ -42,11 +42,6 @@ _PAGE_STYLE = """
   .brandsub { font-size: 9.5px; letter-spacing: .18em; color: #94a3b8;
               font-weight: 700; text-transform: uppercase; margin-top: 2px; }
   .hero { padding: 26px 28px 4px; text-align: center; }
-  .hicon { width: 60px; height: 60px; border-radius: 16px; margin: 0 auto 14px;
-           display: grid; place-items: center; font-size: 28px; }
-  .hicon.ok { background: #ecfdf5; border: 1px solid #a7f3d0; }
-  .hicon.err { background: #fff1f2; border: 1px solid #fecdd3; }
-  .hicon.lock { background: #f1f5f9; border: 1px solid #e2e8f0; }
   .eyebrow { font-size: 11px; letter-spacing: .14em; text-transform: uppercase;
              font-weight: 700; color: #64748b; }
   h1 { font-size: 20px; margin: 8px 0 0; font-weight: 800; color: #0f172a; }
@@ -90,7 +85,6 @@ def _error_page(title: str, message: str, status: int = 410) -> HTMLResponse:
          <div class="brandsub">Identity &amp; Access</div></div>
   </div>
   <div class="hero">
-    <div class="hicon err">⚠️</div>
     <div class="eyebrow">ไม่สามารถแสดง Client Secret</div>
     <h1 class="err">{title}</h1>
   </div>
@@ -172,7 +166,6 @@ def retrieve_secret(
          <div class="brandsub">Identity &amp; Access</div></div>
   </div>
   <div class="hero">
-    <div class="hicon ok">🔑</div>
     <div class="eyebrow">ลงทะเบียนระบบย่อยสำเร็จ</div>
     <h1 class="ok">{sub_name}</h1>
   </div>
@@ -182,13 +175,13 @@ def retrieve_secret(
     <div class="label">Client ID (เปิดเผยได้)</div>
     <div class="secret id">
       <span id="clientid">{client_id}</span>
-      <button class="copy" onclick="navigator.clipboard.writeText(document.getElementById('clientid').innerText);this.textContent='✓ คัดลอกแล้ว'">คัดลอก</button>
+      <button class="copy" onclick="navigator.clipboard.writeText(document.getElementById('clientid').innerText);this.textContent='คัดลอกแล้ว'">คัดลอก</button>
     </div>
 
     <div class="label">Client Secret (ความลับ — เก็บให้ดี)</div>
     <div class="secret">
       <span id="secretval">{client_secret}</span>
-      <button class="copy" onclick="navigator.clipboard.writeText(document.getElementById('secretval').innerText);this.textContent='✓ คัดลอกแล้ว'">คัดลอก</button>
+      <button class="copy" onclick="navigator.clipboard.writeText(document.getElementById('secretval').innerText);this.textContent='คัดลอกแล้ว'">คัดลอก</button>
     </div>
 
     <div class="warn">
@@ -219,7 +212,6 @@ def secret_retrieved_landing():
          <div class="brandsub">Identity &amp; Access</div></div>
   </div>
   <div class="hero">
-    <div class="hicon lock">🔒</div>
     <div class="eyebrow">One-time secret · ปิดการแสดงผลแล้ว</div>
     <h1>client_secret ถูกแสดงไปแล้ว</h1>
   </div>

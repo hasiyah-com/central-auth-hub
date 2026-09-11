@@ -95,7 +95,7 @@ def anomaly_scores(model_name, X, contamination):
 
 def main():
     if not DATA.exists():
-        print(f"❌ ไม่พบ {DATA} — รัน build_benchmark.py ก่อน")
+        print(f"ไม่พบ {DATA} — รัน build_benchmark.py ก่อน")
         return
     cols, y = load()
     contamination = float(y.mean())

@@ -29,22 +29,18 @@
     <div class="nav-section">
       <div class="nav-label">หลัก</div>
       <a href="/" class="nav-item {% if active_nav == 'home' %}active{% endif %}">
-        <span class="nav-ico">❦</span>
         <span>หน้าหลัก</span>
       </a>
       <a href="/books" class="nav-item {% if active_nav == 'catalog' %}active{% endif %}">
-        <span class="nav-ico">✦</span>
         <span>ค้นหาหนังสือ</span>
       </a>
       <a href="/me" class="nav-item {% if active_nav == 'loans' %}active{% endif %}">
-        <span class="nav-ico">❧</span>
         <span>หนังสือที่ยืม</span>
         {% if active_borrows_count and active_borrows_count > 0 %}
         <span class="nav-badge">{{ active_borrows_count }}</span>
         {% endif %}
       </a>
       <span class="nav-item disabled" title="เร็วๆ นี้">
-        <span class="nav-ico">✧</span>
         <span>การจอง</span>
         <span class="nav-badge muted">เร็วๆ นี้</span>
       </span>
@@ -54,21 +50,17 @@
     <div class="nav-section">
       <div class="nav-label">บัญชีของฉัน</div>
       <a href="/me" class="nav-item {% if active_nav == 'history' %}active{% endif %}">
-        <span class="nav-ico">☙</span>
         <span>ประวัติการยืม</span>
       </a>
       <span class="nav-item disabled" title="เร็วๆ นี้">
-        <span class="nav-ico">✚</span>
         <span>ค่าปรับ</span>
         <span class="nav-badge muted">เร็วๆ นี้</span>
       </span>
       <span class="nav-item disabled" title="เร็วๆ นี้">
-        <span class="nav-ico">✉</span>
         <span>การแจ้งเตือน</span>
         <span class="nav-badge muted">เร็วๆ นี้</span>
       </span>
       <a href="/me" class="nav-item {% if active_nav == 'profile' %}active{% endif %}">
-        <span class="nav-ico">❉</span>
         <span>โปรไฟล์</span>
       </a>
     </div>
@@ -78,11 +70,9 @@
     <div class="nav-section">
       <div class="nav-label">แอดมิน</div>
       <a href="/librarian/borrows" class="nav-item {% if active_nav == 'lib-borrows' %}active{% endif %}">
-        <span class="nav-ico">⚜</span>
         <span>จัดการรายการยืม</span>
       </a>
       <a href="/librarian/members" class="nav-item {% if active_nav == 'lib-members' %}active{% endif %}">
-        <span class="nav-ico">❀</span>
         <span>สมาชิก</span>
       </a>
     </div>
@@ -90,7 +80,6 @@
 
     {# ── Quote box ── #}
     <div class="sidebar-quote">
-      <div class="sidebar-quote-mark">❦</div>
       <em>"หนังสือคือเพื่อนที่ซื่อสัตย์ที่สุดของมนุษย์"</em>
       <div class="sidebar-quote-by">— เออร์เนสต์ เฮมิงเวย์</div>
     </div>

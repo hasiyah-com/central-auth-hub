@@ -12,18 +12,18 @@ cd "$(dirname "$0")/.."   # repo root
 ENV_FILE=".env.prod"
 COMPOSE="docker compose --env-file ${ENV_FILE} -f docker-compose.prod.yml"
 
-[ -f "$ENV_FILE" ] || { echo "❌ ไม่พบ $ENV_FILE — cp prod.env.template .env.prod ก่อน"; exit 1; }
+[ -f "$ENV_FILE" ] || { echo "ไม่พบ $ENV_FILE — cp prod.env.template .env.prod ก่อน"; exit 1; }
 
 # โหลด DOMAIN + EMAIL จาก .env.prod
 DOMAIN="$(grep -E '^DOMAIN=' "$ENV_FILE" | head -1 | cut -d= -f2- | tr -d '"')"
 EMAIL="$(grep -E '^(LETSENCRYPT_EMAIL|EMAIL_FROM)=' "$ENV_FILE" | head -1 | cut -d= -f2- | tr -d '"')"
-[ -n "$DOMAIN" ] || { echo "❌ DOMAIN ว่างใน $ENV_FILE"; exit 1; }
+[ -n "$DOMAIN" ] || { echo "DOMAIN ว่างใน $ENV_FILE"; exit 1; }
 
 SUBS=("admin.$DOMAIN" "auth.$DOMAIN" "dorm.$DOMAIN" "library.$DOMAIN" "grade.$DOMAIN")
 STAGING="${STAGING:-0}"   # STAGING=1 bash deploy/init-letsencrypt.sh  → ใช้ LE staging (ทดสอบ ไม่โดน rate limit)
 
-echo "▶ Domains: ${SUBS[*]}"
-echo "▶ Email:   ${EMAIL:-<none>}   Staging: $STAGING"
+echo "Domains: ${SUBS[*]}"
+echo "Email:   ${EMAIL:-<none>}   Staging: $STAGING"
 
 # network (idempotent)
 docker network create cah-net 2>/dev/null || true
@@ -57,4 +57,4 @@ done
 
 # 4) reload nginx รับ cert จริง
 $COMPOSE exec nginx nginx -s reload
-echo "✅ เสร็จ — cert ออกครบ 5 subdomain. ต่อไป: bash deploy/up.sh hub"
+echo "เสร็จ — cert ออกครบ 5 subdomain. ต่อไป: bash deploy/up.sh hub"

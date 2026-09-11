@@ -1288,7 +1288,7 @@ def confirm_identity(token: str = "", db: Session = Depends(get_db)):
     return HTMLResponse(
         content=_confirm_html(
             ok=True,
-            title="✅ ยืนยันตัวตนสำเร็จ",
+            title="ยืนยันตัวตนสำเร็จ",
             msg=(
                 "คุณสามารถ login เข้าระบบได้ตามปกติแล้ว — "
                 "กลับไปหน้า login ของระบบย่อยที่คุณใช้งาน"
@@ -1301,7 +1301,6 @@ def _confirm_html(ok: bool, title: str, msg: str) -> str:
     """Render หน้า HTML สำหรับ identity confirm (success/error)."""
     accent = "#15803d" if ok else "#b91c1c"
     bg = "#dcfce7" if ok else "#fee2e2"
-    icon = "✓" if ok else "✕"
     return f"""<!DOCTYPE html><html lang="th"><head><meta charset="UTF-8">
 <title>{title}</title>
 <style>
@@ -1311,9 +1310,6 @@ def _confirm_html(ok: bool, title: str, msg: str) -> str:
   .card {{ max-width: 520px; background: #fff; border-radius: 16px; overflow: hidden;
            box-shadow: 0 4px 12px rgba(15,23,42,0.08); }}
   .hero {{ background: {bg}; padding: 32px; text-align: center; }}
-  .icon {{ width: 72px; height: 72px; border-radius: 50%; background: {accent};
-           color: #fff; font-size: 36px; font-weight: 800; line-height: 72px;
-           margin: 0 auto 14px; }}
   .title {{ font-size: 22px; font-weight: 800; color: {accent}; }}
   .body {{ padding: 24px 32px 28px; }}
   .msg {{ font-size: 14px; line-height: 1.6; color: #334155; }}
@@ -1322,7 +1318,6 @@ def _confirm_html(ok: bool, title: str, msg: str) -> str:
 </style></head><body>
 <div class="card">
   <div class="hero">
-    <div class="icon">{icon}</div>
     <div class="title">{title}</div>
   </div>
   <div class="body"><p class="msg">{msg}</p></div>

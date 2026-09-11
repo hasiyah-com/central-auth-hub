@@ -44,7 +44,7 @@ def backfill(db: Session, batch_size: int = 500, dry_run: bool = False) -> dict:
     rows = db.execute(q).all()
 
     print(
-        f"📋 พบ {len(rows)} sessions ที่ต้อง backfill (geo_country IS NULL + ip IS NOT NULL)"
+        f"พบ {len(rows)} sessions ที่ต้อง backfill (geo_country IS NULL + ip IS NOT NULL)"
     )
     if not rows:
         return dict(stats)
@@ -86,7 +86,7 @@ def _apply_batch(
         )
         stats["updated"] += 1
     db.commit()
-    print(f"  ✓ committed {len(pending)} updates (total updated: {stats['updated']})")
+    print(f"  committed {len(pending)} updates (total updated: {stats['updated']})")
 
 
 def main() -> int:
@@ -110,7 +110,7 @@ def main() -> int:
         print(f"  {k:>18}: {v}")
     if stats.get("no_match", 0) > 0:
         print(
-            "\n💡 'no_match' = private IP / DB ไม่พร้อม / IP ไม่อยู่ใน GeoLite2\n"
+            "\n'no_match' = private IP / DB ไม่พร้อม / IP ไม่อยู่ใน GeoLite2\n"
             "   ถ้าตัวเลขเยอะมาก ตรวจว่าวาง GeoLite2-Country.mmdb แล้วหรือยัง\n"
             "   (hub/backend/data/GeoLite2-Country.mmdb)"
         )

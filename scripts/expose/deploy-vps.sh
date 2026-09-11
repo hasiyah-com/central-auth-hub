@@ -41,7 +41,7 @@ rsync -avz --delete \
 
 # ─── 2) Ensure remote .env exists ─────────────────────────
 echo "==> Checking remote .env..."
-ssh "$HOST" "if [ ! -f $REMOTE_PATH/.env ]; then echo '⚠️  $REMOTE_PATH/.env not found — copy .env.example then edit'; exit 1; fi"
+ssh "$HOST" "if [ ! -f $REMOTE_PATH/.env ]; then echo ' $REMOTE_PATH/.env not found — copy .env.example then edit'; exit 1; fi"
 
 # ─── 3) Ensure JWT keys exist on remote ───────────────────
 ssh "$HOST" "if [ ! -f $REMOTE_PATH/hub/backend/keys/jwt_private.pem ]; then
@@ -60,7 +60,7 @@ sleep 35
 ssh "$HOST" "docker logs hub-caddy --tail 20"
 
 echo
-echo "✅ Deploy complete."
+echo "Deploy complete."
 echo
 echo "── Verify ──────────────────────────────────────"
 echo "ssh $HOST 'docker compose -f $REMOTE_PATH/docker-compose.yml ps'"

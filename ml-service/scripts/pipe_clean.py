@@ -31,7 +31,7 @@ def valid_ts(s):
 
 def main():
     if not SRC.exists():
-        print(f"❌ ไม่พบ {SRC} — รัน build_user_profiles.py ก่อน")
+        print(f"ไม่พบ {SRC} — รัน build_user_profiles.py ก่อน")
         return
     rows = list(csv.DictReader(open(SRC, encoding="utf-8")))
     n0 = len(rows)
@@ -63,7 +63,7 @@ def main():
         w.writeheader()
         w.writerows(clean)
 
-    print("✅ ทำความสะอาดข้อมูลเสร็จ")
+    print("ทำความสะอาดข้อมูลเสร็จ")
     print(f"   ก่อน: {n0:,} → หลัง: {len(clean):,} (ตัด {n0 - len(clean):,})")
     print(f"   สาเหตุที่ตัด: {dict(dropped)}")
     per_user = Counter(r["email"].split("@")[0] for r in clean)

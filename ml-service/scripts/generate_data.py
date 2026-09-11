@@ -386,7 +386,7 @@ def main():
         writer.writerow(headers)
         writer.writerows(rows)
 
-    print(f"✅ สร้าง dataset (23 features) แล้ว: {OUTPUT}")
+    print(f"สร้าง dataset (23 features) แล้ว: {OUTPUT}")
     print(f"   normal:  {NORMAL_COUNT}")
     print(f"   anomaly: {ANOMALY_COUNT}")
     print(f"   total:   {len(rows)}")

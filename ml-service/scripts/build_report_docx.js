@@ -359,7 +359,7 @@ kids.push(table(["รายการ", "ค่า"], [
   ["attack (label 1)", "300 (3.1%)"],
   ["users", "จริง 5 + clone persona 145"],
   ["features", "23 (Experiment C) — history-based คำนวณจาก login จริงต่อ user; scope อิง subsystem จริง"],
-  ["ระดับ anomaly", "🟡 level1=35 · 🟠 level2=47 · 🔴 level3=253 + คอลัมน์ columns_changed"],
+  ["ระดับ anomaly", "level1=35 · level2=47 · level3=253 + คอลัมน์ columns_changed"],
 ], [2400, 6960]));
 kids.push(h2("10.5.1 ผล in-sample (flag @ 3.1%)"));
 kids.push(table(["Model", "Prec", "Recall", "F1", "ROC-AUC", "PR-AUC"], [
@@ -369,9 +369,9 @@ kids.push(table(["Model", "Prec", "Recall", "F1", "ROC-AUC", "PR-AUC"], [
 ], [3060, 1100, 1100, 1100, 1500, 1500]));
 kids.push(h2("10.5.2 การจับ attack ตามระดับความเนียน (IForest) — จุดเด่น"));
 kids.push(table(["ระดับ", "ลักษณะ", "จับได้"], [
-  ["🟡 1 (IP เปลี่ยนเดี่ยว, label=0)", "ปกติที่ดูแปลก", "0/35 → false positive ต่ำ"],
-  [{ v: "🟠 2 (country/device เดี่ยว)", bold: true }, "เนียน", { v: "1/47 → จับยากมาก", fill: HL, bold: true }],
-  ["🔴 3 (ATO เต็มรูป)", "ชัดเจน", "248/253 → จับเกือบหมด"],
+  ["1 (IP เปลี่ยนเดี่ยว, label=0)", "ปกติที่ดูแปลก", "0/35 → false positive ต่ำ"],
+  [{ v: "2 (country/device เดี่ยว)", bold: true }, "เนียน", { v: "1/47 → จับยากมาก", fill: HL, bold: true }],
+  ["3 (ATO เต็มรูป)", "ชัดเจน", "248/253 → จับเกือบหมด"],
 ], [3400, 2200, 3760]));
 kids.push(p("→ พิสูจน์ว่าโมเดลจับ ATO ชัดได้ แต่ attack เนียนที่เปลี่ยนคอลัมน์เดียวยังจับแทบไม่ได้ (ความท้าทายจริงของ RBA)", { bold: true }));
 kids.push(image("SIM/confusion_matrices.png", 640));
@@ -588,4 +588,4 @@ const doc = new Document({
   }],
 });
 
-Packer.toBuffer(doc).then(buf => { fs.writeFileSync(OUT, buf); console.log("✅ wrote", OUT, "(", (buf.length / 1024).toFixed(0), "KB )"); });
+Packer.toBuffer(doc).then(buf => { fs.writeFileSync(OUT, buf); console.log("wrote", OUT, "(", (buf.length / 1024).toFixed(0), "KB )"); });

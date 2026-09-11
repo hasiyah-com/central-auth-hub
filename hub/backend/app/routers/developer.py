@@ -1077,9 +1077,9 @@ def update_whitelist_role(
             ),
             key=f"{subsystem.id}:{user_id}",
             title=(
-                f"🛡️ Admin Override · เปลี่ยน role · {subsystem.name}"
+                f"Admin Override · เปลี่ยน role · {subsystem.name}"
                 if is_admin_override
-                else f"🧰 ขอเปลี่ยน role · {subsystem.name}"
+                else f"ขอเปลี่ยน role · {subsystem.name}"
             ),
             detail={
                 "subsystem": subsystem.name,
@@ -1304,7 +1304,7 @@ def update_subsystem(
             raise HTTPException(
                 status_code=400, detail="allowed_roles ต้องมีอย่างน้อย 1 ตัว"
             )
-        # ⚠ orphan check แม้ใน request — กัน admin approve แล้วเจอ user หล่น
+        # orphan check แม้ใน request — กัน admin approve แล้วเจอ user หล่น
         current_used = {
             r[0]
             for r in db.query(AccessList.role_in_sub)
@@ -1376,7 +1376,7 @@ def update_subsystem(
                     kind="change_request.admin_override_subsystem_edit",
                     # unique per batch — รวม request_id ของทุก auto_applied
                     key=f"{subsystem.id}:override:{','.join(r['request_id'] for r in auto_applied)}",
-                    title=f"🛡️ Admin Override · แก้ไข {subsystem.name}",
+                    title=f"Admin Override · แก้ไข {subsystem.name}",
                     detail={
                         "subsystem": subsystem.name,
                         "subsystem_id": str(subsystem.id),
@@ -1393,7 +1393,7 @@ def update_subsystem(
                     kind="change_request.subsystem_edit",
                     # unique per batch — รวม request_id ของทุก pending
                     key=f"{subsystem.id}:pending:{','.join(r['request_id'] for r in pending_requests)}",
-                    title=f"📝 ขอแก้ไข {subsystem.name}",
+                    title=f"ขอแก้ไข {subsystem.name}",
                     detail={
                         "subsystem": subsystem.name,
                         "subsystem_id": str(subsystem.id),
@@ -1603,9 +1603,9 @@ def bulk_update_roles(
             ),
             key=f"{subsystem.id}:{req.id}",  # unique per request → ไม่ dedupp
             title=(
-                f"🛡️ Admin Override · batch role · {subsystem.name}"
+                f"Admin Override · batch role · {subsystem.name}"
                 if is_admin_override
-                else f"🧰 ขอเปลี่ยน role · batch · {subsystem.name}"
+                else f"ขอเปลี่ยน role · batch · {subsystem.name}"
             ),
             detail={
                 "subsystem": subsystem.name,
@@ -1806,7 +1806,7 @@ def rotate_client_secret(
                 severity="warning",
                 kind="change_request.admin_override_rotate_secret",
                 key=f"{subsystem.id}:{req.id}",  # unique per request → ไม่ dedupp
-                title=f"🛡️ Admin Override · Rotate Secret · {subsystem.name}",
+                title=f"Admin Override · Rotate Secret · {subsystem.name}",
                 detail={
                     "subsystem": subsystem.name,
                     "subsystem_id": str(subsystem.id),
@@ -1841,7 +1841,7 @@ def rotate_client_secret(
             severity="warning",
             kind="change_request.rotate_secret",
             key=f"{subsystem.id}:{req.id}",  # unique per request → ไม่ dedupp
-            title=f"🔑 ขอ rotate secret · {subsystem.name}",
+            title=f"ขอ rotate secret · {subsystem.name}",
             detail={
                 "subsystem": subsystem.name,
                 "subsystem_id": str(subsystem.id),

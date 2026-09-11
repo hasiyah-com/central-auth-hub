@@ -908,7 +908,7 @@ footer.bg-white {
   box-shadow: var(--shadow);
 }
 .hero-banner::after {
-  content: "❦";
+  content: "";
   position: absolute;
   top: -40px; right: -10px;
   font-family: var(--font-display);

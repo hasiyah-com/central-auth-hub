@@ -146,7 +146,7 @@ def show(title, res):
 
 def main():
     if not DATA.exists():
-        print(f"❌ ไม่พบ {DATA}")
+        print(f"ไม่พบ {DATA}")
         return
     cols, y, uid = load()
     print(

@@ -72,9 +72,7 @@ async def main() -> None:
                 scores.append(float(risk["score"]))
 
         n = len(scores)
-        print(
-            f"\n📊 Calibration — real normal: {n} (ML-driven) + {hard_block} hard-block"
-        )
+        print(f"\nCalibration — real normal: {n} (ML-driven) + {hard_block} hard-block")
         if not n:
             print("ไม่มี ML-driven normal — ข้าม")
             return
@@ -97,11 +95,11 @@ async def main() -> None:
             print(f"   {thr:>5.1f} {flagged:>8} {fpr:>8.1%}{mark}")
 
         print(
-            f"\n💡 แนะนำ challenge threshold ≈ {suggested or '>0.9'} (FPR ML ≤ {TARGET_FPR:.0%})"
+            f"\nแนะนำ challenge threshold ≈ {suggested or '>0.9'} (FPR ML ≤ {TARGET_FPR:.0%})"
         )
         print("   block แนะนำ = challenge + 0.15–0.2; warn = challenge − 0.2")
         print(
-            "   ⚠️ hard-block (login_count≥50 ฯลฯ) ปรับด้วย threshold ไม่ได้ — แยกพิจารณา rule"
+            "   hard-block (login_count≥50 ฯลฯ) ปรับด้วย threshold ไม่ได้ — แยกพิจารณา rule"
         )
     finally:
         db.close()

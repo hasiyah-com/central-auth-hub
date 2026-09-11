@@ -40,7 +40,7 @@ def _valid_ip_or_none(candidate: str | None) -> str | None:
 def get_client_ip(request: Request) -> str | None:
     """คืน IP ของ client (spoof-resistant) เมื่ออยู่หลัง reverse proxy.
 
-    ⚠️ ความปลอดภัย — **ห้ามใช้ X-Forwarded-For[0]** เพราะ client กำหนดค่าตัวแรกได้เอง
+    ความปลอดภัย — **ห้ามใช้ X-Forwarded-For[0]** เพราะ client กำหนดค่าตัวแรกได้เอง
     (`X-Forwarded-For: <IP ปลอม>`) → ปลอมประเทศ/เลี่ยง GeoIP risk/bypass IP blacklist/
     ปลอม audit log. proxy ที่เชื่อถือได้จะ **append** IP จริงไว้ **ท้าย** เสมอ:
       - nginx: `X-Real-IP $remote_addr` (ทับค่า client) + XFF `$proxy_add_x_forwarded_for`

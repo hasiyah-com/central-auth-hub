@@ -1,6 +1,6 @@
-"""L3 multi-scale window — ⛔ DEPRECATED: harness นี้มีบั๊ก cross-family window.
+"""L3 multi-scale window — DEPRECATED: harness นี้มีบั๊ก cross-family window.
 
-⚠️ **ห้ามใช้ผลจากสคริปต์นี้** — window ถูกสร้างจาก final attack ทั้ง 53 เหตุการณ์ของผู้ใช้
+**ห้ามใช้ผลจากสคริปต์นี้** — window ถูกสร้างจาก final attack ทั้ง 53 เหตุการณ์ของผู้ใช้
 (obvious + subtle + campaign) ต่อกันเป็นลิสต์เดียว -> window คร่อมข้าม attack family
 ทำให้ตรวจจับง่ายเกินจริง (วัดได้ W=10 unique 4.18% ทั้งที่ของจริง 0.9%)
 
@@ -211,7 +211,7 @@ def _report(acc, best, seeds):
     for c, (q, f, u, ue) in best.items():
         L.append(
             f"| **{c}** | {q} | {f * 100:.2f}% | **{u * 100:.2f}±{ue * 100:.2f}%** "
-            f"| {'✅' if u >= 0.03 else '❌'} |"
+            f"| {'' if u >= 0.03 else ''} |"
         )
     (REPORTS / "exp_l3_multiscale_2026-08-26.md").write_text(
         "\n".join(L), encoding="utf-8"

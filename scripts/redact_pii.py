@@ -187,7 +187,7 @@ def main() -> int:
             lines.append(f"{'regex:' if is_rx else ''}{pat}==>{rep}")
         args.emit_rules.write_text(chr(10).join(lines) + chr(10), encoding="utf-8")
         print(f"เขียนกฎ {len(lines)} ข้อ -> {args.emit_rules}")
-        print("⚠️ ไฟล์นี้มีค่าจริง — เก็บนอก repo และลบทิ้งหลังใช้")
+        print("ไฟล์นี้มีค่าจริง — เก็บนอก repo และลบทิ้งหลังใช้")
         return 0
 
     rules = load_rules()

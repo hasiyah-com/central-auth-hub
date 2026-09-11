@@ -2006,14 +2006,14 @@ def _force_enroll_html(
     <div class="err" id="err"></div>
     <div class="ok" id="ok"></div>
     <div class="unsupported" id="unsupported">
-      ⚠️ <strong>เบราว์เซอร์นี้ไม่รองรับ Passkey</strong><br>
+      <strong>เบราว์เซอร์นี้ไม่รองรับ Passkey</strong><br>
       กรุณาใช้อุปกรณ์ที่รองรับ หรือใช้
       <a href="/auth/passkey/recover" style="color:var(--mint)">Account Recovery</a>
     </div>
 
     <div class="step active" id="step1">
       <div class="step-h">ขั้นที่ 1 — ยืนยัน OTP ทาง email</div>
-      <button class="btn btn-pk" id="sendBtn">📧 ส่ง OTP ไปที่ email</button>
+      <button class="btn btn-pk" id="sendBtn">ส่ง OTP ไปที่ email</button>
       <label class="fld" for="otpIn" style="margin-top:14px">รหัส OTP 6 หลัก</label>
       <input type="text" id="otpIn" inputmode="numeric" maxlength="6" pattern="\\d{{6}}" placeholder="——————">
       <button class="btn btn-pk" id="verifyOtpBtn" disabled style="margin-top:6px">ยืนยัน OTP</button>
@@ -2023,7 +2023,7 @@ def _force_enroll_html(
       <div class="step-h">ขั้นที่ 2 — ตั้งค่า Passkey</div>
       <label class="fld" for="dev">ชื่ออุปกรณ์</label>
       <input type="text" id="dev" value="อุปกรณ์ของฉัน" maxlength="100">
-      <button class="btn btn-pk" id="enrollBtn">🔑 ตั้งค่า Passkey</button>
+      <button class="btn btn-pk" id="enrollBtn">ตั้งค่า Passkey</button>
     </div>
 
     <a class="btn btn-recover" href="/auth/passkey/recover">ทำ Passkey หาย? → กู้บัญชี</a>
@@ -2062,10 +2062,10 @@ sendBtn.addEventListener('click', async()=>{{
   try {{
     const r=await fetch('/auth/passkey/force-enroll/send-otp',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{challenge_id:CHALLENGE_ID}})}});
     if(!r.ok){{ const e=await r.json().catch(()=>({{}})); throw new Error(e.detail||'ส่งไม่สำเร็จ'); }}
-    showOk('✓ ส่ง OTP ไปแล้ว — ตรวจ email ของคุณ');
-    sendBtn.textContent='📧 ส่งใหม่อีกครั้ง'; sendBtn.disabled=false;
+    showOk('ส่ง OTP ไปแล้ว — ตรวจ email ของคุณ');
+    sendBtn.textContent='ส่งใหม่อีกครั้ง'; sendBtn.disabled=false;
   }} catch(err){{ showErr(err.message||'ส่งไม่สำเร็จ');
-    sendBtn.disabled=false; sendBtn.textContent='📧 ส่ง OTP ไปที่ email'; }}
+    sendBtn.disabled=false; sendBtn.textContent='ส่ง OTP ไปที่ email'; }}
 }});
 
 verifyBtn.addEventListener('click', async()=>{{
@@ -2074,7 +2074,7 @@ verifyBtn.addEventListener('click', async()=>{{
   try {{
     const r=await fetch('/auth/passkey/force-enroll/verify-otp',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{challenge_id:CHALLENGE_ID,otp:otpIn.value}})}});
     if(!r.ok){{ const e=await r.json().catch(()=>({{}})); throw new Error(e.detail||'OTP ไม่ถูกต้อง'); }}
-    showOk('✓ ยืนยัน OTP สำเร็จ — กรุณาตั้งค่า Passkey');
+    showOk('ยืนยัน OTP สำเร็จ — กรุณาตั้งค่า Passkey');
     step1.classList.remove('active'); step2.classList.add('active');
   }} catch(err){{ showErr(err.message||'OTP ไม่ถูกต้อง');
     verifyBtn.disabled=false; verifyBtn.textContent='ยืนยัน OTP'; }}
@@ -2108,14 +2108,14 @@ enrollBtn.addEventListener('click', async()=>{{
     if(data.backup_codes && data.backup_codes.length){{
       const codesDiv=document.createElement('div');
       codesDiv.className='reasons'; codesDiv.style.marginTop='14px';
-      codesDiv.innerHTML='<div class="step-h" style="color:var(--mint)">🔑 Backup Codes (เก็บไว้กู้บัญชี)</div>'+
+      codesDiv.innerHTML='<div class="step-h" style="color:var(--mint)">Backup Codes (เก็บไว้กู้บัญชี)</div>'+
         '<div class="codes">'+data.backup_codes.map(c=>'<div class="code">'+c+'</div>').join('')+'</div>'+
         '<button class="btn btn-pk" id="contBtn">บันทึกแล้ว → ดำเนินการต่อ</button>';
       step2.innerHTML=''; step2.appendChild(codesDiv);
       document.getElementById('contBtn').addEventListener('click', ()=>{{ window.location.href=data.redirect_url; }});
     }} else {{ window.location.href=data.redirect_url; }}
   }} catch(err){{ showErr(err.message||'ตั้งค่าไม่สำเร็จ');
-    enrollBtn.disabled=false; enrollBtn.textContent='🔑 ตั้งค่า Passkey'; }}
+    enrollBtn.disabled=false; enrollBtn.textContent='ตั้งค่า Passkey'; }}
 }});
 </script>
 </body></html>"""
@@ -2164,7 +2164,7 @@ def _risk_stepup_html(
       <div class="or-sep"><span>{totp_label}</span></div>
       <input class="totp-in" id="totpIn" type="text" inputmode="numeric"
         autocomplete="one-time-code" maxlength="6" placeholder="รหัส 6 หลัก">
-      <button class="btn btn-totp" id="verifyTotp">📱 ยืนยันด้วยรหัส</button>
+      <button class="btn btn-totp" id="verifyTotp">ยืนยันด้วยรหัส</button>
     </div>"""
         if has_totp
         else ""
@@ -2173,7 +2173,7 @@ def _risk_stepup_html(
     totp_first = has_totp and (preferred_factor == "totp" or not has_passkey)
     # passkey block (ปุ่ม + ลิงก์ recover) — ซ่อนปุ่ม passkey ถ้าไม่มี passkey
     passkey_btn = (
-        '<button class="btn btn-pk" id="verify">🔑 ยืนยันด้วย Passkey</button>'
+        '<button class="btn btn-pk" id="verify">ยืนยันด้วย Passkey</button>'
         if has_passkey
         else ""
     )
@@ -2277,7 +2277,7 @@ def _risk_stepup_html(
     {reasons_block}
     <div class="err" id="err"></div>
     <div class="unsupported" id="unsupported">
-      ⚠️ <strong>เบราว์เซอร์นี้ไม่รองรับ Passkey</strong><br>
+      <strong>เบราว์เซอร์นี้ไม่รองรับ Passkey</strong><br>
       กรุณาใช้อุปกรณ์ที่รองรับ หรือใช้ <a href="/auth/passkey/recover" style="color:var(--mint)">Account Recovery</a>
     </div>
     {factor_blocks}
@@ -2329,7 +2329,7 @@ async function doVerify(){{
     const data=await f.json();
     window.location.href=data.redirect_url;
   }} catch(err){{ showErr(err.message||'ยืนยันไม่สำเร็จ');
-    btn.disabled=false; btn.textContent='🔑 ยืนยันด้วย Passkey'; }}
+    btn.disabled=false; btn.textContent='ยืนยันด้วย Passkey'; }}
 }}
 if(btn) btn.addEventListener('click', doVerify);
 
@@ -2348,7 +2348,7 @@ async function doVerifyTotp(){{
     const data=await f.json();
     window.location.href=data.redirect_url;
   }} catch(err){{ showErr(err.message||'ยืนยันไม่สำเร็จ');
-    tBtn.disabled=false; tBtn.textContent='📱 ยืนยันด้วยรหัส'; tIn.value=''; }}
+    tBtn.disabled=false; tBtn.textContent='ยืนยันด้วยรหัส'; tIn.value=''; }}
 }}
 if(tBtn){{
   tBtn.addEventListener('click', doVerifyTotp);

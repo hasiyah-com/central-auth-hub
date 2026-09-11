@@ -152,7 +152,7 @@ def seed():
         .count()
     )
     if seed_existing > 0:
-        print(f"⚠️  พบ seed users เดิม {seed_existing} คน")
+        print(f" พบ seed users เดิม {seed_existing} คน")
         print("   การ re-seed จะล้าง: access_list, login_sessions, subsystems,")
         print("   secret_retrieval_tokens, audit_logs ด้วย (เพราะ Foreign Key)")
         ans = input("ต้องการ re-seed หรือไม่? (y/N): ").strip().lower()
@@ -169,7 +169,7 @@ def seed():
         db.query(RequestLog).delete(synchronize_session=False)
         db.query(Subsystem).delete(synchronize_session=False)
         db.commit()
-        print("✓ ล้างตารางลูกแล้ว (access_list, login_sessions, subsystems, ...)")
+        print("ล้างตารางลูกแล้ว (access_list, login_sessions, subsystems, ...)")
 
         # ตอนนี้ลบ seed users ได้แล้ว (ไม่มีตารางลูกอ้างอิง)
         deleted = (
@@ -178,7 +178,7 @@ def seed():
             .delete(synchronize_session=False)
         )
         db.commit()
-        print(f"✓ ลบ seed users เดิม {deleted} คน (user ที่เพิ่มเองไม่ถูกแตะต้อง)")
+        print(f"ลบ seed users เดิม {deleted} คน (user ที่เพิ่มเองไม่ถูกแตะต้อง)")
 
     records = []
     for i in range(1, 71):
@@ -205,7 +205,7 @@ def seed():
         "staff": db.query(User).filter(User.user_type == "staff").count(),
         "admin": db.query(User).filter(User.user_type == "admin").count(),
     }
-    print("\n✅ Seed สำเร็จ!")
+    print("\nSeed สำเร็จ!")
     for ut, c in counts.items():
         print(f"   {ut}: {c} คน")
     print(f"   รวม (seed): {sum(counts.values())} คน")
