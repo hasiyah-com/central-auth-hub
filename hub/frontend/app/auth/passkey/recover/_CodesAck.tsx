@@ -6,6 +6,7 @@
  */
 
 import { useMemo, useState } from "react";
+import styles from "./recovery.module.css";
 
 export function CodesAck({
   codes,
@@ -46,79 +47,58 @@ export function CodesAck({
   const canConfirm = (copied || downloaded) && confirmed;
 
   return (
-    <div className="space-y-4">
-      <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-900">
-        ⚠️ {note || "บันทึก backup codes เหล่านี้ — แสดงครั้งเดียว"}
+    <div className={styles.codesPanel}>
+      <div className={styles.codesHeader}>
+        <span>RECOVERY CODES</span>
+        <h3>บันทึกรหัสสำรองชุดใหม่</h3>
+        <p>{note || "รหัสเหล่านี้จะแสดงเพียงครั้งเดียว กรุณาเก็บไว้ในที่ปลอดภัย"}</p>
       </div>
 
-      <div className="grid grid-cols-2 gap-2">
+      <div className={styles.codesGrid}>
         {codes.map((c, i) => (
-          <code
-            key={i}
-            className="text-sm bg-gray-50 border border-gray-200 rounded px-2 py-1.5 text-center font-mono tracking-wider text-ink-800"
-          >
-            {c}
-          </code>
+          <code key={i}>{c}</code>
         ))}
       </div>
 
-      <div className="flex gap-2">
+      <div className={styles.codesActions}>
         <button
+          type="button"
           onClick={copy}
-          className={`flex-1 py-2 rounded-lg text-sm font-medium ${
-            copied
-              ? "bg-emerald-100 text-emerald-800 border border-emerald-300"
-              : "bg-ink-900 text-white hover:bg-ink-800"
-          }`}
+          className={copied ? styles.actionDone : ""}
         >
-          {copied ? "✓ คัดลอกแล้ว" : "📋 คัดลอก"}
+          {copied ? "คัดลอกแล้ว" : "คัดลอกทั้งหมด"}
         </button>
         <button
+          type="button"
           onClick={download}
-          className={`flex-1 py-2 rounded-lg text-sm font-medium ${
-            downloaded
-              ? "bg-emerald-100 text-emerald-800 border border-emerald-300"
-              : "bg-ink-900 text-white hover:bg-ink-800"
-          }`}
+          className={downloaded ? styles.actionDone : ""}
         >
-          {downloaded ? "✓ ดาวน์โหลดแล้ว" : "💾 ดาวน์โหลด"}
+          {downloaded ? "ดาวน์โหลดแล้ว" : "ดาวน์โหลด .txt"}
         </button>
       </div>
 
       <label
-        className={`flex items-start gap-2.5 p-2.5 rounded-lg text-sm ${
-          copied || downloaded
-            ? "bg-blue-50 cursor-pointer"
-            : "bg-gray-50 opacity-60 cursor-not-allowed"
-        }`}
+        className={`${styles.codesConfirm} ${copied || downloaded ? "" : styles.codesConfirmDisabled}`}
       >
         <input
           type="checkbox"
           checked={confirmed}
           disabled={!(copied || downloaded)}
           onChange={(e) => setConfirmed(e.target.checked)}
-          className="mt-0.5"
         />
-        <span className="text-ink-700">
-          ฉันบันทึก backup codes ไว้ในที่ปลอดภัยแล้ว
-        </span>
+        <span>ฉันบันทึก Backup codes ไว้ในที่ปลอดภัยแล้ว</span>
       </label>
 
       <button
+        type="button"
         onClick={onConfirm}
         disabled={!canConfirm}
-        className={`w-full py-2.5 rounded-lg font-semibold ${
-          canConfirm
-            ? "bg-emerald-600 text-white hover:bg-emerald-700"
-            : "bg-gray-200 text-gray-400 cursor-not-allowed"
-        }`}
+        className={styles.codesSubmit}
       >
-        ยืนยันและไปหน้า Login
+        <span>ยืนยันและไปหน้า Login</span><span>→</span>
       </button>
       {!copied && !downloaded && (
-        <p className="text-xs text-gray-400 text-center">
-          คัดลอกหรือดาวน์โหลดก่อน
-        </p>
+        <p className={styles.codesHint}>กรุณาคัดลอกหรือดาวน์โหลดก่อนดำเนินการต่อ</p>
       )}
     </div>
   );

@@ -42,12 +42,12 @@ type PendingRequest = {
 };
 
 const PENDING_TYPE_LABEL: Record<string, string> = {
-  rotate_secret: "🔑 Rotate Secret",
-  edit_scope: "🎯 แก้ Scope",
-  edit_allowed_roles: "🧰 แก้ Allowed Roles",
-  edit_redirect_uris: "↩️ แก้ Redirect URIs",
-  change_whitelist_role: "👤 เปลี่ยน role (1 คน)",
-  bulk_change_whitelist_roles: "👥 เปลี่ยน role (batch)",
+  rotate_secret: "Rotate Secret", // pragma: allowlist secret
+  edit_scope: "แก้ Scope",
+  edit_allowed_roles: "แก้ Allowed Roles",
+  edit_redirect_uris: "↩แก้ Redirect URIs",
+  change_whitelist_role: "เปลี่ยน role (1 คน)",
+  bulk_change_whitelist_roles: "เปลี่ยน role (batch)",
 };
 
 const SCOPE_OPTIONS: Array<{ key: string; label: string; desc: string }> = [
@@ -404,9 +404,9 @@ export default function DeveloperSubsystemDetailPage({
           </div>
           <Link
             href="/developer/subsystems"
-            className="inline-block px-4 py-2 rounded-lg bg-ink-900 text-white text-sm"
+            className="cx-back"
           >
-            ← กลับรายการ
+            My Subsystems
           </Link>
         </main>
       </>
@@ -471,14 +471,14 @@ export default function DeveloperSubsystemDetailPage({
                 className="px-2 py-1 rounded bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-semibold"
                 title="บันทึก (Enter)"
               >
-                ✓
+                บันทึก
               </button>
               <button
                 onClick={cancelEditRole}
                 className="px-2 py-1 rounded bg-ink-200 hover:bg-ink-300 text-ink-700 text-[11px] font-semibold"
                 title="ยกเลิก (Esc)"
               >
-                ✕
+                ยกเลิก
               </button>
             </div>
           );
@@ -489,7 +489,7 @@ export default function DeveloperSubsystemDetailPage({
             className="font-mono text-xs px-2 py-0.5 rounded hover:bg-ink-100 cursor-pointer text-ink-900"
             title="คลิกเพื่อแก้ role"
           >
-            {u.role_in_sub || "user"} <span className="text-ink-400">✎</span>
+            {u.role_in_sub || "user"}
           </button>
         );
       },
@@ -526,7 +526,6 @@ export default function DeveloperSubsystemDetailPage({
       {verifying && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40">
           <div className="bg-white rounded-2xl px-6 py-5 shadow-xl flex items-center gap-3 text-sm text-ink-700">
-            <span className="animate-pulse text-lg">🔐</span>
             กำลังยืนยันด้วย Passkey… ทำตามที่อุปกรณ์แจ้ง (ข้อมูลในฟอร์มยังอยู่)
           </div>
         </div>
@@ -538,9 +537,9 @@ export default function DeveloperSubsystemDetailPage({
           <div>
             <Link
               href="/developer/subsystems"
-              className="text-xs text-ink-500 hover:text-brand-600 underline"
+              className="cx-back"
             >
-              ← กลับไป Developer Portal
+              Developer Portal
             </Link>
             <h2 className="mt-2 text-2xl font-extrabold text-ink-900">
               {sub.name}
@@ -560,7 +559,7 @@ export default function DeveloperSubsystemDetailPage({
                 onClick={openEditModal}
                 className="px-3 py-1.5 rounded-lg border border-ink-200 hover:bg-ink-50 text-xs font-semibold text-ink-700 transition"
               >
-                ✎ แก้ไข
+                แก้ไข
               </button>
               <button
                 onClick={rotateSecret}
@@ -568,7 +567,7 @@ export default function DeveloperSubsystemDetailPage({
                 className="px-3 py-1.5 rounded-lg border border-amber-200 hover:bg-amber-50 text-xs font-semibold text-amber-700 disabled:opacity-50 transition"
                 title="ขอ rotate client_secret (admin ต้อง approve)"
               >
-                {rotateBusy ? "…" : "🔑 ขอ Rotate Secret"}
+                {rotateBusy ? "…" : "ขอ Rotate Secret"}
               </button>
             </div>
             <div className="text-[11px] text-ink-400 font-mono">
@@ -582,7 +581,7 @@ export default function DeveloperSubsystemDetailPage({
         {pendings.length > 0 && (
           <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
             <div className="text-xs font-bold text-amber-900 uppercase tracking-wider mb-2">
-              ⏳ Pending Approval · {pendings.length} request
+              Pending Approval · {pendings.length} request
             </div>
             <ul className="space-y-1 text-sm">
               {pendings.map((p) => (
@@ -660,7 +659,7 @@ export default function DeveloperSubsystemDetailPage({
 
           {whitelistError && (
             <div className="mb-3 p-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-xs">
-              ⚠ {whitelistError}
+              {whitelistError}
             </div>
           )}
 
@@ -713,7 +712,7 @@ export default function DeveloperSubsystemDetailPage({
           <div className="mb-3 bg-white rounded-xl border border-dashed border-ink-300 p-4 flex flex-wrap items-center gap-3">
             <div className="flex-1 min-w-[200px]">
               <div className="text-xs font-bold text-ink-700">
-                📄 อัปโหลด CSV (bulk add)
+                อัปโหลด CSV (bulk add)
               </div>
               <div className="text-[11px] text-ink-500 mt-0.5">
                 CSV header: <code className="font-mono">email,role,note</code> —
@@ -741,7 +740,7 @@ export default function DeveloperSubsystemDetailPage({
           {csvResult && (
             <div className="mb-3 p-4 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm">
               <div className="font-semibold mb-1">
-                ✓ Upload สำเร็จ — เพิ่ม {csvResult.added} คน, ข้าม{" "}
+                Upload สำเร็จ — เพิ่ม {csvResult.added} คน, ข้าม{" "}
                 {csvResult.skipped} คน
               </div>
               {csvResult.skipped_details.length > 0 && (
@@ -791,14 +790,14 @@ export default function DeveloperSubsystemDetailPage({
               </h3>
               <button
                 onClick={() => setEditOpen(false)}
-                className="text-ink-400 hover:text-ink-700 text-xl"
+                className="text-ink-400 hover:text-ink-700 text-sm"
               >
-                ✕
+                ปิด
               </button>
             </div>
             <div className="p-6 space-y-4">
               <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-3">
-                ⚠ <strong>การแก้ Scope, Allowed Roles, Redirect URIs</strong>{" "}
+                <strong>การแก้ Scope, Allowed Roles, Redirect URIs</strong>{" "}
                 ต้องผ่านการ approve จาก admin ก่อนถึงจะ apply จริง
                 (description apply ได้ทันที)
               </div>

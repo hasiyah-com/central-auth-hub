@@ -27,13 +27,13 @@ body {
   margin: 0;
   background: var(--paper);
   color: #111827;
-  font-family: "IBM Plex Sans Thai", "Noto Sans Thai", system-ui, sans-serif;
+  font-family: "Sarabun", "Noto Sans Thai", system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
 
 h1, h2, h3, h4 {
-  font-family: "Anuphan", "IBM Plex Sans Thai", system-ui, sans-serif;
+  font-family: "Sarabun", system-ui, sans-serif;
   letter-spacing: -0.025em;
 }
 
@@ -141,4 +141,57 @@ button, a, input, select, textarea { -webkit-tap-highlight-color: transparent; }
     animation-iteration-count: 1 !important;
   }
   .reveal { opacity: 1; }
+}
+
+/* ── ปุ่มย้อนกลับ — คลาสกลาง ใช้ได้ทุกหน้า (console + developer) ──
+   เดิมแต่ละหน้าเขียนเอง 4 แบบ (ลิงก์ขีดเส้นใต้ / ตัวหนังสือเทา / ปุ่มดำมน)
+   ลูกศรมาจาก ::before เพื่อไม่ต้องพิมพ์ซ้ำในทุกหน้า และขยับตอน hover */
+.cx-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 30px;
+  padding: 0 12px;
+  border: 1px solid #dbe2e8;
+  background: #fff;
+  color: #5c6b7d;
+  font:500 8px "IBM Plex Mono", ui-monospace, monospace;
+  letter-spacing: 0.9px;
+  text-transform: uppercase;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: color 0.14s, border-color 0.14s, background 0.14s;
+}
+.cx-back::before {
+  content: "\2190";
+  font-size: 11px;
+  line-height: 1;
+  transition: transform 0.14s;
+}
+.cx-back:hover {
+  color: #152131;
+  background: #f4f7fa;
+  border-color: #9aa8b8;
+}
+.cx-back:hover::before {
+  transform: translateX(-2px);
+}
+.cx-back:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.cx-back:disabled:hover::before {
+  transform: none;
+}
+/* บนพื้นเข้ม (หน้า auth / step-up) */
+.cx-back.on-dark {
+  border-color: #2b3a4e;
+  background: #111c2a;
+  color: #93a5ba;
+}
+.cx-back.on-dark:hover {
+  color: #e6eef8;
+  background: #17253a;
+  border-color: #45596f;
 }

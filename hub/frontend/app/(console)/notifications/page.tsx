@@ -50,12 +50,6 @@ const SEVERITY_BG: Record<string, string> = {
   info: "bg-blue-50",
 };
 
-const SEVERITY_ICON: Record<string, string> = {
-  critical: "🚨",
-  warning: "⚠️",
-  info: "ℹ️",
-};
-
 function parseUTC(iso: string): Date {
   const hasTz = /[+-]\d{2}:?\d{2}$|Z$/i.test(iso);
   return new Date(hasTz ? iso : iso + "Z");
@@ -234,8 +228,8 @@ export default function NotificationsPage() {
                 }
               >
                 {unreadCount > 0
-                  ? `🔔 ${unreadCount} ยังไม่อ่าน`
-                  : "✓ อ่านครบแล้ว"}
+                  ? `${unreadCount} ยังไม่อ่าน`
+                  : "อ่านครบแล้ว"}
               </div>
             )}
             {unreadCount > 0 && (
@@ -244,7 +238,7 @@ export default function NotificationsPage() {
                 disabled={busy === "clear"}
                 className="px-3 py-2 rounded-lg border border-emerald-300 hover:bg-emerald-50 text-xs font-semibold text-emerald-700 disabled:opacity-50"
               >
-                ✓ Mark ทั้งหมดว่าอ่าน
+                Mark ทั้งหมดว่าอ่าน
               </button>
             )}
             <button
@@ -260,9 +254,9 @@ export default function NotificationsPage() {
         <div className="inline-flex rounded-lg border border-ink-200 bg-white overflow-hidden text-xs font-semibold w-fit">
           {(
             [
-              { key: "unread", label: "🔔 ยังไม่อ่าน", count: unreadCount },
-              { key: "read", label: "✓ อ่านแล้ว", count: readCount },
-              { key: "all", label: "📨 ทั้งหมด", count: flatItems.length },
+              { key: "unread", label: "ยังไม่อ่าน", count: unreadCount },
+              { key: "read", label: "อ่านแล้ว", count: readCount },
+              { key: "all", label: "ทั้งหมด", count: flatItems.length },
             ] as Array<{ key: ReadFilter; label: string; count: number }>
           ).map((tab) => (
             <button
@@ -314,9 +308,6 @@ export default function NotificationsPage() {
             }
           >
             <div className="flex items-start gap-4">
-              <div className="text-3xl">
-                {SEVERITY_ICON[featured.severity]}
-              </div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 mb-1 flex-wrap">
                   <span className="text-[10px] font-bold uppercase tracking-wider text-ink-900/70">
@@ -358,7 +349,6 @@ export default function NotificationsPage() {
         {/* Notifications table */}
         {data && data.total === 0 ? (
           <div className="bg-white border border-ink-200 rounded-xl p-12 text-center">
-            <div className="text-6xl mb-3">🎉</div>
             <div className="text-lg font-bold text-ink-900">
               ไม่มีแจ้งเตือน
             </div>
@@ -423,7 +413,6 @@ export default function NotificationsPage() {
                             <Badge
                               tone={SEVERITY_TONE[item.severity] || "default"}
                             >
-                              {SEVERITY_ICON[item.severity]}{" "}
                               {item.severity.toUpperCase()}
                             </Badge>
                           </td>
@@ -472,7 +461,7 @@ export default function NotificationsPage() {
                                   className="px-2 py-1.5 rounded-md border border-emerald-300 hover:bg-emerald-50 text-emerald-700 text-xs font-semibold disabled:opacity-50"
                                   title="Mark ว่าอ่านแล้ว"
                                 >
-                                  ✓
+                                  อ่านแล้ว
                                 </button>
                               )}
                               <button
@@ -500,9 +489,6 @@ export default function NotificationsPage() {
         {/* Empty state เมื่อ filter ให้ list เปล่า */}
         {data && data.total > 0 && filteredItems.length === 0 && (
           <div className="bg-white border border-ink-200 rounded-xl p-10 text-center">
-            <div className="text-4xl mb-2">
-              {readFilter === "unread" ? "✓" : "📭"}
-            </div>
             <div className="text-sm font-bold text-ink-900">
               {readFilter === "unread"
                 ? "ไม่มีรายการที่ยังไม่อ่าน"
@@ -789,7 +775,7 @@ function DiagnosticPanel({ item }: { item: FlatItem }) {
   return (
     <div className={`rounded-lg border-2 p-4 ${tone}`}>
       <div className="text-xs font-bold text-ink-900 mb-3">
-        🩺 วิเคราะห์ + วิธีแก้
+        วิเคราะห์ + วิธีแก้
       </div>
 
       {/* Symptom */}
@@ -884,7 +870,7 @@ function NotificationDetailBody({
       <div className={`rounded-lg border-2 p-4 ${sevColor}`}>
         <div className="flex items-center gap-2 mb-2">
           <Badge tone={SEVERITY_TONE[item.severity] || "default"}>
-            {SEVERITY_ICON[item.severity]} {item.severity.toUpperCase()}
+            {item.severity.toUpperCase()}
           </Badge>
           <span className="inline-flex items-center gap-1 text-xs font-semibold text-ink-700">
             <span>{item.categoryIcon}</span>
@@ -934,10 +920,7 @@ function NotificationDetailBody({
       {Object.keys(m).length > 0 && (
         <details className="rounded-lg border border-ink-200 bg-ink-50 group">
           <summary className="px-3 py-2 cursor-pointer text-xs font-semibold text-ink-700 hover:text-ink-900 list-none flex items-center justify-between">
-            <span>📋 Raw metadata ({Object.keys(m).length} fields)</span>
-            <span className="text-ink-400 group-open:rotate-90 transition-transform">
-              ▶
-            </span>
+            <span>Raw metadata ({Object.keys(m).length} fields)</span>
           </summary>
           <pre className="px-3 py-2 border-t border-ink-200 bg-white text-[10px] font-mono text-ink-700 overflow-x-auto whitespace-pre-wrap break-all max-h-80 overflow-y-auto">
             {JSON.stringify(m, null, 2)}
@@ -997,7 +980,7 @@ function HealthSummaryDetail({ meta }: { meta: Record<string, unknown> }) {
   return (
     <div>
       <div className="text-xs font-bold text-ink-900 mb-2">
-        📊 สรุปผลตรวจสุขภาพ
+        สรุปผลตรวจสุขภาพ
       </div>
 
       {/* Status pills grid */}
@@ -1033,7 +1016,7 @@ function HealthSummaryDetail({ meta }: { meta: Record<string, unknown> }) {
                 <div key={i} className="px-3 py-2 text-xs">
                   <div className="grid grid-cols-12 gap-2 items-center">
                     <span className="col-span-6 font-semibold text-ink-900 truncate flex items-center gap-1.5">
-                      <span>{isHub ? "🏛️" : "🧩"}</span>
+                      <span>{isHub ? "" : ""}</span>
                       <span className="truncate">{String(d.name || "—")}</span>
                       {isHub && (
                         <span className="text-[9px] font-bold uppercase tracking-wider text-brand-700 bg-brand-50 px-1 py-0.5 rounded">
@@ -1064,7 +1047,7 @@ function HealthSummaryDetail({ meta }: { meta: Record<string, unknown> }) {
                                 : "text-rose-600"
                             }
                           >
-                            {v.status === "ok" ? "✓" : "✗"}
+                            {v.status === "ok" ? "OK" : "FAIL"}
                           </span>
                           <span className="font-mono text-ink-500 uppercase">
                             {k}
@@ -1088,7 +1071,7 @@ function HealthSummaryDetail({ meta }: { meta: Record<string, unknown> }) {
                       className="mt-1 ml-6 text-[10px] text-rose-600 truncate"
                       title={err}
                     >
-                      ⚠ {err}
+                      {err}
                     </div>
                   )}
                 </div>
@@ -1122,7 +1105,7 @@ function ApiSummaryDetail({ meta }: { meta: Record<string, unknown> }) {
   return (
     <div>
       <div className="text-xs font-bold text-ink-900 mb-2">
-        🛡️ สรุป API Alerts ({windowH}h)
+        สรุป API Alerts ({windowH}h)
       </div>
 
       {/* Stat pills */}
@@ -1151,7 +1134,7 @@ function ApiSummaryDetail({ meta }: { meta: Record<string, unknown> }) {
 
       {total === 0 ? (
         <div className="text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg p-3 text-center">
-          ✓ ไม่พบ API alert ผิดปกติใน {windowH} ชั่วโมงที่ผ่านมา
+          ไม่พบ API alert ผิดปกติใน {windowH} ชั่วโมงที่ผ่านมา
         </div>
       ) : (
         <div className="space-y-3">
@@ -1239,17 +1222,17 @@ function StatusPill({
 
 function StatusBadge({ status }: { status: string }) {
   const map: Record<string, { bg: string; text: string; icon: string }> = {
-    online: { bg: "bg-emerald-100", text: "text-emerald-800", icon: "🟢" },
-    degraded: { bg: "bg-amber-100", text: "text-amber-800", icon: "🟡" },
-    down: { bg: "bg-rose-100", text: "text-rose-800", icon: "🔴" },
-    unknown: { bg: "bg-ink-100", text: "text-ink-700", icon: "⚪" },
+    online: { bg: "bg-emerald-100", text: "text-emerald-800", icon: "" },
+    degraded: { bg: "bg-amber-100", text: "text-amber-800", icon: "" },
+    down: { bg: "bg-rose-100", text: "text-rose-800", icon: "" },
+    unknown: { bg: "bg-ink-100", text: "text-ink-700", icon: "" },
   };
   const s = map[status] || map.unknown;
   return (
     <span
       className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${s.bg} ${s.text}`}
     >
-      {s.icon} {status}
+      {s.icon ? `${s.icon} ${status}` : status}
     </span>
   );
 }
@@ -1321,14 +1304,14 @@ function CategoryDropdown({
 
   const current =
     activeFilter === "all"
-      ? { label: "ทั้งหมด", icon: "📨", count: data.total }
+      ? { label: "ทั้งหมด", icon: "", count: data.total }
       : data.categories[activeFilter]
       ? {
           label: data.categories[activeFilter].label,
           icon: data.categories[activeFilter].icon,
           count: data.categories[activeFilter].count,
         }
-      : { label: "ทั้งหมด", icon: "📨", count: data.total };
+      : { label: "ทั้งหมด", icon: "", count: data.total };
 
   function select(key: string) {
     setActiveFilter(key);
@@ -1338,7 +1321,7 @@ function CategoryDropdown({
   return (
     <div className="relative w-full max-w-md" ref={ref}>
       <div className="text-[10px] font-bold text-ink-500 uppercase tracking-wider mb-2">
-        ⤵ กรองตามประเภท
+        กรองตามประเภท
       </div>
 
       {/* Trigger */}
@@ -1352,7 +1335,9 @@ function CategoryDropdown({
         }
       >
         <span className="flex items-center gap-2 min-w-0">
-          <span className="text-lg shrink-0">{current.icon}</span>
+          {current.icon && (
+            <span className="text-lg shrink-0">{current.icon}</span>
+          )}
           <span className="text-sm font-semibold text-ink-900 truncate">
             {current.label}
           </span>
@@ -1378,7 +1363,6 @@ function CategoryDropdown({
       {open && (
         <div className="absolute left-0 right-0 mt-1.5 z-30 bg-white border border-ink-200 rounded-xl shadow-xl overflow-hidden">
           <DropdownItem
-            icon="📨"
             label="ทั้งหมด"
             count={data.total}
             selected={activeFilter === "all"}
@@ -1412,7 +1396,7 @@ function DropdownItem({
   selected,
   onClick,
 }: {
-  icon: string;
+  icon?: string;
   label: string;
   count: number;
   selected: boolean;
@@ -1431,7 +1415,7 @@ function DropdownItem({
       }
     >
       <span className="flex items-center gap-2 min-w-0">
-        <span className="text-base shrink-0">{icon}</span>
+        {icon && <span className="text-base shrink-0">{icon}</span>}
         <span className="text-sm font-medium truncate">{label}</span>
       </span>
       <span className="flex items-center gap-2 shrink-0">
@@ -1447,7 +1431,6 @@ function DropdownItem({
         >
           {count}
         </span>
-        {selected && <span className="text-xs">✓</span>}
       </span>
     </button>
   );
@@ -1481,7 +1464,7 @@ function FilterChip({
           : "bg-white text-ink-700 border-ink-200 hover:border-ink-400")
       }
     >
-      <span>{icon}</span>
+      {icon && <span>{icon}</span>}
       <span>{label}</span>
       <span
         className={

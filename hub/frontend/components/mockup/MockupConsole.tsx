@@ -102,7 +102,7 @@ function LoginMockup() {
             <div className="grid h-24 w-24 place-items-center rounded-[28px] border-2 border-cyan-300 bg-blue-600/30 text-4xl font-black">H</div>
             <div><h1 className="text-4xl font-black">Central Auth Hub</h1><p className="mt-2 text-lg text-slate-300">ระบบจัดการตัวตนและสิทธิ์แบบศูนย์กลาง<br />Identity & Access Management</p></div>
           </div>
-          <div className="mt-14 space-y-6 text-lg"><p>✓ เข้าสู่ระบบครั้งเดียว / Centralized Login</p><p>✓ ปกป้องด้วย PKCE / Protected by PKCE</p><p>✓ ตรวจจับความเสี่ยง / Risk Detection</p></div>
+          <div className="mt-14 space-y-6 text-lg"><p>เข้าสู่ระบบครั้งเดียว / Centralized Login</p><p>ปกป้องด้วย PKCE / Protected by PKCE</p><p>ตรวจจับความเสี่ยง / Risk Detection</p></div>
         </div>
       </section>
       <section className="grid place-items-center p-8">
@@ -140,7 +140,7 @@ function Sidebar({ screen }: { screen: string }) {
 }
 
 function Topbar() {
-  return <header className="sticky top-0 z-20 flex h-16 items-center border-b bg-white px-6"><div className="w-full max-w-xl rounded-xl border px-4 py-2.5 text-sm text-slate-400">ค้นหา / Search...</div><div className="ml-auto flex items-center gap-3"><span>🔔</span><span className="grid h-10 w-10 place-items-center rounded-full bg-blue-600 text-sm font-bold text-white">AD</span><div className="hidden text-sm md:block"><b>Administrator</b><div className="text-xs text-slate-500">System Admin</div></div></div></header>;
+  return <header className="sticky top-0 z-20 flex h-16 items-center border-b bg-white px-6"><div className="w-full max-w-xl rounded-xl border px-4 py-2.5 text-sm text-slate-400">ค้นหา / Search...</div><div className="ml-auto flex items-center gap-3"><span className="grid h-10 w-10 place-items-center rounded-full bg-blue-600 text-sm font-bold text-white">AD</span><div className="hidden text-sm md:block"><b>Administrator</b><div className="text-xs text-slate-500">System Admin</div></div></div></header>;
 }
 
 function Header({ title, endpoint }: { title: string; endpoint?: string }) {

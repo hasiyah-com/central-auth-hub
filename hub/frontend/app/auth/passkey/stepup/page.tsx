@@ -104,7 +104,6 @@ function StepupInner() {
     <main className="min-h-screen grid place-items-center bg-gradient-to-br from-ink-900 via-ink-800 to-brand-900 px-4">
       <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl overflow-hidden">
         <div className="px-8 pt-8 pb-6">
-          <div className="text-4xl mb-3">🔐</div>
           <h1 className="text-xl font-extrabold text-ink-900 mb-1">
             ยืนยันตัวตนอีกครั้ง
           </h1>
@@ -125,7 +124,7 @@ function StepupInner() {
                 disabled={busy || !supported}
                 className="w-full py-3 rounded-xl font-semibold bg-emerald-600 text-white hover:bg-emerald-700 disabled:bg-gray-200 disabled:text-gray-400"
               >
-                {busy ? "กำลังยืนยัน…" : "🔑 ยืนยันด้วย Passkey"}
+                {busy ? "กำลังยืนยัน…" : "ยืนยันด้วย Passkey"}
               </button>
               <button
                 onClick={() => setMode("otp")}
@@ -143,7 +142,7 @@ function StepupInner() {
                   disabled={busy}
                   className="w-full py-3 rounded-xl font-semibold bg-brand-600 text-white hover:bg-brand-700 disabled:bg-gray-200 disabled:text-gray-400"
                 >
-                  {busy ? "กำลังส่ง…" : "📧 ส่ง OTP ทาง Email"}
+                  {busy ? "กำลังส่ง…" : "ส่ง OTP ทาง Email"}
                 </button>
               ) : (
                 <>
@@ -176,9 +175,9 @@ function StepupInner() {
                     setError(null);
                   }}
                   disabled={busy}
-                  className="w-full py-2 text-sm text-ink-500 hover:text-ink-700"
+                  className="cx-back on-dark"
                 >
-                  ← กลับไปใช้ Passkey
+                  ใช้ Passkey
                 </button>
               )}
             </div>

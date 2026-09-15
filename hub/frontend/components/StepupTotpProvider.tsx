@@ -109,7 +109,6 @@ export default function StepupTotpProvider({
         >
           <div className="w-full max-w-sm rounded-2xl bg-white shadow-2xl overflow-hidden">
             <div className="px-7 pt-7 pb-6">
-              <div className="text-3xl mb-2">🔐</div>
               <h2 className="text-lg font-extrabold text-ink-900 mb-1">
                 ยืนยันด้วย Authenticator
               </h2>

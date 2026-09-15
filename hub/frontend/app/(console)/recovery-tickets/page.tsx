@@ -93,14 +93,14 @@ export default function RecoveryTicketsPage() {
       {verifying && (
         <div className="fixed inset-0 z-[60] grid place-items-center bg-black/40">
           <div className="bg-white rounded-2xl px-6 py-5 shadow-xl text-sm text-ink-700">
-            🔐 กำลังยืนยันด้วย Passkey…
+            กำลังยืนยันด้วย Passkey…
           </div>
         </div>
       )}
       <Topbar title="คำขอกู้บัญชี (Recovery Tickets)" />
       <main className="p-8 max-w-4xl mx-auto w-full">
         <p className="text-xs text-ink-500 mb-4">
-          {/* ⚠️ ยืนยันตัวตนผู้ขอ<strong>ต่อหน้า</strong> (บัตร นศ./ปชช.) ก่อนอนุมัติเสมอ —
+          {/* ยืนยันตัวตนผู้ขอ<strong>ต่อหน้า</strong> (บัตร นศ./ปชช.) ก่อนอนุมัติเสมอ —
           HIGH ต้อง admin 2 คน (four-eyes) */}
         </p>
 
@@ -120,7 +120,7 @@ export default function RecoveryTicketsPage() {
         {link && (
           <div className="mb-4 p-4 rounded-lg bg-brand-50 border border-brand-200">
             <div className="text-xs font-bold text-brand-900 mb-1">
-              🔗 ลิงก์กู้บัญชี (ใช้ครั้งเดียว · 30 นาที) — ส่งให้ผู้ใช้เปิดเอง
+              ลิงก์กู้บัญชี (ใช้ครั้งเดียว · 30 นาที) — ส่งให้ผู้ใช้เปิดเอง
             </div>
             <div className="bg-white border border-brand-200 rounded p-2 font-mono text-[11px] break-all">
               {link.url}
@@ -138,7 +138,6 @@ export default function RecoveryTicketsPage() {
           <div className="text-ink-400 text-sm">กำลังโหลด…</div>
         ) : items.length === 0 ? (
           <div className="bg-white rounded-xl border border-ink-200 p-12 text-center">
-            <div className="text-5xl mb-3">✨</div>
             <div className="font-semibold text-ink-700">ไม่มีคำขอรออนุมัติ</div>
           </div>
         ) : (
