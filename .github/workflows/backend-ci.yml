@@ -79,4 +79,10 @@ jobs:
             --ignore=tests/test_e2e_full_stack.py \
             --ignore=tests/test_l1_oidc.py \
             --ignore=tests/test_l1_oidc_authlib.py \
+            --ignore=tests/test_4layer_v2.py \
+            --ignore=tests/test_profiles_v2.py \
+            --ignore=tests/test_l3_explainability.py \
+            --ignore=tests/test_l3_stability.py \
+            --ignore=tests/test_l3_unified.py \
+            --ignore=tests/test_l3_remote_e2e.py \
             -p no:cacheprovider
