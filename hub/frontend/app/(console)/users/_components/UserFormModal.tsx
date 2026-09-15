@@ -211,14 +211,14 @@ export function UserFormModal({ mode, user, onClose, onSaved }: Props) {
               {CASCADE_STATUSES.has(form.status) &&
                 form.status !== (user?.status ?? "active") && (
                   <p className="text-[11px] text-amber-600 mt-1">
-                    ⚠ เปลี่ยนเป็นสถานะนี้จะเพิกถอนสิทธิ์เข้า subsystem ทั้งหมดทันที
+                    เปลี่ยนเป็นสถานะนี้จะเพิกถอนสิทธิ์เข้า subsystem ทั้งหมดทันที
                     (kick session ที่ค้างอยู่ด้วย)
                   </p>
                 )}
               {CASCADE_STATUSES.has(user?.status ?? "active") &&
                 form.status === "active" && (
                   <p className="text-[11px] text-emerald-600 mt-1">
-                    ✓ เปลี่ยนกลับ active จะคืนสิทธิ์ subsystem ที่เคยถูกเพิกถอนไป
+                    เปลี่ยนกลับ active จะคืนสิทธิ์ subsystem ที่เคยถูกเพิกถอนไป
                   </p>
                 )}
             </Field>
@@ -226,12 +226,11 @@ export function UserFormModal({ mode, user, onClose, onSaved }: Props) {
 
           {verifying ? (
             <div className="p-3 rounded-lg bg-brand-50 border border-brand-200 text-brand-700 text-sm flex items-center gap-2">
-              <span className="animate-pulse">🔐</span>
               กำลังยืนยันด้วย Passkey… ทำตามที่อุปกรณ์แจ้ง (ข้อมูลในฟอร์มยังอยู่)
             </div>
           ) : (
             <p className="text-xs text-ink-400 pt-1">
-              🔐 การบันทึกต้องยืนยันตัวตนด้วย Passkey (step-up) — ยืนยันในหน้านี้เลย ไม่ต้องกรอกใหม่
+              การบันทึกต้องยืนยันตัวตนด้วย Passkey (step-up) — ยืนยันในหน้านี้เลย ไม่ต้องกรอกใหม่
             </p>
           )}
         </div>

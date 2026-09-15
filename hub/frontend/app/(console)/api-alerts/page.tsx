@@ -34,10 +34,10 @@ type ScanResponse = {
 };
 
 const RULE_ICON: Record<string, string> = {
-  excessive_requests: "🔥",
-  high_error_rate: "⚠️",
-  unauthorized_probing: "🚨",
-  bot_pattern: "🤖",
+  excessive_requests: "",
+  high_error_rate: "",
+  unauthorized_probing: "",
+  bot_pattern: "",
 };
 
 const SEVERITY_TONE: Record<string, "warn" | "danger"> = {
@@ -166,21 +166,18 @@ export default function ApiAlertsPage() {
                   label="Critical (ยังไม่ตรวจ)"
                   value={String(critical)}
                   sub="unauthorized probing"
-                  icon="🚨"
                   tone={critical > 0 ? "danger" : "good"}
                 />
                 <StatsCard
                   label="Warning (ยังไม่ตรวจ)"
                   value={String(warning)}
                   sub="excessive requests, errors, bots"
-                  icon="⚠️"
                   tone={warning > 0 ? "warn" : "good"}
                 />
                 <StatsCard
                   label="Resolved"
                   value={String(resolved)}
                   sub="ตรวจสอบแล้ว"
-                  icon="✅"
                 />
               </div>
             </section>
@@ -195,7 +192,7 @@ export default function ApiAlertsPage() {
                 <option value="">ทุกกฎ</option>
                 {Object.entries(data.rules).map(([key, desc]) => (
                   <option key={key} value={key}>
-                    {RULE_ICON[key] || "📋"} {key}
+                    {RULE_ICON[key] || ""} {key}
                   </option>
                 ))}
               </select>
@@ -244,7 +241,7 @@ export default function ApiAlertsPage() {
                     className="bg-white rounded-lg border border-ink-200 p-4"
                   >
                     <div className="flex items-center gap-2">
-                      <span className="text-lg">{RULE_ICON[key] || "📋"}</span>
+                      <span className="text-lg">{RULE_ICON[key] || ""}</span>
                       <span className="text-sm font-bold text-ink-900">{key}</span>
                     </div>
                     <p className="text-xs text-ink-500 mt-1">{desc}</p>
@@ -268,7 +265,7 @@ function AlertCard({
   alert: Alert;
   onResolve: () => void;
 }) {
-  const icon = RULE_ICON[alert.rule] || "📋";
+  const icon = RULE_ICON[alert.rule] || "";
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const detail = (alert.detail || {}) as Record<string, any>;
   const time = alert.created_at
@@ -289,7 +286,7 @@ function AlertCard({
         <div className="flex-1">
           {/* Header */}
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-lg">{icon}</span>
+            {icon && <span className="text-lg">{icon}</span>}
             <span className="font-bold text-ink-900">{alert.rule}</span>
             <Badge tone={SEVERITY_TONE[alert.severity] || "warn"}>
               {alert.severity.toUpperCase()}

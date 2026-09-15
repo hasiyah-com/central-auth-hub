@@ -1,12 +1,13 @@
 "use client";
 
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { Topbar } from "@/components/Topbar";
-import { DataTable, type Column } from "@/components/DataTable";
-import { Badge } from "@/components/Badge";
 import { clientFetch } from "@/lib/api";
 import { parseUserAgent } from "@/lib/ua";
+// design system เดียวกับหน้าคอนโซล — .sc = ชุด cx-*
+import "../../signal-room.css";
+import "../../signal-console.css";
 
 type AuditLog = {
   id: string;
@@ -28,94 +29,82 @@ type AuditResponse = {
   limit: number;
 };
 
-// Tone hints for common action prefixes — visual scanning aid only,
-// fall through to "default" for anything not listed.
-function actionTone(action: string): "brand" | "good" | "warn" | "danger" | "default" {
-  if (action.includes("approved") || action.includes("success")) return "good";
-  if (action.includes("rejected") || action.includes("failed") || action.includes("blocked"))
+type Tone = "signal" | "warn" | "danger" | "default";
+
+function actionTone(action: string): Tone {
+  if (action.includes("approved") || action.includes("success")) return "signal";
+  if (
+    action.includes("rejected") ||
+    action.includes("failed") ||
+    action.includes("blocked")
+  )
     return "danger";
-  if (action.includes("login") || action.includes("token")) return "brand";
   if (action.includes("revoked") || action.includes("suspended")) return "warn";
   return "default";
 }
 
-function formatTime(iso: string | null): string {
-  if (!iso) return "—";
-  // Server stores UTC; display in Asia/Bangkok per project convention.
-  // FastAPI ส่ง naive datetime (เช่น "2026-05-29T11:14:26" ไม่มี Z) —
-  // new Date() จะตีความเป็น local time → เพี้ยน 7 ชม.
-  // บังคับ append "Z" ถ้ายังไม่มี timezone marker
+function resultLabel(tone: Tone): string {
+  return tone === "danger"
+    ? "ล้มเหลว"
+    : tone === "warn"
+    ? "เพิกถอน"
+    : tone === "signal"
+    ? "สำเร็จ"
+    : "บันทึก";
+}
+
+/** เวลาเก็บเป็น UTC — แสดงเป็น Asia/Bangkok ตามกติกาโปรเจกต์
+ *  FastAPI ส่ง naive datetime ("2026-05-29T11:14:26" ไม่มี Z) → ต้อง append Z
+ *  ไม่งั้น new Date() ตีความเป็น local time แล้วเพี้ยน 7 ชม. (B54) */
+function toDate(iso: string | null): Date | null {
+  if (!iso) return null;
   try {
     const hasTz = /[+-]\d{2}:?\d{2}$|Z$/i.test(iso);
     const d = new Date(hasTz ? iso : iso + "Z");
-    return d.toLocaleString("th-TH", {
-      timeZone: "Asia/Bangkok",
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-      hour12: false,
-    });
+    return isNaN(d.getTime()) ? null : d;
   } catch {
-    return iso;
+    return null;
   }
+}
+
+function fmtDate(iso: string | null): string {
+  const d = toDate(iso);
+  if (!d) return "—";
+  return d.toLocaleDateString("th-TH", {
+    timeZone: "Asia/Bangkok",
+    day: "2-digit",
+    month: "short",
+    year: "2-digit",
+  });
+}
+
+function fmtClock(iso: string | null): string {
+  const d = toDate(iso);
+  if (!d) return "—";
+  return d.toLocaleTimeString("th-TH", {
+    timeZone: "Asia/Bangkok",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  });
 }
 
 const PAGE_SIZE = 50;
 
-// แสดงรายละเอียด audit แบบอ่านง่าย: surface field สำคัญ (ต้นทาง/เหตุผล/เป้าหมาย)
-// ก่อน raw JSON — ตอบ "เข้าทางไหน ใช้อะไร ทำอะไร" ได้ทันทีโดยไม่ต้องอ่าน JSON
-function DetailCell({ row }: { row: AuditLog }) {
-  const meta = row.metadata as Record<string, unknown> | null;
-  if (!meta || Object.keys(meta).length === 0) {
-    return <span className="text-ink-400 text-xs">—</span>;
-  }
-  const ua = parseUserAgent(meta.user_agent as string | undefined);
-  // key fields ที่อยากเชิดขึ้นมา (ถ้ามี)
-  const highlights: [string, string][] = [];
-  if (meta.email) highlights.push(["อีเมล", String(meta.email)]);
-  if (meta.reason) highlights.push(["เหตุผล", String(meta.reason)]);
-  if (meta.role) highlights.push(["role", String(meta.role)]);
-  if (meta.provider) highlights.push(["provider", String(meta.provider)]);
-  if (ua) highlights.push(["อุปกรณ์", ua.label]);
-
-  return (
-    <details className="text-xs">
-      <summary className="cursor-pointer text-brand-600 hover:text-brand-700">
-        ดูรายละเอียด
-      </summary>
-      <div className="mt-1.5 space-y-1.5 max-w-md">
-        {highlights.length > 0 && (
-          <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 p-2 bg-brand-50 rounded border border-brand-100">
-            {highlights.map(([k, v]) => (
-              <div key={k} className="contents">
-                <span className="text-ink-500">{k}</span>
-                <span className="font-mono text-ink-800 break-all">{v}</span>
-              </div>
-            ))}
-          </div>
-        )}
-        <details className="text-[10px]">
-          <summary className="cursor-pointer text-ink-400 hover:text-ink-600">
-            raw JSON
-          </summary>
-          <pre className="mt-1 p-2 bg-ink-50 rounded overflow-x-auto">
-            {JSON.stringify(meta, null, 2)}
-          </pre>
-        </details>
-      </div>
-    </details>
-  );
-}
+const ACTION_OPTIONS = [
+  { v: "", label: "ทุก Action" },
+  { v: "hub_login_success", label: "เข้าสู่ระบบสำเร็จ" },
+  { v: "hub_login_failed", label: "เข้าสู่ระบบล้มเหลว" },
+  { v: "subsystem_approved", label: "อนุมัติระบบย่อย" },
+  { v: "subsystem_rejected", label: "ปฏิเสธระบบย่อย" },
+  { v: "user_updated", label: "แก้ไขผู้ใช้" },
+];
 
 function AuditPageInner() {
   const searchParams = useSearchParams();
   const router = useRouter();
-  // มาจาก User 360 view ("ดู Audit Log") — ล็อก scope ไว้ที่ user คนเดียว
-  // target_id = สิ่งที่ถูกกระทำต่อ user นี้ (admin แก้/revoke ให้)
-  // actor_id  = สิ่งที่ user นี้ทำเอง (login, กระทำต่อคนอื่น)
+
   const targetId = searchParams.get("target_id");
   const targetEmail = searchParams.get("target_email");
   const actorId = searchParams.get("actor_id");
@@ -127,9 +116,11 @@ function AuditPageInner() {
   const [data, setData] = useState<AuditResponse | null>(null);
   const [action, setAction] = useState<string>("");
   const [targetType, setTargetType] = useState<string>(targetId ? "user" : "");
+  const [q, setQ] = useState("");
   const [skip, setSkip] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [selected, setSelected] = useState<string | null>(null);
 
   function load() {
     setLoading(true);
@@ -150,161 +141,318 @@ function AuditPageInner() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(load, [action, targetType, targetId, actorId, skip]);
 
-  // Reset to page 1 whenever a filter changes — avoid stuck-on-page-3 surprise.
+  // กลับหน้าแรกเมื่อเปลี่ยนตัวกรอง — กันค้างอยู่หน้า 3 แล้วเจอจอว่าง
   useEffect(() => {
     setSkip(0);
+    setSelected(null);
   }, [action, targetType, targetId, actorId]);
 
-  const columns: Column<AuditLog>[] = [
-    {
-      key: "created_at",
-      header: "เวลา",
-      render: (r) => (
-        <span className="font-mono text-xs whitespace-nowrap">
-          {formatTime(r.created_at)}
-        </span>
-      ),
-    },
-    {
-      key: "actor_email",
-      header: "ผู้กระทำ",
-      render: (r) =>
-        r.actor_email ? (
-          <span className="font-mono text-xs">{r.actor_email}</span>
-        ) : (
-          <span className="text-ink-400 italic text-xs">system</span>
-        ),
-    },
-    {
-      key: "action",
-      header: "การกระทำ",
-      render: (r) => <Badge tone={actionTone(r.action)}>{r.action}</Badge>,
-    },
-    {
-      key: "target_type",
-      header: "Target",
-      render: (r) => (
-        <div className="text-xs">
-          <div>{r.target_type || "—"}</div>
-          {r.target_id && (
-            <div className="font-mono text-ink-500 text-[10px] truncate max-w-[180px]">
-              {r.target_id}
-            </div>
-          )}
-        </div>
-      ),
-    },
-    {
-      key: "ip",
-      header: "ต้นทาง (IP · อุปกรณ์)",
-      render: (r) => {
-        const ua = parseUserAgent(
-          (r.metadata as { user_agent?: string } | null)?.user_agent
-        );
-        return (
-          <div className="text-xs">
-            <div className="font-mono">{r.ip || "—"}</div>
-            {ua && (
-              <div className="text-ink-500 text-[10px] mt-0.5" title={ua.raw}>
-                🖥️ {ua.label}
-              </div>
-            )}
-          </div>
-        );
-      },
-    },
-    {
-      key: "metadata",
-      header: "รายละเอียด",
-      render: (r) => <DetailCell row={r} />,
-    },
-  ];
+  const items = data?.items ?? [];
+
+  // ค้นหาในหน้าที่โหลดมาแล้ว (API ยังไม่มีพารามิเตอร์ค้นหา)
+  const shown = useMemo(() => {
+    const needle = q.trim().toLowerCase();
+    if (!needle) return items;
+    return items.filter((r) =>
+      [r.actor_email, r.action, r.target_type, r.target_id, r.ip]
+        .filter(Boolean)
+        .some((v) => String(v).toLowerCase().includes(needle))
+    );
+  }, [items, q]);
+
+  const current = shown.find((r) => r.id === selected) ?? shown[0] ?? null;
 
   const total = data?.total ?? 0;
   const page = Math.floor(skip / PAGE_SIZE) + 1;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
+  // นับจาก "หน้าที่โหลดมา" เท่านั้น — ไม่ใช่ทั้งระบบ label จึงบอกให้ชัด
+  const onPage = useMemo(() => {
+    const t = { danger: 0, warn: 0 };
+    items.forEach((r) => {
+      const tone = actionTone(r.action);
+      if (tone === "danger") t.danger += 1;
+      if (tone === "warn") t.warn += 1;
+    });
+    return t;
+  }, [items]);
+
   return (
-    <>
+    <div className="sc">
       <Topbar title="Audit Log" />
-      <main className="p-8 max-w-7xl mx-auto w-full">
-        {scopeId && (
-          <div className="mb-5 flex items-center gap-2 px-4 py-2.5 rounded-lg bg-brand-50 border border-brand-200 text-sm text-brand-800">
-            <span>
-              กำลังดู log ที่ <strong>{scopeEmail || scopeId}</strong> {scopeLabel} เท่านั้น
+
+      <section className="cx-command">
+        <div>
+          <span>
+            <span className="cx-dot">
+              <i />
             </span>
+            immutable event stream
+          </span>
+          <h1>Audit Log</h1>
+        </div>
+        <div className="cx-audit-actions">
+          <span className="cx-chip mono">
+            {data === null ? "กำลังโหลด…" : `${total.toLocaleString("th-TH")} events`}
+          </span>
+        </div>
+      </section>
+
+      <main className="cx-document">
+        {/* ── แถบสรุป — แสดงเฉพาะค่าที่คำนวณจากข้อมูลจริงได้ ── */}
+        <section className="cx-audit-status">
+          <div className="cx-audit-status-copy">
+            <div>
+              <small className="mono">AUDIT INTEGRITY</small>
+              <h2>บันทึกทุกการเปลี่ยนแปลง ตรวจสอบย้อนหลังได้</h2>
+            </div>
+          </div>
+          <div className="cx-audit-summary">
+            <span>
+              <small>เหตุการณ์ทั้งหมด</small>
+              <b className="mono">
+                {data === null ? "—" : total.toLocaleString("th-TH")}
+              </b>
+            </span>
+            <span>
+              <small>ล้มเหลว / ปฏิเสธ (หน้านี้)</small>
+              <b className="mono danger">{data === null ? "—" : onPage.danger}</b>
+            </span>
+            <span>
+              <small>เพิกถอน / ระงับ (หน้านี้)</small>
+              <b className="mono">{data === null ? "—" : onPage.warn}</b>
+            </span>
+            <span>
+              <small>แสดงอยู่</small>
+              <b className="mono signal">
+                {data === null ? "—" : `${page}/${totalPages}`}
+              </b>
+            </span>
+          </div>
+        </section>
+
+        {scopeId && (
+          <div className="cx-msg ok">
+            กำลังดู log ที่ <b>{scopeEmail || scopeId}</b> {scopeLabel} เท่านั้น
             <button
               onClick={() => router.push("/audit")}
-              className="ml-auto text-xs px-2.5 py-1 rounded-md border border-brand-300 hover:bg-brand-100"
+              className="cx-chip"
+              style={{ marginLeft: "auto" }}
             >
-              ดูทั้งหมด ✕
+              ดูทั้งหมด
             </button>
           </div>
         )}
-        <div className="mb-5 flex flex-wrap items-center gap-3">
-          <input
-            type="text"
-            placeholder="filter action (เช่น login, revoke, approved)"
-            value={action}
-            onChange={(e) => setAction(e.target.value)}
-            className="px-3 py-2 rounded-lg border border-ink-200 bg-white text-sm focus:outline-none focus:border-brand-500 w-72 font-mono"
-          />
-          <select
-            value={targetType}
-            onChange={(e) => setTargetType(e.target.value)}
-            className="px-3 py-2 rounded-lg border border-ink-200 bg-white text-sm focus:outline-none focus:border-brand-500"
-          >
-            <option value="">ทุก target</option>
-            <option value="user">user</option>
-            <option value="subsystem">subsystem</option>
-            <option value="access_list">access_list</option>
-            <option value="login_session">login_session</option>
-          </select>
-          <div className="ml-auto text-xs text-ink-500">
-            {loading
-              ? "กำลังโหลด…"
-              : `${data?.items.length ?? 0} / ${total} รายการ — หน้า ${page}/${totalPages}`}
-          </div>
-        </div>
 
-        {error && (
-          <div className="mb-5 p-4 rounded-lg bg-rose-50 border border-rose-200 text-rose-700 text-sm">
-            {error}
-          </div>
-        )}
+        {error && <div className="cx-msg err">{error}</div>}
 
-        <DataTable
-          columns={columns}
-          rows={data?.items ?? []}
-          emptyMessage="ไม่พบ audit log ที่ตรงเงื่อนไข"
-        />
+        <section className="cx-audit-workspace">
+          {/* ── รายการเหตุการณ์ ── */}
+          <article className="cx-panel cx-audit-log">
+            <header>
+              <div>
+                <span className="mono">IMMUTABLE EVENT STREAM</span>
+                <h2>รายการ Audit Log</h2>
+              </div>
+              <span className="cx-audit-count mono">
+                {loading ? "กำลังโหลด…" : `${shown.length} รายการในหน้านี้`}
+              </span>
+            </header>
 
-        {/* Pagination — only show when there's more than one page */}
-        {totalPages > 1 && (
-          <div className="mt-5 flex items-center justify-between text-sm">
-            <button
-              type="button"
-              onClick={() => setSkip(Math.max(0, skip - PAGE_SIZE))}
-              disabled={skip === 0 || loading}
-              className="px-4 py-2 rounded-lg border border-ink-200 bg-white hover:bg-ink-50 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              ← ก่อนหน้า
-            </button>
-            <div className="text-ink-500">
-              หน้า {page} / {totalPages}
+            <div className="cx-audit-toolbar">
+              <label>
+                <input
+                  aria-label="ค้นหา Audit Log"
+                  placeholder="ค้นหาอีเมล, Action, Target หรือ IP (ในหน้านี้)"
+                  value={q}
+                  onChange={(e) => setQ(e.target.value)}
+                />
+              </label>
+              <select
+                value={action}
+                onChange={(e) => setAction(e.target.value)}
+                aria-label="กรองตาม action"
+              >
+                {ACTION_OPTIONS.map((o) => (
+                  <option key={o.v} value={o.v}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={targetType}
+                onChange={(e) => setTargetType(e.target.value)}
+                aria-label="กรองตามประเภทเป้าหมาย"
+              >
+                <option value="">ทุกเป้าหมาย</option>
+                <option value="user">user</option>
+                <option value="subsystem">subsystem</option>
+                <option value="session">session</option>
+              </select>
             </div>
-            <button
-              type="button"
-              onClick={() => setSkip(skip + PAGE_SIZE)}
-              disabled={skip + PAGE_SIZE >= total || loading}
-              className="px-4 py-2 rounded-lg border border-ink-200 bg-white hover:bg-ink-50 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              ถัดไป →
-            </button>
-          </div>
-        )}
+
+            <div className="cx-audit-table-head mono">
+              <span>TIME · ASIA/BANGKOK</span>
+              <span>ACTOR</span>
+              <span>ACTION</span>
+              <span>TARGET</span>
+              <span>RESULT</span>
+              <span />
+            </div>
+
+            {shown.length === 0 ? (
+              <div className="cx-empty">
+                <strong>
+                  {loading ? "กำลังโหลด…" : "ไม่พบเหตุการณ์ตามเงื่อนไขนี้"}
+                </strong>
+              </div>
+            ) : (
+              <div className="cx-audit-rows">
+                {shown.map((r) => {
+                  const tone = actionTone(r.action);
+                  return (
+                    <button
+                      key={r.id}
+                      className={current?.id === r.id ? "selected" : ""}
+                      onClick={() => setSelected(r.id)}
+                    >
+                      <time>
+                        <b>{fmtClock(r.created_at)}</b>
+                        <small>{fmtDate(r.created_at)}</small>
+                      </time>
+                      <span className="actor">
+                        <b>{r.actor_email || "system"}</b>
+                        <small className="mono">
+                          {r.actor_email ? "USER" : "SYSTEM SERVICE"}
+                        </small>
+                      </span>
+                      <span>
+                        <i className={tone}>{r.action}</i>
+                        <small className="mono">{r.id.slice(0, 8)}</small>
+                      </span>
+                      <span className="target">
+                        <b>{r.target_type || "—"}</b>
+                        <small className="mono">{r.ip || "—"}</small>
+                      </span>
+                      <span className={`result ${tone}`}>
+                        <span className={`cx-dot ${tone === "default" ? "" : tone}`}>
+                          <i />
+                        </span>
+                        {resultLabel(tone)}
+                      </span>
+                      <span aria-hidden="true">›</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            <div className="cx-audit-pagination">
+              <span>
+                {total === 0
+                  ? "ไม่มีรายการ"
+                  : `แสดง ${skip + 1}–${Math.min(skip + PAGE_SIZE, total)} จาก ${total.toLocaleString("th-TH")} รายการ`}
+              </span>
+              <div>
+                <button
+                  onClick={() => setSkip(Math.max(0, skip - PAGE_SIZE))}
+                  disabled={skip === 0 || loading}
+                >
+                  ก่อนหน้า
+                </button>
+                <b className="mono">
+                  {String(page).padStart(2, "0")} / {String(totalPages).padStart(2, "0")}
+                </b>
+                <button
+                  onClick={() => setSkip(skip + PAGE_SIZE)}
+                  disabled={skip + PAGE_SIZE >= total || loading}
+                >
+                  ถัดไป
+                </button>
+              </div>
+            </div>
+          </article>
+
+          {/* ── รายละเอียดเหตุการณ์ที่เลือก ── */}
+          <aside className="cx-panel cx-audit-detail">
+            <header>
+              <div>
+                <span className="mono">EVENT INSPECTOR</span>
+                <h2>รายละเอียดเหตุการณ์</h2>
+              </div>
+              {current && (
+                <span className={`cx-chip ${actionTone(current.action)}`}>
+                  {resultLabel(actionTone(current.action))}
+                </span>
+              )}
+            </header>
+
+            {!current ? (
+              <div className="cx-empty sm">
+                <strong>เลือกเหตุการณ์เพื่อดูรายละเอียด</strong>
+              </div>
+            ) : (
+              <>
+                <div className="cx-audit-detail-id">
+                  <small className="mono">ACTION</small>
+                  <b className="mono">{current.action}</b>
+                  <span className="mono">{current.id}</span>
+                </div>
+
+                <dl>
+                  <div>
+                    <dt>เวลา</dt>
+                    <dd>
+                      {fmtDate(current.created_at)} · {fmtClock(current.created_at)}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>ผู้ดำเนินการ</dt>
+                    <dd>
+                      {current.actor_email || "system"}
+                      <small className="mono">
+                        {current.actor_id || "ไม่มี actor_id"}
+                      </small>
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>เป้าหมาย</dt>
+                    <dd>
+                      {current.target_type || "—"}
+                      {current.target_id && (
+                        <small className="mono">{current.target_id}</small>
+                      )}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Source IP</dt>
+                    <dd className="mono">{current.ip || "—"}</dd>
+                  </div>
+                  <div>
+                    <dt>อุปกรณ์</dt>
+                    <dd>
+                      {parseUserAgent(
+                        (current.metadata as { user_agent?: string } | null)
+                          ?.user_agent
+                      )?.label || "—"}
+                    </dd>
+                  </div>
+                </dl>
+
+                <div className="cx-audit-json">
+                  <span className="mono">METADATA JSON</span>
+                  <code>
+                    {current.metadata && Object.keys(current.metadata).length > 0
+                      ? JSON.stringify(current.metadata, null, 2)
+                      : "—"}
+                  </code>
+                </div>
+              </>
+            )}
+          </aside>
+        </section>
       </main>
-    </>
+    </div>
   );
 }
 

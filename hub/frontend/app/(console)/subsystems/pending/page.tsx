@@ -124,7 +124,6 @@ export default function PendingSubsystemsPage() {
       {verifying && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40">
           <div className="bg-white rounded-2xl px-6 py-5 shadow-xl flex items-center gap-3 text-sm text-ink-700">
-            <span className="animate-pulse text-lg">🔐</span>
             กำลังยืนยันด้วย Passkey… ทำตามที่อุปกรณ์แจ้ง
           </div>
         </div>
@@ -134,9 +133,9 @@ export default function PendingSubsystemsPage() {
         <div className="mb-6 flex items-center gap-3">
           <Link
             href="/subsystems"
-            className="text-xs text-ink-500 hover:text-brand-600"
+            className="cx-back"
           >
-            ← กลับไปที่ระบบย่อยทั้งหมด
+            Subsystems
           </Link>
           <div className="ml-auto text-xs text-ink-500">
             {loading ? "กำลังโหลด…" : `${subs.length} คำขอ`}
@@ -158,7 +157,6 @@ export default function PendingSubsystemsPage() {
 
         {!loading && subs.length === 0 && (
           <div className="rounded-2xl bg-white border border-ink-200 p-12 text-center">
-            <div className="text-5xl mb-3">✨</div>
             <div className="font-semibold text-ink-700">
               ไม่มีคำขอรออนุมัติ
             </div>

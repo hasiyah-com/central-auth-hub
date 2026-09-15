@@ -4,6 +4,8 @@
  * TotpCard — จัดการ Authenticator (TOTP) ในหน้าบัญชี.
  * enroll: step-up → โชว์ QR (qrcode.react) + secret → ใส่รหัส 6 หลัก → ACTIVE.
  * ปิด/สถานะ. ใช้เป็น Fallback Authentication Factor สำหรับกู้บัญชี.
+ *
+ * สไตล์ cx-* (signal-console.css) — ต้องอยู่ใต้ `.sc` ซึ่ง AccountView ครอบให้
  */
 
 import { useEffect, useState } from "react";
@@ -23,7 +25,9 @@ export function TotpCard() {
   const [error, setError] = useState<string | null>(null);
 
   // enroll wizard
-  const [enroll, setEnroll] = useState<{ uri: string; secret: string } | null>(null);
+  const [enroll, setEnroll] = useState<{ uri: string; secret: string } | null>(
+    null
+  );
   const [code, setCode] = useState("");
 
   const refresh = () =>
@@ -46,7 +50,8 @@ export function TotpCard() {
       setEnroll({ uri: r.otpauth_uri, secret: r.secret });
     } catch (e) {
       const d = (e as { detail?: unknown })?.detail;
-      const c = typeof d === "object" && d ? (d as { code?: string }).code : undefined;
+      const c =
+        typeof d === "object" && d ? (d as { code?: string }).code : undefined;
       if (c === "no_passkey")
         setError("ต้องมี Passkey หรือยืนยันตัวตนก่อนเปิด Authenticator");
       else if (e instanceof DOMException && e.name === "NotAllowedError")
@@ -91,115 +96,123 @@ export function TotpCard() {
     }
   };
 
+  const chipClass = enabled
+    ? "cx-chip signal"
+    : status === "SUSPENDED"
+      ? "cx-chip warn"
+      : "cx-chip";
+
   return (
-    <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-4">
+    <article className="cx-panel">
       {verifying && (
-        <div className="fixed inset-0 z-[60] grid place-items-center bg-black/40">
-          <div className="bg-white rounded-2xl px-6 py-5 shadow-xl text-sm text-ink-700">
-            🔐 กำลังยืนยันตัวตน… ทำตามที่อุปกรณ์แจ้ง
-          </div>
+        <div className="cx-verify-overlay">
+          <div>กำลังยืนยันตัวตน — ทำตามที่อุปกรณ์แจ้ง</div>
         </div>
       )}
 
-      <div className="flex items-center justify-between">
+      <header>
         <div>
-          <h3 className="text-lg font-bold text-gray-900 flex items-center gap-2">
-            🔐 Authenticator (TOTP)
-          </h3>
-          <p className="text-sm text-gray-600 mt-0.5">
-            แอปยืนยันตัวตน (Google/Microsoft Authenticator) — ใช้กู้บัญชีเมื่อเข้า email/Passkey ไม่ได้
-          </p>
+          <span className="mono">authenticator app</span>
+          <h2>Authenticator (TOTP)</h2>
         </div>
         {!loading && (
-          <span
-            className={
-              "text-[11px] font-bold px-2 py-1 rounded-full " +
-              (enabled
-                ? "bg-emerald-100 text-emerald-800"
-                : status === "SUSPENDED"
-                  ? "bg-amber-100 text-amber-800"
-                  : "bg-ink-100 text-ink-500")
-            }
-          >
-            {enabled ? "เปิดใช้งาน" : status === "SUSPENDED" ? "ระงับ" : "ยังไม่เปิด"}
+          <span className={chipClass}>
+            {enabled
+              ? "เปิดใช้งาน"
+              : status === "SUSPENDED"
+                ? "ระงับ"
+                : "ยังไม่เปิด"}
           </span>
         )}
+      </header>
+
+      <div className="cx-setting-row">
+        <div>
+          <b>แอปยืนยันตัวตน (Google / Microsoft Authenticator)</b>
+          <small>
+            ใช้กู้บัญชีเมื่อเข้า email หรือ Passkey ไม่ได้ — รหัส 6 หลักเปลี่ยนทุก 30
+            วินาที
+          </small>
+        </div>
       </div>
 
-      {error && (
-        <div className="text-xs text-rose-700 bg-rose-50 border border-rose-200 rounded-lg p-2.5">
-          {error}
-        </div>
-      )}
+      {error && <div className="cx-inline-error">{error}</div>}
 
-      {/* Enroll wizard */}
       {enroll ? (
-        <div className="border-t border-gray-100 pt-4 space-y-3">
-          <p className="text-sm text-gray-700">
+        <div className="cx-totp-enroll">
+          <p className="cx-totp-step">
             1. สแกน QR ด้วยแอป Authenticator (หรือกรอก secret เอง)
           </p>
-          <div className="flex items-center gap-4 flex-wrap">
-            <div className="bg-white p-2 rounded-lg border border-ink-200">
-              <QRCodeCanvas value={enroll.uri} size={160} />
+          <div className="cx-totp-qr">
+            <div>
+              <QRCodeCanvas value={enroll.uri} size={150} />
             </div>
-            <div className="text-xs">
-              <div className="text-ink-400 mb-1">Secret (กรอกเองถ้าสแกนไม่ได้)</div>
-              <code className="font-mono bg-ink-50 px-2 py-1 rounded break-all">
-                {enroll.secret}
-              </code>
+            <div className="cx-totp-secret">
+              <small>secret (กรอกเองถ้าสแกนไม่ได้)</small>
+              <code>{enroll.secret}</code>
             </div>
           </div>
-          <p className="text-sm text-gray-700">2. ใส่รหัส 6 หลักที่แอปแสดง</p>
-          <div className="flex gap-2">
+
+          <p className="cx-totp-step">2. ใส่รหัส 6 หลักที่แอปแสดง</p>
+          <div className="cx-totp-code">
             <input
               value={code}
-              onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
+              onChange={(e) =>
+                setCode(e.target.value.replace(/\D/g, "").slice(0, 6))
+              }
               placeholder="000000"
               inputMode="numeric"
               autoFocus
-              className="w-32 px-3 py-2 border border-gray-300 rounded-lg font-mono tracking-widest text-center focus:ring-2 focus:ring-emerald-500"
+              aria-label="รหัส 6 หลัก"
             />
             <button
+              type="button"
+              className="cx-primary"
               onClick={confirm}
               disabled={busy || code.length !== 6}
-              className="px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700 disabled:opacity-40"
             >
-              {busy ? "กำลังยืนยัน…" : "ยืนยัน"}
+              {busy ? "กำลังยืนยัน" : "ยืนยัน"}
             </button>
             <button
+              type="button"
               onClick={() => {
                 setEnroll(null);
                 setCode("");
                 setError(null);
               }}
               disabled={busy}
-              className="px-3 py-2 text-gray-500 hover:text-gray-700 text-sm"
             >
               ยกเลิก
             </button>
           </div>
         </div>
       ) : loading ? (
-        <div className="text-sm text-gray-400">กำลังโหลด…</div>
-      ) : enabled || status === "SUSPENDED" ? (
-        <div className="flex items-center gap-2">
-          <button
-            onClick={disable}
-            disabled={busy}
-            className="px-4 py-2 rounded-lg border border-rose-200 text-rose-700 text-sm font-semibold hover:bg-rose-50 disabled:opacity-50"
-          >
-            ปิด / ลบ Authenticator
-          </button>
+        <div className="cx-empty sm">
+          <strong>กำลังโหลด</strong>
         </div>
       ) : (
-        <button
-          onClick={startEnroll}
-          disabled={busy}
-          className="px-4 py-2 rounded-lg bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700 disabled:opacity-50"
-        >
-          {busy ? "กำลังเริ่ม…" : "+ เปิดใช้งาน Authenticator"}
-        </button>
+        <div className="cx-panel-foot">
+          {enabled || status === "SUSPENDED" ? (
+            <button
+              type="button"
+              className="cx-panel-action danger"
+              onClick={disable}
+              disabled={busy}
+            >
+              ปิด / ลบ Authenticator
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="cx-panel-action cx-primary"
+              onClick={startEnroll}
+              disabled={busy}
+            >
+              {busy ? "กำลังเริ่ม" : "เปิดใช้งาน Authenticator"}
+            </button>
+          )}
+        </div>
       )}
-    </div>
+    </article>
   );
 }

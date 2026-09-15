@@ -187,8 +187,8 @@ export const STATUS_META: Record<
   string,
   { label: string; tone: "danger" | "good" | "default" }
 > = {
-  active: { label: "🔴 ยังเปิดอยู่", tone: "danger" },
-  ended: { label: "✓ ถูกตัดแล้ว", tone: "good" },
+  active: { label: "ยังเปิดอยู่", tone: "danger" },
+  ended: { label: "ถูกตัดแล้ว", tone: "good" },
   expired: { label: "หมดอายุแล้ว", tone: "default" },
 };
 
@@ -196,9 +196,9 @@ export const SEVERITY_META: Record<
   string,
   { tone: "danger" | "warn" | "default"; icon: string; label: string; btn: string }
 > = {
-  critical: { tone: "danger", icon: "🔴", label: "ด่วน", btn: "bg-rose-600 hover:bg-rose-700" },
-  warning: { tone: "warn", icon: "🟠", label: "ควรตรวจ", btn: "bg-amber-600 hover:bg-amber-700" },
-  info: { tone: "default", icon: "🔵", label: "ข้อมูล", btn: "bg-emerald-600 hover:bg-emerald-700" },
+  critical: { tone: "danger", icon: "", label: "ด่วน", btn: "bg-rose-600 hover:bg-rose-700" },
+  warning: { tone: "warn", icon: "", label: "ควรตรวจ", btn: "bg-amber-600 hover:bg-amber-700" },
+  info: { tone: "default", icon: "", label: "ข้อมูล", btn: "bg-emerald-600 hover:bg-emerald-700" },
 };
 
 export const RISK_LEVEL_META: Record<
@@ -215,12 +215,12 @@ export const ACTION_CATEGORY_META: Record<
   string,
   { label: string; icon: string }
 > = {
-  root_cause: { label: "Root Cause — จัดการต้นเหตุ", icon: "🎯" },
-  authentication: { label: "Authentication — ยืนยันตัวตน", icon: "🔑" },
-  network: { label: "Network — เครือข่าย/IP", icon: "🌐" },
-  account: { label: "Account — บัญชีผู้ใช้", icon: "👤" },
-  subsystem: { label: "Subsystem — ระบบย่อย", icon: "🧩" },
-  configuration: { label: "Configuration — ตั้งค่าระบบ", icon: "⚙️" },
+  root_cause: { label: "Root Cause — จัดการต้นเหตุ", icon: "" },
+  authentication: { label: "Authentication — ยืนยันตัวตน", icon: "" },
+  network: { label: "Network — เครือข่าย/IP", icon: "" },
+  account: { label: "Account — บัญชีผู้ใช้", icon: "" },
+  subsystem: { label: "Subsystem — ระบบย่อย", icon: "" },
+  configuration: { label: "Configuration — ตั้งค่าระบบ", icon: "" },
 };
 
 // สีของ node ใน attack path

@@ -52,9 +52,9 @@ export default function ThresholdPage() {
         {/* Breadcrumb */}
         <Link
           href="/ml"
-          className="text-xs text-ink-500 hover:text-brand-600 underline"
+          className="cx-back"
         >
-          &larr; ML Overview
+          ML Overview
         </Link>
 
         {/* Header */}
@@ -120,7 +120,7 @@ export default function ThresholdPage() {
 
             {mfaT >= blockT && (
               <div className="mt-3 p-2 rounded bg-rose-50 border border-rose-200 text-xs text-rose-700">
-                ⚠ MFA threshold ต้องน้อยกว่า Block threshold
+                MFA threshold ต้องน้อยกว่า Block threshold
               </div>
             )}
 

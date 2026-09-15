@@ -89,7 +89,7 @@ export default function IpBlacklistPage() {
         setMsg({
           kind: "ok",
           text:
-            `✓ Refresh สำเร็จ — fetched ${r.fetched}, ` +
+            `Refresh สำเร็จ — fetched ${r.fetched}, ` +
             `เพิ่มใหม่ ${r.new_inserted}, ซ้ำ ${r.skipped_existing} ` +
             `(${r.elapsed_sec}s)`,
         });
@@ -197,7 +197,6 @@ export default function IpBlacklistPage() {
             className="px-4 py-2 rounded-lg bg-brand-600 hover:bg-brand-700 text-white text-sm font-semibold disabled:opacity-50 transition flex items-center gap-2"
             title="ดาวน์โหลด ipsum L5 ล่าสุดจาก GitHub"
           >
-            <span className={refreshBusy ? "animate-spin" : ""}>🔄</span>
             {refreshBusy ? "กำลัง refresh…" : "Refresh ipsum"}
           </button>
         </div>
@@ -218,7 +217,6 @@ export default function IpBlacklistPage() {
                 ? `แสดง ${entries.length} ที่ตรงกับ "${search}"`
                 : "ตรวจจับอัตโนมัติเมื่อ login"
             }
-            icon="🚫"
             tone={total > 0 ? "danger" : "good"}
           />
         </div>
@@ -324,7 +322,7 @@ export default function IpBlacklistPage() {
                   onClick={clearSearch}
                   className="px-2 py-1.5 rounded-lg border border-ink-200 hover:bg-ink-50 text-xs text-ink-600"
                 >
-                  ✕
+                  ล้าง
                 </button>
               )}
             </form>
@@ -405,7 +403,7 @@ export default function IpBlacklistPage() {
                     className="px-2 py-1 rounded border border-ink-200 hover:bg-white disabled:opacity-40"
                     title="หน้าแรก"
                   >
-                    ⏮
+
                   </button>
                   <button
                     onClick={() => setPage((p) => Math.max(0, p - 1))}
@@ -432,7 +430,7 @@ export default function IpBlacklistPage() {
                     className="px-2 py-1 rounded border border-ink-200 hover:bg-white disabled:opacity-40"
                     title="หน้าสุดท้าย"
                   >
-                    ⏭
+
                   </button>
                 </div>
               </div>

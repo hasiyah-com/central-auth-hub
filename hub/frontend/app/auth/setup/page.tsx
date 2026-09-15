@@ -34,7 +34,7 @@ const OPTIONS: {
 }[] = [
   {
     key: "passkey",
-    icon: "🔑",
+    icon: "",
     title: "Passkey",
     badge: "แนะนำ",
     desc: "ลายนิ้วมือ / Face / PIN — แข็งแรงสุด กัน phishing",
@@ -44,7 +44,7 @@ const OPTIONS: {
   },
   {
     key: "totp",
-    icon: "📱",
+    icon: "",
     title: "Authenticator",
     badge: null,
     desc: "รหัส 6 หลักจากแอป — ใช้ได้ทุกอุปกรณ์",
@@ -54,7 +54,7 @@ const OPTIONS: {
   },
   {
     key: "both",
-    icon: "✨",
+    icon: "",
     title: "ทั้งสอง",
     badge: "ปลอดภัยสุด",
     desc: "Passkey หลัก + Authenticator สำรองไว้กู้บัญชี",
@@ -141,7 +141,7 @@ function SetupInner() {
             style={{ animationDelay: "60ms" }}
           >
             <div className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-brand-600 to-brand-900 text-xl text-white shadow-md">
-              🛡️
+
             </div>
             <div>
               <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-brand-600">
@@ -171,11 +171,6 @@ function SetupInner() {
                 className={`reveal group relative flex flex-col gap-3 rounded-2xl border border-ink-200 bg-white p-4 text-left transition-all duration-200 hover:-translate-y-1 hover:shadow-lg hover:ring-4 ${o.ring} focus:outline-none focus-visible:ring-4 focus-visible:ring-brand-200`}
               >
                 <div className="flex items-start justify-between">
-                  <span
-                    className={`grid h-11 w-11 place-items-center rounded-xl text-xl ${o.tile}`}
-                  >
-                    {o.icon}
-                  </span>
                   {o.badge && (
                     <span
                       className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${o.badgeCls}`}

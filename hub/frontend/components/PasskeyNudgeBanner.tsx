@@ -49,7 +49,6 @@ export function PasskeyNudgeBanner({ accountHref }: { accountHref: string }) {
   return (
     <div className="mx-8 mt-4 flex items-center justify-between gap-4 rounded-xl border border-amber-200 bg-amber-50 px-5 py-3">
       <div className="flex items-center gap-3 min-w-0">
-        <span className="text-xl shrink-0">🔑</span>
         <p className="text-sm text-amber-900 min-w-0">
           <strong>บัญชีของคุณยังไม่มี Passkey</strong> — ใช้งานมาแล้ว{" "}
           {status.days_since_signup} วัน เพิ่ม Passkey เพื่อ login แบบไม่ใช้
