@@ -32,7 +32,7 @@ from datetime import datetime, timedelta
 
 import pytest
 
-from app.models import LoginSession, User
+from app.models import AuditLog, LoginSession, User
 from app.security.risk_engine import evaluate_login_risk
 from app.services.feature_extraction import (
     extract_session_features,
@@ -92,6 +92,33 @@ def demo_user(db):
     db.refresh(u)
     print(f"\n>>> สร้างบัญชีสาธิตใหม่: {u.email}")
     return u
+
+
+@pytest.fixture(scope="module", autouse=True)
+def _purge_demo_rows():
+    """ลบบัญชีสาธิตและ session สาธิตเมื่อจบไฟล์.
+
+    เดิมตั้งใจให้ค้างไว้ดูบนหน้า console ของ dev แต่ชุดเทสรันบนฐานข้อมูลของเทสแล้ว
+    (guard บังคับ) การค้างไว้จึงเป็นข้อมูลรั่วที่ทำให้เทียบ state ก่อน/หลังไม่ตรง
+    """
+    yield
+    from app.database import SessionLocal
+
+    db = SessionLocal()
+    try:
+        user = db.query(User).filter(User.email == DEMO_EMAIL).first()
+        if user is None:
+            return
+        db.query(LoginSession).filter(LoginSession.user_id == user.id).delete(
+            synchronize_session=False
+        )
+        db.query(AuditLog).filter(AuditLog.actor_id == user.id).delete(
+            synchronize_session=False
+        )
+        db.query(User).filter(User.id == user.id).delete(synchronize_session=False)
+        db.commit()
+    finally:
+        db.close()
 
 
 def _reset_demo_sessions(db, user) -> int:

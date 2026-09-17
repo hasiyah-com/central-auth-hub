@@ -721,17 +721,53 @@ docker compose exec ml-service python -m scripts.train_model
 - ถ้า test fail → อ่าน traceback เต็ม อย่าเดาหรือข้าม
 - test คือ source of truth — test fail = งานยังไม่เสร็จ
 
-**Run commands** — container WORKDIR=`/app`, run pytest จาก `.`:
+**Run commands** — ชุดเทสรันบนฐานข้อมูล `hub_test` และ Redis DB 15 เท่านั้น
+ไม่ใช่ `hub_db` ของ dev · `conftest.py` มี guard แบบ fail-closed ถ้าชี้ผิดจะหยุดก่อน
+collect (ไม่มี flag ยกเว้น) — เหตุผลอยู่ใน `tests/support/env_guard.py`
+
 ```bash
-# รัน test ทั้งหมด
-docker compose exec hub-backend pytest . -v
+# ครั้งแรก / เมื่อต้องการฐานข้อมูลเทสสะอาด (drop + create + seed + manifest)
+bash scripts/test/setup_test_db.sh
 
-# รันเฉพาะไฟล์ + stop ที่ fail แรก
-docker compose exec hub-backend pytest tests/test_auth.py -x -v
+# รัน test ทั้งหมด (Functional Gate — ค่าเริ่มต้น ไม่รวมเทส latency/throughput)
+bash scripts/test/run_tests.sh
 
-# แสดง print output (debug)
-docker compose exec hub-backend pytest . -v -s
+# Performance Gate แยกต่างหาก (ผลขึ้นกับความเร็วของเครื่อง) / ทุกตัว
+TEST_GATE=performance bash scripts/test/run_tests.sh
+TEST_GATE=all bash scripts/test/run_tests.sh
+
+# รันเฉพาะไฟล์
+bash scripts/test/run_tests.sh tests/test_auth.py
+
+# เปิดเครื่องมือวินิจฉัย (บันทึกเหตุที่ token ถูกปฏิเสธ + การกระโดดของนาฬิกา)
+TEST_DIAG=1 bash scripts/test/run_tests.sh
+
+# พิสูจน์ว่า cleanup ยังทำงานแม้เทสล้ม
+TEST_FORCE_FAIL=test_auth bash scripts/test/run_tests.sh tests/test_auth.py
+
+# ตรวจ schema ของ hub_test ทีละรายการ (ไม่เชื่อว่า `alembic stamp head` = schema ถูก)
+bash scripts/test/verify_test_schema.sh
+
+# พิสูจน์ว่าผลไม่ขึ้นกับลำดับ — setup ฐานข้อมูลใหม่ก่อนทุกโหมด
+bash scripts/test/order_matrix.sh all        # forward / reverse / shuffle 3 seed
+bash scripts/test/order_matrix.sh per-file   # รันทีละไฟล์ คนละ process
+bash scripts/test/order_matrix.sh repeat 3   # release gate — ชุดเต็ม 3 รอบติด
 ```
+
+ท้ายรอบจะพิมพ์รายงานเทียบ state ก่อน/หลัง ถ้าพบข้อมูลรั่ว (ผู้ใช้ค้าง, session ค้าง,
+key ค้างใน namespace) รอบนั้นถือว่า **ไม่ผ่าน** แม้เทสทุกตัวจะเขียว
+
+**สภาพแวดล้อมของเทสมี 3 ชั้น**
+
+| ชั้น | dev | test |
+|---|---|---|
+| PostgreSQL | `hub_db` | `hub_test` (สร้างใหม่ทุกครั้งที่ setup) |
+| Redis | DB 0 | DB 15 + key ขึ้นต้น `test:{run_id}:` |
+| ml-service | `ml-service` (Redis DB 0) | `ml-service-test` ใน `docker-compose.test.yml` (Redis DB 15) |
+
+ที่ต้องมี ml-service แยกเพราะ **แกน L3 อ่าน Redis ด้วย connection ของตัวเอง** — hub เขียน
+`l3resid:{user_id}` แล้ว ml-service อ่านเอง ถ้าชี้คนละ DB จะมองไม่เห็นประวัติและ abstain
+ทั้งหมด · key กลุ่มนี้ (`l3resid:`, `l3dup:`) จึงไม่ใส่ prefix และอาศัยการแยก DB แทน
 
 **Test file layout** (`hub/backend/tests/`):
 - `conftest.py` — shared fixtures (db session, test client, seeded users)

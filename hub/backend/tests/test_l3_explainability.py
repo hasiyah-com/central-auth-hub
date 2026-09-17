@@ -256,6 +256,7 @@ async def test_result_records_method_and_versions(seeded):
 # ══════════════ 5. latency + concurrency หลังเพิ่มคำอธิบายหลัก ══════════════
 
 
+@pytest.mark.performance
 @pytest.mark.asyncio
 async def test_latency_within_login_budget(seeded):
     """คำอธิบายหลักคำนวณทุกครั้ง — ต้องไม่ทำให้ L3 เกินครึ่งของงบ timeout."""
@@ -278,15 +279,26 @@ async def test_latency_within_login_budget(seeded):
 
 
 @pytest.mark.asyncio
-async def test_concurrent_requests_agree(seeded):
-    """ยิงพร้อมกันหลายอัน -> ผลต้องตรงกันทุกอัน (ไม่มี race ใน baseline/cache)."""
+async def test_concurrent_requests_agree(seeded, monkeypatch):
+    """ยิงพร้อมกันหลายอัน -> ผลต้องตรงกันทุกอัน (ไม่มี race ใน baseline/cache).
+
+    **Functional Gate** — ขยาย timeout เฉพาะในเทสนี้ เพราะ ml-service ประมวลผล L3
+    ต่อคิว ยิง 20 ตัวพร้อมกัน p50 ราว 530–630 ms เกิน timeout ของ login (500 ms)
+    ถ้าใช้ timeout จริง ผลจะขึ้นกับความเร็วของเครื่อง ไม่ใช่การมี race
+    (เคยล้ม 9/20 หลัง Docker restart) · เรื่องความเร็วอยู่ที่
+    `test_concurrent_burst_mostly_within_timeout` ใน Performance Gate
+    """
+    from app.config import settings
+
     await _ok([0.1] * L3.DIMS)
+    monkeypatch.setattr(settings, "l3_timeout_seconds", 10.0)
     resid = _spike(8, 30, 3)
     outs = await asyncio.gather(
         *[evaluate_l3(USER, _features(), resid, "allow") for _ in range(20)]
     )
     ok = [o for o in outs if o["error"] is None]
-    assert len(ok) >= 18, f"สำเร็จเพียง {len(ok)}/20"
+    errors = sorted({o["error"] for o in outs if o["error"] is not None})
+    assert len(ok) == 20, f"สำเร็จเพียง {len(ok)}/20 · error {errors}"
     scores = {o["sequence"]["raw_score"] for o in ok}
     tops = {
         o["diagnostic_factors"][0]["feature"] for o in ok if o["diagnostic_factors"]
@@ -294,6 +306,27 @@ async def test_concurrent_requests_agree(seeded):
     assert len(scores) == 1, f"คะแนนไม่ตรงกัน: {scores}"
     assert len(tops) <= 1, f"คำอธิบายไม่ตรงกัน: {tops}"
     print(f"\n  concurrency 20 -> สำเร็จ {len(ok)} · คะแนนเดียว {scores}")
+
+
+@pytest.mark.performance
+@pytest.mark.asyncio
+async def test_concurrent_burst_mostly_within_timeout(seeded):
+    """Performance Gate — login พร้อมกัน 20 ครั้ง ต้องไม่ทำให้ L3 timeout เกิน 10%.
+
+    ใช้ timeout จริงของ login · ถ้าล้ม L3 จะ abstain แบบ fail-safe เงียบ ๆ ในช่วง
+    ที่มีคนเข้าพร้อมกัน (ตระกูล B61) ซึ่งต้องแก้ก่อนเปิด pilot (ขั้นที่ 13)
+    วัดเมื่อ 17 ก.ย. 2569: p50 ราว 530–630 ms · timeout 0–14 จาก 20
+    """
+    await _ok([0.1] * L3.DIMS)
+    resid = _spike(8, 30, 3)
+    t0 = time.perf_counter()
+    outs = await asyncio.gather(
+        *[evaluate_l3(USER, _features(), resid, "allow") for _ in range(20)]
+    )
+    elapsed = (time.perf_counter() - t0) * 1000
+    ok = [o for o in outs if o["error"] is None]
+    print(f"\n  burst 20 -> สำเร็จ {len(ok)}/20 ใน {elapsed:.0f} ms")
+    assert len(ok) >= 18, f"สำเร็จเพียง {len(ok)}/20 ภายใน timeout ของ login"
 
 
 @pytest.mark.asyncio

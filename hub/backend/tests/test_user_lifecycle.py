@@ -22,7 +22,9 @@ import uuid
 import pytest
 
 from app.deps import _status_block_message
-from app.models import AccessList, LoginSession, Subsystem
+from sqlalchemy import or_
+
+from app.models import AccessList, AuditLog, LoginSession, Subsystem, User
 from app.routers.users import _CASCADE_STATUSES, _VALID_STATUS
 from app.services import stepup_cache
 from app.services.jwt_service import create_access_token
@@ -36,12 +38,29 @@ def _admin_token_with_stepup(admin_user) -> str:
 
 
 @pytest.fixture
-def target_with_access(db, student_user):
-    """student_user + subsystem + active AccessList + active LoginSession (jti).
+def target_with_access(db):
+    """นักศึกษา **ชั่วคราว** + subsystem + active AccessList + active LoginSession (jti).
 
-    Teardown: ลบ subsystem/access/session ที่สร้างไว้ทดสอบ + คืน status เดิม
-    (กัน pollute live dev DB ตาม convention).
+    เดิม fixture นี้ใช้ `student_user` ซึ่งเป็นผู้ใช้ seed แล้วคืนสถานะตอน teardown ด้วย
+    `student_user.status = original_status` — แต่สถานะถูกเปลี่ยนผ่าน API ใน session อื่น
+    object ใน session ของ fixture จึงยังจำค่าเดิมเป็น `active` SQLAlchemy มองว่าไม่มีอะไร
+    เปลี่ยนและไม่สั่ง UPDATE ผลคือนักศึกษา seed ค้างสถานะ graduated/resigned ถาวรรอบละ
+    หลายคน จนไม่เหลือ student ที่ active และเทสที่ต้องใช้ถูก skip ทั้งหมด
+
+    รอบนี้จึงสร้างผู้ใช้ของตัวเองและลบทิ้งท้ายเทส — ไม่แตะข้อมูล seed อีก
     """
+    user = User(
+        email=f"lifecycle_{uuid.uuid4().hex[:8]}@uni.ac.th",
+        google_sub=f"gsub_lifecycle_{uuid.uuid4().hex[:8]}",
+        full_name="Lifecycle Target",
+        user_type="student",
+        status="active",
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    student_user = user
+
     sub = Subsystem(
         name=f"lifecycle-test-{uuid.uuid4().hex[:6]}",
         client_id=f"cli_{uuid.uuid4().hex[:8]}",
@@ -73,14 +92,22 @@ def target_with_access(db, student_user):
     db.refresh(access)
     db.refresh(sess)
 
-    original_status = student_user.status
-
     yield student_user, sub, access, sess
 
-    db.query(LoginSession).filter(LoginSession.id == sess.id).delete()
-    db.query(AccessList).filter(AccessList.id == access.id).delete()
-    db.query(Subsystem).filter(Subsystem.id == sub.id).delete()
-    student_user.status = original_status
+    # cleanup ต้องทนต่อ transaction ที่ค้างจากเทสที่ fail และลบผู้ใช้ชั่วคราวให้หมด
+    db.rollback()
+    uid = student_user.id
+    db.query(LoginSession).filter(LoginSession.user_id == uid).delete(
+        synchronize_session=False
+    )
+    db.query(AccessList).filter(AccessList.user_id == uid).delete(
+        synchronize_session=False
+    )
+    db.query(Subsystem).filter(Subsystem.id == sub.id).delete(synchronize_session=False)
+    db.query(AuditLog).filter(
+        or_(AuditLog.actor_id == uid, AuditLog.target_id == uid)
+    ).delete(synchronize_session=False)
+    db.query(User).filter(User.id == uid).delete(synchronize_session=False)
     db.commit()
 
 
