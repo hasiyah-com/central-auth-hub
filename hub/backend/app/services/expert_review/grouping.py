@@ -53,6 +53,53 @@ def is_alert(decision: str | None) -> bool:
     return bool(decision) and decision.startswith("would_")
 
 
+# เหตุที่เหตุการณ์ถูกส่งเข้า Expert Review (ขั้นที่ 10 ของแผน Hybrid Shadow)
+REASON_ACTUAL = "actual_alert"  # การตัดสินจริงเป็น would_*
+REASON_L3_CHANGED = "l3_changed_shadow"  # hybrid_shadow != baseline_shadow
+REASON_L3_INVESTIGATE = "l3_investigate"  # แกนเฝ้าระวังของ L3 ขอให้ดู
+
+
+def _l3_monitoring(breakdown) -> str | None:
+    if not isinstance(breakdown, dict):
+        return None
+    l3 = breakdown.get("l3")
+    return l3.get("monitoring_decision") if isinstance(l3, dict) else None
+
+
+def selection_reasons(s) -> set[str]:
+    """ทุกเหตุที่ทำให้ login นี้ควรถึงผู้เชี่ยวชาญ — ว่าง = ไม่ต้องส่ง.
+
+    ในโหมด `shadow_hybrid` การตัดสินจริงยังเป็น L1+L2 ถ้าดูแค่ `decision`
+    เหตุการณ์ที่ L3 เท่านั้นเห็นจะไม่มีวันถึงผู้ตรวจ แล้วตอบไม่ได้ว่า L3 ช่วยจริงไหม
+    """
+    out: set[str] = set()
+    if is_alert(getattr(s, "decision", None)):
+        out.add(REASON_ACTUAL)
+    if getattr(s, "l3_changed_shadow_decision", None) is True:
+        out.add(REASON_L3_CHANGED)
+    if _l3_monitoring(getattr(s, "risk_breakdown", None)) == REASON_L3_INVESTIGATE:
+        out.add(REASON_L3_INVESTIGATE)
+    return out
+
+
+def is_candidate(s) -> bool:
+    return bool(selection_reasons(s))
+
+
+def signal_for(s) -> str:
+    """alert จริงใช้ signal เดิมของ L1/L2 · เหตุการณ์ที่ L3 เท่านั้นเห็นได้ signal ของตัวเอง.
+
+    แยกกันเพื่อไม่ให้เหตุการณ์ของ L3 ไปปนกลุ่มกับ alert จริง ซึ่งจะทำให้ผู้ตรวจ
+    ติดป้ายสองเรื่องที่ต่างกันเป็นกลุ่มเดียว
+    """
+    reasons = selection_reasons(s)
+    if REASON_ACTUAL in reasons or not reasons:
+        return primary_signal(s.risk_breakdown, s.risk_reasons)
+    if REASON_L3_CHANGED in reasons:
+        return f"anomaly:{REASON_L3_CHANGED}"
+    return f"anomaly:{REASON_L3_INVESTIGATE}"
+
+
 def in_double_review_pool(key: str) -> bool:
     """สุ่มแบบ deterministic จาก group_key — ผู้ตรวจเลือกเองไม่ได้ ทำซ้ำได้."""
     bucket = int(hashlib.sha256(key.encode("utf-8")).hexdigest()[:8], 16) % 100
@@ -75,9 +122,9 @@ def build_groups(sessions) -> list[GroupDraft]:
     buckets: dict[str, list] = defaultdict(list)
     meta: dict[str, tuple] = {}
     for s in sessions:
-        if not is_alert(s.decision):
+        if not is_candidate(s):
             continue
-        sig = primary_signal(s.risk_breakdown, s.risk_reasons)
+        sig = signal_for(s)
         w = window_start(s.created_at)
         key = group_key(s.user_id, sig, w)
         buckets[key].append(s)

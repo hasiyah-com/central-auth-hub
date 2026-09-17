@@ -40,13 +40,6 @@ from app.services.expert_review import sync as SY
 from app.services.jwt_service import create_access_token
 
 PREFIX = "/admin/expert-review"
-NO_EPOCH = {
-    "shadow_epoch_id": None,
-    "risk_config_id": None,
-    "calibration_version": None,
-    "calibration_sha256": None,
-    "scoring_commit": None,
-}
 
 
 # ─────────────────────────────────────────────────────────────
@@ -160,7 +153,6 @@ def _sync(world):
         world["db"],
         now=world["now"],
         since=world["now"] - timedelta(hours=24),
-        epoch=NO_EPOCH,
         user_id=world["subject"].id,
     )
 

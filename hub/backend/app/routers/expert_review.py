@@ -98,10 +98,10 @@ def sync_groups(
     db: Session = Depends(get_db),
 ):
     now = datetime.utcnow()
+    # ที่มาของคอนฟิกของแต่ละกลุ่มอ่านจากแถว login เอง ค่านี้คืนไว้ให้ดูว่าตอนนี้
+    # ระบบรันคอนฟิกอะไร เท่านั้น — ไม่ถูกเขียนลงกลุ่ม
     epoch = _epoch()
-    out = SY.sync_alert_groups(
-        db, now=now, since=now - timedelta(hours=since_hours), epoch=epoch
-    )
+    out = SY.sync_alert_groups(db, now=now, since=now - timedelta(hours=since_hours))
     log_action(
         db,
         actor_id=admin.id,
@@ -111,7 +111,7 @@ def sync_groups(
         metadata={**out, "since_hours": since_hours},
     )
     db.commit()
-    return {**out, "epoch": epoch}
+    return {**out, "current_epoch": epoch}
 
 
 @router.get("/queue/next")

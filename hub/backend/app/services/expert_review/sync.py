@@ -1,6 +1,9 @@
 """สร้าง alert group + system disposition จาก shadow decision.
 
-* อ่านเฉพาะ login ที่ `decision` เป็น `would_*`
+* อ่าน login ที่ `decision` เป็น `would_*` **หรือ** L3 ทำให้ผลจำลองเปลี่ยน **หรือ**
+  L3 ขอให้ตรวจ (`l3_investigate`) — ขั้นที่ 10 ของแผน Hybrid Shadow
+* ที่มาของคอนฟิกของกลุ่มอ่านจาก **แถวของ login** ไม่ใช่ settings ตอน sync · ถ้าแถว
+  ในกลุ่มคอนฟิกไม่ตรงกัน ฟิลด์นั้นเป็น None (พิสูจน์ที่มาไม่ได้) — B66
 * สร้างเฉพาะกลุ่มของหน้าต่างที่ **ปิดแล้ว** — เนื้อหาของกลุ่มจึงไม่เปลี่ยนหลังผู้ตรวจเริ่มดู
 * `since` ถูกปัดลงต้นหน้าต่าง กันกลุ่มถูกสร้างจากหน้าต่างที่ขาดครึ่ง
 * idempotent — group_key ที่มีแล้วข้าม
@@ -14,6 +17,7 @@ from __future__ import annotations
 from collections import Counter
 from datetime import datetime, timedelta
 
+from sqlalchemy import Text, cast, or_
 from sqlalchemy.orm import Session
 
 from app.models import ExpertAlertGroup, LoginSession, SystemDisposition
@@ -46,6 +50,7 @@ def _num(x):
 
 def _model_row(s: LoginSession) -> dict:
     bd = s.risk_breakdown if isinstance(s.risk_breakdown, dict) else {}
+    l3 = bd.get("l3") if isinstance(bd.get("l3"), dict) else {}
     return {
         "session_id": str(s.id),
         "created_at": s.created_at.isoformat(),
@@ -55,7 +60,30 @@ def _model_row(s: LoginSession) -> dict:
         "primary_layer": bd.get("primary_layer"),
         "final_risk_score": bd.get("final_risk_score"),
         "reasons": list(s.risk_reasons or []),
+        # ผลจำลอง — ผู้ตรวจเห็นได้เฉพาะรอบ unblinded (blind_payload ไม่อ่านส่วนนี้)
+        "selected_because": sorted(G.selection_reasons(s)),
+        "baseline_shadow_decision": s.baseline_shadow_decision,
+        "baseline_shadow_score": _num(s.baseline_shadow_score),
+        "hybrid_shadow_decision": s.hybrid_shadow_decision,
+        "hybrid_shadow_score": _num(s.hybrid_shadow_score),
+        "l3_changed_shadow_decision": s.l3_changed_shadow_decision,
+        "l3_monitoring_decision": l3.get("monitoring_decision"),
+        "l3_eligibility": s.l3_eligibility,
+        "shadow_epoch_id": s.shadow_epoch_id,
     }
+
+
+def group_epoch(rows) -> dict:
+    """ที่มาของคอนฟิกของกลุ่ม = ค่าที่ทุกแถวตรงกัน · ไม่ตรงกันหรือว่าง = None.
+
+    ไม่เติมจาก settings ตอน sync — แถวที่เกิดก่อนมีการบันทึกที่มา (NULL) ต้องคง
+    NULL ไว้ ไม่ใช่ถูกติดป้ายด้วยคอนฟิกที่รันอยู่ตอนนี้
+    """
+    out = {}
+    for field in EPOCH_FIELDS:
+        values = {getattr(r, field, None) for r in rows}
+        out[field] = values.pop() if len(values) == 1 else None
+    return out
 
 
 def sync_alert_groups(
@@ -63,18 +91,24 @@ def sync_alert_groups(
     *,
     now: datetime,
     since: datetime,
-    epoch: dict,
     user_id=None,
 ) -> dict:
-    epoch = {k: epoch.get(k) for k in EPOCH_FIELDS}
     q = db.query(LoginSession).filter(
         LoginSession.created_at >= G.window_start(since),
         LoginSession.created_at <= now,
-        LoginSession.decision.like("would%"),
+        or_(
+            LoginSession.decision.like("would%"),
+            LoginSession.l3_changed_shadow_decision.is_(True),
+            # risk_breakdown เป็น JSON (ไม่ใช่ JSONB) — คัดหยาบด้วยข้อความก่อน
+            # แล้วตัดสินจริงด้วย G.is_candidate ด้านล่าง
+            cast(LoginSession.risk_breakdown, Text).like(
+                f"%{G.REASON_L3_INVESTIGATE}%"
+            ),
+        ),
     )
     if user_id is not None:
         q = q.filter(LoginSession.user_id == user_id)
-    sessions = [s for s in q.all() if G.is_alert(s.decision)]
+    sessions = [s for s in q.all() if G.is_candidate(s)]
 
     width = timedelta(minutes=G.WINDOW_MINUTES)
     closed = [s for s in sessions if G.window_start(s.created_at) + width <= now]
@@ -98,6 +132,7 @@ def sync_alert_groups(
             skipped += 1
             continue
         rows = [by_id[i] for i in d.session_ids]
+        epoch = group_epoch(rows)
         prov = group_provenance(
             {PV.classify(str(s.ip) if s.ip else None, s.user_agent) for s in rows}
         )
