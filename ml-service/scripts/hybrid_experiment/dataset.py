@@ -200,6 +200,14 @@ class ECDF:
             out[layer] = [round(v, 6) for v in q[::step]]
         return out
 
+    def raw_samples(self, layer: str) -> list[float]:
+        """คะแนนดิบทั้งหมดของชั้นนี้ (เรียงแล้ว) — ใช้ส่งออกเป็นตาราง production.
+
+        `to_artifact()` ย่อเหลือ 512 จุดเพื่อให้ไฟล์รายงานไม่ใหญ่ ซึ่งหยาบเกินไป
+        สำหรับตารางที่ใช้ตัดสินจริง · ตัวสร้าง calibration จึงต้องอ่านของเต็มจากที่นี่
+        """
+        return list(self._q.get(layer) or ())
+
     @property
     def layers(self) -> list[str]:
         return sorted(self._q)
