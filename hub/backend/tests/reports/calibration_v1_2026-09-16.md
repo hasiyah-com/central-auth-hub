@@ -314,9 +314,7 @@ restart ล้ม 2 ใน 3 เพราะความจุของ ml-servi
 
 ### บั๊กที่เจอ: hash ขึ้นกับระบบที่สร้าง
 
-`write_artifact` ใช้ `write_text` ซึ่งบน Windows แปลง `
-` เป็น `
-` ไฟล์รอบ 3 จึงมี CRLF ทั้งไฟล์
+`write_artifact` ใช้ `write_text` ซึ่งบน Windows แปลง `\n` เป็น `\r\n` ไฟล์รอบ 3 จึงมี CRLF ทั้งไฟล์
 และ sha256 `1e9038c3…` ที่บันทึกไว้เป็นของเวอร์ชันนั้น · สร้างซ้ำบน Linux จะได้ hash คนละค่า
 
 * แก้ `write_artifact` ให้เขียน bytes ที่ใช้ LF เสมอ (เทส `test_written_artifact_uses_lf_on_every_platform` ล้มบน Windows ก่อนแก้)
