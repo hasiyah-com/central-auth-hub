@@ -167,3 +167,12 @@ hub/backend/tests/reports/*.docx
 scripts/pii/replacements.txt
 scripts/pii/mailmap.txt
 scripts/pii/*.docx
+
+# ไฟล์บีบอัด — อาจมี private key หรือ .env ซ่อนอยู่ (hub/backend.zip เคยมี key จริง 17 ก.ย. 2569)
+# pre-commit มี block-archives กันซ้ำอีกชั้น
+*.zip
+*.rar
+*.7z
+*.tar
+*.tgz
+*.tar.gz

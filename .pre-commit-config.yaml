@@ -48,6 +48,13 @@ repos:
         pass_filenames: true
         always_run: false
 
+      - id: block-archives
+        name: Block archives and key containers (zip/rar/7z/tar/p12/pfx/key)
+        entry: python scripts/hooks/block_archives.py
+        language: system
+        pass_filenames: true
+        always_run: false
+
       - id: block-real-pii
         name: Block real user PII (emails of real people)
         entry: python scripts/hooks/check_pii.py
