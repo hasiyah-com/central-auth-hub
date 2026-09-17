@@ -10,7 +10,7 @@
 | ชุดเทสเต็ม | ก่อนงานส่วน §9: 1251 passed · 0 failed · หลัง §9: 1272 passed · 1 failed (freeze ก่อน re-freeze) · รอบยืนยันหลัง re-freeze: 1 failed (`test_concurrent_requests_agree` — ไม่เกี่ยวกับงานนี้ ดู §11) · หลังแยกเกต: **Functional Gate 1275 passed · 23 skipped · 3 deselected · 0 failed** · ไม่มี state รั่ว |
 | artifact บนประชากร P48-T2 | **สร้างแล้ว ผ่าน validate** — ยังอยู่ใน scratchpad |
 | อัตรายิงบนชุดตรวจที่ไม่ได้ใช้สร้าง | **อยู่ในงบทั้งสามระดับ** |
-| นำไฟล์เข้า `app/security/` | **ยังไม่ทำ** — รอการตัดสินใจ |
+| นำไฟล์เข้า repo | **เสร็จ** — `app/security/artifacts/calibration_v1.json` + `.meta.json` (§12) · ไม่โหลดเอง |
 | sha256 + fail-closed ใน `calibration.py` | **เสร็จ** — re-freeze แล้ว (§9) |
 | holdout P48-T2 (16 โปรไฟล์) | **ไม่ถูกแตะ** |
 
@@ -104,7 +104,8 @@ production เทียบด้วย `>=` (`risk_fusion._action_for`) แต�
 **P48-T2 · 32 โปรไฟล์ validation · fit seed 511-518 · ตรวจ seed 519-520 · size 5000 · γ 1.0**
 
 ```
-sha256   1e9038c3edfe5bed3311f46c97d67ebbe011bbfeeab8c9a710e917dfa1c5a4f0   (รอบ 3 — เพิ่ม fusion.gamma)
+sha256   e093b3ac25a46094e31b1304fe02e13c1e4f8c4cf12e9bfcffc20d9bbc944fbc   (LF · เก็บใน repo)
+         1e9038c3edfe5bed3311f46c97d67ebbe011bbfeeab8c9a710e917dfa1c5a4f0   (ไฟล์ตามที่สร้างบน Windows มี CRLF)
 ขนาด     ราว 1.9 MB
 ตัวอย่าง 128,000 เหตุการณ์ต่อชั้น -> กริด 20,000 จุด
 ```
@@ -298,3 +299,28 @@ Functional Gate ชุดเต็ม               1275 passed · 23 skipped ·
 **Performance Gate ยังไม่ควรใช้ตัดสินเปิด pilot** — ผ่าน 5/5 ตอนเครื่องอุ่น แต่หลัง Docker
 restart ล้ม 2 ใน 3 เพราะความจุของ ml-service อยู่ใกล้เส้น timeout ต้องแก้ความจุก่อน
 (เพิ่ม worker หรือเปลี่ยนรูปแบบการประมวลผล — ยังไม่ได้วัด)
+
+---
+
+## 12. เก็บตารางเข้า repo (17 ก.ย. 2569)
+
+| ไฟล์ | หน้าที่ |
+|---|---|
+| `hub/backend/app/security/artifacts/calibration_v1.json` | ตารางที่ใช้จริง (1.9 MB) |
+| `hub/backend/app/security/artifacts/calibration_v1.meta.json` | version, sha256, gamma, เกณฑ์, ประชากร, seed, commit ของตัวสร้าง, `synthetic_only` |
+| `hub/backend/tests/test_calibration_artifact.py` | ไฟล์กับ metadata ตรงกัน · ผ่าน `validate_startup` และ `validate_artifact` · ไม่มีข้อมูลระบุตัว · ไม่มี CR |
+
+ระบบยังไม่โหลดไฟล์นี้เอง — ต้องตั้ง `CALIBRATION_PATH`, `CALIBRATION_SHA256` และเกณฑ์/gamma ให้ตรง
+
+### บั๊กที่เจอ: hash ขึ้นกับระบบที่สร้าง
+
+`write_artifact` ใช้ `write_text` ซึ่งบน Windows แปลง `
+` เป็น `
+` ไฟล์รอบ 3 จึงมี CRLF ทั้งไฟล์
+และ sha256 `1e9038c3…` ที่บันทึกไว้เป็นของเวอร์ชันนั้น · สร้างซ้ำบน Linux จะได้ hash คนละค่า
+
+* แก้ `write_artifact` ให้เขียน bytes ที่ใช้ LF เสมอ (เทส `test_written_artifact_uses_lf_on_every_platform` ล้มบน Windows ก่อนแก้)
+* แปลงไฟล์ที่มีอยู่เป็น LF โดย **ไม่สร้างใหม่** (ไม่เปิด seed เป็นครั้งที่ 4) — ตรวจแล้วว่า JSON เท่าเดิมทุกค่า
+* sha256 ใหม่ `e093b3ac25a46094e31b1304fe02e13c1e4f8c4cf12e9bfcffc20d9bbc944fbc` · บันทึกทั้งสองค่าไว้ใน metadata และ ledger
+* `.gitattributes` ตั้ง `hub/backend/app/security/artifacts/** -text` กัน `core.autocrlf=true` แปลงกลับตอน checkout
+* pre-commit ยกเว้นโฟลเดอร์นี้จาก `check-added-large-files` (500 KB) และ `detect-secrets` (sha256 ใน metadata)

@@ -1,0 +1,108 @@
+{
+  "generated_at": "2026-09-17T05:11:03+00:00",
+  "commit": "9f387f7c7a6dccbb3301876a3f7d5b77ed5cdf4b",
+  "scoring_fingerprint": "2829be852767cbc8ad6f2d39e5573bb82e68b281e485bafd469fbf5d9bb5414f",
+  "source": "ml-service/data/hybrid_experiment/holdout_ledger.json (gitignored)",
+  "sanitized_fields": 0,
+  "entries": {
+    "101,102,103,104,105": {
+      "seeds": [
+        101,
+        102,
+        103,
+        104,
+        105
+      ],
+      "open_count": ">1 (ประมาณ — เปิดหลายครั้งระหว่าง optimize bootstrap · ดู hybrid_risk_round2_2026-09-04.md §5)",
+      "first_opened_at": "2026-09-04T00:00:00+0700",
+      "last_opened_at": "2026-09-04T01:55:00+0700",
+      "frozen_commit": "fc9353fbad3b",
+      "reopened": true,
+      "note": "Round 2 final · candidate B failed gate (warn 5.26%) · holdout ถือว่าใช้แล้ว ห้ามใช้เป็น clean final อีก",
+      "purpose": "final_gate"
+    },
+    "106,107,108,109,110": {
+      "seeds": [
+        106,
+        107,
+        108,
+        109,
+        110
+      ],
+      "open_count": 1,
+      "first_opened_at": "2026-09-05T02:07:18+0700",
+      "last_opened_at": "2026-09-05T02:07:18+0700",
+      "frozen_commit": "8e6dc3f6d142d06429e36433037127171f3815e3",
+      "purpose": "final_gate"
+    },
+    "111,112,113,114,115": {
+      "seeds": [
+        111,
+        112,
+        113,
+        114,
+        115
+      ],
+      "open_count": 1,
+      "first_opened_at": "2026-09-05T15:35:44+0700",
+      "last_opened_at": "2026-09-05T15:35:44+0700",
+      "frozen_commit": "950288be044c4f9f9b2bf22164556559aaeab843",
+      "purpose": "final_gate"
+    },
+    "501,502,503": {
+      "seeds": [
+        501,
+        502,
+        503
+      ],
+      "purpose": "calibration",
+      "open_count": 1,
+      "first_opened_at": "2026-09-15T14:58:43+00:00",
+      "last_opened_at": "2026-09-15T14:58:43+00:00",
+      "population": "l12",
+      "note": "hybrid-shadow-calibration-v1-synthetic · sha256 7f74d1c8cf72",
+      "correction": "2026-09-16: รอบนี้รันบนประชากร 12 โปรไฟล์เดิมโดยไม่ตั้งใจ (build_seed ไม่ได้รับ spec) ไม่ใช่ P48-T2 · artifact sha256 7f74d1c8cf72 ห้ามนำไปใช้ · holdout P48-T2 ไม่ถูกแตะ",
+      "invalidated_runs": [
+        {
+          "open": 1,
+          "artifact_sha256_prefix": "7f74d1c8cf72",
+          "reason": "รันบนประชากร 12 โปรไฟล์โดยไม่ตั้งใจ (build_seed ไม่ได้รับ spec) — B72"
+        }
+      ]
+    },
+    "511,512,513,514,515,516,517,518,519,520": {
+      "seeds": [
+        511,
+        512,
+        513,
+        514,
+        515,
+        516,
+        517,
+        518,
+        519,
+        520
+      ],
+      "purpose": "calibration",
+      "open_count": 3,
+      "first_opened_at": "2026-09-15T15:25:32+00:00",
+      "last_opened_at": "2026-09-16T08:56:39+00:00",
+      "population": "p48t2",
+      "note": "hybrid-shadow-calibration-v1-synthetic · sha256 1e9038c3edfe",
+      "history": "open 1: sha256 9171b350c816 (เกณฑ์ nearest-rank ยิงเกินงบ ไม่ใช้) · open 2: sha256 6e0e0fb67226 (เกณฑ์ตามงบ >=) · open 3: sha256 1e9038c3edfe (เพิ่มฟิลด์ fusion.gamma เกณฑ์และอัตรายิงเท่ารอบ 2 ทุกตัว) · 17 ก.ย. 2569: ไฟล์ open 3 มี CRLF เพราะเขียนบน Windows แปลงเป็น LF แล้ว sha256 e093b3ac25a4 (เนื้อหาเท่าเดิม ไม่ได้สร้างใหม่) เก็บที่ hub/backend/app/security/artifacts/calibration_v1.json",
+      "artifact_sha256": "e093b3ac25a46094e31b1304fe02e13c1e4f8c4cf12e9bfcffc20d9bbc944fbc",
+      "invalidated_runs": [
+        {
+          "open": 1,
+          "artifact_sha256_prefix": "9171b350c816",
+          "reason": "เกณฑ์ nearest-rank ทำให้ยิงเกินงบเมื่อคะแนนมีค่าซ้ำ — B73"
+        },
+        {
+          "open": 2,
+          "artifact_sha256_prefix": "6e0e0fb67226",
+          "reason": "ไม่มีฟิลด์ fusion.gamma ที่ validate_startup ต้องใช้ตรวจ"
+        }
+      ]
+    }
+  }
+}

@@ -406,12 +406,14 @@ def validate_artifact(artifact: dict, min_samples: int = 1000) -> list[str]:
 
 
 def write_artifact(path, artifact: dict) -> Path:
-    """เขียนแบบกำหนดผลแน่นอน เพื่อให้ sha256 ซ้ำได้จากเนื้อเดียวกัน."""
+    """เขียนแบบกำหนดผลแน่นอน เพื่อให้ sha256 ซ้ำได้จากเนื้อเดียวกันบนทุกระบบ.
+
+    เขียนเป็น bytes ไม่ใช่ `write_text` — บน Windows `write_text` แปลง \\n เป็น \\r\\n
+    ทำให้ hash ขึ้นกับระบบที่สร้าง (เจอจริงกับตาราง v1 เมื่อ 17 ก.ย. 2569)
+    """
     p = Path(path)
-    p.write_text(
-        json.dumps(artifact, ensure_ascii=False, indent=2, sort_keys=False) + "\n",
-        encoding="utf-8",
-    )
+    text = json.dumps(artifact, ensure_ascii=False, indent=2, sort_keys=False) + "\n"
+    p.write_bytes(text.encode("utf-8"))
     return p
 
 

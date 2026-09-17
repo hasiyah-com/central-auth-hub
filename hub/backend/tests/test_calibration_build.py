@@ -386,3 +386,16 @@ def test_exceedance_matches_tailcal_on_host():
         assert math.isclose(
             mine[key], theirs[key]["observed_exceedance"], abs_tol=1e-6
         ), key
+
+
+def test_written_artifact_uses_lf_on_every_platform(tmp_path):
+    """sha256 ต้องไม่ขึ้นกับระบบที่สร้าง — `write_text` บน Windows แปลง \n เป็น \r\n.
+
+    เจอจริง 17 ก.ย. 2569: ตาราง v1 ที่สร้างบน Windows มี CRLF ทั้งไฟล์ hash ที่บันทึกไว้
+    จึงเป็นของเวอร์ชัน CRLF และสร้างซ้ำบน Linux จะได้ hash คนละค่า
+    """
+    path = tmp_path / "calibration_v1.json"
+    CORE.write_artifact(path, _good_artifact())
+    blob = path.read_bytes()
+    assert b"\r" not in blob
+    assert blob.endswith(b"\n")
