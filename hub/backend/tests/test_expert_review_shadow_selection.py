@@ -261,3 +261,26 @@ def test_sync_is_still_idempotent(shadow_world):
     assert first["created"] == 1
     assert second["created"] == 0
     assert second["skipped_existing"] == 1
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 3. contract ของ POST /groups/sync
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+def test_sync_response_keeps_deprecated_epoch_alias(client, admin_token, auth_headers):
+    """`epoch` เปลี่ยนชื่อเป็น `current_epoch` — คงชื่อเดิมไว้หนึ่ง release ให้ client ภายนอก.
+
+    ค่าทั้งสองต้องเท่ากัน และต้องบอกชัดว่าเลิกใช้แล้ว · ค่านี้เป็นคอนฟิกที่รันอยู่
+    ตอนนี้ **ไม่ใช่** ที่มาของกลุ่ม (ที่มาของกลุ่มอ่านจากแถว login)
+    """
+    r = client.post(
+        "/admin/expert-review/groups/sync?since_hours=1",
+        headers=auth_headers(admin_token),
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert set(body) >= {"created", "skipped_existing", "skipped_open_window"}
+    assert "current_epoch" in body
+    assert body["epoch"] == body["current_epoch"]
+    assert "epoch" in body["deprecated"]

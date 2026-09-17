@@ -111,7 +111,13 @@ def sync_groups(
         metadata={**out, "since_hours": since_hours},
     )
     db.commit()
-    return {**out, "current_epoch": epoch}
+    return {
+        **out,
+        "current_epoch": epoch,
+        # ชื่อเดิม — คงไว้หนึ่ง release ให้ client ภายนอกที่อาจพึ่งอยู่ แล้วค่อยลบ
+        "epoch": epoch,
+        "deprecated": {"epoch": "ใช้ current_epoch แทน · จะถูกลบใน release ถัดไป"},
+    }
 
 
 @router.get("/queue/next")
