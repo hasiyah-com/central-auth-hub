@@ -23,20 +23,33 @@ L3 เป็นค่า `-score_samples()` ของ IsolationForest ซึ่�
 
 **ไม่มีตาราง = ต้องรู้ตัว (B61):** ถ้าโหลดไฟล์ไม่ได้ ระบบจะไม่แอบใช้ค่าดิบแทนเงียบๆ
 แต่จะตั้ง `calibrated=False` ติดไปกับหลักฐาน และ L4 บันทึกไว้ใน breakdown
+
+**การเปิดใช้ตารางต้องประกาศชัด:** โหลดเฉพาะไฟล์ที่ตั้งไว้ใน `CALIBRATION_PATH`
+ไม่ใช่ไฟล์ที่บังเอิญวางอยู่ข้าง ๆ — ตารางเปลี่ยนสเกลของหลักฐานทุกชั้น ถ้าเปิดใช้
+โดยที่เกณฑ์ยังเป็นชุดเก่า การตัดสินจริงเกือบทุกครั้งจะกลายเป็น block · ตอน start
+`validate_startup()` จึงบังคับให้ sha256, version, gamma และเกณฑ์ตรงกับตารางเสมอ
 """
 
 from __future__ import annotations
 
 import bisect
+import hashlib
 import json
 import logging
 from dataclasses import dataclass
 from pathlib import Path
 
+from app.config import settings
+
 logger = logging.getLogger(__name__)
 
-CALIBRATION_FILE = Path(__file__).with_name("calibration_v1.json")
+# None = ไม่ได้ประกาศใช้ตาราง · เทสและการทดลองชี้ไฟล์เองโดยตั้งค่านี้ตรง ๆ
+CALIBRATION_FILE: Path | None = (
+    Path(settings.calibration_path) if settings.calibration_path else None
+)
 LAYERS = ("rule", "behavior", "anomaly_point", "anomaly_sequence")
+# ความคลาดที่ยอมได้ตอนเทียบเกณฑ์ใน env กับเกณฑ์ในตาราง (เลขทศนิยมจาก JSON)
+_THRESHOLD_TOL = 1e-9
 
 
 @dataclass(frozen=True)
@@ -52,31 +65,65 @@ class _Table:
     def __init__(self) -> None:
         self.version: str = "uncalibrated"
         self.quantiles: dict[str, list[float]] = {}
+        self.state: str = "not_loaded"
+        self.sha256: str | None = None
+        self.path: Path | None = None
         self._loaded = False
 
     def load(self) -> None:
+        """โหลดตาราง · สถานะที่เป็นไปได้
+
+        not_configured  ไม่ได้ประกาศใช้ตาราง (พฤติกรรมเดิม — หลักฐานยังไม่ calibrate)
+        missing         ประกาศไว้แต่ไม่พบไฟล์
+        sha_mismatch    ไฟล์ไม่ตรงกับ `CALIBRATION_SHA256` — **ไม่ใช้ตาราง**
+        unverified      โหลดแล้วแต่ไม่มี hash ให้เทียบ (เทส/การทดลองที่ชี้ไฟล์เอง)
+        ok              โหลดแล้วและ hash ตรง
+        error           อ่านไม่ได้
+        """
         if self._loaded:
             return
         self._loaded = True
+        self.path = CALIBRATION_FILE
+        if CALIBRATION_FILE is None:
+            self.state = "not_configured"
+            return
         try:
-            raw = json.loads(CALIBRATION_FILE.read_text(encoding="utf-8"))
+            blob = Path(CALIBRATION_FILE).read_bytes()
+        except FileNotFoundError:
+            self.state = "missing"
+            logger.warning(
+                "[calibration] ไม่พบ %s — หลักฐานจะถูกทำเครื่องหมาย calibrated=False",
+                CALIBRATION_FILE,
+            )
+            return
+        self.sha256 = hashlib.sha256(blob).hexdigest()
+        expected = getattr(settings, "calibration_sha256", None)
+        if expected and expected.lower() != self.sha256:
+            self.state = "sha_mismatch"
+            logger.error(
+                "[calibration] sha256 ไม่ตรง (คาด %s ได้ %s) — ไม่ใช้ตาราง",
+                expected[:12],
+                self.sha256[:12],
+            )
+            return
+        try:
+            raw = json.loads(blob.decode("utf-8"))
             self.version = str(raw.get("version") or "unknown")
             for layer in LAYERS:
                 vals = raw.get("quantiles", {}).get(layer)
                 if isinstance(vals, list) and len(vals) >= 2:
                     self.quantiles[layer] = sorted(float(v) for v in vals)
+            self.state = "ok" if expected else "unverified"
             if self.quantiles:
                 logger.info(
-                    "[calibration] loaded %s (%d layers)",
+                    "[calibration] loaded %s (%d layers, %s)",
                     self.version,
                     len(self.quantiles),
+                    self.state,
                 )
-        except FileNotFoundError:
-            logger.warning(
-                "[calibration] ไม่พบ %s — หลักฐานจะถูกทำเครื่องหมาย calibrated=False",
-                CALIBRATION_FILE.name,
-            )
         except Exception as e:  # noqa: BLE001
+            self.state = "error"
+            self.quantiles = {}
             logger.warning("[calibration] โหลดไม่สำเร็จ: %s", e)
 
     def cdf(self, layer: str, raw_score: float) -> Calibrated:
@@ -115,6 +162,88 @@ def calibration_version() -> str:
 def is_calibrated(layer: str) -> bool:
     _TABLE.load()
     return layer in _TABLE.quantiles
+
+
+def status() -> dict:
+    """สถานะของตารางที่ระบบกำลังใช้ — สำหรับ health check และการตรวจย้อน."""
+    _TABLE.load()
+    return {
+        "state": _TABLE.state,
+        "path": str(_TABLE.path) if _TABLE.path else None,
+        "sha256": _TABLE.sha256,
+        "version": _TABLE.version,
+        "layers": sorted(_TABLE.quantiles),
+    }
+
+
+def validate_startup(cfg) -> None:
+    """ปฏิเสธการ start เมื่อตารางกับคอนฟิกไม่ใช่ชุดเดียวกัน — fail closed.
+
+    ตรวจจากไฟล์ที่ `cfg.calibration_path` ชี้ (ไม่ใช่ตารางที่โหลดค้างในหน่วยความจำ)
+    เพื่อให้ผลขึ้นกับคอนฟิกที่ส่งเข้ามาเท่านั้น
+
+    * `shadow_hybrid` ต้องมีตารางเสมอ — ผลจำลองที่ไม่ calibrate เทียบข้ามชั้นไม่ได้
+    * ประกาศ path แล้ว (ทุกโหมด) ต้องมีไฟล์, มี sha256, sha256 ตรง, version ตรง
+    * gamma และเกณฑ์ทั้งสามระดับใน env ต้องตรงกับที่ตารางผลิตมา — หลักฐานที่เป็น
+      เปอร์เซ็นไทล์กับเกณฑ์ชุดเก่า = การตัดสินจริงกลายเป็น block เกือบทุกครั้ง
+    """
+    mode = (getattr(cfg, "l3_mode", "") or "").strip().lower()
+    path_value = getattr(cfg, "calibration_path", None)
+    if not path_value:
+        if mode == "shadow_hybrid":
+            raise RuntimeError(
+                "L3_MODE=shadow_hybrid ต้องมีตาราง calibration — ตั้ง CALIBRATION_PATH "
+                "และ CALIBRATION_SHA256 ก่อน หรือใช้โหมด shadow ไปก่อน"
+            )
+        return
+
+    path = Path(path_value)
+    expected = getattr(cfg, "calibration_sha256", None)
+    if not expected:
+        raise RuntimeError(
+            f"ตั้ง CALIBRATION_PATH={path} แล้วแต่ไม่ได้ตั้ง CALIBRATION_SHA256 — "
+            "ต้องระบุ hash ที่คาดไว้เสมอ"
+        )
+    if not path.exists():
+        raise RuntimeError(f"ไม่พบตาราง calibration ที่ {path}")
+    blob = path.read_bytes()
+    actual = hashlib.sha256(blob).hexdigest()
+    if actual != expected.lower():
+        raise RuntimeError(
+            f"sha256 ของตาราง calibration ไม่ตรง: คาด {expected[:12]} ได้ {actual[:12]}"
+        )
+    art = json.loads(blob.decode("utf-8"))
+
+    want_version = getattr(cfg, "calibration_version", None)
+    if want_version and want_version != art.get("version"):
+        raise RuntimeError(
+            f"calibration version ไม่ตรง: env {want_version} แต่ไฟล์ {art.get('version')}"
+        )
+
+    derived = art.get("derived_thresholds")
+    if not isinstance(derived, dict):
+        raise RuntimeError(
+            "ตาราง calibration ไม่มี derived_thresholds — ตรวจไม่ได้ว่าเกณฑ์ใน env "
+            "มาจากตารางนี้ (สร้างด้วย build_calibration.py)"
+        )
+    wrong = []
+    for level in ("warn", "challenge", "block"):
+        env_value = float(getattr(cfg, f"l4_threshold_{level}"))
+        table_value = derived.get(level)
+        if table_value is None or abs(env_value - float(table_value)) > _THRESHOLD_TOL:
+            wrong.append(f"{level} env={env_value} ตาราง={table_value}")
+    if wrong:
+        raise RuntimeError(
+            "threshold ใน env ไม่ได้มาจากตาราง calibration นี้: " + " · ".join(wrong)
+        )
+
+    fusion = art.get("fusion") or {}
+    if "gamma" not in fusion:
+        raise RuntimeError("ตาราง calibration ไม่ได้บันทึก gamma ที่ใช้สร้างเกณฑ์")
+    if abs(float(cfg.l4_gamma) - float(fusion["gamma"])) > _THRESHOLD_TOL:
+        raise RuntimeError(
+            f"gamma ใน env ({cfg.l4_gamma}) ไม่ตรงกับตาราง ({fusion['gamma']})"
+        )
 
 
 def reload_for_tests() -> None:

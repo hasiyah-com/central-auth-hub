@@ -11,6 +11,7 @@ L1/L2/L3 ไม่มีอำนาจตัดสินการเข้า�
 """
 
 import logging
+from time import perf_counter
 
 from sqlalchemy.orm import Session
 
@@ -26,6 +27,40 @@ from app.security.risk_fusion import fuse, is_surfaced
 from app.security.rule_engine import evaluate_rules
 
 logger = logging.getLogger(__name__)
+
+# ── โหมดของ L3 (ขั้นที่ 3 ของแผน Hybrid Shadow) ──
+#   off            ไม่เรียก L3 เลย
+#   monitor_only   เรียก L3 เก็บ l3_investigate อย่างเดียว ไม่เข้าการรวมคะแนนใด ๆ
+#   shadow         เก็บหลักฐานไว้ดู แต่ไม่รวมคะแนน (พฤติกรรมเดิม)
+#   shadow_hybrid  รวม L3 เข้า L4 **เฉพาะผลจำลอง** — การตัดสินจริงยังเป็น L1+L2
+#   hybrid_stepup  L3 มีผลต่อการตัดสินจริง (ยกได้สูงสุด challenge)
+#
+# ยังไม่มีโหมดที่ให้ L3 block โดยตั้งใจ · โหมดที่ไม่รู้จักต้องได้สิทธิ์ต่ำสุดเสมอ
+L3_MODES = frozenset(
+    {"off", "monitor_only", "shadow", "shadow_hybrid", "hybrid_stepup"}
+)
+# โหมดที่ L3 มีผลต่อ **การตัดสินจริง** — รายชื่อนี้ต้องสั้นที่สุดเท่าที่จะเป็นไปได้
+_L3_COUNTS_IN_ACTUAL = frozenset({"hybrid_stepup"})
+# โหมดที่คำนวณผล hybrid ไว้เปรียบเทียบ (ไม่แตะผู้ใช้)
+_L3_IN_HYBRID_SHADOW = frozenset({"shadow_hybrid", "hybrid_stepup"})
+
+
+def _would(action: str) -> str:
+    """คำของ **ผลจำลอง** ต้องขึ้นต้น would_ ทุกตัวรวมทั้ง allow.
+
+    fuse(shadow_mode=True) เติม would_ เฉพาะ action ที่ไม่ใช่ allow เพราะผลนั้นเป็น
+    การตัดสินจริงของโหมด shadow ซึ่ง "allow" คือสิ่งที่ผู้ใช้ได้รับจริง ๆ
+    แต่ baseline_shadow/hybrid_shadow เป็นผลจำลองล้วน จึงต้องแยกคำให้ขาดจากของจริง
+    ไม่ให้ใครอ่านสองอย่างนี้ปนกัน
+    """
+    return action if action.startswith("would_") else f"would_{action}"
+
+
+def _shadow_result(decision) -> dict:
+    return {
+        "final_risk": decision.total_score,
+        "decision": _would(decision.decision),
+    }
 
 
 async def evaluate_login_risk(
@@ -48,6 +83,8 @@ async def evaluate_login_risk(
 
     Returns dict — คีย์เดิมคงไว้ให้ router ที่มีอยู่ใช้ต่อได้ไม่ต้องแก้
     """
+    started = perf_counter()
+
     # ── 0. Policy Gate — ข้อบังคับ ไม่ใช่การคาดการณ์ ──
     policy = evaluate_policy(features, db, user_id, ip, geo_country)
     if policy.denied:
@@ -59,7 +96,16 @@ async def evaluate_login_risk(
             policy.reasons,
         )
         decision = fuse(policy, [], shadow_mode=shadow_mode)
-        return _result(decision, l3=None, evidences=[])
+        denied = _shadow_result(decision)
+        return _result(
+            decision,
+            l3=None,
+            evidences=[],
+            mode=(settings.l3_mode or "shadow").strip().lower(),
+            baseline=denied,
+            hybrid=denied,
+            latency_total_ms=int((perf_counter() - started) * 1000),
+        )
 
     # ── 1. L1 Rule evidence ──
     rule_result = evaluate_rules(
@@ -75,19 +121,27 @@ async def evaluate_login_risk(
     # ── 3. L3 Anomaly evidence (สองมุมมอง) ──
     mode = (settings.l3_mode or "shadow").strip().lower()
     l3 = None
+    latency_l3_ms = None
     if mode != "off":
+        t_l3 = perf_counter()
         l3 = await _evaluate_l3(user_id, features, profile, subsystem_id)
+        latency_l3_ms = int((perf_counter() - t_l3) * 1000)
 
-    evidences = [
+    l1_l2 = [
         rule_evidence(rule_result),
         behavior_evidence(behavior_result),
     ]
-    anomaly = anomaly_evidence(l3)
-    if mode != "hybrid_stepup":
-        # shadow: เก็บหลักฐานไว้ดู แต่ L4 ต้องไม่นับ — ทำให้ผลเท่ากับ baseline เป๊ะ
-        anomaly.eligible = False
-        anomaly.abstain_reason = anomaly.abstain_reason or f"l3_mode={mode}"
-    evidences.append(anomaly)
+
+    # หลักฐาน L3 สองชุดจากผลเดียวกัน — ชุดหนึ่งนับได้ อีกชุดถูกปิด
+    # สร้างสองครั้งแทนการแก้ object เดิม เพื่อไม่ให้การปิดหลักฐานของเส้นทางจริง
+    # ไปทำให้ผล hybrid (ที่ต้องนับ L3) เพี้ยนตามไปด้วย
+    anomaly_live = anomaly_evidence(l3)
+    anomaly_muted = anomaly_evidence(l3)
+    anomaly_muted.eligible = False
+    anomaly_muted.abstain_reason = anomaly_muted.abstain_reason or f"l3_mode={mode}"
+
+    counts_in_actual = mode in _L3_COUNTS_IN_ACTUAL
+    evidences = [*l1_l2, anomaly_live if counts_in_actual else anomaly_muted]
 
     # ── 4. L4 — จุดเดียวที่สร้าง final_risk_score และ access_decision ──
     thresholds = {
@@ -106,9 +160,7 @@ async def evaluate_login_risk(
     #   changed_decision   ผลการตัดสินต่างจริง
     #   changed_score_only คะแนนต่าง แต่ผลเท่าเดิม (ไม่มีคุณค่าเชิงปฏิบัติ)
     #   surfaced_new       เดิมปล่อยผ่าน ตอนนี้ถูกหยิบขึ้นมา = คุณค่าที่แท้จริง
-    new_l1_l2_baseline = fuse(
-        policy, [e for e in evidences if e.layer != "anomaly"], **kw
-    )
+    new_l1_l2_baseline = fuse(policy, l1_l2, **kw)
     changed = decision.decision != new_l1_l2_baseline.decision
     decision.breakdown["counterfactual"] = {
         # ชื่อ "new_l1_l2" ไม่ใช่ "baseline" เฉยๆ — เพราะนี่คือ fusion **ใหม่**
@@ -125,18 +177,53 @@ async def evaluate_login_risk(
         ),
     }
 
+    # ── ผลจำลองสองชุดต่อหนึ่ง login (ขั้นที่ 4 ของแผน) ──
+    # ใช้ Policy Gate, L1 และ L2 **ชุดเดียวกัน** ทั้งสองชุด ความต่างจึงมาจาก L3 ล้วน
+    # ทั้งคู่เป็นผลจำลอง ไม่มีเส้นทางไหนอ่านไปตัดสินการเข้าถึง (test_shadow_invariant)
+    baseline_shadow = _shadow_result(new_l1_l2_baseline)
+    if mode in _L3_IN_HYBRID_SHADOW:
+        hybrid_raw = fuse(policy, [*l1_l2, anomaly_live], **kw)
+        hybrid_shadow = _shadow_result(hybrid_raw)
+    else:
+        # ไม่ได้คำนวณ hybrid ในโหมดนี้ — คัดลอก baseline มาตรง ๆ และบอกไว้ใน l3
+        hybrid_shadow = dict(baseline_shadow)
+
     logger.info(
-        "[risk_engine] user=%s risk=%.3f decision=%s primary=%s l3_mode=%s",
+        "[risk_engine] user=%s risk=%.3f decision=%s primary=%s l3_mode=%s "
+        "baseline=%s hybrid=%s",
         user_id,
         decision.total_score,
         decision.decision,
         decision.breakdown.get("primary_layer"),
         mode,
+        baseline_shadow["decision"],
+        hybrid_shadow["decision"],
     )
-    return _result(decision, l3, evidences)
+    return _result(
+        decision,
+        l3,
+        evidences,
+        mode=mode,
+        baseline=baseline_shadow,
+        hybrid=hybrid_shadow,
+        anomaly=anomaly_live,
+        latency_total_ms=int((perf_counter() - started) * 1000),
+        latency_l3_ms=latency_l3_ms,
+    )
 
 
-def _result(decision, l3: dict | None, evidences: list) -> dict:
+def _result(
+    decision,
+    l3: dict | None,
+    evidences: list,
+    *,
+    mode: str = "shadow",
+    baseline: dict | None = None,
+    hybrid: dict | None = None,
+    anomaly=None,
+    latency_total_ms: int | None = None,
+    latency_l3_ms: int | None = None,
+) -> dict:
     """รูปแบบผลลัพธ์ — คีย์เดิมคงไว้ทั้งหมดเพื่อไม่ให้ router ต้องแก้."""
     point = (l3 or {}).get("point") or {}
     seq_contract = _sequence_contract(l3) if l3 else None
@@ -162,10 +249,18 @@ def _result(decision, l3: dict | None, evidences: list) -> dict:
         "behavior_raw": _raw("behavior"),
         "iforest_raw": round(float(point.get("anomaly_score") or 0.0), 4),
     }
+    base = baseline or _shadow_result(decision)
+    hyb = hybrid or dict(base)
+    l3_summary = (
+        _l3_summary(l3, anomaly=anomaly, baseline=base, hybrid=hyb) if l3 else None
+    )
+
     if seq_contract is not None:
         breakdown["l3_sequence"] = seq_contract
-    if l3 is not None:
-        breakdown["l3"] = _l3_summary(l3)
+    if l3_summary is not None:
+        breakdown["l3"] = l3_summary
+    breakdown["baseline_shadow"] = base
+    breakdown["hybrid_shadow"] = hyb
 
     return {
         # ── แกนเดียวของการตัดสิน — มาจาก L4 เท่านั้น ──
@@ -174,10 +269,16 @@ def _result(decision, l3: dict | None, evidences: list) -> dict:
         "reasons": decision.reasons,
         "breakdown": breakdown,
         "iforest_explanation": point.get("explanation") or [],
+        # ── ผลจำลองสองชุด — ห้าม router นำไปตัดสินการเข้าถึง ──
+        "l3_mode": mode,
+        "baseline_shadow": base,
+        "hybrid_shadow": hyb,
+        "latency_total_ms": latency_total_ms,
+        "latency_l3_ms": latency_l3_ms,
         # ── ข้อมูลเฝ้าระวัง (ไม่ใช่การตัดสิน) ──
         "monitoring_decision": (l3 or {}).get("monitoring_decision") or "normal",
         "l3_sequence": seq_contract,
-        "l3": _l3_summary(l3) if l3 else None,
+        "l3": l3_summary,
         "evidence": {e.layer: e.to_contract() for e in evidences},
     }
 
@@ -200,9 +301,35 @@ _L3_SUMMARY_KEYS = (
 )
 
 
-def _l3_summary(l3: dict) -> dict:
-    """ส่วนที่เก็บลง log/replay — ตัดผลดิบของแต่ละมุมมองออก (ยาวเกินจำเป็น)."""
-    return {k: l3[k] for k in _L3_SUMMARY_KEYS}
+def _l3_summary(
+    l3: dict, *, anomaly=None, baseline: dict | None = None, hybrid: dict | None = None
+) -> dict:
+    """ส่วนที่เก็บลง log/replay — ตัดผลดิบของแต่ละมุมมองออก (ยาวเกินจำเป็น).
+
+    เพิ่มฟิลด์ตามขั้นที่ 5 และ 10 ของแผน: คะแนนของสองมุมมองแยกกัน วิธีรวม
+    และผลของ L3 ต่อการตัดสิน **จำลอง** (ไม่ใช่ของจริง)
+
+    `sequence_evidence` เป็น `None` เมื่อประวัติไม่พอ — ตั้งใจไม่ใช้ 0.0 เพราะ
+    0.0 แปลว่า "ประเมินแล้วไม่พบความผิดปกติ" ส่วน None แปลว่า "ยังประเมินไม่ได้"
+    สองอย่างนี้ต่างกันและห้ามปนกัน
+    """
+    out = {k: l3[k] for k in _L3_SUMMARY_KEYS}
+    views = (getattr(anomaly, "detail", None) or {}).get("views") or {}
+    seq = l3.get("sequence") or {}
+    out.update(
+        {
+            "point_evidence": views.get("point"),
+            "sequence_evidence": views.get("sequence"),
+            "combined_evidence": (max(views.values()) if views else None),
+            "combined_method": "max",
+            "eligibility": seq.get("eligibility"),
+            "n_history": seq.get("n_history"),
+            "changed_shadow_decision": bool(
+                baseline and hybrid and baseline["decision"] != hybrid["decision"]
+            ),
+        }
+    )
+    return out
 
 
 def _sequence_contract(l3: dict) -> dict | None:

@@ -56,6 +56,7 @@ from app.services.hooks import (
 from app.services.jwt_service import create_subsystem_token, revoke_jti
 from app.services.pkce import generate_pkce_pair, verify_pkce
 from app.security.risk_engine import evaluate_login_risk
+from app.services.shadow_record import SOURCE_OAUTH, shadow_columns
 from app.services.secret_service import verify_secret
 from app.services import webauthn_service
 from app.services import passkey_recovery
@@ -654,6 +655,7 @@ async def _finalize_subsystem_login(
             decision=actual_decision,
             is_attack_ip=is_blacklisted(db, client_ip),
             login_method=provider,
+            **shadow_columns(risk, source=SOURCE_OAUTH),
         )
     )
 

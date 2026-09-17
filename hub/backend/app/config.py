@@ -120,9 +120,11 @@ class Settings(BaseSettings):
     # ให้ปล่อยผ่านไปเลย แล้วรอบถัดไปค่อยได้ผลจาก cache — เสีย 1 เหตุการณ์ ดีกว่าถ่วงทุก login
     l3_timeout_seconds: float = 0.5
 
-    # ── L3 mode (rollout) — off | shadow | hybrid_stepup ──
+    # ── L3 mode (rollout) — off | monitor_only | shadow | shadow_hybrid | hybrid_stepup ──
     # off           : ไม่เรียก L3 เลย
+    # monitor_only  : เรียก L3 เก็บ l3_investigate อย่างเดียว ไม่เข้าการรวมคะแนนใด ๆ
     # shadow        : เรียก เก็บหลักฐาน แต่ L4 ไม่นับ (ค่าเริ่มต้น — ปลอดภัยที่สุด)
+    # shadow_hybrid : นับ L3 เฉพาะผลจำลอง การตัดสินจริงยังเป็น L1+L2 · ต้องมีตาราง calibration
     # hybrid_stepup : L4 นับหลักฐาน L3 ด้วย · ยกได้สูงสุด challenge (ห้าม block เดี่ยว)
     # ยังไม่มีโหมด hybrid_block โดยตั้งใจ จนกว่าจะมี production replay มากพอ
     l3_mode: str = "shadow"
@@ -140,6 +142,9 @@ class Settings(BaseSettings):
     risk_config_id: str | None = None
     calibration_version: str | None = None
     calibration_sha256: str | None = None
+    # path ของตาราง calibration — ว่าง = ไม่ใช้ตาราง (หลักฐานยังไม่ calibrate)
+    # ตั้งแล้วต้องตั้ง CALIBRATION_SHA256 และเกณฑ์/gamma ให้ตรงกับตาราง ไม่งั้นไม่ start
+    calibration_path: str | None = None
     scoring_commit: str | None = None
 
     # GeoIP (MaxMind GeoLite2 offline DB) — fail-safe ถ้าไฟล์หาย

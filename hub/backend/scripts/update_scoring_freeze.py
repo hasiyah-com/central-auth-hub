@@ -43,6 +43,7 @@ def main() -> int:
     )
     a = ap.parse_args()
 
+    files = current_fingerprint()
     rec = {
         "frozen_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "git_commit": _git("rev-parse", "HEAD"),
@@ -51,8 +52,37 @@ def main() -> int:
         "scope": a.scope,
         "unfreeze_when": a.unfreeze_when,
         "hash_method": "sha256 ของไฟล์หลัง normalize CRLF -> LF",
-        "files": current_fingerprint(),
+        "files": files,
     }
+
+    # ต่อประวัติ ไม่เขียนทับ — เหตุผลของการ freeze ครั้งก่อนอาจยังไม่ถูก commit
+    # ถ้าเขียนทับตรง ๆ เหตุผลนั้นจะหายไปจากทุกที่ (เคยเกิดจริง 16 ก.ย. 2569)
+    history = []
+    if RECORD.exists():
+        prev = json.loads(RECORD.read_text(encoding="utf-8"))
+        history = list(prev.get("history") or [])
+        if not history:
+            history.append(
+                {
+                    "frozen_at": prev.get("frozen_at"),
+                    "git_commit": prev.get("git_commit"),
+                    "reason": prev.get("reason"),
+                    "files_changed": [],
+                }
+            )
+        old_files = prev.get("files") or {}
+        changed = sorted(k for k in files if old_files.get(k) != files[k])
+    else:
+        changed = sorted(files)
+    history.append(
+        {
+            "frozen_at": rec["frozen_at"],
+            "git_commit": rec["git_commit"],
+            "reason": rec["reason"],
+            "files_changed": changed,
+        }
+    )
+    rec["history"] = history
     RECORD.write_text(
         json.dumps(rec, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
     )

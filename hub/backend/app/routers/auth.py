@@ -46,6 +46,12 @@ from app.services.ip_blacklist import is_blacklisted
 from app.services.alert_service import maybe_alert_ml_risk
 from app.services.identity_challenge import is_user_challenged
 from app.security.risk_engine import evaluate_login_risk
+from app.services.shadow_record import (
+    SOURCE_GOOGLE,
+    SOURCE_LINE,
+    SOURCE_REFRESH,
+    shadow_columns,
+)
 from app.services import webauthn_service
 from app.services import risk_challenge
 from app.services import mfa_policy
@@ -515,6 +521,7 @@ async def google_callback(request: Request, db: Session = Depends(get_db)):
         decision=actual_decision,
         is_attack_ip=is_blacklisted(db, client_ip),
         login_method="google",
+        **shadow_columns(risk, source=SOURCE_GOOGLE),
     )
     db.add(login_session)
     db.flush()  # ต้องการ login_session.id สำหรับ MFA challenge
@@ -1026,6 +1033,7 @@ async def line_callback(request: Request, db: Session = Depends(get_db)):
         decision=actual_decision,
         is_attack_ip=is_blacklisted(db, client_ip),
         login_method="line",
+        **shadow_columns(risk, source=SOURCE_LINE),
     )
     db.add(login_session)
     db.flush()  # ต้องการ login_session.id สำหรับ MFA challenge
@@ -1389,6 +1397,10 @@ async def _refresh_risk_gate(
         sess.risk_score = risk_score
         sess.risk_breakdown = breakdown
         sess.risk_reasons = reasons
+        # refresh ให้คะแนนใหม่ทับ snapshot เดิมของ session — ผลจำลองต้องตามไปด้วย
+        # ไม่งั้นแถวนี้จะมีคะแนนของรอบใหม่แต่ผลเปรียบเทียบของรอบเก่า
+        for column, value in shadow_columns(risk, source=SOURCE_REFRESH).items():
+            setattr(sess, column, value)
 
     enforcing = not settings.ml_shadow_mode
 

@@ -127,6 +127,12 @@ async def lifespan(app: FastAPI):
                 "รันก่อน: docker compose exec hub-backend python -m scripts.generate_jwt_keys"
             )
 
+    # fail-closed ถ้าตาราง calibration กับคอนฟิกไม่ใช่ชุดเดียวกัน (ขั้นที่ 7 ของแผน
+    # Hybrid Shadow) — หลักฐานเปอร์เซ็นไทล์กับเกณฑ์ชุดเก่า = block เกือบทุกครั้ง
+    from app.security import calibration
+
+    calibration.validate_startup(settings)
+
     # Lifecycle hooks (event bus) — fail-safe extension points
     register_default_listeners()
 

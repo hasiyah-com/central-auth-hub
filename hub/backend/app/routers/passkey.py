@@ -64,6 +64,7 @@ from app.services.ip_blacklist import is_blacklisted
 from app.services.jwt_service import create_access_token
 from app.services import refresh_token_service
 from app.security.risk_engine import evaluate_login_risk
+from app.services.shadow_record import SOURCE_PASSKEY, shadow_columns
 
 log = logging.getLogger(__name__)
 
@@ -203,6 +204,7 @@ async def _build_login_session(result, request, jti, db, method: str) -> LoginSe
         is_attack_ip=is_blacklisted(db, ip),
         jti=jti,
         login_method=method,
+        **shadow_columns(risk, source=SOURCE_PASSKEY),
     )
 
 
