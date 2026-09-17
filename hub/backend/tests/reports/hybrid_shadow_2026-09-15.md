@@ -9,7 +9,7 @@
 | ขั้นที่ 11 — เทสก่อน implementation | **เสร็จ** — RED 17 failed ก่อนแก้โค้ด |
 | ขั้นที่ 3 — โหมด `shadow_hybrid` / `monitor_only` | **เสร็จ** |
 | ขั้นที่ 4 — คำนวณผลสองชุดต่อหนึ่ง login | **เสร็จ** |
-| ขั้นที่ 10 — ฟิลด์บันทึกใน `login_sessions` | **เสร็จเฉพาะส่วนฟิลด์** — เกณฑ์ส่งเข้า Expert Review ยังไม่แก้ |
+| ขั้นที่ 10 — ฟิลด์บันทึก + เกณฑ์ส่งเข้า Expert Review | **เสร็จ** — ครึ่งหลังทำ 17 ก.ย. (§10) |
 | ชุดเทสเต็ม | **1221 passed · 21 skipped · 0 failed** (§6) |
 | state รั่ว | ไม่มี |
 | ขั้นที่ 7 — calibration artifact | **ยังไม่ทำ** — `calibrated=false` ทุกแถว |
@@ -228,7 +228,6 @@ risk_engine.py  218291bb...  ->  ea762aa3...
 | งาน | สถานะ |
 |---|---|
 | ขั้นที่ 7 — calibration artifact + SHA + fail-closed | ยังไม่เริ่ม · ต้องตัดสินก่อนว่าจะสร้างจาก validation ชุดไหน (ห้ามสร้างจากผลเก่าที่ปะติดปะต่อ) |
-| ขั้นที่ 10 (ครึ่งหลัง) — เกณฑ์ส่งเข้า Expert Review | ยังเป็น `decision.startswith("would_")` เฉย ๆ · แผนต้องการ `hybrid != baseline` หรือ `l3_investigate` ด้วย |
 | ขั้นที่ 6 — รายงานอัตรา abstain แยก 6 ช่วงประวัติ | ยังไม่มี (คอลัมน์ `l3_eligibility`/`l3_n_history` พร้อมแล้ว) |
 | ขั้นที่ 9 — ยืนยันว่า SHAP ไม่ถูกคำนวณทุก login | ยังไม่ตรวจ |
 | ขั้นที่ 12-17 | ยังไม่เริ่ม |
@@ -250,3 +249,38 @@ bash scripts/test/run_tests.sh                        # ชุดเต็ม
 docker compose exec hub-backend alembic downgrade -1
 docker compose exec hub-backend alembic upgrade head
 ```
+
+---
+
+## 10. ขั้นที่ 10 ครึ่งหลัง — เกณฑ์ส่งเข้า Expert Review (17 ก.ย. 2569)
+
+### ปัญหา
+
+sync เลือกเฉพาะ login ที่ `decision` เป็น `would_*` · ในโหมด `shadow_hybrid` การตัดสินจริง
+ยังเป็น L1+L2 เหตุการณ์ที่ L3 เท่านั้นเห็นจึงไม่เคยถึงผู้เชี่ยวชาญ และที่มาของคอนฟิกของ
+กลุ่มยังรับจาก settings ตอน sync ทั้งที่ตอนนี้ `login_sessions` มีค่าต่อแถวแล้ว
+
+### ที่แก้
+
+| จุด | เดิม | ใหม่ |
+|---|---|---|
+| เกณฑ์คัดเหตุการณ์ | `decision` เป็น `would_*` | `would_*` **หรือ** `l3_changed_shadow_decision` **หรือ** `l3.monitoring_decision == l3_investigate` |
+| signal ของกลุ่ม | L1/L2 ของการตัดสินจริง | alert จริงใช้ของเดิม · เหตุการณ์ของ L3 อย่างเดียวได้ `anomaly:l3_changed_shadow` / `anomaly:l3_investigate` ไม่ปนกลุ่มกัน |
+| ที่มาของคอนฟิก | settings ตอน sync | ค่าที่ทุกแถวในกลุ่มตรงกัน · ไม่ตรงกันหรือว่าง = None |
+| `model_output` ของ disposition | ผลการตัดสินจริง | เพิ่ม `selected_because`, ผลจำลองสองชุด, `l3_monitoring_decision`, `shadow_epoch_id` |
+| `POST /groups/sync` | คืน `epoch` | คืน `current_epoch` (ใช้ดูอย่างเดียว ไม่ถูกเขียนลงกลุ่ม) |
+
+รอบ blind ยังไม่เห็นเหตุผลที่กลุ่มถูกสร้าง — `blind_payload` อ่านจากรายการที่อนุญาตเท่านั้น
+และมีเทสยืนยันว่าคำอย่าง `l3_changed_shadow`, `hybrid`, `baseline`, `would_` ไม่หลุดออกไป
+
+### ผล
+
+```
+RED    tests/test_expert_review_shadow_selection.py  14 failed
+       (ไม่มี selection_reasons / signal_for / group_epoch · sync ยังบังคับ epoch)
+GREEN  expert review ทั้ง 4 ไฟล์ 142 passed
+ชุดเต็ม (Functional Gate) 1289 passed · 23 skipped · 3 deselected · 0 failed · ไม่มี state รั่ว
+```
+
+แถวที่เกิดก่อนมีการบันทึกที่มา (NULL) จะได้กลุ่มที่ `risk_config_id` / `scoring_commit`
+เป็น None และ `eligible_for_production_metrics = false` — ไม่ถูกติดป้ายด้วยคอนฟิกที่รันอยู่
