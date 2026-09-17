@@ -129,6 +129,14 @@ class Settings(BaseSettings):
     # ยังไม่มีโหมด hybrid_block โดยตั้งใจ จนกว่าจะมี production replay มากพอ
     l3_mode: str = "shadow"
 
+    # ── สวิตช์ปิดฉุกเฉินของ Hybrid (แผน Hybrid Shadow ขั้นที่ 3/13) ──
+    # false = ไม่คำนวณผลจำลอง hybrid และไม่นับ L3 ในการรวมคะแนนใด ๆ (รวม hybrid_stepup)
+    #         L3 ยังเฝ้าระวังได้ตาม L3_MODE · อ่านค่าทุก login จึงมีผลทันทีหลัง recreate
+    # ค่าเริ่มต้น true เพราะการเปิด hybrid ยังต้องตั้ง L3_MODE=shadow_hybrid เองอยู่แล้ว
+    # ค่าที่ไม่ใช่ boolean ทำให้ Settings ไม่ยอมโหลด (pydantic) — ไม่เดาค่าให้
+    # คำสั่งปิดฉุกเฉิน: HYBRID_SHADOW_ENABLED=false + L3_MODE=monitor_only
+    hybrid_shadow_enabled: bool = True
+
     # ── L4 fusion — ต้องเลือกจาก validation แล้ว freeze ก่อนแตะ final holdout ──
     l4_gamma: float = 0.35
     l4_threshold_warn: float = 0.50

@@ -10,6 +10,7 @@ L1/L2/L3 ไม่มีอำนาจตัดสินการเข้า�
   - Freeman et al. (2016), Wiefling et al. (2022), F-RBA (2024)
 """
 
+import asyncio
 import logging
 from time import perf_counter
 
@@ -56,6 +57,14 @@ def _would(action: str) -> str:
     return action if action.startswith("would_") else f"would_{action}"
 
 
+_UNSET = object()
+
+
+def _hybrid_enabled() -> bool:
+    """อ่านสวิตช์ทุก login — เปลี่ยนค่าแล้วมีผลกับ login ถัดไปทันที."""
+    return bool(getattr(settings, "hybrid_shadow_enabled", True))
+
+
 def _shadow_result(decision) -> dict:
     return {
         "final_risk": decision.total_score,
@@ -97,13 +106,15 @@ async def evaluate_login_risk(
         )
         decision = fuse(policy, [], shadow_mode=shadow_mode)
         denied = _shadow_result(decision)
+        enabled = _hybrid_enabled()
         return _result(
             decision,
             l3=None,
             evidences=[],
             mode=(settings.l3_mode or "shadow").strip().lower(),
             baseline=denied,
-            hybrid=denied,
+            hybrid=denied if enabled else None,
+            hybrid_enabled=enabled,
             latency_total_ms=int((perf_counter() - started) * 1000),
         )
 
@@ -140,7 +151,9 @@ async def evaluate_login_risk(
     anomaly_muted.eligible = False
     anomaly_muted.abstain_reason = anomaly_muted.abstain_reason or f"l3_mode={mode}"
 
-    counts_in_actual = mode in _L3_COUNTS_IN_ACTUAL
+    # สวิตช์ฉุกเฉินปิดเมื่อไร L3 ต้องไม่ถูกนับในการรวมคะแนนใด ๆ รวม hybrid_stepup
+    hybrid_enabled = _hybrid_enabled()
+    counts_in_actual = hybrid_enabled and mode in _L3_COUNTS_IN_ACTUAL
     evidences = [*l1_l2, anomaly_live if counts_in_actual else anomaly_muted]
 
     # ── 4. L4 — จุดเดียวที่สร้าง final_risk_score และ access_decision ──
@@ -181,7 +194,11 @@ async def evaluate_login_risk(
     # ใช้ Policy Gate, L1 และ L2 **ชุดเดียวกัน** ทั้งสองชุด ความต่างจึงมาจาก L3 ล้วน
     # ทั้งคู่เป็นผลจำลอง ไม่มีเส้นทางไหนอ่านไปตัดสินการเข้าถึง (test_shadow_invariant)
     baseline_shadow = _shadow_result(new_l1_l2_baseline)
-    if mode in _L3_IN_HYBRID_SHADOW:
+    if not hybrid_enabled:
+        # ไม่คำนวณเลย — ห้ามคัดลอก baseline มาแทน เพราะจะอ่านได้ว่า
+        # "L3 ไม่เปลี่ยนอะไร" ทั้งที่ความจริงคือไม่ได้วัด
+        hybrid_shadow = None
+    elif mode in _L3_IN_HYBRID_SHADOW:
         hybrid_raw = fuse(policy, [*l1_l2, anomaly_live], **kw)
         hybrid_shadow = _shadow_result(hybrid_raw)
     else:
@@ -197,7 +214,7 @@ async def evaluate_login_risk(
         decision.breakdown.get("primary_layer"),
         mode,
         baseline_shadow["decision"],
-        hybrid_shadow["decision"],
+        hybrid_shadow["decision"] if hybrid_shadow else "disabled",
     )
     return _result(
         decision,
@@ -207,6 +224,7 @@ async def evaluate_login_risk(
         baseline=baseline_shadow,
         hybrid=hybrid_shadow,
         anomaly=anomaly_live,
+        hybrid_enabled=hybrid_enabled,
         latency_total_ms=int((perf_counter() - started) * 1000),
         latency_l3_ms=latency_l3_ms,
     )
@@ -219,8 +237,9 @@ def _result(
     *,
     mode: str = "shadow",
     baseline: dict | None = None,
-    hybrid: dict | None = None,
+    hybrid=_UNSET,
     anomaly=None,
+    hybrid_enabled: bool = True,
     latency_total_ms: int | None = None,
     latency_l3_ms: int | None = None,
 ) -> dict:
@@ -250,7 +269,7 @@ def _result(
         "iforest_raw": round(float(point.get("anomaly_score") or 0.0), 4),
     }
     base = baseline or _shadow_result(decision)
-    hyb = hybrid or dict(base)
+    hyb = dict(base) if hybrid is _UNSET else hybrid
     l3_summary = (
         _l3_summary(l3, anomaly=anomaly, baseline=base, hybrid=hyb) if l3 else None
     )
@@ -261,6 +280,7 @@ def _result(
         breakdown["l3"] = l3_summary
     breakdown["baseline_shadow"] = base
     breakdown["hybrid_shadow"] = hyb
+    breakdown["hybrid_shadow_enabled"] = hybrid_enabled
 
     return {
         # ── แกนเดียวของการตัดสิน — มาจาก L4 เท่านั้น ──
@@ -273,6 +293,7 @@ def _result(
         "l3_mode": mode,
         "baseline_shadow": base,
         "hybrid_shadow": hyb,
+        "hybrid_shadow_enabled": hybrid_enabled,
         "latency_total_ms": latency_total_ms,
         "latency_l3_ms": latency_l3_ms,
         # ── ข้อมูลเฝ้าระวัง (ไม่ใช่การตัดสิน) ──
@@ -324,9 +345,10 @@ def _l3_summary(
             "combined_method": "max",
             "eligibility": seq.get("eligibility"),
             "n_history": seq.get("n_history"),
-            "changed_shadow_decision": bool(
-                baseline and hybrid and baseline["decision"] != hybrid["decision"]
-            ),
+            # None = ไม่ได้คำนวณ hybrid (สวิตช์ปิด) · ต่างจาก False ที่แปลว่าวัดแล้วไม่เปลี่ยน
+            "changed_shadow_decision": None
+            if not (baseline and hybrid)
+            else bool(baseline["decision"] != hybrid["decision"]),
         }
     )
     return out
@@ -371,6 +393,10 @@ async def _evaluate_l3(
     """
     from app.services.l3_sequence_client import _unified_quiet, evaluate_l3
 
+    # เพดานเวลา **รวม** ของ L3 — httpx timeout เป็นเพดานต่อช่วง (connect/read/...)
+    # วัดได้ request 626 ms ที่ยังสำเร็จทั้งที่ตั้ง 0.5 s (step12 §4) จึงนับเวลาเอง
+    # ตั้งแต่ต้นฟังก์ชัน งานก่อนเรียก ML กินงบไปด้วย
+    started = perf_counter()
     resid = None
     try:
         if settings.l3_sequence_enabled:
@@ -380,8 +406,16 @@ async def _evaluate_l3(
     except Exception as e:  # noqa: BLE001
         logger.warning("[risk_engine] residual error: %s", e)
 
+    remaining = float(settings.l3_timeout_seconds) - (perf_counter() - started)
     try:
-        l3 = await evaluate_l3(user_id, features, resid)
+        if remaining <= 0:
+            raise TimeoutError
+        l3 = await asyncio.wait_for(
+            evaluate_l3(user_id, features, resid), timeout=remaining
+        )
+    except TimeoutError:
+        # login เดินต่อ · L3 abstain · ห้ามใช้คะแนนเก่าหรือผลบางส่วน
+        l3 = _unified_quiet("l3_timeout")
     except Exception as e:  # noqa: BLE001
         logger.warning("[risk_engine] l3 evaluate error: %s", e)
         l3 = _unified_quiet(f"l3_error: {type(e).__name__}")

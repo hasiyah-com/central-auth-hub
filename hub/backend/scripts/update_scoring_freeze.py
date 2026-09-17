@@ -71,15 +71,19 @@ def main() -> int:
                 }
             )
         old_files = prev.get("files") or {}
-        changed = sorted(k for k in files if old_files.get(k) != files[k])
     else:
-        changed = sorted(files)
+        old_files = {}
+    changed = sorted(k for k in files if old_files.get(k) != files[k])
     history.append(
         {
             "frozen_at": rec["frozen_at"],
             "git_commit": rec["git_commit"],
             "reason": rec["reason"],
             "files_changed": changed,
+            # hash เก่า/ใหม่ของแต่ละไฟล์ — ตรวจย้อนได้ว่าเปลี่ยนจากอะไรเป็นอะไร
+            "hash_changes": {
+                k: {"old": old_files.get(k), "new": files[k]} for k in changed
+            },
         }
     )
     rec["history"] = history
