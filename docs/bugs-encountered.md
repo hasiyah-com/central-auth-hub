@@ -485,6 +485,13 @@
 - **กฎ:** เทส functional ห้ามขึ้นกับความเร็ว — ขยาย timeout ในเทสและแยกเงื่อนไขเวลาไป marker `performance` · อย่าเรียก timeout ของ httpx ว่าเพดานรวม
 - **Verify:** `tests/test_gate_markers.py` · `tests/reports/step12_verification_2026-09-17.md` §4
 
+**B77. นาฬิกาถอยหลังไม่ถึงวินาทีทำให้ token ที่เพิ่งออกถูกปฏิเสธเป็น 401 — ชุดเทสล้มสุ่มคนละตัวทุกรอบ**
+- อาการ: Functional Gate ล้ม 1–2 ตัวต่อรอบ ด้วย 401 ในเทสที่ไม่เกี่ยวกัน (`test_scope21_list_users_requires_admin`, `test_e2e_register_bad_scope_rejected`, `test_view_is_audited` ที่ไปล้มตอนนับ audit แทน) รันไฟล์เดี่ยวผ่าน 3/3
+- หลักฐาน (`TEST_DIAG=1`): `ImmatureSignatureError: The token is not yet valid (iat)` โดย `age_s = -0.848` · `clock_steps.jsonl` นับนาฬิกาถอยหลังราว 0.97 วินาทีได้ 16 ครั้งในรอบเดียว (และกระโดดไปข้างหน้าราว 3.7 วินาทีเป็นระยะ) — Docker Desktop/WSL ปรับเวลาตามเครื่องหลัก
+- สาเหตุ: `verify_token` ตรวจ `iat`/`nbf`/`exp` แบบไม่เผื่อเลย · token ที่ออกก่อนนาฬิกาถอยแล้วตรวจหลังถอยจะดูเหมือนออกในอนาคต · เกิดได้ใน production เช่นกัน (NTP step, hub หลายเครื่องนาฬิกาไม่ตรงกัน)
+- **กฎ:** การตรวจเวลาของ JWT ต้องมี leeway ที่ตั้งค่าได้และมีเพดาน (`jwt_clock_skew_seconds` ค่าเริ่ม 5 ช่วง 0–60 ค่าผิด = ไม่ start) · leeway ใช้กับ `iat`/`nbf`/`exp` เท่านั้น ลายเซ็น/iss/aud/revocation เข้มเท่าเดิม · เทสที่ตรวจผลข้างเคียง (audit, DB) ต้องตรวจ HTTP status ก่อน ไม่งั้นอาการ 401 จะไปโผล่เป็น assertion อื่นที่ชี้ผิดที่
+- **Verify:** `tests/test_jwt_clock_skew.py`
+
 ---
 
 ## วิธีเพิ่ม bug ใหม่

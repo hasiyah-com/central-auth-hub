@@ -310,6 +310,8 @@ def verify_token(token: str, audience: str | None = None) -> dict:
         audience=expected_aud,
         issuer=_issuer(),
         options={"verify_aud": True, "verify_iss": True, "verify_exp": True},
+        # เผื่อเฉพาะการตรวจเวลา (iat/nbf/exp) — ลายเซ็น/iss/aud/revocation เข้มเท่าเดิม (B77)
+        leeway=settings.jwt_clock_skew_seconds,
     )
     # Revocation check — หลัง decode ผ่านถึงจะตรวจ
     # (กัน Redis hit ตอน token ผิด signature/aud — ลด attack surface)

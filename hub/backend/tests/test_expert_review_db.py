@@ -305,7 +305,9 @@ def test_blind_view_has_no_model_output(world, client):
 def test_view_is_audited(world, client):
     g = _group(world)
     rv = world["reviewers"][0]
-    client.get(f"{PREFIX}/groups/{g.id}", headers=_hdr(rv))
+    r = client.get(f"{PREFIX}/groups/{g.id}", headers=_hdr(rv))
+    # ตรวจ status ก่อน — ถ้า token ถูกปฏิเสธ (B77) จะเห็น 401 ตรงนี้ ไม่ใช่ audit 0 == 1
+    assert r.status_code == 200, r.text
     world["db"].expire_all()
     n = (
         world["db"]

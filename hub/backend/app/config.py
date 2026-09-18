@@ -1,5 +1,6 @@
 """Application configuration loaded from environment."""
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # default ที่ห้ามใช้ใน production — ถ้าเจอตัวเหล่านี้ + app_env=production จะ fail-fast
@@ -49,6 +50,11 @@ class Settings(BaseSettings):
     jwt_extra_public_keys: str = ""
     # audience ของ token ที่ Hub ออกใช้กับ Hub เอง (กัน subsystem token ใช้ที่ Hub)
     jwt_hub_audience: str = "hub.internal"
+    # ความคลาดของนาฬิกาที่ยอมให้ตอนตรวจ iat/nbf/exp (วินาที) — B77
+    # นาฬิกาที่ถูกปรับถอยหลัง (NTP, Docker Desktop/WSL) ทำให้ token ที่เพิ่งออกดูเหมือน
+    # ออกในอนาคตแล้วถูกปฏิเสธเป็น 401 · เพดาน 60 กันตั้งค่าหลวมจน exp ไม่มีความหมาย
+    # ค่าผิดช่วง = Settings() ล้มตั้งแต่ startup
+    jwt_clock_skew_seconds: int = Field(default=5, ge=0, le=60)
 
     # OIDC issuer identifier — ใส่ใน `iss` claim ของ JWT และใน
     # /.well-known/openid-configuration (issuer field — RFC 8414 §3)
