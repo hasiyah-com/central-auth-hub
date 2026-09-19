@@ -3995,3 +3995,60 @@
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+
+/* ── Notifications page width correction ── */
+.sc.cx-notifications-page {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: hidden;
+}
+.sc.cx-notifications-page .cx-command,
+.sc.cx-notifications-page .cx-document {
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+.sc.cx-notifications-page .cx-document > * {
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+.sc.cx-notifications-page .cx-notif-filter-chips {
+  width: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  gap: 6px;
+}
+.sc.cx-notifications-page .cx-notif-filter-chips button {
+  flex: 1 1 150px;
+  width: auto;
+  min-width: 0;
+  min-height: 40px;
+  padding: 7px 9px;
+}
+.sc.cx-notifications-page .cx-table-wrap {
+  max-width: 100%;
+  overflow-x: auto;
+}
+@media (max-width: 720px) {
+  .sc.cx-notifications-page .cx-command {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .sc.cx-notifications-page .cx-live-actions {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+  .sc.cx-notifications-page .cx-notif-filter-chips button {
+    flex-basis: calc(50% - 3px);
+  }
+}
+@media (max-width: 420px) {
+  .sc.cx-notifications-page .cx-notif-filter-chips button {
+    flex-basis: 100%;
+  }
+}
