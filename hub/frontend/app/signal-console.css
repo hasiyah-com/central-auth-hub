@@ -3956,53 +3956,12 @@
   white-space: nowrap;
 }
 
-
-/* ── Notifications category tabs fit guard ── */
-.sc .cx-notif-filter-chips {
-  width: 100%;
-  display: grid;
-  grid-template-columns: repeat(7, minmax(0, 1fr));
-  gap: 6px;
-}
-.sc .cx-notif-filter-chips button {
-  width: 100%;
-  min-width: 0;
-  min-height: 40px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 7px;
-  padding: 7px 9px;
-  line-height: 1.35;
-  text-align: center;
-  white-space: normal;
-}
-.sc .cx-notif-filter-chips button > span {
-  flex: none;
-}
-@media (max-width: 1200px) {
-  .sc .cx-notif-filter-chips {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-  }
-}
-@media (max-width: 720px) {
-  .sc .cx-notif-filter-chips {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-@media (max-width: 420px) {
-  .sc .cx-notif-filter-chips {
-    grid-template-columns: minmax(0, 1fr);
-  }
-}
-
-
-/* ── Notifications page width correction ── */
+/* ── Notifications: page containment + category tabs ── */
 .sc.cx-notifications-page {
   width: 100%;
   max-width: 100%;
   min-width: 0;
-  overflow-x: hidden;
+  overflow-x: clip;
 }
 .sc.cx-notifications-page .cx-command,
 .sc.cx-notifications-page .cx-document {
@@ -4017,67 +3976,22 @@
   box-sizing: border-box;
 }
 .sc.cx-notifications-page .cx-notif-filter-chips {
-  width: 100%;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: stretch;
-  gap: 6px;
-}
-.sc.cx-notifications-page .cx-notif-filter-chips button {
-  flex: 1 1 150px;
-  width: auto;
-  min-width: 0;
-  min-height: 40px;
-  padding: 7px 9px;
-}
-.sc.cx-notifications-page .cx-table-wrap {
-  max-width: 100%;
-  overflow-x: auto;
-}
-@media (max-width: 720px) {
-  .sc.cx-notifications-page .cx-command {
-    align-items: flex-start;
-    flex-direction: column;
-  }
-  .sc.cx-notifications-page .cx-live-actions {
-    width: 100%;
-    flex-wrap: wrap;
-  }
-  .sc.cx-notifications-page .cx-notif-filter-chips button {
-    flex-basis: calc(50% - 3px);
-  }
-}
-@media (max-width: 420px) {
-  .sc.cx-notifications-page .cx-notif-filter-chips button {
-    flex-basis: 100%;
-  }
-}
-
-
-/* ── Notifications tabs exact-width layout ── */
-.sc.cx-notifications-page .cx-notif-filter-chips {
   display: grid;
-  grid-template-columns:
-    minmax(0, .65fr)
-    minmax(0, 1.75fr)
-    minmax(0, 1.55fr)
-    minmax(0, 2.15fr)
-    minmax(0, 1.2fr)
-    minmax(0, 1.35fr)
-    minmax(0, 1.35fr);
+  grid-template-columns: repeat(7, minmax(0, 1fr));
   width: 100%;
   max-width: 100%;
   gap: 6px;
-  overflow: hidden;
 }
 .sc.cx-notifications-page .cx-notif-filter-chips button {
   width: 100%;
   min-width: 0;
   max-width: 100%;
+  min-height: 40px;
   display: flex;
-  flex: none;
   align-items: center;
   justify-content: center;
+  gap: 7px;
+  padding: 7px 9px;
   overflow: hidden;
   white-space: nowrap;
 }
@@ -4090,13 +4004,24 @@
 .sc.cx-notifications-page .cx-notif-filter-chips button > i {
   flex: none;
 }
+.sc.cx-notifications-page .cx-table-wrap {
+  max-width: 100%;
+  overflow-x: auto;
+}
 @media (max-width: 900px) {
   .sc.cx-notifications-page .cx-notif-filter-chips {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    overflow: visible;
   }
 }
 @media (max-width: 480px) {
+  .sc.cx-notifications-page .cx-command {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .sc.cx-notifications-page .cx-live-actions {
+    width: 100%;
+    flex-wrap: wrap;
+  }
   .sc.cx-notifications-page .cx-notif-filter-chips {
     grid-template-columns: minmax(0, 1fr);
   }
