@@ -439,7 +439,7 @@ def main() -> None:
         w = csv.DictWriter(f, fieldnames=cols, extrasaction="ignore")
         w.writeheader()
         w.writerows(all_rows)
-    print("\n✅ results_v2.json + scored_v2.csv")
+    print("\nresults_v2.json + scored_v2.csv")
 
 
 if __name__ == "__main__":

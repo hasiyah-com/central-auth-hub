@@ -77,7 +77,7 @@ def load():
 
 def main():
     if not DATA.exists():
-        print(f"❌ ไม่พบ {DATA}")
+        print(f"ไม่พบ {DATA}")
         return
     X, y = load()
     Xs = StandardScaler().fit_transform(X)
@@ -121,7 +121,7 @@ def main():
         f"KernelExplainer (OCSVM): อธิบายแค่ {len(expl_idx)} แถว (bg={N_BG}) ใน {t_kernel:.2f}s"
     )
     print(
-        f"\n⚠️ ต้นทุนต่อแถว: Tree={t_tree/len(Xs)*1000:.3f} ms/row | "
+        f"\nต้นทุนต่อแถว: Tree={t_tree/len(Xs)*1000:.3f} ms/row | "
         f"Kernel={t_kernel/len(expl_idx)*1000:.1f} ms/row "
         f"(~{(t_kernel/len(expl_idx))/(t_tree/len(Xs)):.0f}× ช้ากว่า)"
     )
@@ -162,7 +162,7 @@ def main():
     fig.tight_layout()
     fig.savefig(FIG / "shap_ocsvm_vs_iforest.png", dpi=130)
     plt.close(fig)
-    print(f"\n✅ figure -> {FIG / 'shap_ocsvm_vs_iforest.png'}")
+    print(f"\nfigure -> {FIG / 'shap_ocsvm_vs_iforest.png'}")
 
 
 if __name__ == "__main__":

@@ -779,7 +779,7 @@ def _humanize_reason(feature: str) -> str:
 def _build_impact(ls: LoginSession) -> dict:
     """สรุปผลกระทบแบบตรงไปตรงมา (Attempt Blocked / Token Issued / Data Exposure).
 
-    ⚠️ ยึดความจริง: shadow mode (would_*) = ไม่ได้บล็อกจริง → token ออกแล้ว →
+    ยึดความจริง: shadow mode (would_*) = ไม่ได้บล็อกจริง → token ออกแล้ว →
     ห้ามบอกว่า "No Data Exposure". เฉพาะ enforce block เท่านั้นที่ปลอดภัยจริง.
     """
     decision = ls.decision or ""

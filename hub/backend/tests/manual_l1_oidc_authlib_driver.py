@@ -4,7 +4,10 @@
 ถ้าผ่าน → confirm ว่า L1 พร้อมใช้กับ SDK ทุกภาษาที่อิง OIDC
 
 Run:
-    docker exec hub-backend python /app/tests/test_l1_oidc_authlib.py
+    docker exec hub-backend python /app/tests/manual_l1_oidc_authlib_driver.py
+
+ไม่ใช่เทสของ pytest (ไม่มีฟังก์ชัน test_) — เดิมชื่อ test_l1_oidc_authlib.py ซึ่ง
+pytest เก็บได้ 0 ตัวโดยไม่มีอะไรฟ้อง จึงเปลี่ยนชื่อตามแบบ manual_*_driver.py
 """
 
 from __future__ import annotations

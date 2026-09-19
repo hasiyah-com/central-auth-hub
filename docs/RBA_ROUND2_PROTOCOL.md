@@ -1,0 +1,234 @@
+# RBA Hybrid Risk — Round 2 Protocol (ประกาศล่วงหน้าก่อนแตะโค้ด)
+
+> เอกสารนี้ต้องถูก **commit ก่อน** เริ่มแก้โค้ดใดๆ ของ Round 2
+> เพื่อให้พิสูจน์ได้ว่า candidate / fallback / เกณฑ์ ถูกประกาศ **ก่อน** เห็นผล
+> ไม่ใช่เลือกย้อนหลัง (post-hoc selection) ซึ่งเป็นเหตุผลที่ Config F
+> ถูกห้ามใช้ใน Round 1 แม้จะผ่านงบ FPR ทุกระดับ
+
+| | |
+|---|---|
+| ฐานของรอบนี้ | tag `rba-hybrid-round1-failed-gate-2026-09-03` (commit `db04d29`) |
+| branch | `feature/hybrid-risk-round2` |
+| สถานะ Round 1 | `final_round_1_failed_gate` — ไม่มี config ใดผ่าน Final Gate |
+| ระบบ production | **ไม่เปลี่ยน** · L3 ยังคง shadow mode |
+
+---
+
+## 1. Candidate และ Fallback — ประกาศไว้ก่อน
+
+```
+candidate: Config B · gamma=1.0 · warn=0.941667 · challenge=0.989833 · block=0.9999
+fallback:  current deployed configuration / shadow mode
+```
+
+**block=0.9999 ตัดสินบน validation แล้ว (2026-09-03)** — การยก block threshold จาก
+Round 1 (0.998112) เป็น 0.9999 ลด validation block FPR จาก 0.179% เหลือ 0.009%
+โดย recall / recall@challenge / challenge FPR **ไม่เปลี่ยนเลย** (block->challenge
+ยังนับใน recall และ CHALLENGED) · เลือก 0.9999 ไม่ใช่ 1.0 เพื่อคง hard-block ไว้
+สำหรับเคสที่ rule+behavior สูงเกือบเต็มพร้อมกัน · หลักฐาน:
+`hub/backend/tests/reports/round2_prefreeze_2026-09-03.md`
+
+**Config F ไม่ใช่ fallback** แม้จะผ่านงบ FPR ทุกระดับใน Round 1 เพราะ recall
+ต่ำกว่ามาก (recall@challenge 0.4678 เทียบกับ B ที่ 0.7080) · ให้เก็บ F ไว้เป็น
+**comparator** ในรายงานเท่านั้น ไม่ใช่ทางเลือกสำหรับ deploy
+
+**ความหมายของ fallback ในที่นี้:** ถ้า candidate ไม่ผ่าน Final Gate อีกครั้ง
+→ ไม่ deploy อะไรใหม่ · ระบบเดิมทำงานต่อ · L3 ยังคง shadow
+ไม่ใช่ "ถอยไปใช้ config อื่นที่ผ่านงบ"
+
+---
+
+## 2. ขอบเขตของ Round 2 — ทำเฉพาะ 9 ข้อนี้
+
+| # | งาน | หมายเหตุ |
+|---|---|---|
+| 1 | paired hierarchical bootstrap | ΔRecall(B−C), ΔRecall(B−D), ΔRecall(B−E), ΔChallengeFPR(B−E), ΔCampaignRecall(B−E) — สุ่มโครงสร้าง `user → seed → instance/event` เดียวกัน |
+| 2 | hierarchical campaign CI | แทน Wilson ซึ่งสมมติแคมเปญเป็นอิสระ |
+| 3 | tail calibration | benign percentile exceedance · FPR ที่ p95/p99/p99.9 · KS/PIT uniformity บน normal · เทียบ validation vs holdout |
+| 4 | common FPR 1.5% | จุดเทียบที่สูงกว่า legacy floor (1.2467%) เพื่อให้เทียบกับระบบเดิมได้จริง — กวาดบน validation |
+| 5 | rename metric field | `l3_effective_unique` → `within_config_l3_counterfactual_unique` |
+| 6 | ปรับ block threshold ของ Config B | **บน validation เท่านั้น** ห้ามดูตัวเลข holdout ประกอบ |
+| 7 | ประกาศ candidate / fallback ล่วงหน้า | เอกสารนี้ |
+| 8 | holdout seeds ชุดใหม่ | `[101, 102, 103, 104, 105]` — ไม่เคยเปิด |
+| 9 | full pytest + operational latency | latency ต้องวัดแบบ end-to-end รวม I/O ไม่ใช่เฉพาะเส้นทางคำนวณ |
+
+**ห้ามทำใน Round 2:** เปลี่ยน fusion logic, เพิ่ม/ลด layer, เปลี่ยนสมมติฐานของ L3
+งานเหล่านั้นเป็นของ Round 3
+
+งานเสริมที่อนุญาต (ไม่กระทบผล): เปลี่ยนชื่อสคริปต์ live-stack 9 ไฟล์ในโฟลเดอร์
+`tests/` จาก `test_*` เป็น `manual_*_driver.py` ตามแบบแผนที่มีอยู่ เพื่อให้
+`pytest .` แบบไม่กรองทำงานได้
+
+---
+
+## 3. งบ FPR — ไม่เปลี่ยนจาก Round 1
+
+| ระดับ | งบ |
+|---|---|
+| warn FPR | ≤ 5.0% |
+| challenge FPR | ≤ 1.0% |
+| block FPR | ≤ 0.2% |
+
+**มาตรฐาน gate = per-size (ตัดสิน 2026-09-04):** งบต้องผ่าน **ทุกขนาดข้อมูล** ไม่ใช่แค่
+ค่า macro · ตรงกับที่ `sweep.eligible()` ใช้ตอน tune · macro-only จะกลบภาระของผู้ใช้
+cold-start (ประวัติน้อย) ที่อาจทะลุงบ · `_final_gate()` แก้ให้ตรวจ per-size แล้ว
+
+**ห้ามขยับงบหลังเห็นผล** ถ้า candidate ทำไม่ได้ ต้องรายงานว่าทำไม่ได้
+พร้อม `attainable_floor` ไม่ใช่เขียนงบใหม่ให้ผลดูผ่าน
+
+---
+
+## 4. ลำดับที่บังคับ
+
+```
+1. commit เอกสารนี้ (ก่อนแตะโค้ด)
+2. แก้โค้ดตามขอบเขต §2 ข้อ 1-5
+3. parity gate ต้องผ่านครบทุกกลุ่ม
+4. audit shortcut บนชุดพัฒนา (ห้ามแตะ holdout ใหม่)
+5. prepare + tune บน validation -> ปรับ block threshold ของ B
+6. freeze (บันทึก candidate=B, fallback=shadow, hash โค้ด+split)
+7. full pytest + บันทึก image/commit
+8. final -- เปิด HOLDOUT_SEEDS [101-105] ครั้งเดียว
+9. รายงาน + commit + tag
+```
+
+**holdout ของ Round 1** (seeds 42-46 ส่วน `test` / `final_attacks`) **ถูกเปิดแล้ว**
+ห้ามใช้เป็น final holdout อีก · ใช้ได้เฉพาะเป็นข้อมูลอ้างอิงย้อนหลัง
+
+---
+
+## 5. Round 3 — แยกออกไปต่างหาก
+
+**สมมติฐาน:** conditional L3 fusion — ให้ L3 มีผลเฉพาะเมื่อ L1/L2 อยู่ใน
+uncertainty band แทนการดันคะแนนทุกเหตุการณ์
+
+เป็นการ **เปลี่ยนสมมติฐานและ fusion logic** จึงห้ามปนกับ Round 2 ที่แก้เพียง
+block threshold · ต้องใช้ validation ใหม่ และ **holdout seeds ชุดที่สาม
+`[201, 202, 203, 204, 205]`**
+
+```
+Round 1  Hybrid ทุกแบบ            -> failed gate
+Round 2  ทำ Config B ให้ผ่าน gate -> baseline ใหม่ที่เสถียร
+Round 3  Conditional L3 fusion     -> IF ช่วยเฉพาะ uncertainty band ได้ไหม
+```
+
+ห้ามใช้ `[101-105]` ซ้ำหลัง Round 2 เปิดแล้ว
+
+---
+
+## 6. เงื่อนไขการผ่านของ Round 2
+
+Round 2 ถือว่า **สำเร็จ** เมื่อ:
+
+1. candidate (Config B ที่ปรับ block threshold แล้ว) ผ่านงบ FPR **ครบทั้งสามระดับ**
+   บน holdout ชุดใหม่
+2. parity gate ผ่านครบ
+3. shortcut audit ไม่พบฟีเจอร์เข้าเกณฑ์ ทั้งชุดพัฒนาและ holdout
+4. leakage เป็นศูนย์
+5. full pytest ผ่าน พร้อมบันทึก command / image / commit
+
+ถ้าข้อใดไม่ผ่าน → รายงานเป็น `final_round_2_failed_gate` และ **ไม่ deploy**
+ตาม fallback ที่ประกาศไว้
+
+---
+
+## 7e. Round 2c — ผลลัพธ์ (per-size, 2026-09-04 · **แก้ไข**)
+
+**สถานะ: `final_round_2c_failed_gate`** — B ตก per-size ที่ **challenge@size50 = 1.18%**
+· ขนาดอื่นผ่านหมด · ไม่มี config ใหม่พร้อม deploy · production ไม่เปลี่ยน · L3 shadow
+
+**⚠️ แก้ข้อสรุปเดิม (2026-09-04):** ฉบับแรกสรุปว่า "threshold tuning หมดทาง" และ
+"root cause = login_velocity" — **เกินหลักฐานทั้งสองข้อ**
+
+- "threshold หมดทาง" มาจากการเทียบ 1.23% (2b) กับ 1.18% (2c) ซึ่งเป็น **คนละ holdout
+  population** → confound · การวัดองค์ประกอบพบว่า **68–78% ของ challenged normal
+  มาจาก score** (threshold ควบคุมได้) · policy floor คงที่ 38 เหตุการณ์ทุกขนาด (0.126%)
+- `login_velocity` **ไม่ใช่ policy floor** — `rule.min_action` ถูก drop ใน `fuse`
+  (ใช้เฉพาะ `policy.min_action`) จึงเป็นแค่ +0.25 คะแนน · ตัวเลข 83% เป็นความถี่ใน
+  `reasons` ไม่ใช่การพิสูจน์เชิงสาเหตุ
+
+**ข้อสรุปที่ตรงหลักฐาน:** **validation 5 seeds ประเมิน population variance ของ
+cold-start ต่ำเกินไปอย่างเป็นระบบ** (worst-seed 0.73% → holdout 1.18%, เกิดซ้ำทั้ง 2b/2c)
+→ ทางแก้คือ **เพิ่มจำนวน validation seeds + เลือก threshold จาก quantile ข้ามประชากร**
+ไม่ใช่ personalize login_velocity
+
+รายงาน: `hub/backend/tests/reports/hybrid_risk_round2c_2026-09-04.md` §2, §3, §8
+
+---
+
+## 7d. Round 2c — candidate (ประกาศล่วงหน้าก่อนเปิด holdout ใหม่)
+
+```
+candidate:       Config B
+gamma:           1.0
+warn_threshold:  0.98      (Round 2b)
+challenge:       0.995     (Round 2c — เกณฑ์ worst-seed per-size)
+block_threshold: 0.9999    (Round 2)
+holdout_seeds:   [111, 112, 113, 114, 115]   (ยังไม่เคยเปิด · ไม่ชน 106-110 spent / 201-205 Round 3)
+fallback:        current production / L3 shadow
+```
+
+**ที่มาของ challenge=0.995 (validation เท่านั้น):**
+- Round 2b ตกที่ cold-start challenge (size 50 macro 1.23% บน holdout) · per-size gate
+- ตัวขับคือ **population variance** ไม่ใช่ cold-start: บางประชากร (s45) challenge FPR
+  ~1.5% ทุกขนาด · validation-internal shift ~0
+- ~~root cause: login_velocity rule (L1) ยิง normal ของ s45 (83%)~~ **← ข้อความนี้ผิด
+  ถูกแก้แล้ว (ดู §7e)**: `rule.min_action` ถูก drop ใน `fuse` → login_velocity เป็นแค่
+  +0.25 คะแนน ไม่ใช่ floor · "83%" เป็นความถี่ใน `reasons` ไม่ใช่การพิสูจน์เชิงสาเหตุ
+- เกณฑ์ worst-seed per-size: challenge=0.995 ให้ worst-seed (max ทุก seed×size) = 0.73%
+  (margin ~0.27pp ใต้ 1%) · challenge=0.992 ไม่พอ (s44·n500 = 1.02%)
+- **ต้นทุน: recall@challenge 0.7252 -> 0.6938 (−3.1pp = enforcement recall จริง)** ·
+  recall แบบ warn+ ไม่กระทบ (challenge->warn ยัง surface) · family ที่เสีย step-up มาก:
+  new_passkey −0.14, subtle_slow_burst −0.14, login_velocity −0.12 · หลักฐาน:
+  `round2c_prefreeze_2026-09-04.md`
+
+---
+
+## 7c. Round 2b — ผลลัพธ์ (per-size, 2026-09-04)
+
+**สถานะ: `final_round_2b_failed_gate`** — ภายใต้ per-size gate **ไม่มี config ใดผ่าน** ·
+Config B ใกล้ที่สุด ตกจุดเดียว **challenge@size50 = 1.23% > 1%** (cold-start) ·
+warn fix (0.98) และ block fix (0.9999) ได้ผลครบ · ข้อจำกัดที่เหลือคือ cold-start
+challenge FPR · **ไม่ deploy** · รายงาน: `hub/backend/tests/reports/hybrid_risk_round2b_2026-09-04.md`
+· holdout [106-110] ledger open_count=1 (single-open · spent) · Round 2c ต้องใช้ holdout ใหม่
+
+---
+
+## 7b. Round 2b — candidate ที่ยืนยัน (ประกาศล่วงหน้าก่อนเปิด holdout ใหม่)
+
+```
+candidate:      Config B
+gamma:          1.0
+warn_threshold: 0.98      (Round 2b — เกณฑ์ worst-seed บน validation)
+challenge:      0.989833  (คงจาก Round 1)
+block_threshold: 0.9999   (Round 2 — คันโยกฟรี)
+holdout_seeds:  [106, 107, 108, 109, 110]   (ยังไม่เคยเปิด · ไม่ชน 201-205 ของ Round 3)
+fallback:       current production / L3 shadow (ไม่ deploy ถ้าไม่ผ่าน)
+```
+
+**ที่มาของ warn=0.98 (หลักฐานบน validation เท่านั้น):**
+- วัด validation-internal shift (calib->tuning) = **~0** (exceedance ratio 0.79-0.91
+  ทุกขนาด) → shift ไม่ได้มาจาก in-sample optimism
+- ตัวขับจริงคือ **ความแปรปรวนระหว่าง seed (ประชากรผู้ใช้)** — ที่ warn=0.9417 seed
+  44/45/46 มี warn FPR 5-6.2% ที่ขนาด 500/1000 แต่ 42/43 อยู่ 2.6-3.1%
+- เลือกด้วยเกณฑ์ **worst-seed <= 5%**: warn=0.98 ให้ worst-seed 2.88% (margin ~2.1pp)
+- recall (warn+) 0.8961 -> 0.8617 · **recall@challenge 0.7252 ไม่เปลี่ยน** (เสียแค่ soft
+  warn บน subtle_*/campaign ที่ยังถูกจับที่ระดับ challenge/block) · หลักฐาน:
+  `round2b_prefreeze_2026-09-04.md`
+- เลือก 0.98 ไม่ใช่ 0.97 เพราะ holdout ใหม่เป็นประชากรชุดใหม่ที่อาจแย่กว่า 5 seed ของ
+  validation → margin กว้างปลอดภัยกว่า จ่ายแค่ soft-warn -0.6pp
+
+---
+
+## 7. ผลลัพธ์ (ปิดรอบ 2026-09-04)
+
+**สถานะ: `final_round_2_failed_gate`** — Config B แก้ block สำเร็จ (0.25% → 0.04%)
+แต่ไม่ผ่านที่ **warn FPR 5.26% > 5.0%** บน holdout `[101-105]` (distribution shift ที่
+ขนาด 500/1000) → ไม่มี config ใหม่พร้อม deploy · fallback = shadow / current
+
+- รายงานเต็ม: `hub/backend/tests/reports/hybrid_risk_round2_2026-09-04.md`
+- ⚠️ provenance: holdout `[101-105]` ถูกเปิดหลายครั้งระหว่าง optimize (B68) → ขึ้นบัญชี
+  spent ใน `holdout_ledger.json` · Round 2b (ถ้ามี) ต้องใช้ holdout ชุดใหม่ (ไม่ใช่
+  101-105 หรือ 201-205 ที่สงวนให้ Round 3)
+- paired bootstrap ยืนยัน B > C/D/E ด้าน recall เสถียร (sign 1.0, CI ไม่คร่อม 0) →
+  L3 คงไว้ที่ shadow · ข้อสรุปหลักของ Round 1 ยังยืน

@@ -46,7 +46,7 @@ def main():
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
     if not Path(in_path).exists():
-        print(f"❌ ไม่พบไฟล์อ้างอิง: {in_path}")
+        print(f"ไม่พบไฟล์อ้างอิง: {in_path}")
         sys.exit(1)
 
     normal_res: list[list[str]] = []  # reservoir 10,000
@@ -55,7 +55,7 @@ def main():
     n_anomaly_seen = 0
     header: list[str] = []
 
-    print(f"📖 อ่านไฟล์อ้างอิง (สตรีม): {in_path}")
+    print(f"อ่านไฟล์อ้างอิง (สตรีม): {in_path}")
     with open(in_path, "r", encoding="utf-8", errors="replace", newline="") as f:
         reader = csv.reader(f)
         header = next(reader)
@@ -101,7 +101,7 @@ def main():
         for r in anomaly_res:
             w.writerow(r + ["1", "rba"])
 
-    print("\n✅ เสร็จ — base sample จากข้อมูลจริง")
+    print("\nเสร็จ — base sample จากข้อมูลจริง")
     print(f"   normal  kept: {len(normal_res):,} (seen {n_normal_seen:,})")
     print(f"   anomaly kept: {len(anomaly_res):,} (seen {n_anomaly_seen:,})")
     print(f"   output: {out_path}")

@@ -329,7 +329,7 @@ def main():
 
     _chart(results, configs, labels)
     _report(results, configs, labels, m0)
-    print(f"\n✅ chart + report -> {REPORTS}")
+    print(f"\nchart + report -> {REPORTS}")
 
 
 def _chart(results, configs, labels):

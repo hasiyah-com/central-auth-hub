@@ -204,7 +204,7 @@ def main():
         w.writerows(out)
 
     n_atk = sum(1 for r in out if r["label"] == 1)
-    print("✅ 23-feature dataset (จาก simulated_month, anchor ผู้ใช้จริง)")
+    print("23-feature dataset (จาก simulated_month, anchor ผู้ใช้จริง)")
     print(f"   rows   : {len(out)} | attack: {n_atk} ({n_atk / len(out) * 100:.1f}%)")
     print("   features: 23 (Experiment C) + label/anomaly_level/scenario/email")
     print(f"   output : {OUT}")

@@ -434,12 +434,12 @@ def _report(M, extra, leak_hits, leak_tot, shortcuts, touched):
         "| การตรวจ | ผล |",
         "|---|---|",
         f"| data leakage (eval ซ้ำ train) | **{leak_hits}/{leak_tot}** — "
-        f"{'✅ ไม่มี' if leak_hits == 0 else '❌ พบ'} |",
+        f"{'ไม่มี' if leak_hits == 0 else 'พบ'} |",
         f"| generator shortcut (feature AUC>0.99 หรือ support<5%) | "
         f"**{len(set(s[0] for s in shortcuts))} feature** — "
-        f"{'✅ ไม่พบ' if not shortcuts else '⚠️ ดูรายละเอียด'} |",
+        f"{'ไม่พบ' if not shortcuts else 'ดูรายละเอียด'} |",
         f"| L3 เปลี่ยน allow/challenge/block | **{touched} ครั้ง** — "
-        f"{'✅ ไม่แตะ' if touched == 0 else '❌ แตะ'} |",
+        f"{'ไม่แตะ' if touched == 0 else 'แตะ'} |",
     ]
     if shortcuts:
         L += [
@@ -487,10 +487,8 @@ def _report(M, extra, leak_hits, leak_tot, shortcuts, touched):
         L.append(f"| {s} | {ab:.1f}% | {tf:.2f} | {ts:.3f} |")
     L += ["\n## 6. เกณฑ์ผ่าน/ไม่ผ่าน\n", "| เกณฑ์ | ผล |", "|---|---|"]
     for lab, okk in checks:
-        L.append(f"| {lab} | {'✅' if okk else '❌'} |")
-    L.append(
-        f"| L3 มีคุณค่าพอสำหรับ enforcement (unique ≥3%) | {'✅' if enforce else '❌'} |"
-    )
+        L.append(f"| {lab} | {'' if okk else ''} |")
+    L.append(f"| L3 มีคุณค่าพอสำหรับ enforcement (unique ≥3%) | {'' if enforce else ''} |")
     L += [f"\n---\n\n## ข้อสรุป\n\n> # {verdict}\n"]
     (REPORTS / "exp_final_gate_2026-08-26.md").write_text(
         "\n".join(L), encoding="utf-8"

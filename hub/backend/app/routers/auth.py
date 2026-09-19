@@ -46,6 +46,12 @@ from app.services.ip_blacklist import is_blacklisted
 from app.services.alert_service import maybe_alert_ml_risk
 from app.services.identity_challenge import is_user_challenged
 from app.security.risk_engine import evaluate_login_risk
+from app.services.shadow_record import (
+    SOURCE_GOOGLE,
+    SOURCE_LINE,
+    SOURCE_REFRESH,
+    shadow_columns,
+)
 from app.services import webauthn_service
 from app.services import risk_challenge
 from app.services import mfa_policy
@@ -515,6 +521,7 @@ async def google_callback(request: Request, db: Session = Depends(get_db)):
         decision=actual_decision,
         is_attack_ip=is_blacklisted(db, client_ip),
         login_method="google",
+        **shadow_columns(risk, source=SOURCE_GOOGLE),
     )
     db.add(login_session)
     db.flush()  # ต้องการ login_session.id สำหรับ MFA challenge
@@ -1026,6 +1033,7 @@ async def line_callback(request: Request, db: Session = Depends(get_db)):
         decision=actual_decision,
         is_attack_ip=is_blacklisted(db, client_ip),
         login_method="line",
+        **shadow_columns(risk, source=SOURCE_LINE),
     )
     db.add(login_session)
     db.flush()  # ต้องการ login_session.id สำหรับ MFA challenge
@@ -1288,7 +1296,7 @@ def confirm_identity(token: str = "", db: Session = Depends(get_db)):
     return HTMLResponse(
         content=_confirm_html(
             ok=True,
-            title="✅ ยืนยันตัวตนสำเร็จ",
+            title="ยืนยันตัวตนสำเร็จ",
             msg=(
                 "คุณสามารถ login เข้าระบบได้ตามปกติแล้ว — "
                 "กลับไปหน้า login ของระบบย่อยที่คุณใช้งาน"
@@ -1301,7 +1309,6 @@ def _confirm_html(ok: bool, title: str, msg: str) -> str:
     """Render หน้า HTML สำหรับ identity confirm (success/error)."""
     accent = "#15803d" if ok else "#b91c1c"
     bg = "#dcfce7" if ok else "#fee2e2"
-    icon = "✓" if ok else "✕"
     return f"""<!DOCTYPE html><html lang="th"><head><meta charset="UTF-8">
 <title>{title}</title>
 <style>
@@ -1311,9 +1318,6 @@ def _confirm_html(ok: bool, title: str, msg: str) -> str:
   .card {{ max-width: 520px; background: #fff; border-radius: 16px; overflow: hidden;
            box-shadow: 0 4px 12px rgba(15,23,42,0.08); }}
   .hero {{ background: {bg}; padding: 32px; text-align: center; }}
-  .icon {{ width: 72px; height: 72px; border-radius: 50%; background: {accent};
-           color: #fff; font-size: 36px; font-weight: 800; line-height: 72px;
-           margin: 0 auto 14px; }}
   .title {{ font-size: 22px; font-weight: 800; color: {accent}; }}
   .body {{ padding: 24px 32px 28px; }}
   .msg {{ font-size: 14px; line-height: 1.6; color: #334155; }}
@@ -1322,7 +1326,6 @@ def _confirm_html(ok: bool, title: str, msg: str) -> str:
 </style></head><body>
 <div class="card">
   <div class="hero">
-    <div class="icon">{icon}</div>
     <div class="title">{title}</div>
   </div>
   <div class="body"><p class="msg">{msg}</p></div>
@@ -1394,6 +1397,10 @@ async def _refresh_risk_gate(
         sess.risk_score = risk_score
         sess.risk_breakdown = breakdown
         sess.risk_reasons = reasons
+        # refresh ให้คะแนนใหม่ทับ snapshot เดิมของ session — ผลจำลองต้องตามไปด้วย
+        # ไม่งั้นแถวนี้จะมีคะแนนของรอบใหม่แต่ผลเปรียบเทียบของรอบเก่า
+        for column, value in shadow_columns(risk, source=SOURCE_REFRESH).items():
+            setattr(sess, column, value)
 
     enforcing = not settings.ml_shadow_mode
 

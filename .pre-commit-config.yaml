@@ -10,7 +10,8 @@ repos:
       - id: check-added-large-files
         args: ['--maxkb=500']
         # vendor JS (babel standalone 2.4MB) self-host แทน CDN — intentional, exempt
-        exclude: ^hub/subsystem-dorm/app/static/vendor/
+        # ตาราง calibration (1.9 MB) เป็นหลักฐานที่ตรวจด้วย sha256 — intentional, exempt
+        exclude: ^(hub/subsystem-dorm/app/static/vendor/|hub/backend/app/security/artifacts/)
       - id: check-yaml
         exclude: ^docker-compose\.ya?ml$  # docker-compose ใช้ !reset tag custom, skip
       - id: check-json
@@ -33,6 +34,10 @@ repos:
             \.git/.*|
             \.secrets\.baseline|
             docs/sample_whitelist\.csv|
+            hub/backend/tests/scoring_freeze\.json|
+            hub/backend/app/security/artifacts/.*\.json|
+            hub/backend/tests/provenance/.*\.json|
+            hub/backend/tests/p48_population_baseline\.json|
             .*\.pyc
           )$
 
@@ -42,6 +47,13 @@ repos:
       - id: block-env-files
         name: Block .env files (allow .env.example only)
         entry: python scripts/hooks/block_env_commit.py
+        language: system
+        pass_filenames: true
+        always_run: false
+
+      - id: block-archives
+        name: Block archives and key containers (zip/rar/7z/tar/p12/pfx/key)
+        entry: python scripts/hooks/block_archives.py
         language: system
         pass_filenames: true
         always_run: false

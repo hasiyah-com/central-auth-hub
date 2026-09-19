@@ -76,7 +76,7 @@ def _get_reader():
         return None
     try:
         _reader = geoip2.database.Reader(str(db_path))
-        logger.info(f"✅ GeoLite2 DB loaded: {db_path}")
+        logger.info(f"GeoLite2 DB loaded: {db_path}")
     except Exception as e:
         logger.warning(f"เปิด GeoLite2 DB ไม่ได้: {e}")
         _reader = None

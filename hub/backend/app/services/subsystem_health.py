@@ -50,9 +50,9 @@ HEALTH_HISTORY_TTL = 48 * 3600  # กันค้างถ้า subsystem ถ�
 # แล้วบันทึกเป็น audit_log (action="subsystem_health_summary") เพื่อให้
 # โผล่ในหน้า /notifications ได้
 SUMMARY_SLOTS: list[tuple[int, str, str]] = [
-    (8, "morning", "🌅 รายงานเช้า"),
-    (13, "afternoon", "🌤 รายงานบ่าย"),
-    (18, "evening", "🌙 รายงานเย็น"),
+    (8, "morning", "รายงานเช้า"),
+    (13, "afternoon", "รายงานบ่าย"),
+    (18, "evening", "รายงานเย็น"),
 ]
 BKK_TZ = timezone(timedelta(hours=7))
 
@@ -121,6 +121,45 @@ def _resolve_health_url(subsystem: Subsystem) -> str | None:
         return _translate_for_docker(url)
     except Exception:
         return None
+
+
+def _origin_key(url: str) -> tuple[str, str] | None:
+    """(host, port) ของ URL — เติม default port ตาม scheme. None ถ้า parse ไม่ได้."""
+    try:
+        p = urlparse(url if "://" in url else f"http://{url}")
+        host = (p.hostname or "").lower()
+        if not host:
+            return None
+        return (host, str(p.port or (443 if p.scheme == "https" else 80)))
+    except Exception:
+        return None
+
+
+def _self_origin_keys() -> set[tuple[str, str]]:
+    """origin ของ Hub เอง (backend + admin console) ทั้งรูปแบบดิบและหลัง docker-translate.
+
+    ใช้กันเคส subsystem ตั้ง `redirect_uri` ชี้กลับมาที่ Hub/หน้าคอนโซลเอง: health check
+    จะได้ 200 จาก `/health` ของ *เราเอง* (frontend rewrite `/health` → hub-backend ตาม
+    single-domain mode) → รายงาน "online" ทั้งที่ไม่ได้แตะระบบย่อยจริงเลย
+    """
+    from app.config import settings as _s
+    from app.services.webhook_dispatcher import _translate_for_docker
+
+    keys: set[tuple[str, str]] = set()
+    for raw in (
+        getattr(_s, "hub_base_url", "") or "",
+        getattr(_s, "admin_frontend_url", "") or "",
+        # ชื่อ service ภายใน docker network (compose ตั้งไว้ตายตัว)
+        "http://hub-backend:8000",
+        "http://hub-frontend:3000",
+    ):
+        if not raw:
+            continue
+        for candidate in (raw, _translate_for_docker(raw)):
+            k = _origin_key(candidate)
+            if k:
+                keys.add(k)
+    return keys
 
 
 async def _self_check_hub() -> dict:
@@ -254,6 +293,45 @@ async def _ping(subsystem: Subsystem) -> dict:
             "error": "target ไม่ปลอดภัย — ถูกบล็อกโดย SSRF guard",
         }
 
+    # ── Self-target guard ──
+    # redirect_uri ที่ชี้กลับมาที่ Hub/หน้าคอนโซลเอง จะได้ 200 จาก /health ของเราเอง
+    # → ขึ้น "online" หลอก ทั้งที่ไม่เคยแตะระบบย่อยจริง (เจอจริง: subsystem ทดสอบที่ตั้ง
+    # redirect_uri = http://localhost:3000/... รายงาน online 584ms เพราะ Next.js rewrite
+    # ส่ง /health เข้า hub-backend ตาม single-domain mode)
+    #
+    # คืน "unknown" ไม่ใช่ "down" — ระบบย่อยจริงอาจปกติดี เราแค่ *เช็คไม่ได้*
+    # (vocabulary เดียวกับเคส no redirect_uri / SSRF blocked)
+    # fail-safe (B21): เทียบพลาด → log แล้วเช็คต่อตามปกติ ไม่ทำให้ health loop ล้ม
+    try:
+        self_keys = _self_origin_keys()
+        raw_uris = list(subsystem.redirect_uris or [])
+        candidates_key = [
+            k
+            for k in (
+                _origin_key(origin),
+                _origin_key(raw_uris[0] if raw_uris else ""),
+            )
+            if k
+        ]
+        if any(k in self_keys for k in candidates_key):
+            log.warning(
+                "[health] self-target detected — subsystem=%s origin=%r (redirect_uri ชี้กลับมาที่ Hub เอง)",
+                subsystem.id,
+                origin,
+            )
+            return {
+                "status": "unknown",
+                "checked_at": datetime.now(timezone.utc).isoformat(),
+                "url": origin,
+                "error": (
+                    "redirect_uri ชี้กลับมาที่ Hub/หน้าคอนโซลเอง — "
+                    "ตรวจสุขภาพระบบย่อยไม่ได้ (แก้ redirect_uri ให้ชี้ไปที่ระบบย่อยจริง)"
+                ),
+                "self_target": True,
+            }
+    except Exception as e:
+        log.warning("[health] self-target check failed: %r", e)
+
     # ลองดึง "path prefix" ของ redirect_uri[0] เผื่อ subsystem จัด structure
     # แบบ "ทุกอย่างอยู่ใน subfolder" เช่น /subsystem/callback.php → /subsystem/health.php
     # (ใช้กับ XAMPP/PHP project ที่ไม่อยาก rewrite ออก root)
@@ -304,7 +382,7 @@ async def _ping(subsystem: Subsystem) -> dict:
                 latency_ms = int((time.time() - start) * 1000)
 
                 if r.status_code == 200:
-                    # ✓ เจอ endpoint ที่ตอบ 200
+                    # เจอ endpoint ที่ตอบ 200
                     if label == "root_fallback":
                         # root ได้แค่ degraded + แจ้งเตือน
                         return {
@@ -411,7 +489,7 @@ def _detect_transition(sub: Subsystem, old: dict | None, new: dict) -> None:
             severity="critical" if new_status == "down" else "warning",
             kind="subsystem.health_changed",
             key=str(sub.id),
-            title=f"⚠ {sub_name} status: {old_status} → {new_status}",
+            title=f"{sub_name} status: {old_status} → {new_status}",
             detail={
                 "subsystem": sub_name,
                 "subsystem_id": str(sub.id),
@@ -428,7 +506,7 @@ def _detect_transition(sub: Subsystem, old: dict | None, new: dict) -> None:
             severity="warning",
             kind="subsystem.health_recovered",
             key=str(sub.id),
-            title=f"✅ {sub_name} กลับมา online",
+            title=f"{sub_name} กลับมา online",
             detail={
                 "subsystem": sub_name,
                 "subsystem_id": str(sub.id),

@@ -49,9 +49,9 @@ app = FastAPI(
 def startup():
     try:
         load_model()
-        print("✅ Model loaded")
+        print("Model loaded")
     except FileNotFoundError as e:
-        print(f"⚠️  {e}")
+        print(f" {e}")
 
 
 # ── Redis (L3 sequence history) — lazy + fail-safe ตาม B21 ──
@@ -72,7 +72,7 @@ def _redis():
         )
         _REDIS.ping()
     except Exception as e:  # noqa: BLE001
-        print(f"⚠️  redis unavailable — L3 sequence abstains: {e}")
+        print(f" redis unavailable — L3 sequence abstains: {e}")
         _REDIS = None
     return _REDIS
 

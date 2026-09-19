@@ -9,7 +9,7 @@ user แต่ละคน** (per-user chronological) ไม่ใช่สุ�
   Compute — เรียงตามเวลา/คน -> คำนวณ feature จากประวัติก่อนหน้าแบบ O(n) (two-pointer)
   Output — ATO ทั้งหมด + subsample normal 10,000
 
-⚠️ Feature set = 12 ตัว (จาก Experiment A 13 ตัว ตัด active_session_count เพราะ RBA ไม่มี
+Feature set = 12 ตัว (จาก Experiment A 13 ตัว ตัด active_session_count เพราะ RBA ไม่มี
    logout/session-duration -> derive ไม่ได้จริง). failed_logins_24h ใช้ Login Successful=False จริง
 
 หมายเหตุ memory: เก็บ ua เป็น hash + cap MAX_PER_USER (กัน attack account ที่ login เป็นแสน
@@ -249,23 +249,23 @@ COLUMNS = [
 
 def main():
     if not Path(INPUT).exists():
-        print(f"❌ ไม่พบ {INPUT}")
+        print(f"ไม่พบ {INPUT}")
         return
-    print("📖 Pass 1 — หา ATO users + สุ่ม normal users", flush=True)
+    print("Pass 1 — หา ATO users + สุ่ม normal users", flush=True)
     ato_users, normal_users = pass1(INPUT)
     target = ato_users | normal_users
 
-    print("📖 Pass 2 — ดึง login history (compact, cap ต่อ user)", flush=True)
+    print("Pass 2 — ดึง login history (compact, cap ต่อ user)", flush=True)
     hist = pass2(INPUT, target)
 
     counts = [c for dq in hist.values() for (_t, c, *_r) in dq if c]
     home = statistics.mode(counts) if counts else "US"
     print(
-        f"🏠 home country (modal) = {home!r} | users={len(hist):,} total_logins={len(counts):,}",
+        f"home country (modal) = {home!r} | users={len(hist):,} total_logins={len(counts):,}",
         flush=True,
     )
 
-    print("🧮 compute features (O(n) per user)", flush=True)
+    print("compute features (O(n) per user)", flush=True)
     rows = compute_rows(hist, home)
     attack_rows = [r for r in rows if r["label"] == 1]
     normal_rows = [r for r in rows if r["label"] == 0]
@@ -284,7 +284,7 @@ def main():
         w.writeheader()
         w.writerows(final)
 
-    print("\n✅ real-only dataset (feature จริงล้วน 12 ตัว)", flush=True)
+    print("\nreal-only dataset (feature จริงล้วน 12 ตัว)", flush=True)
     print(f"   total  : {len(final):,}")
     print(f"   normal : {len(normal_rows):,}")
     print(f"   attack : {len(attack_rows)}  (ATO จริงจาก RBA)")

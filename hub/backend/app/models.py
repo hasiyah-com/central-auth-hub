@@ -8,13 +8,17 @@ from sqlalchemy import (
     Column,
     DateTime,
     ForeignKey,
+    ForeignKeyConstraint,
+    Index,
     Integer,
     LargeBinary,
+    SmallInteger,
     String,
     Text,
     UniqueConstraint,
     JSON,
     Numeric,
+    text,
 )
 from sqlalchemy.dialects.postgresql import UUID, ARRAY, INET, JSONB
 
@@ -197,6 +201,28 @@ class LoginSession(Base):
     risk_reasons = Column(JSON)  # ["is_new_device (+0.30)", "hours_diff=12 (+0.40)"]
 
     decision = Column(String(20))  # allow/warn/challenge/block/would_*
+
+    # ── Hybrid Shadow — ผลจำลองสองชุดต่อหนึ่ง login (migration f6a7b8c9d0e1) ──
+    # ทั้งสองชุดเป็นผลจำลองล้วน ไม่มีเส้นทางไหนอ่านไปตัดสินการเข้าถึง
+    # (บังคับด้วย tests/test_shadow_invariant.py) · `decision` ด้านบนยังเป็นผลจริง
+    actual_decision_source = Column(String(32), nullable=True)
+    baseline_shadow_score = Column(Numeric(4, 3), nullable=True)  # L1+L2
+    baseline_shadow_decision = Column(String(20), nullable=True)  # would_*
+    hybrid_shadow_score = Column(Numeric(4, 3), nullable=True)  # L1+L2+L3
+    hybrid_shadow_decision = Column(String(20), nullable=True)  # would_*
+    # ธงหลักของงานวิจัย — L3 ทำให้ผลจำลองต่างจาก baseline หรือไม่
+    l3_changed_shadow_decision = Column(Boolean, nullable=True, index=True)
+    l3_eligibility = Column(String(20), nullable=True)  # abstain/diagnostic/warn/...
+    l3_n_history = Column(Integer, nullable=True)
+    # calibration + ที่มาของคอนฟิกที่ใช้ให้คะแนน "ครั้งนี้" — ไม่ใช่ค่าตอน query
+    calibrated = Column(Boolean, nullable=True)
+    calibration_version = Column(String(64), nullable=True)
+    calibration_sha256 = Column(String(64), nullable=True)
+    risk_config_id = Column(String(64), nullable=True)
+    shadow_epoch_id = Column(String(64), nullable=True, index=True)
+    scoring_commit = Column(String(64), nullable=True)
+    latency_total_ms = Column(Integer, nullable=True)
+    latency_l3_ms = Column(Integer, nullable=True)
 
     # ช่องทางที่ login เข้ามา (Week 10) — google / passkey / discoverable / line / hub_direct
     # ใช้ในหน้า Access Activity (admin) — NULL = row เก่าก่อนเพิ่ม column
@@ -572,3 +598,118 @@ class RecoveryTicketApproval(Base):
     evidence_note = Column(Text, nullable=True)
     remark = Column(Text, nullable=True)
     approved_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+# ── Expert Label Workflow (docs/design/EXPERT_LABEL_WORKFLOW.md) ──
+# สิ่งที่ผู้ตรวจวินิจฉัย กับ สิ่งที่ระบบทำ อยู่คนละตารางโดยตั้งใจ — ห้ามเขียนทับกัน
+# CHECK constraint และ trigger ที่ปฏิเสธ UPDATE อยู่ใน migration e5f6a7b8c9d0
+
+
+class ExpertAlertGroup(Base):
+    """หน่วยที่ผู้เชี่ยวชาญตรวจ — group_key = (user_id, primary_signal, หน้าต่าง 30 นาที)."""
+
+    __tablename__ = "expert_alert_groups"
+
+    id = uuid_pk()
+    group_key = Column(String(255), nullable=False, unique=True)
+    user_id = Column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=True, index=True
+    )
+    primary_signal = Column(String(120), nullable=False)
+    window_start = Column(DateTime, nullable=False, index=True)
+    session_ids = Column(JSON, nullable=False)  # ทุก login_sessions.id ในกลุ่ม
+    n_events = Column(Integer, nullable=False)
+    first_seen_at = Column(DateTime, nullable=False)
+    last_seen_at = Column(DateTime, nullable=False)
+    # ที่มาของคอนฟิกที่ shadow รันตอนเกิดเหตุ — ว่าง = พิสูจน์ที่มาไม่ได้
+    shadow_epoch_id = Column(String(64), nullable=True)
+    risk_config_id = Column(String(64), nullable=True)
+    calibration_version = Column(String(64), nullable=True)
+    calibration_sha256 = Column(String(64), nullable=True)
+    scoring_commit = Column(String(64), nullable=True)
+    provenance = Column(
+        String(10), nullable=False, index=True
+    )  # demo | test | unknown | local | external
+    eligible_for_production_metrics = Column(Boolean, nullable=False, default=False)
+    double_review = Column(Boolean, nullable=False, default=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class SystemDisposition(Base):
+    """สิ่งที่ระบบทำ/จะทำกับกลุ่ม — เขียนครั้งเดียวตอนสร้าง · ไม่มี API ให้ผู้ตรวจแก้."""
+
+    __tablename__ = "system_dispositions"
+
+    id = uuid_pk()
+    group_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("expert_alert_groups.id"),
+        nullable=False,
+        unique=True,
+    )
+    disposition = Column(String(20), nullable=False)  # would_* ที่รุนแรงที่สุดในกลุ่ม
+    decision_counts = Column(JSON, nullable=False)
+    max_risk_score = Column(Numeric(4, 3), nullable=True)
+    primary_layer = Column(String(20), nullable=True)
+    model_output = Column(JSON, nullable=False)  # snapshot ต่อ login · ซ่อนในรอบแรก
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+
+class ExpertReview(Base):
+    """สิ่งที่ผู้เชี่ยวชาญวินิจฉัย — append-only · แก้ด้วยแถวใหม่ที่ชี้ supersedes_id."""
+
+    __tablename__ = "expert_reviews"
+    # ข้อบังคับที่อยู่ใน migration e5f6a7b8c9d0 — ประกาศไว้ตรงนี้ด้วยให้ model ตรงกับ DB
+    __table_args__ = (
+        # เป้าหมายของ composite FK ด้านล่าง
+        UniqueConstraint(
+            "id", "group_id", "reviewer_id", "round", name="uq_expert_reviews_chain_key"
+        ),
+        # แถวที่แก้ label ต้องอยู่กลุ่ม ผู้ตรวจ และรอบเดียวกับแถวเดิม
+        ForeignKeyConstraint(
+            ["supersedes_id", "group_id", "reviewer_id", "round"],
+            [
+                "expert_reviews.id",
+                "expert_reviews.group_id",
+                "expert_reviews.reviewer_id",
+                "expert_reviews.round",
+            ],
+            name="fk_expert_reviews_supersedes_same_chain",
+        ),
+        # label ต้นทางได้แถวเดียวต่อ (กลุ่ม, ผู้ตรวจ, รอบ)
+        Index(
+            "uq_expert_reviews_one_root",
+            "group_id",
+            "reviewer_id",
+            "round",
+            unique=True,
+            postgresql_where=text("supersedes_id IS NULL"),
+        ),
+    )
+
+    id = uuid_pk()
+    group_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("expert_alert_groups.id"),
+        nullable=False,
+        index=True,
+    )
+    reviewer_id = Column(
+        UUID(as_uuid=True), ForeignKey("users.id"), nullable=False, index=True
+    )
+    round = Column(SmallInteger, nullable=False)  # 1 = blind · 2 = เห็นผลของโมเดลแล้ว
+    model_output_visible = Column(Boolean, nullable=False)
+    verdict = Column(
+        String(24), nullable=False
+    )  # benign | suspicious | confirmed_attack | insufficient_context
+    confidence = Column(String(8), nullable=False)  # low | medium | high
+    reason_codes = Column(JSON, nullable=False)
+    comment = Column(Text, nullable=True)
+    time_spent_sec = Column(Integer, nullable=True)
+    supersedes_id = Column(
+        UUID(as_uuid=True),
+        ForeignKey("expert_reviews.id"),
+        nullable=True,
+        unique=True,
+    )
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)

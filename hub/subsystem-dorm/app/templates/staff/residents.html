@@ -6,7 +6,7 @@
 <div class="flex items-start justify-between flex-wrap gap-4 mb-6">
   <div>
     <div class="flex items-center gap-2 mb-3">
-      <span class="badge badge-staff">👔 STAFF</span>
+      <span class="badge badge-staff">STAFF</span>
       <span style="color:#0A0A0A;">·</span>
       <span class="mono text-xs font-extrabold" style="color:#6B6B6B; letter-spacing:.08em;">RESIDENT_DIRECTORY</span>
     </div>
@@ -88,12 +88,12 @@
           <td>
             {% if resident.hub_access_revoked_at %}
             <span class="badge" style="background:#fee2e2; color:#991b1b; border:1px solid #fca5a5;" title="Hub revoke whitelist แล้ว — login ใหม่ไม่ได้">
-              ⛔ Hub-revoked
+              Hub-revoked
             </span>
             {% else %}
             <span class="badge badge-{% if resident.status == 'checked_in' %}checked_in{% elif resident.status == 'active' %}active{% else %}{{ resident.status }}{% endif %}">
-              {% if resident.status == "checked_in" %}🏠 check-in
-              {% elif resident.status == "active" %}✅ active
+              {% if resident.status == "checked_in" %}check-in
+              {% elif resident.status == "active" %}active
               {% else %}{{ resident.status }}{% endif %}
             </span>
             {% endif %}
@@ -114,7 +114,6 @@
 
   {% else %}
   <div class="empty-state" style="border:none; border-radius:0;">
-    <div class="empty-state-icon">👥</div>
     <h3>ยังไม่มีผู้พักในระบบ</h3>
     <p>ผู้ใช้จะปรากฏที่นี่หลังจาก login ครั้งแรก</p>
   </div>

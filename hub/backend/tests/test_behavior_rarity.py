@@ -13,9 +13,7 @@ from __future__ import annotations
 from collections import Counter
 
 from app.security.behavior_profiling import BehaviorResult, evaluate_behavior
-from app.security.iforest_scorer import IForestResult
-from app.security.risk_aggregator import aggregate
-from app.security.rule_engine import FEAT, RuleResult
+from app.security.rule_engine import FEAT
 
 
 def base_vec(hour=12.0):
@@ -60,40 +58,45 @@ def test_offhour_fires_rarity():
     assert r.score >= 0.30
 
 
-# ── subsystem_lateral: เข้าระบบที่ไม่เคยใช้ (SUB_B) → challenge floor ──
-def test_new_subsystem_forces_challenge():
+# ── subsystem_lateral: เข้าระบบที่ไม่เคยใช้ (SUB_B) → หลักฐานแรง แต่ไม่บังคับ action ──
+# แก้ 6 ก.ย. 2569: เดิมชื่อ test_new_subsystem_forces_challenge และยืนยัน
+# `min_action == "challenge"` · ฟิลด์นั้นไม่เคยถูกอ่านบนเส้นทางจริงของ production
+# (ยืนยันด้วยข้อมูล: 81/81 เหตุการณ์ได้ policy min_action = None) จึงถูกตัดทิ้ง (B70)
+def test_new_subsystem_is_strong_evidence_not_a_floor():
     r = evaluate_behavior(base_vec(hour=8.0), DAYTIME, subsystem_id="SUB_B")
-    assert r.min_action == "challenge"
     assert any("subsystem" in x for x in r.reasons)
+    assert r.score > 0.20, "ประวัติยาว -> ความมั่นใจสูง -> หลักฐานต้องเกือบเต็มน้ำหนัก"
 
 
 # ── subsystem ที่ใช้ประจำ (SUB_A) → ไม่ยิง ──
 def test_common_subsystem_no_signal():
     r = evaluate_behavior(base_vec(hour=8.0), DAYTIME, subsystem_id="SUB_A")
-    assert r.min_action is None
     assert not any("subsystem" in x for x in r.reasons)
 
 
-# ── subsystem ที่ใช้นานๆ ที (HUB, legit) → soft เท่านั้น ไม่ถึง challenge ──
-def test_rare_but_seen_subsystem_soft():
-    r = evaluate_behavior(base_vec(hour=8.0), DAYTIME, subsystem_id="HUB")
-    assert r.min_action is None  # เคยใช้ = ไม่บังคับ challenge
+# ── subsystem ที่ใช้นานๆ ที (HUB, legit) → ต้องอ่อนกว่าระบบที่ไม่เคยใช้เสมอ ──
+def test_rare_but_seen_subsystem_is_weaker_than_never_seen():
+    seen = evaluate_behavior(base_vec(hour=8.0), DAYTIME, subsystem_id="HUB")
+    never = evaluate_behavior(base_vec(hour=8.0), DAYTIME, subsystem_id="SUB_B")
+    assert seen.score < never.score
 
 
-# ── policy floor ทะลุถึง decision จริง ──
-def _decide(v, sub):
-    beh = evaluate_behavior(v, DAYTIME, subsystem_id=sub)
-    rule = RuleResult(blocked=False, score=0.0, reasons=[])
-    ifr = IForestResult(raw_score=0.0, risk_score=0.0, label="normal")
-    return aggregate(rule, beh, ifr).decision
+# ── ข้อจำกัดที่รู้ตัว: น้ำหนักของ "ไม่เคยเห็น" **ไม่** ขึ้นกับปริมาณประวัติ ──
+def test_novelty_weight_is_independent_of_history_size_by_design():
+    """ประวัติ 25 วันกับ 2,500 วันให้หลักฐานเท่ากัน — เป็นข้อจำกัดที่วัดแล้วยอมรับ.
 
+    เคยทดลองถ่วงน้ำหนักตามปริมาณประวัติ (rule-of-three heuristic) แล้ววัดบน
+    validation: ลด FPR ได้สูงสุด 0.08 pp ซึ่งแยกไม่ออกจากศูนย์ใน paired test
+    แต่ recall ของ `subtle_quiet_lateral` ตก 6.7 pp อย่างมีนัย จึงถอนออก
+    (ดู tests/reports/l2_subsystem_family_grid_2026-09-06.md)
 
-def test_lateral_reaches_challenge_end_to_end():
-    assert _decide(base_vec(hour=8.0), "SUB_B") == "challenge"
-
-
-def test_normal_stays_allow():
-    assert _decide(base_vec(hour=8.0), "SUB_A") == "allow"
+    เทสนี้ตรึงพฤติกรรมปัจจุบันไว้ ไม่ใช่รับรองว่าเป็นพฤติกรรมที่ดีที่สุด
+    """
+    short = dict(DAYTIME, total=50, session_count=50)
+    long_ = dict(DAYTIME, total=5000, session_count=5000)
+    r_short = evaluate_behavior(base_vec(hour=8.0), short, subsystem_id="SUB_B")
+    r_long = evaluate_behavior(base_vec(hour=8.0), long_, subsystem_id="SUB_B")
+    assert r_short.score == r_long.score
 
 
 # ── backward compat: profile แบบเก่า (ไม่มี hour_counts) ต้องไม่พัง ──

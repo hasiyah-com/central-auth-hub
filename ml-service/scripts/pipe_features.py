@@ -17,7 +17,7 @@ OUT = DATA / "user_features.csv"
 
 def main():
     if not SRC.exists():
-        print(f"❌ ไม่พบ {SRC} — รัน pipe_clean.py ก่อน")
+        print(f"ไม่พบ {SRC} — รัน pipe_clean.py ก่อน")
         return
     by_user = defaultdict(list)
     for r in csv.DictReader(open(SRC, encoding="utf-8")):
@@ -33,7 +33,7 @@ def main():
 
     from collections import Counter
 
-    print("✅ สกัด 23 ฟีเจอร์เสร็จ")
+    print("สกัด 23 ฟีเจอร์เสร็จ")
     print(f"   rows: {len(feats):,} | users: {len(by_user)}")
     print(f"   ต่อ user: {dict(Counter(r['email'].split('@')[0] for r in feats))}")
     print(f"   → {OUT}")

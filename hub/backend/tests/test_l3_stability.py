@@ -345,6 +345,7 @@ async def test_cold_capacity_many_distinct_users(seeded):
 
 
 # ══════════════ 5. Latency ══════════════
+@pytest.mark.performance
 @pytest.mark.asyncio
 async def test_latency_within_login_budget(seeded):
     """L3 ต้องไม่กินเวลาเกินงบของ login path.

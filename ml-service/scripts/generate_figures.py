@@ -261,7 +261,7 @@ def figs_for_experiment(exp, names, cols, y, cont):
 
 def main():
     if not DATA.exists():
-        print(f"❌ ไม่พบ {DATA} — รัน build_benchmark.py ก่อน")
+        print(f"ไม่พบ {DATA} — รัน build_benchmark.py ก่อน")
         return
     cols, y = load()
     cont = float(y.mean())
@@ -275,7 +275,7 @@ def main():
         for n in MODELS:
             prauc[n].append(vals[n][4])
             f1s[n].append(vals[n][2])
-        print(f"   ✅ Experiment {exp} ({len(names)} feat) — 6 รูป")
+        print(f"   Experiment {exp} ({len(names)} feat) — 6 รูป")
 
     # ablation: PR-AUC + F1 across A->B->C
     exps = list(EXPERIMENTS.keys())
@@ -300,7 +300,7 @@ def main():
     fig.savefig(FIG_DIR / "ablation_pr_auc.png", dpi=130)
     plt.close(fig)
 
-    print(f"\n✅ เสร็จ — figures ที่: {FIG_DIR}")
+    print(f"\nเสร็จ — figures ที่: {FIG_DIR}")
     print("   figures/{A,B,C}/ (6 รูปต่อชุด) + ablation_pr_auc.png")
 
 

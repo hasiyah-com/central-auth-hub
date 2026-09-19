@@ -215,7 +215,7 @@ def seed():
 
     existing = db.query(Book).count()
     if existing > 0:
-        print(f"⚠️  มีหนังสือ {existing} เล่มอยู่แล้ว")
+        print(f" มีหนังสือ {existing} เล่มอยู่แล้ว")
         ans = input("ต้องการลบของเก่าแล้ว seed ใหม่หรือไม่? (y/N): ").strip().lower()
         if ans != "y":
             print("ยกเลิก")
@@ -227,7 +227,7 @@ def seed():
         db.query(Borrowing).delete()
         db.query(Book).delete()
         db.commit()
-        print("✓ ลบ books + borrowings เก่าแล้ว")
+        print("ลบ books + borrowings เก่าแล้ว")
 
     for isbn, title, author, category, total, desc in BOOKS:
         db.add(
@@ -248,7 +248,7 @@ def seed():
     for _, _, _, c, _, _ in BOOKS:
         by_cat[c] = by_cat.get(c, 0) + 1
 
-    print(f"\n✅ Seed สำเร็จ — {len(BOOKS)} เล่ม")
+    print(f"\nSeed สำเร็จ — {len(BOOKS)} เล่ม")
     for cat, n in by_cat.items():
         print(f"   {cat}: {n} เล่ม")
     print("\nลองเปิด http://localhost:8002/books")

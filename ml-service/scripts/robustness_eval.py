@@ -92,7 +92,7 @@ def ci95(vals):
 
 def main():
     if not DATA.exists():
-        print(f"❌ ไม่พบ {DATA}")
+        print(f"ไม่พบ {DATA}")
         return
     X, y = load()
     cont = float(y.mean())

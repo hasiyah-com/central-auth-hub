@@ -167,7 +167,7 @@ def main() -> int:
         hits += scan(f, roster_emails)
 
     if hits:
-        print("❌ พบข้อมูลส่วนบุคคลของผู้ใช้จริงในไฟล์ที่จะขึ้น git:\n", file=sys.stderr)
+        print("พบข้อมูลส่วนบุคคลของผู้ใช้จริงในไฟล์ที่จะขึ้น git:\n", file=sys.stderr)
         for h in hits[:50]:
             print(f"   {h}", file=sys.stderr)
         if len(hits) > 50:
@@ -177,7 +177,7 @@ def main() -> int:
         print("   ถ้าเป็น placeholder จริงๆ เพิ่มใน ALLOWLIST ของสคริปต์นี้", file=sys.stderr)
         return 1
 
-    print(f"✅ ไม่พบ PII ของคนจริง ({len(files)} ไฟล์)")
+    print(f"ไม่พบ PII ของคนจริง ({len(files)} ไฟล์)")
     return 0
 
 

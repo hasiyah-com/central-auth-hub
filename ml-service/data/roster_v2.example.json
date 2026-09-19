@@ -1,0 +1,15 @@
+{
+  "_comment": "คัดลอกเป็น roster_v2.json แล้วใส่อีเมลจริง — roster_v2.json ถูก gitignore",
+  "U01": "user01@example.invalid",
+  "U02": "user02@example.invalid",
+  "U03": "user03@example.invalid",
+  "U04": "user04@example.invalid",
+  "U05": "user05@example.invalid",
+  "U06": "user06@example.invalid",
+  "U07": "user07@example.invalid",
+  "U08": "user08@example.invalid",
+  "U09": "user09@example.invalid",
+  "U10": "user10@example.invalid",
+  "U11": "user11@example.invalid",
+  "U12": "user12@example.invalid"
+}

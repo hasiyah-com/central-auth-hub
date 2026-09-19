@@ -195,7 +195,7 @@ async def main() -> int:
             print(f"  Recall (mfa+)      : {tp}/{n_attack} = {recall * 100:.1f}%")
             print(f"  mean risk (attack) : {mean_attack:.3f}")
         else:
-            print("\n⚠️  attack label = 0 → recall วัดไม่ได้")
+            print("\n attack label = 0 → recall วัดไม่ได้")
             print("    ต้องให้ admin label จริง (toggle-attack-ip / MLFeedback) ก่อน")
         print("=" * 64)
         return 0

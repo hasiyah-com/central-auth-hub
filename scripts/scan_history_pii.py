@@ -454,17 +454,17 @@ def self_test() -> int:
     for kind, sample in SELF_TEST:
         got = {k for k, _ in scan_text(sample, set(), set())}
         ok = kind in got
-        print(f"  {'✅' if ok else '❌'} {kind:<22} {'' if ok else '<- ไม่จับ!'}")
+        print(f"  {'' if ok else ''} {kind:<22} {'' if ok else '<- ไม่จับ!'}")
         bad += 0 if ok else 1
     # กันอักขระควบคุมหลุดเข้า pattern อีก
     raw = Path(__file__).read_bytes()
     ctrl = [hex(b) for b in range(32) if b not in (9, 10, 13) and bytes([b]) in raw]
     if ctrl:
-        print(f"  ❌ พบอักขระควบคุมในไฟล์: {ctrl}")
+        print(f"  พบอักขระควบคุมในไฟล์: {ctrl}")
         bad += 1
     else:
-        print("  ✅ ไม่มีอักขระควบคุมในไฟล์")
-    tail = "✅ ทุกกฎทำงาน" if not bad else f"❌ {bad} กฎไม่ทำงาน — อย่าเชื่อผลสแกน"
+        print("  ไม่มีอักขระควบคุมในไฟล์")
+    tail = "ทุกกฎทำงาน" if not bad else f"{bad} กฎไม่ทำงาน — อย่าเชื่อผลสแกน"
     print(chr(10) + tail)
     return 1 if bad else 0
 
@@ -550,7 +550,7 @@ def main() -> int:
             cs = " · ".join(c.split()[0] for c in commits_touching(p)) or "—"
             L.append(f"| `{p}` | {label} | {cs} |")
     else:
-        L.append("✅ ไม่พบ — ไม่มีไฟล์ต้องห้ามในประวัติเลย")
+        L.append("ไม่พบ — ไม่มีไฟล์ต้องห้ามในประวัติเลย")
 
     L += ["", "## 2. เนื้อหาที่เข้าข่าย PII / ความลับ", ""]
     now, hist = {}, {}
@@ -574,16 +574,16 @@ def main() -> int:
         return out
 
     L += [
-        "### 2.1 🔴 ยังอยู่ในไฟล์ปัจจุบัน (เห็นทันทีที่เปิด repo)",
+        "### 2.1 ยังอยู่ในไฟล์ปัจจุบัน (เห็นทันทีที่เปิด repo)",
         "",
     ]
-    L += _rows(now) if now else ["✅ ไม่พบ — ไฟล์ปัจจุบันสะอาด"]
+    L += _rows(now) if now else ["ไม่พบ — ไฟล์ปัจจุบันสะอาด"]
     L += [
         "",
-        "### 2.2 🟠 อยู่แค่ในประวัติ (ไฟล์ปัจจุบันล้างแล้ว แต่ commit เก่ายังกู้ได้)",
+        "### 2.2 อยู่แค่ในประวัติ (ไฟล์ปัจจุบันล้างแล้ว แต่ commit เก่ายังกู้ได้)",
         "",
     ]
-    L += _rows(hist) if hist else ["✅ ไม่พบ"]
+    L += _rows(hist) if hist else ["ไม่พบ"]
 
     msg_hits = scan_commit_messages(args.refs, roster)
     total = len(path_hits) + len(content_hits) + len(msg_hits)
@@ -598,25 +598,25 @@ def main() -> int:
             L.append(f"| `{sha}` | {kind} | `{val}` |")
         L += [
             "",
-            "> ⚠️ `git filter-repo --invert-paths` ล้างเฉพาะไฟล์ — commit message",
+            "> `git filter-repo --invert-paths` ล้างเฉพาะไฟล์ — commit message",
             "> ต้องใช้ `--message-callback` แยกต่างหาก",
         ]
     else:
-        L.append("✅ ไม่พบ")
+        L.append("ไม่พบ")
 
     L += [
         "",
         "## 3. สรุป",
         "",
         f"- ไฟล์ต้องห้ามในประวัติ: **{len(path_hits)}**",
-        f"- 🔴 ไฟล์ปัจจุบันที่ยังมี PII: **{len(now)}**",
-        f"- 🟠 ไฟล์ที่สะอาดแล้วแต่ประวัติยังค้าง: **{len(hist)}**",
+        f"- ไฟล์ปัจจุบันที่ยังมี PII: **{len(now)}**",
+        f"- ไฟล์ที่สะอาดแล้วแต่ประวัติยังค้าง: **{len(hist)}**",
         f"- commit message ที่มี PII: **{len(set(msg_hits))}**",
         "",
         (
-            "✅ **ประวัติสะอาด** — เปิด repo เป็นสาธารณะได้โดยไม่ต้อง rewrite history"
+            "**ประวัติสะอาด** — เปิด repo เป็นสาธารณะได้โดยไม่ต้อง rewrite history"
             if total == 0
-            else "❌ **ต้องจัดการก่อนเปิดสาธารณะ** — ดู §4"
+            else "**ต้องจัดการก่อนเปิดสาธารณะ** — ดู §4"
         ),
         "",
     ]

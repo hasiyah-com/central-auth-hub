@@ -265,7 +265,7 @@ def main():
         w = csv.DictWriter(f, fieldnames=list(out_rows[0].keys()))
         w.writeheader()
         w.writerows(out_rows)
-    print(f"\n✅ ผลลัพธ์ต่อ login → {OUT}")
+    print(f"\nผลลัพธ์ต่อ login → {OUT}")
 
 
 if __name__ == "__main__":

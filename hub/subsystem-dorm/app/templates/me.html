@@ -34,14 +34,14 @@
       {# field "ติดมา" เสมอ — email + name มาในทุก scope ที่ subsystem ขอ #}
       <div class="flex items-center justify-between py-2" style="border-bottom:1px solid rgba(10,10,10,.08);">
         <dt class="text-sm flex items-center gap-2" style="color:#6B6B6B;">
-          <span>📧</span>อีเมล
+          อีเมล
           <span class="mono" style="font-size:10px;color:#9C9C9C;">(email)</span>
         </dt>
         <dd class="text-sm font-extrabold mono" style="color:#0A0A0A;">{{ user.email }}</dd>
       </div>
       <div class="flex items-center justify-between py-2" style="border-bottom:1px solid rgba(10,10,10,.08);">
         <dt class="text-sm flex items-center gap-2" style="color:#6B6B6B;">
-          <span>👤</span>ชื่อ-นามสกุล
+          ชื่อ-นามสกุล
           <span class="mono" style="font-size:10px;color:#9C9C9C;">(name)</span>
         </dt>
         <dd class="text-sm font-extrabold" style="color:#0A0A0A;">{{ user.full_name or "—" }}</dd>
@@ -49,20 +49,20 @@
 
       {# field optional — แสดงเฉพาะที่ scope ปัจจุบันขอ #}
       {% set optional_fields = [
-        ('🎓', 'รหัสนักศึกษา', 'student_id', resident.student_id if resident else None),
-        ('👔', 'รหัสบุคลากร', 'employee_id', resident.employee_id if resident else None),
-        ('🏛️', 'คณะ', 'faculty', resident.faculty if resident else None),
-        ('📚', 'สาขา', 'major', resident.major if resident else None),
-        ('🗓️', 'ชั้นปี', 'year', resident.year if resident else None),
-        ('💼', 'ตำแหน่ง', 'position', resident.position if resident else None),
-        ('📞', 'โทรศัพท์', 'phone', resident.phone if resident else None),
-        ('🏠', 'ที่อยู่', 'address', resident.address if resident else None),
+        ('รหัสนักศึกษา', 'student_id', resident.student_id if resident else None),
+        ('รหัสบุคลากร', 'employee_id', resident.employee_id if resident else None),
+        ('คณะ', 'faculty', resident.faculty if resident else None),
+        ('สาขา', 'major', resident.major if resident else None),
+        ('ชั้นปี', 'year', resident.year if resident else None),
+        ('ตำแหน่ง', 'position', resident.position if resident else None),
+        ('โทรศัพท์', 'phone', resident.phone if resident else None),
+        ('ที่อยู่', 'address', resident.address if resident else None),
       ] %}
-      {% for icon, label, key, val in optional_fields %}
+      {% for label, key, val in optional_fields %}
         {% if key in user.provided_scope %}
         <div class="flex items-center justify-between py-2" style="border-bottom:1px solid rgba(10,10,10,.08);">
           <dt class="text-sm flex items-center gap-2" style="color:#6B6B6B;">
-            <span>{{ icon }}</span>{{ label }}
+            {{ label }}
             <span class="mono" style="font-size:10px;color:#9C9C9C;">({{ key }})</span>
           </dt>
           <dd class="text-sm font-extrabold mono text-right" style="color:#0A0A0A;">
@@ -87,7 +87,7 @@
   <div class="card p-6">
     <div class="flex items-center justify-between mb-4">
       <h2 class="display flex items-center gap-2" style="font-size:20px;">
-        <span>🏠</span> สถานะในระบบหอพัก
+        สถานะในระบบหอพัก
       </h2>
       <span class="chip mono">DORM_STATUS</span>
     </div>
@@ -96,9 +96,9 @@
     <div class="flex flex-col gap-3 mb-5">
       <div class="flex items-center gap-3 p-4 card-soft">
         <div class="text-2xl">
-          {% if resident.status == "checked_in" %}🏠
-          {% elif resident.status == "active" %}✅
-          {% else %}👤{% endif %}
+          {% if resident.status == "checked_in" %}
+          {% elif resident.status == "active" %}
+          {% else %}{% endif %}
         </div>
         <div>
           <div class="mono text-xs font-extrabold mb-1" style="color:#6B6B6B; letter-spacing:.08em;">STATUS</div>
@@ -107,7 +107,6 @@
       </div>
 
       <div class="flex items-center gap-3 p-4 card-soft">
-        <div class="text-2xl">🛏️</div>
         <div>
           <div class="mono text-xs font-extrabold mb-1" style="color:#6B6B6B; letter-spacing:.08em;">CURRENT_ROOM</div>
           <div class="font-extrabold" style="color:#0A0A0A;">
@@ -122,7 +121,6 @@
 
       {% if resident.checked_in_at %}
       <div class="flex items-center gap-3 p-4 card-soft">
-        <div class="text-2xl">📅</div>
         <div>
           <div class="mono text-xs font-extrabold mb-1" style="color:#6B6B6B; letter-spacing:.08em;">CHECKED_IN_AT</div>
           <div class="font-extrabold" style="color:#0A0A0A;">{{ resident.checked_in_at.strftime("%d %b %Y · %H:%M") }}</div>
@@ -131,7 +129,6 @@
       {% endif %}
 
       <div class="flex items-center gap-3 p-4 card-soft">
-        <div class="text-2xl">🕐</div>
         <div>
           <div class="mono text-xs font-extrabold mb-1" style="color:#6B6B6B; letter-spacing:.08em;">FIRST_LOGIN</div>
           <div class="font-extrabold" style="color:#0A0A0A;">{{ resident.created_at.strftime("%d %b %Y") }}</div>
@@ -140,7 +137,6 @@
     </div>
     {% else %}
     <div class="empty-state py-10">
-      <div class="empty-state-icon">🏠</div>
       <h3>ยังไม่มีข้อมูลในระบบหอพัก</h3>
       <p>เริ่มส่งคำขอจองห้องเพื่อสร้างโปรไฟล์</p>
     </div>
@@ -195,17 +191,17 @@
           </td>
           <td>
             <span class="badge badge-{{ r.status }}">
-              {% if r.status == "pending" %}⏳ รออนุมัติ
-              {% elif r.status == "approved" %}✅ อนุมัติแล้ว
-              {% elif r.status == "checked_in" %}🏠 check-in
-              {% elif r.status == "rejected" %}❌ ปฏิเสธ
-              {% elif r.cancelled_at %}🚫 ยกเลิกแล้ว
+              {% if r.status == "pending" %}รออนุมัติ
+              {% elif r.status == "approved" %}อนุมัติแล้ว
+              {% elif r.status == "checked_in" %}check-in
+              {% elif r.status == "rejected" %}ปฏิเสธ
+              {% elif r.cancelled_at %}ยกเลิกแล้ว
               {% else %}{{ r.status }}{% endif %}
             </span>
           </td>
           <td class="max-w-xs">
             {% if r.status == "rejected" and r.reject_reason %}
-              <span class="text-xs" style="color:#B22A2E;">❌ {{ r.reject_reason }}</span>
+              <span class="text-xs" style="color:#B22A2E;">{{ r.reject_reason }}</span>
             {% elif r.reason %}
               <span class="text-xs line-clamp-2" style="color:#6B6B6B;">{{ r.reason }}</span>
             {% else %}
@@ -232,7 +228,6 @@
 
   {% else %}
   <div class="empty-state" style="border:none; border-radius:0;">
-    <div class="empty-state-icon">📋</div>
     <h3>ยังไม่เคยส่งคำขอจอง</h3>
     <p>ไปที่ <a href="/rooms" class="underline font-extrabold" style="color:#2454FF;">ห้องทั้งหมด</a> เพื่อเริ่มจอง</p>
   </div>

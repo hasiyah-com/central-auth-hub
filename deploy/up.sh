@@ -24,4 +24,4 @@ case "${1:-all}" in
   all)     up_hub; up_dorm; up_library; up_grade ;;
   *) echo "usage: bash deploy/up.sh [hub|dorm|library|grade|all]"; exit 1 ;;
 esac
-echo "✅ up: ${1:-all}"
+echo "up: ${1:-all}"

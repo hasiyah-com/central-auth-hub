@@ -26,7 +26,7 @@ REPORTS = ROOT / "hub" / "backend" / "tests" / "reports"
 # manifest แต่ละรอบเป็นคนละไฟล์ — **ห้ามเขียนทับของเดิม** เพราะ tag เก่าอ้างไฟล์นั้นอยู่
 # (เขียนทับ = หลักฐานของ freeze รอบก่อนหายไป ตรวจย้อนไม่ได้)
 MANIFEST_DIR = ROOT / "docs"
-MANIFEST_DEFAULT = MANIFEST_DIR / "RBA_EVIDENCE_MANIFEST_2026-09-01-r2.md"
+MANIFEST_DEFAULT = MANIFEST_DIR / "RBA_EVIDENCE_MANIFEST_2026-09-08.md"
 
 # ── ชุดหลักฐาน: รายงานการทดลอง (เรียงตามลำดับที่ทำจริง) ──
 EVIDENCE_REPORTS = [
@@ -59,6 +59,17 @@ EVIDENCE_REPORTS = [
     "l3_shadow_replay_2026-08-29.md",
     "l3_unified_2026-08-31.md",
     "l3_explainability_2026-09-01.md",
+    # รอบ 3-8 ก.ย. 2026 — Hybrid gate, cluster-aware FPR, ประชากร P48
+    "hybrid_risk_experiment_2026-09-03.md",
+    "round2_statistics_2026-09-03.md",
+    "hybrid_risk_round2_2026-09-04.md",
+    "hybrid_risk_round2b_2026-09-04.md",
+    "hybrid_risk_round2c_2026-09-04.md",
+    "cold_start_fpr_rootcause_2026-09-06.md",
+    "cluster_aware_gate_2026-09-06.md",
+    "l2_subsystem_family_grid_2026-09-06.md",
+    "p48_population_and_audit_2026-09-08.md",
+    "p48_validation_2026-09-08.md",
 ]
 
 # ── โค้ดที่ผลิตตัวเลข (harness ทดลอง + production ที่ถูกวัด) ──
@@ -90,6 +101,30 @@ EVIDENCE_CODE = [
     "ml-service/app/main.py",
     "hub/backend/app/security/iforest_scorer.py",
     "hub/backend/tests/test_l3_unified.py",
+    # รอบ 3-8 ก.ย. 2026 — harness ของ Hybrid gate + cluster-aware CI + ประชากร P48
+    "ml-service/scripts/exp_hybrid_gate.py",
+    "ml-service/scripts/exp_l2_family_grid.py",
+    "ml-service/scripts/exp_p48_validation.py",
+    "ml-service/scripts/audit_p48_generator.py",
+    "ml-service/scripts/population_p48.py",
+    "ml-service/scripts/gen_v3.py",
+    "ml-service/scripts/hybrid_experiment/bootstrap.py",
+    "ml-service/scripts/hybrid_experiment/gate.py",
+    "ml-service/scripts/hybrid_experiment/tune.py",
+    "ml-service/scripts/hybrid_experiment/dataset.py",
+    "ml-service/scripts/hybrid_experiment/l2_family_variant.py",
+    "hub/backend/app/security/risk_fusion.py",
+    "hub/backend/app/security/policy_gate.py",
+    "hub/backend/tests/test_cluster_aware_gate.py",
+    "hub/backend/tests/test_population_p48.py",
+    "hub/backend/tests/test_l2_evidence_only.py",
+    "hub/backend/tests/test_l2_subsystem_family.py",
+    "hub/backend/tests/test_l2_legacy_mode_parity.py",
+    "hub/backend/tests/test_scoring_freeze.py",
+    "hub/backend/tests/scoring_freeze.json",
+    "docs/design/USER_POPULATION_P48_PREREG.md",
+    "docs/design/L2_SUBSYSTEM_NOVELTY_FAMILY.md",
+    "docs/RBA_ROUND2_PROTOCOL.md",
     # รอบ r2 (1 ก.ย. 2569) — คำอธิบายหลักเปลี่ยนเป็น robust deviation (B67)
     "hub/backend/tests/test_l3_explainability.py",
 ]
@@ -221,7 +256,7 @@ def build(MANIFEST: Path) -> None:
         f"| working tree ตอนสร้าง manifest | {'สะอาด' if not dirty else 'มีไฟล์ที่ยังไม่ commit (ดู §5)'} |",
         f"| จำนวนไฟล์หลักฐาน | {len(rows)} |",
         "",
-        "> ⚠️ commit SHA ด้านบนคือ **commit ก่อนหน้า** ตอน generate — SHA ของ freeze commit เอง",
+        "> commit SHA ด้านบนคือ **commit ก่อนหน้า** ตอน generate — SHA ของ freeze commit เอง",
         "> บันทึกไว้ที่ §5 (เขียนเพิ่มหลัง commit เสร็จ เพราะ SHA คำนวณจากเนื้อหาไฟล์รวมทั้ง manifest)",
         "",
         "## 2. Configuration ที่ล็อก (ดึงจาก source จริง)",
@@ -330,7 +365,7 @@ def build(MANIFEST: Path) -> None:
     print(f"manifest -> {MANIFEST.relative_to(ROOT)}")
     print(f"  ไฟล์หลักฐาน {len(rows)} ไฟล์ · commit {short} · branch {branch}")
     if miss:
-        print(f"  ⚠️ ไม่พบ {len(miss)} ไฟล์: {', '.join(miss[:5])}")
+        print(f"  ไม่พบ {len(miss)} ไฟล์: {', '.join(miss[:5])}")
 
 
 def verify(MANIFEST: Path) -> int:
@@ -348,27 +383,41 @@ def verify(MANIFEST: Path) -> int:
     if not recorded:
         print("manifest ไม่มีรายการ hash")
         return 1
-    bad, gone = [], []
-    for rel, h, _ in collect():
-        key = (
-            rel.split("/")[-1] if rel.startswith("hub/backend/tests/reports/") else rel
-        )
-        if key not in recorded:
-            gone.append(f"{key} (ไม่ได้บันทึกไว้ใน manifest)")
-        elif recorded[key] != h:
-            bad.append(key)
-    present = {
-        (r.split("/")[-1] if r.startswith("hub/backend/tests/reports/") else r)
-        for r, _, _ in collect()
+    # ตรวจ **สิ่งที่ manifest บันทึกไว้** เป็นหลัก ไม่ใช่รายการไฟล์ปัจจุบัน
+    #
+    # เดิมวนจาก `collect()` (รายการปัจจุบัน) แล้วนับ "ไม่ได้บันทึกไว้ใน manifest"
+    # เป็นความล้มเหลว -> พอรอบใหม่เพิ่มไฟล์เข้ารายการ manifest **ของรอบเก่าจะ verify
+    # ไม่ผ่านตลอดกาล** ทั้งที่ไฟล์ของรอบนั้นไม่ได้ถูกแก้เลยสักไฟล์
+    # ซึ่งทำลายจุดประสงค์ของ manifest (พิสูจน์ว่าหลักฐานของรอบนั้นไม่ถูกแก้ย้อนหลัง)
+    current = {
+        (rel.split("/")[-1] if rel.startswith("hub/backend/tests/reports/") else rel): h
+        for rel, h, _ in collect()
     }
-    gone += [f"{k} (หายไปจาก repo)" for k in recorded if k not in present]
-    print(f"ตรวจ {len(recorded)} รายการ")
+    lookup = dict(current)
+    for key in recorded:
+        if key in lookup:
+            continue
+        # ไฟล์ที่รอบนี้ไม่ได้อยู่ในรายการแล้ว ยังต้องตรวจได้ถ้ายังอยู่ใน repo
+        cand = ROOT / key
+        if not cand.exists():
+            cand = REPORTS / key
+        if cand.exists():
+            lookup[key] = sha256(cand)
+
+    bad = [k for k, h in recorded.items() if k in lookup and lookup[k] != h]
+    gone = [f"{k} (หายไปจาก repo)" for k in recorded if k not in lookup]
+    added = sorted(set(current) - set(recorded))
+
+    print(f"ตรวจ {len(recorded)} รายการที่บันทึกไว้ใน {MANIFEST.name}")
     for b in bad:
-        print(f"  ❌ เปลี่ยนแปลง: {b}")
+        print(f"  เปลี่ยนแปลง: {b}")
     for g in gone:
-        print(f"  ⚠️ {g}")
+        print(f"  {g}")
+    if added:
+        # ข้อมูลประกอบ ไม่ใช่ความล้มเหลว — เป็นหลักฐานของรอบหลัง
+        print(f"  (มีไฟล์ {len(added)} รายการที่เพิ่มเข้ารายการหลัง manifest นี้)")
     if not bad and not gone:
-        print("  ✅ ทุกไฟล์ตรงกับ manifest")
+        print("  ทุกไฟล์ที่บันทึกไว้ยังตรงกับ manifest")
         return 0
     return 1
 

@@ -215,7 +215,7 @@ def main():
         w.writerows(all_logins)
 
     print(
-        f"✅ โปรไฟล์ {len(profiles)} คน + login รวม {len(all_logins)} (เป้า {TARGET_PER_USER}/คน)"
+        f"โปรไฟล์ {len(profiles)} คน + login รวม {len(all_logins)} (เป้า {TARGET_PER_USER}/คน)"
     )
     print(
         f"   login ต่อคน: {dict(Counter(r['email'].split('@')[0] for r in all_logins))}"

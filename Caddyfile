@@ -14,6 +14,9 @@ hub.<DOMAIN> {
     reverse_proxy hub-backend:8000 {
         header_up X-Forwarded-Proto https
         header_up X-Forwarded-For {remote_host}
+        # ต้องทับ X-Real-IP เสมอ — deps.get_client_ip() เชื่อ header นี้เป็นอันดับแรก
+        #    ถ้าไม่ทับ Caddy จะส่งค่าที่ client ปลอมมาดิบๆ → ปลอมประเทศ/bypass IP blacklist
+        header_up X-Real-IP {remote_host}
     }
 
     log {
@@ -28,6 +31,9 @@ admin.<DOMAIN> {
     reverse_proxy hub-frontend:3000 {
         header_up X-Forwarded-Proto https
         header_up X-Forwarded-For {remote_host}
+        # ต้องทับ X-Real-IP เสมอ — deps.get_client_ip() เชื่อ header นี้เป็นอันดับแรก
+        #    ถ้าไม่ทับ Caddy จะส่งค่าที่ client ปลอมมาดิบๆ → ปลอมประเทศ/bypass IP blacklist
+        header_up X-Real-IP {remote_host}
     }
 }
 
@@ -37,6 +43,9 @@ dorm.<DOMAIN> {
     reverse_proxy subsystem-dorm:8000 {
         header_up X-Forwarded-Proto https
         header_up X-Forwarded-For {remote_host}
+        # ต้องทับ X-Real-IP เสมอ — deps.get_client_ip() เชื่อ header นี้เป็นอันดับแรก
+        #    ถ้าไม่ทับ Caddy จะส่งค่าที่ client ปลอมมาดิบๆ → ปลอมประเทศ/bypass IP blacklist
+        header_up X-Real-IP {remote_host}
     }
 }
 
@@ -46,6 +55,9 @@ library.<DOMAIN> {
     reverse_proxy subsystem-library:8000 {
         header_up X-Forwarded-Proto https
         header_up X-Forwarded-For {remote_host}
+        # ต้องทับ X-Real-IP เสมอ — deps.get_client_ip() เชื่อ header นี้เป็นอันดับแรก
+        #    ถ้าไม่ทับ Caddy จะส่งค่าที่ client ปลอมมาดิบๆ → ปลอมประเทศ/bypass IP blacklist
+        header_up X-Real-IP {remote_host}
     }
 }
 

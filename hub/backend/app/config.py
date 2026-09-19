@@ -1,5 +1,6 @@
 """Application configuration loaded from environment."""
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # default ที่ห้ามใช้ใน production — ถ้าเจอตัวเหล่านี้ + app_env=production จะ fail-fast
@@ -49,6 +50,11 @@ class Settings(BaseSettings):
     jwt_extra_public_keys: str = ""
     # audience ของ token ที่ Hub ออกใช้กับ Hub เอง (กัน subsystem token ใช้ที่ Hub)
     jwt_hub_audience: str = "hub.internal"
+    # ความคลาดของนาฬิกาที่ยอมให้ตอนตรวจ iat/nbf/exp (วินาที) — B77
+    # นาฬิกาที่ถูกปรับถอยหลัง (NTP, Docker Desktop/WSL) ทำให้ token ที่เพิ่งออกดูเหมือน
+    # ออกในอนาคตแล้วถูกปฏิเสธเป็น 401 · เพดาน 60 กันตั้งค่าหลวมจน exp ไม่มีความหมาย
+    # ค่าผิดช่วง = Settings() ล้มตั้งแต่ startup
+    jwt_clock_skew_seconds: int = Field(default=5, ge=0, le=60)
 
     # OIDC issuer identifier — ใส่ใน `iss` claim ของ JWT และใน
     # /.well-known/openid-configuration (issuer field — RFC 8414 §3)
@@ -119,6 +125,41 @@ class Settings(BaseSettings):
     # ถ้า ml-service ยัง fit โมเดลรายคนอยู่ (cache miss, ~0.4-0.9 วิ ที่ history 2000)
     # ให้ปล่อยผ่านไปเลย แล้วรอบถัดไปค่อยได้ผลจาก cache — เสีย 1 เหตุการณ์ ดีกว่าถ่วงทุก login
     l3_timeout_seconds: float = 0.5
+
+    # ── L3 mode (rollout) — off | monitor_only | shadow | shadow_hybrid | hybrid_stepup ──
+    # off           : ไม่เรียก L3 เลย
+    # monitor_only  : เรียก L3 เก็บ l3_investigate อย่างเดียว ไม่เข้าการรวมคะแนนใด ๆ
+    # shadow        : เรียก เก็บหลักฐาน แต่ L4 ไม่นับ (ค่าเริ่มต้น — ปลอดภัยที่สุด)
+    # shadow_hybrid : นับ L3 เฉพาะผลจำลอง การตัดสินจริงยังเป็น L1+L2 · ต้องมีตาราง calibration
+    # hybrid_stepup : L4 นับหลักฐาน L3 ด้วย · ยกได้สูงสุด challenge (ห้าม block เดี่ยว)
+    # ยังไม่มีโหมด hybrid_block โดยตั้งใจ จนกว่าจะมี production replay มากพอ
+    l3_mode: str = "shadow"
+
+    # ── สวิตช์ปิดฉุกเฉินของ Hybrid (แผน Hybrid Shadow ขั้นที่ 3/13) ──
+    # false = ไม่คำนวณผลจำลอง hybrid และไม่นับ L3 ในการรวมคะแนนใด ๆ (รวม hybrid_stepup)
+    #         L3 ยังเฝ้าระวังได้ตาม L3_MODE · อ่านค่าทุก login จึงมีผลทันทีหลัง recreate
+    # ค่าเริ่มต้น true เพราะการเปิด hybrid ยังต้องตั้ง L3_MODE=shadow_hybrid เองอยู่แล้ว
+    # ค่าที่ไม่ใช่ boolean ทำให้ Settings ไม่ยอมโหลด (pydantic) — ไม่เดาค่าให้
+    # คำสั่งปิดฉุกเฉิน: HYBRID_SHADOW_ENABLED=false + L3_MODE=monitor_only
+    hybrid_shadow_enabled: bool = True
+
+    # ── L4 fusion — ต้องเลือกจาก validation แล้ว freeze ก่อนแตะ final holdout ──
+    l4_gamma: float = 0.35
+    l4_threshold_warn: float = 0.50
+    l4_threshold_challenge: float = 0.70
+    l4_threshold_block: float = 0.85
+
+    # ── Expert Label Workflow — ที่มาของคอนฟิกที่ shadow กำลังรัน ──
+    # ประทับลงทุก alert group ตอนสร้าง · ว่าง = ยังไม่มี shadow epoch ที่ประกาศ
+    # ซึ่งทำให้ทุกกลุ่ม eligible_for_production_metrics = false โดยอัตโนมัติ
+    shadow_epoch_id: str | None = None
+    risk_config_id: str | None = None
+    calibration_version: str | None = None
+    calibration_sha256: str | None = None
+    # path ของตาราง calibration — ว่าง = ไม่ใช้ตาราง (หลักฐานยังไม่ calibrate)
+    # ตั้งแล้วต้องตั้ง CALIBRATION_SHA256 และเกณฑ์/gamma ให้ตรงกับตาราง ไม่งั้นไม่ start
+    calibration_path: str | None = None
+    scoring_commit: str | None = None
 
     # GeoIP (MaxMind GeoLite2 offline DB) — fail-safe ถ้าไฟล์หาย
     # ดาวน์โหลดฟรีที่ https://www.maxmind.com/en/geolite2/signup
