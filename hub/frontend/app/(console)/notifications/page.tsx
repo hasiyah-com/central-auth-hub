@@ -275,7 +275,7 @@ export default function NotificationsPage() {
   }, [data]);
 
   return (
-    <div className="sc">
+    <div className="sc cx-notifications-page">
       <Topbar title="แจ้งเตือน" />
 
       {/* ── Command bar (พื้นเข้ม) ── */}
