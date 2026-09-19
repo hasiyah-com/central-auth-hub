@@ -1000,3 +1000,482 @@ function HealthSummaryDetail({ meta }: { meta: Record<string, unknown> }) {
           <div className="px-3 py-4 text-center text-xs text-ink-400">
             ไม่มีข้อมูล (ระบบเช็คอาจยังไม่ทำงาน)
           </div>
+        ) : (
+          <div className="divide-y divide-ink-100">
+            {details.map((d, i) => {
+              const status = String(d.status || "unknown");
+              const latency = d.latency_ms as number | undefined;
+              const err = d.error as string | undefined;
+              const isHub = d.kind === "hub" || d.subsystem_id === "hub";
+              const components = d.components as
+                | Record<string, { status: string; error?: string }>
+                | undefined;
+              return (
+                <div key={i} className="px-3 py-2 text-xs">
+                  <div className="grid grid-cols-12 gap-2 items-center">
+                    <span className="col-span-6 font-semibold text-ink-900 truncate flex items-center gap-1.5">
+                      <span>{isHub ? "" : ""}</span>
+                      <span className="truncate">{String(d.name || "—")}</span>
+                      {isHub && (
+                        <span className="text-[9px] font-bold uppercase tracking-wider text-brand-700 bg-brand-50 px-1 py-0.5 rounded">
+                          self
+                        </span>
+                      )}
+                    </span>
+                    <span className="col-span-3 text-center">
+                      <StatusBadge status={status} />
+                    </span>
+                    <span className="col-span-3 text-right font-mono text-ink-600">
+                      {latency != null ? `${latency}ms` : "—"}
+                    </span>
+                  </div>
+
+                  {/* Hub components breakdown */}
+                  {isHub && components && (
+                    <div className="mt-1.5 ml-6 grid grid-cols-2 gap-x-3 gap-y-1">
+                      {Object.entries(components).map(([k, v]) => (
+                        <div
+                          key={k}
+                          className="flex items-center gap-1.5 text-[10px]"
+                        >
+                          <span
+                            className={
+                              v.status === "ok"
+                                ? "text-emerald-600"
+                                : "text-rose-600"
+                            }
+                          >
+                            {v.status === "ok" ? "OK" : "FAIL"}
+                          </span>
+                          <span className="font-mono text-ink-500 uppercase">
+                            {k}
+                          </span>
+                          {v.error && (
+                            <span
+                              className="text-rose-500 truncate"
+                              title={v.error}
+                            >
+                              {v.error.slice(0, 40)}
+                            </span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Error inline */}
+                  {!isHub && err && (
+                    <div
+                      className="mt-1 ml-6 text-[10px] text-rose-600 truncate"
+                      title={err}
+                    >
+                      {err}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      <div className="text-[10px] text-ink-400 mt-2 text-right">
+        {total} ระบบ (Hub + subsystems) · slot: {String(meta.slot || "—")} ·{" "}
+        {String(meta.date || "")}
+      </div>
+    </div>
+  );
+}
+
+function ApiSummaryDetail({ meta }: { meta: Record<string, unknown> }) {
+  const total = (meta.total as number) || 0;
+  const unresolved = (meta.unresolved as number) || 0;
+  const resolved = (meta.resolved as number) || 0;
+  const bySev =
+    (meta.by_severity as Record<string, number> | undefined) || {};
+  const topRules =
+    (meta.top_rules as Array<{ rule: string; count: number }> | undefined) ||
+    [];
+  const topIps =
+    (meta.top_ips as Array<{ ip: string; count: number }> | undefined) || [];
+  const windowH = (meta.window_hours as number) || 24;
+
+  return (
+    <div>
+      <div className="text-xs font-bold text-ink-900 mb-2">
+        สรุป API Alerts ({windowH}h)
+      </div>
+
+      {/* Stat pills */}
+      <div className="grid grid-cols-4 gap-2 mb-3">
+        <StatusPill
+          label="ทั้งหมด"
+          count={total}
+          tone={total === 0 ? "ink" : "amber"}
+        />
+        <StatusPill
+          label="Unresolved"
+          count={unresolved}
+          tone={unresolved === 0 ? "ink" : "rose"}
+        />
+        <StatusPill
+          label="Resolved"
+          count={resolved}
+          tone={resolved === 0 ? "ink" : "emerald"}
+        />
+        <StatusPill
+          label="Critical"
+          count={bySev.critical || 0}
+          tone={(bySev.critical || 0) === 0 ? "ink" : "rose"}
+        />
+      </div>
+
+      {total === 0 ? (
+        <div className="text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg p-3 text-center">
+          ไม่พบ API alert ผิดปกติใน {windowH} ชั่วโมงที่ผ่านมา
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {/* Top rules */}
+          {topRules.length > 0 && (
+            <div className="border border-ink-200 rounded-lg overflow-hidden">
+              <div className="bg-ink-50 px-3 py-1.5 text-[10px] font-bold text-ink-500 uppercase tracking-wider">
+                Top Rules
+              </div>
+              <div className="divide-y divide-ink-100">
+                {topRules.map((r, i) => (
+                  <div
+                    key={i}
+                    className="px-3 py-1.5 flex items-center justify-between text-xs"
+                  >
+                    <span className="font-mono text-ink-700">{r.rule}</span>
+                    <span className="px-2 py-0.5 rounded bg-amber-100 text-amber-800 font-bold tabular-nums">
+                      {r.count}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Top IPs */}
+          {topIps.length > 0 && (
+            <div className="border border-ink-200 rounded-lg overflow-hidden">
+              <div className="bg-ink-50 px-3 py-1.5 text-[10px] font-bold text-ink-500 uppercase tracking-wider">
+                Top IPs
+              </div>
+              <div className="divide-y divide-ink-100">
+                {topIps.map((r, i) => (
+                  <div
+                    key={i}
+                    className="px-3 py-1.5 flex items-center justify-between text-xs"
+                  >
+                    <span className="font-mono text-ink-700">{r.ip}</span>
+                    <span className="px-2 py-0.5 rounded bg-ink-100 text-ink-700 font-bold tabular-nums">
+                      {r.count}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      <div className="text-[10px] text-ink-400 mt-2 text-right">
+        slot: {String(meta.slot || "—")} · {String(meta.date || "")}
+      </div>
+    </div>
+  );
+}
+
+function StatusPill({
+  label,
+  count,
+  tone,
+}: {
+  label: string;
+  count: number;
+  tone: "emerald" | "amber" | "rose" | "ink";
+}) {
+  const styles: Record<string, string> = {
+    emerald: "bg-emerald-50 border-emerald-200 text-emerald-800",
+    amber: "bg-amber-50 border-amber-200 text-amber-800",
+    rose: "bg-rose-50 border-rose-200 text-rose-800",
+    ink: "bg-ink-50 border-ink-200 text-ink-700",
+  };
+  return (
+    <div
+      className={`rounded-lg border p-2 text-center ${styles[tone]} ${
+        count === 0 ? "opacity-50" : ""
+      }`}
+    >
+      <div className="text-lg font-extrabold tabular-nums">{count}</div>
+      <div className="text-[10px] uppercase tracking-wider font-semibold">
+        {label}
+      </div>
+    </div>
+  );
+}
+
+function StatusBadge({ status }: { status: string }) {
+  const map: Record<string, { bg: string; text: string; icon: string }> = {
+    online: { bg: "bg-emerald-100", text: "text-emerald-800", icon: "" },
+    degraded: { bg: "bg-amber-100", text: "text-amber-800", icon: "" },
+    down: { bg: "bg-rose-100", text: "text-rose-800", icon: "" },
+    unknown: { bg: "bg-ink-100", text: "text-ink-700", icon: "" },
+  };
+  const s = map[status] || map.unknown;
+  return (
+    <span
+      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${s.bg} ${s.text}`}
+    >
+      {s.icon ? `${s.icon} ${status}` : status}
+    </span>
+  );
+}
+
+function GenericMetaHighlights({ meta }: { meta: Record<string, unknown> }) {
+  // หยิบเฉพาะ key ที่น่าสนใจขึ้นมาแสดง (ที่เหลือดูใน raw)
+  const highlights: Array<[string, string]> = [];
+  const push = (label: string, key: string) => {
+    const v = meta[key];
+    if (v != null && v !== "") highlights.push([label, String(v)]);
+  };
+  push("Request type", "request_type");
+  push("Status", "status");
+  push("Reviewer note", "reviewer_note");
+  push("Rule", "rule");
+  push("IP", "ip");
+  push("Session ID", "session_id");
+  push("Decision", "decision");
+  push("URL", "url");
+
+  if (highlights.length === 0) return null;
+
+  return (
+    <div>
+      <div className="text-xs font-bold text-ink-900 mb-2">ข้อมูลสำคัญ</div>
+      <div className="border border-ink-200 rounded-lg p-3 space-y-1">
+        {highlights.map(([label, value]) => (
+          <DetailRow key={label} label={label}>
+            <span className="text-xs font-mono text-ink-800 break-all">
+              {value}
+            </span>
+          </DetailRow>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function CategoryDropdown({
+  data,
+  activeFilter,
+  setActiveFilter,
+}: {
+  data: NotificationsResponse;
+  activeFilter: string;
+  setActiveFilter: (s: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  // ปิดเมื่อคลิกข้างนอก
+  useEffect(() => {
+    if (!open) return;
+    function onClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setOpen(false);
+    }
+    document.addEventListener("mousedown", onClick);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onClick);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  const current =
+    activeFilter === "all"
+      ? { label: "ทั้งหมด", icon: "", count: data.total }
+      : data.categories[activeFilter]
+      ? {
+          label: data.categories[activeFilter].label,
+          icon: data.categories[activeFilter].icon,
+          count: data.categories[activeFilter].count,
+        }
+      : { label: "ทั้งหมด", icon: "", count: data.total };
+
+  function select(key: string) {
+    setActiveFilter(key);
+    setOpen(false);
+  }
+
+  return (
+    <div className="relative w-full max-w-md" ref={ref}>
+      <div className="text-[10px] font-bold text-ink-500 uppercase tracking-wider mb-2">
+        กรองตามประเภท
+      </div>
+
+      {/* Trigger */}
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className={
+          "w-full flex items-center justify-between gap-3 px-4 py-2.5 rounded-xl border bg-white text-left transition shadow-sm " +
+          (open
+            ? "border-ink-900 ring-2 ring-ink-900/10"
+            : "border-ink-200 hover:border-ink-400")
+        }
+      >
+        <span className="flex items-center gap-2 min-w-0">
+          {current.icon && (
+            <span className="text-lg shrink-0">{current.icon}</span>
+          )}
+          <span className="text-sm font-semibold text-ink-900 truncate">
+            {current.label}
+          </span>
+          <span className="px-2 py-0.5 rounded-full bg-ink-100 text-ink-700 text-[10px] font-bold tabular-nums shrink-0">
+            {current.count}
+          </span>
+        </span>
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          viewBox="0 0 20 20"
+          fill="currentColor"
+          className={`w-4 h-4 text-ink-500 transition ${open ? "rotate-180" : ""}`}
+        >
+          <path
+            fillRule="evenodd"
+            d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z"
+            clipRule="evenodd"
+          />
+        </svg>
+      </button>
+
+      {/* Dropdown */}
+      {open && (
+        <div className="absolute left-0 right-0 mt-1.5 z-30 bg-white border border-ink-200 rounded-xl shadow-xl overflow-hidden">
+          <DropdownItem
+            label="ทั้งหมด"
+            count={data.total}
+            selected={activeFilter === "all"}
+            onClick={() => select("all")}
+          />
+          <div className="border-t border-ink-100" />
+          {categoryOrder.map((key) => {
+            const cat = data.categories[key];
+            if (!cat) return null;
+            return (
+              <DropdownItem
+                key={key}
+                icon={cat.icon}
+                label={cat.label}
+                count={cat.count}
+                selected={activeFilter === key}
+                onClick={() => select(key)}
+              />
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DropdownItem({
+  icon,
+  label,
+  count,
+  selected,
+  onClick,
+}: {
+  icon?: string;
+  label: string;
+  count: number;
+  selected: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={
+        "w-full flex items-center justify-between gap-3 px-4 py-2.5 text-left transition " +
+        (selected
+          ? "bg-ink-900 text-white"
+          : count === 0
+          ? "text-ink-400 hover:bg-ink-50"
+          : "text-ink-700 hover:bg-ink-50")
+      }
+    >
+      <span className="flex items-center gap-2 min-w-0">
+        {icon && <span className="text-base shrink-0">{icon}</span>}
+        <span className="text-sm font-medium truncate">{label}</span>
+      </span>
+      <span className="flex items-center gap-2 shrink-0">
+        <span
+          className={
+            "px-2 py-0.5 rounded-full tabular-nums text-[10px] font-bold " +
+            (selected
+              ? "bg-white/20 text-white"
+              : count === 0
+              ? "bg-ink-100 text-ink-400"
+              : "bg-ink-100 text-ink-700")
+          }
+        >
+          {count}
+        </span>
+      </span>
+    </button>
+  );
+}
+
+function FilterChip({
+  label,
+  icon,
+  count,
+  active,
+  onClick,
+  disabled = false,
+}: {
+  label: string;
+  icon: string;
+  count: number;
+  active: boolean;
+  onClick: () => void;
+  disabled?: boolean;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      className={
+        "inline-flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs font-semibold transition " +
+        (active
+          ? "bg-ink-900 text-white border-ink-900 shadow-sm"
+          : disabled
+          ? "bg-ink-50 text-ink-400 border-ink-100 cursor-not-allowed"
+          : "bg-white text-ink-700 border-ink-200 hover:border-ink-400")
+      }
+    >
+      {icon && <span>{icon}</span>}
+      <span>{label}</span>
+      <span
+        className={
+          "px-1.5 py-0.5 rounded-full tabular-nums text-[10px] font-bold " +
+          (active
+            ? "bg-white/20 text-white"
+            : disabled
+            ? "bg-ink-100 text-ink-400"
+            : "bg-ink-100 text-ink-700")
+        }
+      >
+        {count}
+      </span>
+    </button>
+  );
+}
