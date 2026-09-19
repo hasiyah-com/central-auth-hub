@@ -3930,3 +3930,28 @@
     width: 100%;
   }
 }
+
+
+/* ── Audit Log overflow guard ── */
+.sc .cx-audit-table-head > *,
+.sc .cx-audit-rows > button > * {
+  min-width: 0;
+}
+.sc .cx-audit-rows > button > span:nth-child(3) {
+  overflow: hidden;
+}
+.sc .cx-audit-rows > button > span:nth-child(3) > i {
+  display: block;
+  width: fit-content;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sc .cx-audit-rows .actor b,
+.sc .cx-audit-rows .target b,
+.sc .cx-audit-rows .target small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
