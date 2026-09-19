@@ -372,7 +372,9 @@ export default function NotificationsPage() {
                 disabled={c.count === 0 && c.key !== "all"}
                 onClick={() => setActiveFilter(c.key)}
               >
-                {c.label}
+                <span className="cx-notif-tab-label" title={c.label}>
+                  {c.label}
+                </span>
                 <i className="mono">{c.count}</i>
               </button>
             ))}
