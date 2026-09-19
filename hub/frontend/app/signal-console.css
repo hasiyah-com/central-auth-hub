@@ -4052,3 +4052,52 @@
     flex-basis: 100%;
   }
 }
+
+
+/* ── Notifications tabs exact-width layout ── */
+.sc.cx-notifications-page .cx-notif-filter-chips {
+  display: grid;
+  grid-template-columns:
+    minmax(0, .65fr)
+    minmax(0, 1.75fr)
+    minmax(0, 1.55fr)
+    minmax(0, 2.15fr)
+    minmax(0, 1.2fr)
+    minmax(0, 1.35fr)
+    minmax(0, 1.35fr);
+  width: 100%;
+  max-width: 100%;
+  gap: 6px;
+  overflow: hidden;
+}
+.sc.cx-notifications-page .cx-notif-filter-chips button {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.sc.cx-notifications-page .cx-notif-tab-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sc.cx-notifications-page .cx-notif-filter-chips button > i {
+  flex: none;
+}
+@media (max-width: 900px) {
+  .sc.cx-notifications-page .cx-notif-filter-chips {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    overflow: visible;
+  }
+}
+@media (max-width: 480px) {
+  .sc.cx-notifications-page .cx-notif-filter-chips {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
