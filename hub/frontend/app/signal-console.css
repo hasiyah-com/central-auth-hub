@@ -3955,3 +3955,43 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+
+/* ── Notifications category tabs fit guard ── */
+.sc .cx-notif-filter-chips {
+  width: 100%;
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 6px;
+}
+.sc .cx-notif-filter-chips button {
+  width: 100%;
+  min-width: 0;
+  min-height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 7px 9px;
+  line-height: 1.35;
+  text-align: center;
+  white-space: normal;
+}
+.sc .cx-notif-filter-chips button > span {
+  flex: none;
+}
+@media (max-width: 1200px) {
+  .sc .cx-notif-filter-chips {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+@media (max-width: 720px) {
+  .sc .cx-notif-filter-chips {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 420px) {
+  .sc .cx-notif-filter-chips {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
