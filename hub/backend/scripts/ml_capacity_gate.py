@@ -206,6 +206,19 @@ class Gate:
                 break
         return seen
 
+    async def wait_fits_idle(self, client, timeout_s: float = 600.0) -> bool:
+        """รอจนทุก worker ไม่มี fit ค้าง (fits_pending = 0 สองครั้งติด)."""
+        deadline = time.monotonic() + timeout_s
+        quiet = 0
+        while time.monotonic() < deadline:
+            st = await self.stats(client)
+            busy = sum(int(s.get("fits_pending") or 0) for s in st.values())
+            quiet = quiet + 1 if busy == 0 and len(st) >= self.workers else 0
+            if quiet >= 2:
+                return True
+            await asyncio.sleep(1.0)
+        return False
+
     async def wait_ready(self, client, timeout_s: float = 60.0) -> int:
         """รอจนทุก worker ตอบ — health ผ่านจาก worker ตัวเดียวก็ได้ จึงไม่พอ.
 
@@ -516,6 +529,7 @@ async def run(a) -> dict:
         if not a.skip_seed:
             gate.seed_history()
         cold_open = None
+        fit_baseline = None
         if a.cold_open_loop:
             gate.seed_cold_users()
         ready = await gate.wait_ready(client)
@@ -526,6 +540,11 @@ async def run(a) -> dict:
                 client, COLD_RATE, COLD_SECONDS, a.seed
             )
             cold_open["passed"] = cold_pass(cold_open)
+            # ให้ fit ของช่วงเย็นจบก่อน แล้วเก็บเป็นฐานของ P2
+            await gate.wait_fits_idle(client)
+            fit_baseline = {
+                pid: s["fits_total"] for pid, s in (await gate.stats(client)).items()
+            }
         started = time.perf_counter()
         cold = await gate.cold_burst(client)
         cold_stats = await gate.stats(client)
@@ -553,6 +572,7 @@ async def run(a) -> dict:
         warm_stats,
         rounds,
         time.perf_counter() - started,
+        fit_baseline=fit_baseline,
     )
     result["high_score_share"] = gate.high_score_share
     result["pooled"] = pool_levels(
@@ -589,7 +609,16 @@ def load_share(before: dict, after: dict) -> dict:
     }
 
 
-def evaluate(workers, cold, cold_stats, warm, warm_stats, rounds, elapsed) -> dict:
+def evaluate(
+    workers,
+    cold,
+    cold_stats,
+    warm,
+    warm_stats,
+    rounds,
+    elapsed,
+    fit_baseline: dict | None = None,
+) -> dict:
     checks = {}
 
     # P1
@@ -625,7 +654,11 @@ def evaluate(workers, cold, cold_stats, warm, warm_stats, rounds, elapsed) -> di
     )
     fits_after_warm = sum(s["fits_total"] for s in warm_stats.values())
     fits_after_steady = sum(s["fits_total"] for s in final.values())
-    exact = all(s["fits_total"] == N_USERS for s in final.values())
+    # ช่วงเย็นแบบ open-loop (§15) fit ผู้ใช้ชุด cold ไปก่อน · นับเฉพาะส่วนที่เพิ่มจากฐาน
+    base = fit_baseline or {}
+    exact = all(
+        s["fits_total"] - base.get(pid, 0) == N_USERS for pid, s in final.items()
+    )
     checks["P2_fit_storm"] = {
         "pass": per_proc_max <= 1
         and exact
@@ -635,6 +668,7 @@ def evaluate(workers, cold, cold_stats, warm, warm_stats, rounds, elapsed) -> di
         "max_fits_per_user_per_process": per_proc_max,
         "processes_seen": len(final),
         "fits_per_process_final": {str(p): s["fits_total"] for p, s in final.items()},
+        "fit_baseline": {str(p): v for p, v in base.items()},
         "expected_fits_per_process": N_USERS,
         "fits_after_warm": fits_after_warm,
         "fits_after_steady": fits_after_steady,

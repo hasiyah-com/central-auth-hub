@@ -579,6 +579,35 @@ def test_cold_decision():
     assert not G.cold_pass({"latency": {**ok["latency"], "over_deadline": 37}})
 
 
+def test_p2_counts_cap_fits_on_top_of_the_cold_phase():
+    """บั๊กที่ smoke ของ §15 จับได้: ช่วงเย็น fit ผู้ใช้ชุด cold อีก 400 คน · P2 ต้องนับเฉพาะ
+    fit ที่เกิดหลังช่วงเย็น (ผู้ใช้ชุด cap 20 คน) ไม่ใช่ยอดรวม."""
+    kw = _passing(workers=2)
+    baseline = {pid: 170 for pid in kw["rounds"][-1]["stats"]}
+    for st in (
+        kw["warm_stats"],
+        kw["rounds"][-1]["stats"],
+        *(r["stats"] for r in kw["rounds"]),
+    ):
+        for s in st.values():
+            s["fits_total"] = 170 + G.N_USERS
+    out = G.evaluate(**kw, fit_baseline=baseline)
+    assert out["checks"]["P2_fit_storm"]["pass"]
+    # ถ้าไม่ส่งฐาน ยอดรวมไม่เท่ากับ 20 ต้องล้ม (พฤติกรรมเดิม)
+    assert not G.evaluate(**kw)["checks"]["P2_fit_storm"]["pass"]
+
+
+def test_p2_with_baseline_still_catches_a_refit():
+    kw = _passing(workers=2)
+    baseline = {pid: 170 for pid in kw["rounds"][-1]["stats"]}
+    for st in (kw["warm_stats"], *(r["stats"] for r in kw["rounds"])):
+        for s in st.values():
+            s["fits_total"] = 170 + G.N_USERS
+    pid = next(iter(kw["rounds"][-1]["stats"]))
+    kw["rounds"][-1]["stats"][pid]["fits_total"] += 1  # fit เพิ่มช่วง steady
+    assert not G.evaluate(**kw, fit_baseline=baseline)["checks"]["P2_fit_storm"]["pass"]
+
+
 def test_passing_input_is_not_mutated():
     kw = _passing()
     snap = copy.deepcopy(kw)
