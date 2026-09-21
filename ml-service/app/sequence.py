@@ -439,8 +439,10 @@ def get_model(redis, user_id: str, key: str, n_raw: int) -> tuple[L3Model | None
 # thread งาน fit เกินกำลังเครื่อง และแย่ง GIL กับ request ที่อุ่นแล้ว · จึงให้ thread เบื้องหลัง
 # ตัวเดียวต่อ process fit ทีละคน (CPU มีเพดาน) แล้ว request รอได้ไม่เกินงบ · ไม่ทันตอบ abstain
 # พร้อม abstain_reason = model_warming · งบต้องน้อยกว่าเพดาน L3 ของ hub (500 ms)
+# ค่าเริ่มต้น 50 (เดิม 150) — เลือกตามกฎที่เขียนก่อนวัด (§17–18): ที่ 150 cold burst ไม่ผ่าน
+# และงบรอได้คะแนนคืนแค่ 0.25–0.47% ของ cache miss (fit ~165 ms นานกว่างบ)
 FIT_WAIT_ENV = "L3_FIT_WAIT_MS"
-FIT_WAIT_DEFAULT_MS = 150.0
+FIT_WAIT_DEFAULT_MS = 50.0
 FIT_WAIT_MAX_MS = 400.0
 
 _FIT_EXECUTOR: ThreadPoolExecutor | None = None

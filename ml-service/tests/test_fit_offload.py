@@ -8,7 +8,7 @@ ml-service ยัง fit ต่อจนกิน CPU ของ request ที�
 
 ทางแก้ที่ตัดสินแล้ว (2026-09-22):
   - cache miss → ส่ง fit ให้ thread เบื้องหลัง**ตัวเดียวต่อ process** แล้วรอได้ไม่เกินงบ
-    (`L3_FIT_WAIT_MS`, ค่าเริ่มต้น 150) · ทันก็ให้คะแนนตามปกติ · ไม่ทันตอบทันทีว่า abstain
+    (`L3_FIT_WAIT_MS`, ค่าเริ่มต้น 50 — ลดจาก 150 ตามผลวัด §17–18) · ทันก็ให้คะแนนตามปกติ · ไม่ทันตอบทันทีว่า abstain
     พร้อม `abstain_reason = "model_warming"` (ไม่บอกว่า "ดูแล้วไม่เจอ" — บทเรียน B61)
   - คนเดียวกันส่ง fit ซ้ำไม่ได้ขณะรออยู่ · fit พังต้องไม่ค้างสถานะ (ลองใหม่ได้)
   - คะแนนหลังโมเดลพร้อมต้องเท่ากับการ fit แบบเดิมทุกประการ
@@ -208,8 +208,10 @@ def test_invalid_budget_is_refused(monkeypatch, bad):
         SEQ.fit_wait_seconds()
 
 
-def test_default_budget_is_150_ms():
-    assert SEQ.fit_wait_seconds() == pytest.approx(0.150)
+def test_default_budget_is_50_ms():
+    """เลือกตามกฎที่เขียนก่อนวัด (§17): ค่ามากสุดใน {50, 0} ที่ผ่านทุกเกณฑ์ · ที่ 150 ms
+    cold burst ไม่ผ่าน (p95 ~245–305 ms) และได้คะแนนคืนแค่ 0.25–0.47% ของ cache miss."""
+    assert SEQ.fit_wait_seconds() == pytest.approx(0.050)
 
 
 def test_stats_count_requests_that_waited_and_got_a_score(monkeypatch):
