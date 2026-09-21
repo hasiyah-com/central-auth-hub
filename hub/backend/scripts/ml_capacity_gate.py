@@ -24,7 +24,9 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import itertools
 import json
+import math
 import random
 import statistics
 import sys
@@ -265,7 +267,94 @@ class Gate:
             "latency": summarize(lat, len(errors)),
             "error_kinds": sorted(set(errors)),
             "scores": {k: sorted(v) for k, v in scores.items()},
+            "raw_ms": lat,  # ใช้รวม p95 ข้ามรอบ (วิธีวัด v2) — ไม่เขียนลงผล
         }
+
+    async def open_loop(self, client, rate: float, seconds: float, seed: int) -> dict:
+        """ยิงตามเวลาที่กำหนด (Poisson) ไม่รอคำตอบก่อนยิงตัวถัดไป — ใกล้ traffic จริงกว่า
+        closed-loop ที่ concurrency คงที่ · ใช้ประกอบการทบทวนเกณฑ์ (รายงาน §13)."""
+        times = arrival_times(rate, seconds, seed)
+        rng = random.Random(seed)
+        lat: list[float] = []
+        errors: list[str] = []
+        lag: list[float] = []
+        start = time.perf_counter()
+
+        async def fire(u, r):
+            ms, _, err = await self.call(client, u, r, spread=True)
+            lat.append(ms)
+            if err:
+                errors.append(err)
+
+        tasks = []
+        for at in times:
+            delay = at - (time.perf_counter() - start)
+            if delay > 0:
+                await asyncio.sleep(delay)
+            lag.append(max(0.0, (time.perf_counter() - start) - at) * 1000)
+            u, r = self.probes[rng.randrange(len(self.probes))]
+            tasks.append(asyncio.create_task(fire(u, r)))
+        await asyncio.gather(*tasks)
+        return {
+            "rate": rate,
+            "seconds": seconds,
+            "offered": len(times),
+            "latency": summarize(lat, len(errors)),
+            "error_kinds": sorted(set(errors)),
+            "max_schedule_lag_ms": round(max(lag), 1) if lag else 0.0,
+        }
+
+
+def arrival_times(rate: float, seconds: float, seed: int) -> list[float]:
+    """เวลายิง (วินาทีนับจากเริ่ม) แบบ Poisson — seed เดียวกันได้ชุดเดียวกัน."""
+    rng = random.Random(seed)
+    out, t = [], 0.0
+    while True:
+        t += rng.expovariate(rate)
+        if t >= seconds:
+            return out
+        out.append(t)
+
+
+def pool_levels(raw_rounds: list[dict]) -> dict:
+    """p95 ของทุก request ในทุกรอบ ต่อระดับ concurrency (วิธีวัด v2)."""
+    merged: dict[str, list[float]] = {}
+    for rnd in raw_rounds:
+        for lvl, values in rnd.items():
+            merged.setdefault(lvl, []).extend(values)
+    return {lvl: summarize(values, 0) for lvl, values in merged.items()}
+
+
+def permutation_p_value(a: list[float], b: list[float]) -> float:
+    """permutation test แบบ exact สองทาง บนผลต่างของค่าเฉลี่ย.
+
+    ไม่สมมติรูปการแจกแจง · 10 ต่อ 10 = 184,756 แบบ (รันได้ในไม่กี่วินาที)
+    """
+    pooled = list(a) + list(b)
+    n, total = len(a), sum(pooled)
+    observed = abs(sum(a) / n - sum(b) / len(b))
+    hits = count = 0
+    for idx in itertools.combinations(range(len(pooled)), n):
+        s = sum(pooled[i] for i in idx)
+        diff = abs(s / n - (total - s) / len(b))
+        hits += diff >= observed - 1e-12
+        count += 1
+    return hits / count
+
+
+P1_V2_MEDIAN_MAX_MS = 225.0  # ส่วนเผื่อ 10% จากเพดาน 250
+P1_V2_RUN_SHARE = 0.9  # อย่างน้อย 9 ใน 10 ครั้งต้อง <= เพดาน
+
+
+def p1_v2_pass(per_run_p95: list[float]) -> bool:
+    """P1 v2 (กำหนดก่อนวัด): median ของ p95 รวมต่อครั้ง <= 225 ms และอย่างน้อย 90%
+    ของครั้ง <= 250 ms."""
+    if not per_run_p95:
+        return False
+    within = sum(1 for v in per_run_p95 if v <= P95_BUDGET_MS)
+    return statistics.median(
+        per_run_p95
+    ) <= P1_V2_MEDIAN_MAX_MS and within >= math.ceil(P1_V2_RUN_SHARE * len(per_run_p95))
 
 
 def _probe_key(user: str, resid: list[float]) -> str:
@@ -327,6 +416,12 @@ async def run(a) -> dict:
                 levels[str(c)] = await gate.steady(client, c)
             rounds.append({"levels": levels, "stats": await gate.stats(client)})
 
+        open_loop = []
+        for rate in a.open_loop_rates:
+            open_loop.append(
+                await gate.open_loop(client, rate, a.open_loop_seconds, a.seed)
+            )
+
     result = evaluate(
         a.workers,
         cold,
@@ -337,6 +432,10 @@ async def run(a) -> dict:
         time.perf_counter() - started,
     )
     result["high_score_share"] = gate.high_score_share
+    result["pooled"] = pool_levels(
+        [{c: lvl["raw_ms"] for c, lvl in r["levels"].items()} for r in rounds]
+    )
+    result["open_loop"] = open_loop
     return result
 
 
@@ -486,6 +585,13 @@ def main(argv=None) -> int:
         default=0.0,
         help="สัดส่วน probe ที่ point score >= 0.50 (ได้ SHAP) — 0 = ชุดปกติทั้งหมด",
     )
+    ap.add_argument(
+        "--open-loop-rates",
+        type=lambda s: [float(x) for x in s.split(",") if x.strip()],
+        default=[],
+        help="อัตรา login ต่อวินาทีของการยิงแบบ open-loop หลัง steady เช่น 10,30,60,120",
+    )
+    ap.add_argument("--open-loop-seconds", type=float, default=60.0)
     ap.add_argument("--skip-seed", action="store_true")
     ap.add_argument("--out")
     a = ap.parse_args(argv)

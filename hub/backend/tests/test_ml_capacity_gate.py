@@ -401,6 +401,98 @@ def test_share_must_be_a_fraction():
         G.Gate("http://ml", "redis://localhost:6379/13", 4, 1, high_score_share=1.5)
 
 
+# ── วิธีวัด v2 (กำหนดก่อนวัด 2026-09-22, รายงาน §13) ─────────────────────────
+
+
+def test_pooled_p95_uses_every_request_of_every_round():
+    """v2 ตัดสินจาก p95 ของทุก request ในทุกรอบ ไม่ใช่ค่าแย่สุดของรอบเดียว."""
+    raw = [
+        {"20": [100.0] * 95 + [300.0] * 5},
+        {"20": [100.0] * 100},
+        {"20": [100.0] * 100},
+    ]
+    pooled = G.pool_levels(raw)
+    assert pooled["20"]["n"] == 300
+    assert pooled["20"]["p95_ms"] == 100.0  # 5/300 ช้า < 5% → p95 ไม่ใช่ 300
+
+
+def test_steady_returns_raw_latencies_for_pooling():
+    import asyncio
+
+    import httpx
+
+    def handler(request):
+        return httpx.Response(200, json={"data": {"sequence": {}, "point": {}}})
+
+    g = _gate(0.0)
+
+    async def go():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as c:
+            return await g.steady(c, 5)
+
+    out = asyncio.run(go())
+    assert len(out["raw_ms"]) == G.REQUESTS_PER_LEVEL
+
+
+def test_arrival_times_are_poisson_and_reproducible():
+    a = G.arrival_times(rate=50.0, seconds=60.0, seed=7)
+    b = G.arrival_times(rate=50.0, seconds=60.0, seed=7)
+    assert a == b
+    assert all(0.0 <= t < 60.0 for t in a)
+    assert a == sorted(a)
+    assert 2700 <= len(a) <= 3300  # ~ rate × seconds = 3000
+
+
+def test_open_loop_fires_on_schedule_and_counts_misses():
+    import asyncio
+
+    import httpx
+
+    def handler(request):
+        return httpx.Response(200, json={"data": {"sequence": {}, "point": {}}})
+
+    g = _gate(0.0)
+
+    async def go():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as c:
+            return await g.open_loop(c, rate=20.0, seconds=1.0, seed=3)
+
+    out = asyncio.run(go())
+    assert out["offered"] == len(G.arrival_times(20.0, 1.0, 3))
+    assert out["latency"]["n"] == out["offered"]
+    assert out["latency"]["errors"] == 0
+    assert "over_deadline" in out["latency"]
+
+
+def test_permutation_test_detects_a_clear_difference():
+    a = [230, 240, 235, 245, 238, 242, 236, 244, 239, 241]
+    b = [200, 205, 198, 210, 202, 207, 199, 204, 201, 206]
+    p = G.permutation_p_value(a, b)
+    assert p < 0.001
+
+
+def test_permutation_test_does_not_invent_a_difference():
+    a = [230, 200, 245, 205, 238, 198, 236, 210, 239, 202]
+    b = [240, 207, 235, 204, 242, 199, 244, 201, 241, 206]
+    assert G.permutation_p_value(a, b) > 0.2
+
+
+def test_permutation_test_is_exact_and_two_sided():
+    # สลับฝั่งแล้ว p เท่าเดิม
+    a, b = [1, 2, 3, 4], [5, 6, 7, 8]
+    assert G.permutation_p_value(a, b) == G.permutation_p_value(b, a)
+    # 4 ต่อ 4 ที่แยกขาด: เป็นไปได้ 70 แบบ สุดขั้วสองทาง 2 แบบ → p = 2/70
+    assert abs(G.permutation_p_value(a, b) - 2 / 70) < 1e-12
+
+
+def test_v2_decision_rule():
+    """ผ่าน = median ของ p95 รวมต่อครั้ง ≤ 225 และอย่างน้อย 9/10 ครั้ง ≤ 250."""
+    ok = [200] * 9 + [260]
+    assert G.p1_v2_pass(ok)
+    assert not G.p1_v2_pass([200] * 8 + [260, 260])  # 8/10
+    assert not G.p1_v2_pass([230] * 10)  # median เกิน 225 แม้ทุกครั้ง ≤ 250
+
+
 def test_passing_input_is_not_mutated():
     kw = _passing()
     snap = copy.deepcopy(kw)

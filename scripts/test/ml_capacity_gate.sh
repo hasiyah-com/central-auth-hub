@@ -7,6 +7,8 @@
 #   CAP_SKIP_POINT_SHAP=1 ...   # ทดลองเท่านั้น: ข้าม SHAP ของ point view (ห้ามใช้ใน production)
 #   CAP_HIGH_SCORE_SHARE=0.33 ...   # สัดส่วน probe ที่ point score >= 0.50 (ได้ SHAP)
 #   CAP_POINT_SHAP_MIN_SCORE=0 ...  # เกณฑ์ SHAP ของ ml-service (ว่าง = ค่าเริ่มต้น 0.50 · 0 = ทุก login)
+#   CAP_OPEN_LOOP_RATES=10,30,60,120 CAP_OPEN_LOOP_SECONDS=60 ...  # ยิงแบบ open-loop หลัง steady
+#   เทียบสองฝั่ง: python -m scripts.ml_capacity_compare <dir A> <dir B>   (ใน hub/backend)
 #
 # ทุกค่าของ worker เปิด ml-service ตัวใหม่ (container `ml-cap`) → cache/lock เย็นทุก process
 # เท่ากับสภาพหลัง Docker restart · ข้อมูลเป็นของสังเคราะห์ใน Redis DB แยก (ค่าเริ่มต้น 13)
@@ -67,7 +69,9 @@ for W in $WORKERS; do
     -v "$HUB_SRC:/app" -v "$OUT_W:/out" -w /app "$IMAGE_HUB" \
     python -m scripts.ml_capacity_gate --url http://ml-cap:9000 --workers "$W" \
       --redis "redis://redis:6379/$CAP_DB" --out "/out/workers_$W.json" \
-      --high-score-share "${CAP_HIGH_SCORE_SHARE:-0}"
+      --high-score-share "${CAP_HIGH_SCORE_SHARE:-0}" \
+      --open-loop-rates "${CAP_OPEN_LOOP_RATES:-}" \
+      --open-loop-seconds "${CAP_OPEN_LOOP_SECONDS:-60}"
   rc=$?
   set -e
   docker logs ml-cap > "$OUT/ml-cap_workers_$W.log" 2>&1 || true

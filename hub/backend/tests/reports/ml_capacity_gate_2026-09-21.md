@@ -298,7 +298,56 @@ P2/P3/P4 ผ่านทุกครั้งทุกฝั่ง · log ไม
 
 **ผลรวม: ยังไม่ผ่าน** — ทางเลือก 2 ลดงานได้จริงแต่ไม่พอให้ผ่านแบบมีส่วนเผื่อที่ c=20
 
-## 13. รันซ้ำ
+## 13. วิธีวัด v2 และการทบทวนเกณฑ์ c=20 — เขียนก่อนวัด (2026-09-22)
+
+ส่วนนี้ commit **ก่อน**รันวัดรอบ v2 · ผลจะเพิ่มใน §14 โดยไม่แก้ส่วนนี้
+
+### 13.1 ทำไมต้องเปลี่ยนวิธีวัด
+
+§12 พบว่าที่ c=20 ความแกว่งระหว่างครั้ง (170–290 ms) ใหญ่กว่าผลของทางเลือก 2 และฝั่งที่ต้นทุน
+ควรสูงสุดกลับผ่าน 3/3 · เกณฑ์เดิมตัดสินจาก**ค่าแย่สุดของรอบเดียว** (400 request) ซึ่งไวต่อ
+ความแกว่งมาก และ 3 ครั้งต่อฝั่งไม่พอจะแยกผลออกจากความแกว่ง
+
+### 13.2 วิธีวัด v2 (ข้อ 1)
+
+- **การตั้งค่า:** reuseport 4 worker · probe คะแนนสูง 33% (`CAP_HIGH_SCORE_SHARE=0.33`) ·
+  ข้อมูลเดิม (20 ผู้ใช้ × 2,000 แถว, Redis DB 13)
+- **สองฝั่ง:** A = SHAP ทุก request (`L3_POINT_SHAP_MIN_SCORE=0`, พฤติกรรมเดิม) ·
+  B = ทางเลือก 2 (ค่าเริ่มต้น 0.50)
+- **จำนวน:** ฝั่งละ **10 ครั้ง** สลับลำดับ A, B, A, B, … ในช่วงเวลาเดียวกัน · ครั้งละ 3 รอบ ×
+  400 request ต่อระดับเหมือนเดิม
+- **ตัวชี้วัดต่อครั้ง:** p95 ของ**ทุก request ทั้ง 3 รอบรวมกัน** (1,200 ตัวต่อระดับ) —
+  `pool_levels()`
+- **กฎผ่านของแต่ละฝั่ง (P1 v2):** ทุกระดับ concurrency — median ของ p95 รวมต่อครั้ง ≤ **225 ms**
+  (ส่วนเผื่อ 10%) **และ** อย่างน้อย **9/10** ครั้ง ≤ 250 ms · P2–P4 ต้องผ่าน**ทุกครั้ง**
+- **ผลของทางเลือก 2:** permutation test แบบ exact สองทางบน p95 รวมต่อครั้ง ระดับหลัก **c=20**,
+  α = 0.05 · ขนาดผล = median(A) − median(B) พร้อม bootstrap 95% CI (10,000 รอบ) ·
+  ระดับอื่นรายงานเป็นข้อมูลสำรวจ ไม่ใช้ตัดสิน
+- **เครื่องมือ:** `scripts/ml_capacity_compare.py` (เทส `tests/test_ml_capacity_compare.py`)
+- ไม่แก้กฎหลังเห็นผล · ถ้าผลก้ำกึ่งจะรายงานตามกฎ ไม่วัดเพิ่มเพื่อให้ผ่าน
+
+### 13.3 ทบทวนเกณฑ์ c=20 (ข้อ 2)
+
+**c=20 แทนภาระเท่าไร:** ตัววัดเป็นแบบ closed-loop — client 20 ตัวยิงต่อทันทีที่ได้คำตอบ ·
+ตามกฎของ Little (L = λW) ที่ p50 ~85 ms (reuseport 4 worker, §10) ภาระที่ c=20 ≈ **235 login/วินาที
+ต่อเนื่อง** (c=10 ≈ 200, c=5 ≈ 125) · c=20 จึงเป็นจุดอิ่มตัวของเครื่อง ไม่ใช่ภาระที่คาดไว้
+
+**ข้อมูลภาระจริงที่มี:** `hub_db` มี 1,879 login จาก 9 ผู้ใช้ใน 92 วัน · สูงสุด 20 ต่อนาที,
+8 ต่อวินาที, 6 ใน 500 ms — เป็นข้อมูล dev/สคริปต์ **ใช้แทนภาระจริงไม่ได้**
+
+**แบบจำลองภาระ (สมมติฐาน — ต้องยืนยันขนาดมหาวิทยาลัยจริง):** ถ้ามีผู้ใช้ ~30,000 คน
+ช่วงเร่งด่วนที่พอนึกได้ เช่น เปิดลงทะเบียน 5,000 login ใน 5 นาที ≈ 17/วินาที หรือเริ่มสอบพร้อมกัน
+2,000 login ใน 60 วินาที ≈ 33/วินาที · คูณส่วนเผื่อ 2 เท่า ≈ **60 login/วินาที**
+
+**การวัดประกอบ (open-loop):** หลังวัด v2 จะรันฝั่ง B 3 ครั้ง ยิงแบบ Poisson ที่ **10, 30, 60, 120
+login/วินาที** ครั้งละ 60 วินาที · รายงาน p95, จำนวนที่เกิน 500 ms และ error · **เป็นข้อมูล
+ประกอบเท่านั้น** ยังไม่ใช่เกณฑ์ผ่าน
+
+**เกณฑ์ที่จะเสนอ (รอผู้ใช้ตัดสิน — ยังไม่ใช้):** ที่อัตรา login เป้าหมาย (ตั้งจากขนาดจริง) ×2:
+p95 ≤ 250 ms, เกิน 500 ms ≤ 1%, error = 0 · และ burst 20 request พร้อมกัน: error = 0
+(L3 abstain เมื่อเกินเพดานได้ตามที่ออกแบบ)
+
+## 14. รันซ้ำ
 
 ```bash
 bash scripts/test/ml_capacity_gate.sh            # 1 2 4
@@ -307,8 +356,10 @@ CAP_SERVER=reuseport bash scripts/test/ml_capacity_gate.sh 4   # ตัวเป
 CAP_SERVER=reuseport CAP_SKIP_POINT_SHAP=1 bash scripts/test/ml_capacity_gate.sh 4   # ทดลองข้าม SHAP
 CAP_SERVER=reuseport CAP_HIGH_SCORE_SHARE=0.33 bash scripts/test/ml_capacity_gate.sh 4   # ทางเลือก 2
 CAP_SERVER=reuseport CAP_POINT_SHAP_MIN_SCORE=0 CAP_HIGH_SCORE_SHARE=0.33 bash scripts/test/ml_capacity_gate.sh 4   # พฤติกรรมเดิม
+CAP_SERVER=reuseport CAP_HIGH_SCORE_SHARE=0.33 CAP_OPEN_LOOP_RATES=10,30,60,120 bash scripts/test/ml_capacity_gate.sh 4   # open-loop
+(cd hub/backend && python -m scripts.ml_capacity_compare <dir A> <dir B>)   # เทียบ v2
 ```
 
 ผลดิบ: `workers_{1,2,4}.json` + log ของ ml-service ต่อรอบ (เก็บใน `CAP_OUT` ไม่เข้า git)
 
-เทส: `hub/backend/tests/test_ml_capacity_gate.py` (30) · `ml-service/tests/test_capacity_stats.py` (10) · `ml-service/tests/test_explainer_init.py` (5) · `ml-service/tests/test_serve.py` (8, ตัวที่ใช้ socket จริงรันเฉพาะ Linux) · `ml-service/tests/test_point_shap_experiment.py` (8) · `ml-service/tests/test_point_shap_gating.py` (13)
+เทส: `hub/backend/tests/test_ml_capacity_gate.py` (38) · `hub/backend/tests/test_ml_capacity_compare.py` (4) · `ml-service/tests/test_capacity_stats.py` (10) · `ml-service/tests/test_explainer_init.py` (5) · `ml-service/tests/test_serve.py` (8, ตัวที่ใช้ socket จริงรันเฉพาะ Linux) · `ml-service/tests/test_point_shap_experiment.py` (8) · `ml-service/tests/test_point_shap_gating.py` (13)
