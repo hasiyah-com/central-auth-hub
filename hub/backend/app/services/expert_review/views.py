@@ -42,7 +42,7 @@ def _get(obj, key, default=None):
 
 def alias(user_id) -> str:
     mac = hmac.new(
-        settings.secret_key.encode("utf-8"),
+        settings.secret_key.get_secret_value().encode("utf-8"),
         f"expert-review-alias:{user_id}".encode("utf-8"),
         hashlib.sha256,
     )

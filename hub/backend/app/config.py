@@ -1,6 +1,8 @@
 """Application configuration loaded from environment."""
 
-from pydantic import Field
+from urllib.parse import urlsplit, urlunsplit
+
+from pydantic import Field, SecretStr, field_serializer
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # default ที่ห้ามใช้ใน production — ถ้าเจอตัวเหล่านี้ + app_env=production จะ fail-fast
@@ -9,21 +11,47 @@ _FORBIDDEN_DEFAULTS = {
     "secret_encryption_key": "",
 }
 
+# B78 — secret ทุกตัวเป็น SecretStr (repr/str/dump แสดง **********) ใช้ค่าจริงด้วย
+# `.get_secret_value()` ตรงจุดที่ใช้เท่านั้น · URL ยังเป็น str เพราะถูกส่งต่อให้ไลบรารี
+# (SQLAlchemy, redis, httpx) โดยตรง จึงปิดเฉพาะตอนแสดงผลแทน
+_URL_PASSWORD_FIELDS = ("database_url", "redis_url")
+# URL ที่ส่วน path คือ token (Slack/Discord webhook) — ปิดทั้ง path
+_URL_OPAQUE_FIELDS = ("alert_webhook_url",)
+_MASK = "***"
+
+
+def _mask_url(value: str, *, opaque_path: bool) -> str:
+    try:
+        parts = urlsplit(value)
+    except ValueError:
+        return _MASK
+    if not parts.scheme or not parts.hostname:
+        return _MASK if value else value
+    netloc = parts.hostname
+    if parts.port:
+        netloc = f"{netloc}:{parts.port}"
+    if parts.username or parts.password:
+        user = parts.username or ""
+        netloc = f"{user}:{_MASK}@{netloc}"
+    if opaque_path:
+        return urlunsplit((parts.scheme, netloc, f"/{_MASK}", "", ""))
+    return urlunsplit((parts.scheme, netloc, parts.path, parts.query, ""))
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     # App
     app_env: str = "development"
-    secret_key: str = "dev-secret-change-me"  # session middleware + HMAC
+    secret_key: SecretStr = "dev-secret-change-me"  # session middleware + HMAC
     # คีย์แยกสำหรับ encrypt client_secret ใน DB (ห้ามใช้ secret_key เดียวกัน)
     # ถ้าว่างใน development จะ fallback ไปใช้ secret_key พร้อม warning
-    secret_encryption_key: str = ""
+    secret_encryption_key: SecretStr = ""
     # Legacy Fernet keys สำหรับ rotation grace period (decrypt fallback)
     # Format: comma-separated รหัส (base64 url-safe) ที่เคยใช้
     # MultiFernet: encrypt ใช้ secret_encryption_key (primary)
     #              decrypt ลอง primary ก่อน → fallback ทีละตัวใน legacy list
-    secret_encryption_keys_legacy: str = ""
+    secret_encryption_keys_legacy: SecretStr = ""
     hub_base_url: str = "http://localhost:8000"  # ใช้สร้าง one-time URL
     # ปิด Swagger UI ใน production — กันคนภายนอกเห็น API tree
     enable_docs: bool = True
@@ -65,7 +93,7 @@ class Settings(BaseSettings):
 
     # Google OAuth
     google_client_id: str = ""
-    google_client_secret: str = ""
+    google_client_secret: SecretStr = ""
     google_redirect_uri: str = "http://localhost:8000/auth/google/callback"
     # Change-Google re-link (ข้อ 3) — callback ของ flow เปลี่ยนบัญชี Google
     # ต้องเพิ่ม URI นี้ใน Google Console → Authorized redirect URIs ด้วย (B17)
@@ -75,7 +103,7 @@ class Settings(BaseSettings):
 
     # LINE
     line_client_id: str = ""
-    line_client_secret: str = ""
+    line_client_secret: SecretStr = ""
     line_redirect_uri: str = "http://localhost:8000/auth/line/callback"
 
     # OAuth flow (subsystem) — callback ที่ Google ส่งกลับตอน subsystem login
@@ -169,13 +197,13 @@ class Settings(BaseSettings):
     smtp_host: str = "smtp.gmail.com"
     smtp_port: int = 587
     smtp_user: str = ""
-    smtp_password: str = ""
+    smtp_password: SecretStr = ""
     email_from: str = "noreply@hub.local"
 
     # ── Webhook back-channel (Hub → Subsystem) ──
     # shared HMAC key สำหรับ sign payload — subsystem มี key เดียวกันใน config
     # ปล่อยว่าง = ปิด webhook channel (subsystem ต้องใช้ cron sync แทน)
-    webhook_shared_key: str = ""
+    webhook_shared_key: SecretStr = ""
 
     # ── Structured Logging ──
     # json = production (ส่งเข้า ELK/Loki/Datadog ได้) / text = dev อ่านง่าย
@@ -188,7 +216,7 @@ class Settings(BaseSettings):
     alert_webhook_url: str = ""
     # Telegram Bot API — ต้องใส่ทั้ง 2 ตัวถึงจะทำงาน
     # bot token จาก @BotFather, chat_id ได้จาก @userinfobot หรือ getUpdates
-    alert_telegram_bot_token: str = ""
+    alert_telegram_bot_token: SecretStr = ""
     alert_telegram_chat_id: str = ""
     # email ปลายทาง (admin / oncall) — ปล่อยว่าง = ปิด email channel
     alert_email_to: str = ""
@@ -248,11 +276,29 @@ class Settings(BaseSettings):
     # 5 นาที — สั้นพอกัน replay, ยาวพอให้ user ทำ flow เสร็จ
     risk_challenge_ttl_sec: int = 300
 
+    @field_serializer(*_URL_PASSWORD_FIELDS, *_URL_OPAQUE_FIELDS)
+    def _serialize_url(self, value: str, info):
+        """model_dump/json ของ Settings — ปิดเหมือน repr (ค่าบน attribute ไม่เปลี่ยน)."""
+        return _mask_url(value, opaque_path=info.field_name in _URL_OPAQUE_FIELDS)
+
+    def __repr_args__(self):
+        """repr/str ของ Settings — ปิดรหัสผ่านใน URL (B78)."""
+        for name, value in super().__repr_args__():
+            if isinstance(value, str) and name in _URL_PASSWORD_FIELDS:
+                value = _mask_url(value, opaque_path=False)
+            elif isinstance(value, str) and name in _URL_OPAQUE_FIELDS:
+                value = _mask_url(value, opaque_path=True)
+            yield name, value
+
     def validate_production(self) -> None:
         """fail-fast ถ้า prod ยังใช้ default ที่ไม่ปลอดภัย."""
         if self.app_env != "production":
             return
-        bad = [k for k, v in _FORBIDDEN_DEFAULTS.items() if getattr(self, k) == v]
+        bad = [
+            k
+            for k, v in _FORBIDDEN_DEFAULTS.items()
+            if getattr(self, k).get_secret_value() == v
+        ]
         if bad:
             raise RuntimeError(
                 "Production refused to start — env vars ต่อไปนี้ยังเป็น default ที่ไม่ปลอดภัย: "

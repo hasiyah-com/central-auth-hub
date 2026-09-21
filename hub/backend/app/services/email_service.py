@@ -20,7 +20,11 @@ log = logging.getLogger(__name__)
 
 def _smtp_configured() -> bool:
     """SMTP พร้อมใช้งานไหม — ต้องมี user + password + host."""
-    return bool(settings.smtp_user and settings.smtp_password and settings.smtp_host)
+    return bool(
+        settings.smtp_user
+        and settings.smtp_password.get_secret_value()
+        and settings.smtp_host
+    )
 
 
 def _send_html_email(to: str, subject: str, html: str, text_fallback: str) -> bool:
@@ -50,7 +54,7 @@ def _send_html_email(to: str, subject: str, html: str, text_fallback: str) -> bo
             with smtplib.SMTP_SSL(
                 settings.smtp_host, settings.smtp_port, context=ctx, timeout=15
             ) as s:
-                s.login(settings.smtp_user, settings.smtp_password)
+                s.login(settings.smtp_user, settings.smtp_password.get_secret_value())
                 s.send_message(msg)
         else:
             # 587 STARTTLS (Gmail default)
@@ -58,7 +62,7 @@ def _send_html_email(to: str, subject: str, html: str, text_fallback: str) -> bo
                 s.ehlo()
                 s.starttls(context=ctx)
                 s.ehlo()
-                s.login(settings.smtp_user, settings.smtp_password)
+                s.login(settings.smtp_user, settings.smtp_password.get_secret_value())
                 s.send_message(msg)
         log.info("Email sent — to=%s subject=%r", to, subject)
         return True

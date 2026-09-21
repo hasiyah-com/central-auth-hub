@@ -68,7 +68,7 @@ def hash_retrieval_token(plaintext_token: str) -> str:
     ใช้ HMAC (ไม่ใช่ Argon2) เพราะต้อง deterministic เพื่อ lookup ได้ตรงๆ
     """
     mac = hmac.new(
-        settings.secret_key.encode("utf-8"),
+        settings.secret_key.get_secret_value().encode("utf-8"),
         plaintext_token.encode("utf-8"),
         hashlib.sha256,
     )
@@ -121,17 +121,17 @@ def _fernet() -> MultiFernet:
     Production: validate_production() บังคับว่า secret_encryption_key ต้องมีค่า
     Dev: fallback ใช้ secret_key พร้อม warning
     """
-    primary = settings.secret_encryption_key
+    primary = settings.secret_encryption_key.get_secret_value()
     if not primary:
         log.warning(
             "SECRET_ENCRYPTION_KEY ว่าง — fallback ใช้ SECRET_KEY สำหรับ encrypt "
             "(dev เท่านั้น). Production ต้องตั้งค่าใหม่"
         )
-        primary = settings.secret_key
+        primary = settings.secret_key.get_secret_value()
 
     keys: list[Fernet] = [Fernet(_derive_fernet_key(primary))]
     # Append legacy keys (verify-only — สำหรับ decrypt ของเก่า)
-    for legacy in (settings.secret_encryption_keys_legacy or "").split(","):
+    for legacy in settings.secret_encryption_keys_legacy.get_secret_value().split(","):
         legacy = legacy.strip()
         if not legacy or legacy == primary:
             continue

@@ -492,6 +492,12 @@
 - **กฎ:** การตรวจเวลาของ JWT ต้องมี leeway ที่ตั้งค่าได้และมีเพดาน (`jwt_clock_skew_seconds` ค่าเริ่ม 5 ช่วง 0–60 ค่าผิด = ไม่ start) · leeway ใช้กับ `iat`/`nbf`/`exp` เท่านั้น ลายเซ็น/iss/aud/revocation เข้มเท่าเดิม · เทสที่ตรวจผลข้างเคียง (audit, DB) ต้องตรวจ HTTP status ก่อน ไม่งั้นอาการ 401 จะไปโผล่เป็น assertion อื่นที่ชี้ผิดที่
 - **Verify:** `tests/test_jwt_clock_skew.py`
 
+**B78. error ที่พิมพ์ `repr(settings)` พา secret ทุกตัวออกมาใน output ของเทส**
+- อาการ: ระหว่าง RED ของ B77 เทสเรียก `monkeypatch.setattr(settings, "jwt_clock_skew_seconds", 0)` ก่อนฟิลด์จะมีอยู่ → `AttributeError` ที่ข้อความมี `repr(settings)` ทั้งก้อน รวม Google client secret, SMTP app password, LINE secret, webhook key และ Telegram bot token
+- สาเหตุ: ทุกฟิลด์ใน `Settings` เป็น `str` ธรรมดา · traceback, log หรือ error ใดที่แสดง settings ให้ผลเดียวกัน · `database_url`/`redis_url` มีรหัสผ่านอยู่ใน URL
+- **กฎ:** secret ใน `Settings` ต้องเป็น `SecretStr` และเรียก `.get_secret_value()` ตรงจุดที่ใช้เท่านั้น · URL ที่ต้องส่งให้ไลบรารีเป็น str ให้ปิดรหัสผ่าน/path ใน repr และ dump · ฟิลด์ใหม่ที่ชื่อคล้าย secret ต้องจัดประเภท (เทสบังคับ) · ถ้าค่าเคยหลุดออกนอกเครื่อง ให้ถือว่ารั่วและ rotate
+- **Verify:** `tests/test_settings_secrets.py` (รวมการจำลองเหตุการณ์จริง `test_the_original_incident_attribute_error_is_clean`)
+
 ---
 
 ## วิธีเพิ่ม bug ใหม่

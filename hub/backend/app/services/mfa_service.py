@@ -38,7 +38,7 @@ def hash_otp(otp: str) -> str:
     ห้ามเก็บ plaintext — ถ้า DB หลุด attacker จะ replay OTP ได้
     """
     return hmac.new(
-        settings.secret_key.encode(),
+        settings.secret_key.get_secret_value().encode(),
         otp.encode(),
         hashlib.sha256,
     ).hexdigest()

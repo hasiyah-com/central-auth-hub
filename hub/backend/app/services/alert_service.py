@@ -227,7 +227,7 @@ def _send_telegram(
     title: str,
     detail: dict[str, Any] | None,
 ) -> bool:
-    token = settings.alert_telegram_bot_token
+    token = settings.alert_telegram_bot_token.get_secret_value()
     chat_id = settings.alert_telegram_chat_id
     if not token or not chat_id:
         return False

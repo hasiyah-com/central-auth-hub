@@ -106,7 +106,7 @@ def _dummy_descriptors(email: str) -> list[PublicKeyCredentialDescriptor]:
       - ไม่มีทางตรง credential จริงใน DB → ceremony fail แบบเดียวกับ wrong cred
         (401 invalid_credential) ที่ ``auth_complete``.
     """
-    key = (settings.secret_key or "").encode()
+    key = settings.secret_key.get_secret_value().encode()
     digest = hmac.new(
         key, f"passkey-decoy:{email.lower()}".encode(), hashlib.sha256
     ).digest()

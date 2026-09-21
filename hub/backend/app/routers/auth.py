@@ -120,7 +120,7 @@ oauth = OAuth()
 oauth.register(
     name="google",
     client_id=settings.google_client_id,
-    client_secret=settings.google_client_secret,
+    client_secret=settings.google_client_secret.get_secret_value(),
     server_metadata_url="https://accounts.google.com/.well-known/openid-configuration",
     client_kwargs={"scope": "openid email profile"},
 )
@@ -128,7 +128,7 @@ oauth.register(
 oauth.register(
     name="line",
     client_id=settings.line_client_id,
-    client_secret=settings.line_client_secret,
+    client_secret=settings.line_client_secret.get_secret_value(),
     server_metadata_url=("https://access.line.me/.well-known/openid-configuration"),
     client_kwargs={"scope": "openid email profile"},
 )
@@ -767,7 +767,7 @@ async def line_callback(request: Request, db: Session = Depends(get_db)):
                 "code": code,
                 "redirect_uri": settings.line_redirect_uri,
                 "client_id": settings.line_client_id,
-                "client_secret": settings.line_client_secret,
+                "client_secret": settings.line_client_secret.get_secret_value(),
             },
         )
         if token_resp.status_code != 200:

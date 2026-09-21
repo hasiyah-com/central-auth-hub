@@ -184,7 +184,7 @@ app.add_middleware(RequestIdMiddleware)
 # - same_site: lax พอสำหรับ OAuth redirect (strict จะตัด state cookie ตอน redirect กลับ)
 app.add_middleware(
     SessionMiddleware,
-    secret_key=settings.secret_key,
+    secret_key=settings.secret_key.get_secret_value(),
     https_only=(settings.app_env == "production"),
     same_site="lax",
     max_age=60 * 60,  # 1 ชม. — กัน session ค้างนาน
