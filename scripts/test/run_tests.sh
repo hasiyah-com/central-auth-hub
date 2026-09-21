@@ -46,6 +46,12 @@ echo "gate: $TEST_GATE" >&2
 TEST_REDIS_DB="$TEST_REDIS_DB" docker compose -f docker-compose.yml -f docker-compose.test.yml \
   up -d ml-service-test > /dev/null 2>&1
 
+# ตรวจนาฬิกาก่อนเริ่ม (B77) — นาฬิกาที่กระโดดทำให้ token ใหม่ถูกปฏิเสธด้วย iat
+# แล้วออกมาเป็น 401 ในเทสที่ไม่เกี่ยวกัน · หยุดตรงนี้พร้อมวิธีแก้ ดีกว่าไปไล่หาทีหลัง
+docker compose exec -T \
+  -e HOST_EPOCH="$(date +%s.%N)" \
+  hub-backend python -m tests.support.clock_guard --seconds "${CLOCK_GUARD_SECONDS:-10}"
+
 docker compose exec -T \
   -e DATABASE_URL="$DB_URL" \
   -e REDIS_URL="$REDIS_URL" \

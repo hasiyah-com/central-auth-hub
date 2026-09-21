@@ -754,6 +754,10 @@ bash scripts/test/order_matrix.sh per-file   # รันทีละไฟล์
 bash scripts/test/order_matrix.sh repeat 3   # release gate — ชุดเต็ม 3 รอบติด
 ```
 
+ก่อนเริ่มทุกรอบ `run_tests.sh` ตรวจนาฬิกาของคอนเทนเนอร์ 10 วินาที (`CLOCK_GUARD_SECONDS`) —
+กระโดดเกิน 1 วินาที หรือต่างจากเครื่องหลักเกิน 3 วินาที จะไม่เริ่ม เพราะจะออกมาเป็น 401 สุ่ม (B77)
+ถ้าไม่ผ่าน ให้ sync นาฬิกาของ Windows ก่อน (`w32tm /stripchart /computer:time.windows.com`)
+
 ท้ายรอบจะพิมพ์รายงานเทียบ state ก่อน/หลัง ถ้าพบข้อมูลรั่ว (ผู้ใช้ค้าง, session ค้าง,
 key ค้างใน namespace) รอบนั้นถือว่า **ไม่ผ่าน** แม้เทสทุกตัวจะเขียว
 

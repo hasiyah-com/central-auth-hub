@@ -490,7 +490,9 @@
 - หลักฐาน (`TEST_DIAG=1`): `ImmatureSignatureError: The token is not yet valid (iat)` โดย `age_s = -0.848` · `clock_steps.jsonl` นับนาฬิกาถอยหลังราว 0.97 วินาทีได้ 16 ครั้งในรอบเดียว (และกระโดดไปข้างหน้าราว 3.7 วินาทีเป็นระยะ) — Docker Desktop/WSL ปรับเวลาตามเครื่องหลัก
 - สาเหตุ: `verify_token` ตรวจ `iat`/`nbf`/`exp` แบบไม่เผื่อเลย · token ที่ออกก่อนนาฬิกาถอยแล้วตรวจหลังถอยจะดูเหมือนออกในอนาคต · เกิดได้ใน production เช่นกัน (NTP step, hub หลายเครื่องนาฬิกาไม่ตรงกัน)
 - **กฎ:** การตรวจเวลาของ JWT ต้องมี leeway ที่ตั้งค่าได้และมีเพดาน (`jwt_clock_skew_seconds` ค่าเริ่ม 5 ช่วง 0–60 ค่าผิด = ไม่ start) · leeway ใช้กับ `iat`/`nbf`/`exp` เท่านั้น ลายเซ็น/iss/aud/revocation เข้มเท่าเดิม · เทสที่ตรวจผลข้างเคียง (audit, DB) ต้องตรวจ HTTP status ก่อน ไม่งั้นอาการ 401 จะไปโผล่เป็น assertion อื่นที่ชี้ผิดที่
-- **Verify:** `tests/test_jwt_clock_skew.py`
+- **ภาคต่อ — ต้นเหตุที่แท้จริง (2026-09-21):** หลังเพิ่ม leeway แล้ว gate บน worktree สะอาดยังล้ม 3 ตัวด้วย `iat` เดิม · วัดในคอนเทนเนอร์ 60 วินาทีได้ `[-8.824, 9.75, -8.889, 9.765]` และเร็วกว่าเครื่องหลัก 7–9 วินาที · `wsl --shutdown` ไม่หาย (VM ใหม่ uptime 42 วินาที ยังได้ `[-10.001, 10.004, ...]`) · `w32tm /stripchart` พบ **นาฬิกาของ Windows ช้ากว่าเวลาจริง 9.77 วินาที** → Hyper-V ดึง VM ตาม Windows ขณะที่ NTP ดึงกลับตามเวลาจริง แย่งกันทุก 15–30 วินาที · หลัง Sync now คลาดเหลือ -0.04 วินาที, ใน 90 วินาทีกระโดดครั้งเดียว -0.07 วินาที, gate เต็ม 1378 passed โดยนาฬิกาถอยมากสุด 19 ms และไม่มี `ImmatureSignatureError`
+- **กฎเพิ่ม:** leeway รับการขยับปกติได้ แต่**ห้ามขยาย leeway ให้ครอบนาฬิกาที่คลาดทั้งก้อน** — แก้ที่ต้นทาง · `run_tests.sh` ตรวจนาฬิกา 10 วินาทีก่อนเริ่ม (กระโดด > 1 วินาที หรือต่างจากเครื่องหลัก > 3 วินาที = ไม่เริ่ม พร้อมวิธีแก้)
+- **Verify:** `tests/test_jwt_clock_skew.py` · `tests/test_clock_guard.py`
 
 **B78. error ที่พิมพ์ `repr(settings)` พา secret ทุกตัวออกมาใน output ของเทส**
 - อาการ: ระหว่าง RED ของ B77 เทสเรียก `monkeypatch.setattr(settings, "jwt_clock_skew_seconds", 0)` ก่อนฟิลด์จะมีอยู่ → `AttributeError` ที่ข้อความมี `repr(settings)` ทั้งก้อน รวม Google client secret, SMTP app password, LINE secret, webhook key และ Telegram bot token
