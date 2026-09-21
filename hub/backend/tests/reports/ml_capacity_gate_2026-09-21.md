@@ -517,7 +517,35 @@ c=20 p = 0.86)
 
 **ผลรวม: ยังไม่ผ่าน** (C2)
 
-## 17. รันซ้ำ
+## 17. ลดงบรอ fit — เขียนก่อนวัด (2026-09-22)
+
+ส่วนนี้ commit **ก่อน**วัด · ผลจะเพิ่มใน §18 โดยไม่แก้ส่วนนี้
+
+### 17.1 เหตุผล
+
+§16: C2 ไม่ผ่าน (p95 ~245–280 ms) ขณะที่ทั้ง 20 คำตอบเป็น `model_warming` ทุกครั้ง · fit ใช้ ~165 ms
+มากกว่างบ 150 ms · สมมติฐาน: งบรอแทบไม่ได้คะแนนคืน จึงเป็นต้นทุน latency ล้วนๆ · ผู้ใช้เลือกให้
+ลดงบแล้ววัดซ้ำ (2026-09-22)
+
+### 17.2 เครื่องมือที่เพิ่ม
+
+`fit_wait_scored` ใน `/v1/l3-capacity-stats` — นับ cache miss ที่ fit ทันงบแล้วได้คะแนน · ตัววัด
+รายงาน `wait_outcomes` (หลังช่วงเย็น และตอนจบ) = ได้คะแนนหลังรอ เทียบกับ `model_warming`
+
+### 17.3 การทดลอง
+
+- การตั้งค่าเหมือน §15 ทุกอย่าง (reuseport 4 worker, probe คะแนนสูง 33%, `CAP_COLD_OPEN_LOOP=1`)
+  ยกเว้น `L3_FIT_WAIT_MS`
+- **ค่าที่ทดสอบ:** **50** และ **0** ms · ฝั่งละ **10 ครั้ง** สลับลำดับ 50, 0, 50, 0, …
+- **ข้อมูลประกอบ:** ค่าเดิม **150** ms อีก 3 ครั้ง เพื่อวัด `scored_share` (§16 ยังไม่มีตัวนับนี้) —
+  ไม่ใช้ตัดสิน
+- **เกณฑ์ต่อค่า:** C1 (≥ 9/10 ครั้งผ่าน `cold_pass` และ median p95 ≤ 225 ms) · C2 (≥ 9/10 ครั้ง) ·
+  steady P1 v2 และ P2–P4 ทุกครั้ง — กฎเดียวกับ §13/§15
+- **กฎเลือกค่าเริ่มต้นใหม่:** ค่า**มากที่สุด**ใน {50, 0} ที่ผ่านทุกเกณฑ์ (ค่ามากกว่ายังมีโอกาสได้คะแนน
+  คืน) · ถ้าไม่มีค่าใดผ่าน **คงค่า 150** และรายงานตามจริง · ไม่ทดสอบค่าอื่นเพิ่มเพื่อให้ผ่าน
+- ค่าเริ่มต้นในโค้ดจะเปลี่ยนหลังได้ผลตามกฎนี้เท่านั้น (commit แยก)
+
+## 18. รันซ้ำ
 
 ```bash
 bash scripts/test/ml_capacity_gate.sh            # 1 2 4
@@ -533,4 +561,4 @@ CAP_SERVER=reuseport CAP_HIGH_SCORE_SHARE=0.33 CAP_COLD_OPEN_LOOP=1 bash scripts
 
 ผลดิบ: `workers_{1,2,4}.json` + log ของ ml-service ต่อรอบ (เก็บใน `CAP_OUT` ไม่เข้า git)
 
-เทส: `hub/backend/tests/test_ml_capacity_gate.py` (43) · `hub/backend/tests/test_ml_capacity_compare.py` (4) · `ml-service/tests/test_capacity_stats.py` (10) · `ml-service/tests/test_explainer_init.py` (5) · `ml-service/tests/test_serve.py` (8, ตัวที่ใช้ socket จริงรันเฉพาะ Linux) · `ml-service/tests/test_point_shap_experiment.py` (8) · `ml-service/tests/test_point_shap_gating.py` (13) · `ml-service/tests/test_fit_offload.py` (13)
+เทส: `hub/backend/tests/test_ml_capacity_gate.py` (47) · `hub/backend/tests/test_ml_capacity_compare.py` (4) · `ml-service/tests/test_capacity_stats.py` (10) · `ml-service/tests/test_explainer_init.py` (5) · `ml-service/tests/test_serve.py` (8, ตัวที่ใช้ socket จริงรันเฉพาะ Linux) · `ml-service/tests/test_point_shap_experiment.py` (8) · `ml-service/tests/test_point_shap_gating.py` (13) · `ml-service/tests/test_fit_offload.py` (14)

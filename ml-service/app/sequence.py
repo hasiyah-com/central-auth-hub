@@ -509,6 +509,7 @@ def wait_for_background_fits(timeout: float | None = None) -> bool:
 _FIT_COUNTS: dict[str, int] = {}
 _FIT_COUNTS_GUARD = threading.Lock()
 _WARMING = [0]  # คำตอบ model_warming ของ process นี้
+_WAIT_SCORED = [0]  # cache miss ที่ fit ทันงบแล้วได้คะแนน (§17)
 _L3_REQUESTS = [0]  # request ที่ /v1/l3-evaluate ของ process นี้ — ดูว่า worker ได้งานเท่ากันไหม
 
 
@@ -527,6 +528,7 @@ def reset_capacity_stats() -> None:
         _FIT_COUNTS.clear()
         _L3_REQUESTS[0] = 0
         _WARMING[0] = 0
+        _WAIT_SCORED[0] = 0
 
 
 def _rss_kb() -> int | None:
@@ -548,6 +550,7 @@ def capacity_stats() -> dict:
         counts = list(_FIT_COUNTS.values())
         l3_requests = _L3_REQUESTS[0]
         warming = _WARMING[0]
+        wait_scored = _WAIT_SCORED[0]
     return {
         "pid": os.getpid(),
         "fits_total": sum(counts),
@@ -556,6 +559,7 @@ def capacity_stats() -> dict:
         "cache_entries": len(_MODEL_CACHE),
         "l3_requests": l3_requests,
         "warming_responses": warming,
+        "fit_wait_scored": wait_scored,
         "fits_pending": sum(1 for f in list(_PENDING.values()) if not f.done()),
         "rss_kb": _rss_kb(),
     }
@@ -592,6 +596,8 @@ def score(redis, user_id: str, residual: list[float], explain: bool = False) -> 
             fut = _submit_fit(redis, user_id, key, n_raw)
             try:
                 model, n_parsed = fut.result(timeout=fit_wait_seconds())
+                with _FIT_COUNTS_GUARD:
+                    _WAIT_SCORED[0] += 1  # งบรอได้คะแนนคืน (fit ทันงบ)
             except FutureTimeout:
                 with _FIT_COUNTS_GUARD:
                     _WARMING[0] += 1

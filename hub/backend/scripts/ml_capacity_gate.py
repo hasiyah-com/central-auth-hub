@@ -416,6 +416,23 @@ def _is_warming(data: dict) -> bool:
     return (data.get("sequence") or {}).get("abstain_reason") == WARMING_REASON
 
 
+def wait_outcomes(stats: dict) -> dict:
+    """cache miss ที่รอแล้วได้คะแนน เทียบกับที่ตอบ model_warming — รวมทุก worker (§17)."""
+    scored = warming = 0
+    known = False
+    for s in stats.values():
+        if "fit_wait_scored" in s:
+            known = True
+        scored += int(s.get("fit_wait_scored") or 0)
+        warming += int(s.get("warming_responses") or 0)
+    total = scored + warming
+    return {
+        "scored_after_wait": scored,
+        "warming": warming,
+        "scored_share": round(scored / total, 4) if known and total else None,
+    }
+
+
 def cold_user_order(n_users: int, n_arrivals: int) -> list[int]:
     """ลำดับผู้ใช้ของ arrival — n_users ตัวแรกเป็นคนละคนทั้งหมด แล้ววนซ้ำ."""
     return [i % n_users for i in range(n_arrivals)]
@@ -542,9 +559,9 @@ async def run(a) -> dict:
             cold_open["passed"] = cold_pass(cold_open)
             # ให้ fit ของช่วงเย็นจบก่อน แล้วเก็บเป็นฐานของ P2
             await gate.wait_fits_idle(client)
-            fit_baseline = {
-                pid: s["fits_total"] for pid, s in (await gate.stats(client)).items()
-            }
+            after_cold = await gate.stats(client)
+            fit_baseline = {pid: s["fits_total"] for pid, s in after_cold.items()}
+            cold_open["wait_outcomes"] = wait_outcomes(after_cold)
         started = time.perf_counter()
         cold = await gate.cold_burst(client)
         cold_stats = await gate.stats(client)
@@ -581,6 +598,7 @@ async def run(a) -> dict:
     result["open_loop"] = open_loop
     result["cold_open_loop"] = cold_open
     result["cold_burst_passed"] = cold_pass({"latency": cold["latency"]})
+    result["wait_outcomes_total"] = wait_outcomes(rounds[-1]["stats"])
     return result
 
 

@@ -212,6 +212,21 @@ def test_default_budget_is_150_ms():
     assert SEQ.fit_wait_seconds() == pytest.approx(0.150)
 
 
+def test_stats_count_requests_that_waited_and_got_a_score(monkeypatch):
+    """ตอบคำถามของ §17: งบรอได้คะแนนคืนกี่ครั้ง (fit ทันงบ) เทียบกับ model_warming."""
+    r = FakeRedis()
+    _seed(r, "fast")
+    history = SEQ.load_history(r, "fast")
+    ready = SEQ.fit_user_model(history, n_history=len(history))
+    monkeypatch.setattr(SEQ, "fit_user_model", lambda h, n_history=None: ready)
+    monkeypatch.setenv("L3_FIT_WAIT_MS", "400")
+    SEQ.score(r, "fast", RESID)  # fit ทันงบ → นับ
+    SEQ.score(r, "fast", RESID)  # cache อุ่น → ไม่นับ (ไม่ได้รอ)
+    s = SEQ.capacity_stats()
+    assert s["fit_wait_scored"] == 1
+    assert s["warming_responses"] == 0
+
+
 def test_stats_report_warming_and_queue(monkeypatch):
     monkeypatch.setenv("L3_FIT_WAIT_MS", "0")
     _slow_fit(monkeypatch, 0.2)

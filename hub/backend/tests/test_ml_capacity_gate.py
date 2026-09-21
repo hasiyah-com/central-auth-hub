@@ -608,6 +608,20 @@ def test_p2_with_baseline_still_catches_a_refit():
     assert not G.evaluate(**kw, fit_baseline=baseline)["checks"]["P2_fit_storm"]["pass"]
 
 
+def test_wait_outcomes_sum_every_worker():
+    """§17: งบรอได้คะแนนคืนกี่ครั้ง — รวมทุก worker จากตัวนับของ ml-service."""
+    stats = {
+        1: {"fit_wait_scored": 3, "warming_responses": 97},
+        2: {"fit_wait_scored": 1, "warming_responses": 99},
+    }
+    out = G.wait_outcomes(stats)
+    assert out == {"scored_after_wait": 4, "warming": 196, "scored_share": 0.02}
+
+
+def test_wait_outcomes_unknown_when_not_reported():
+    assert G.wait_outcomes({1: {}})["scored_share"] is None
+
+
 def test_passing_input_is_not_mutated():
     kw = _passing()
     snap = copy.deepcopy(kw)
