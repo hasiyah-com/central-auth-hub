@@ -327,7 +327,7 @@ function AuditPageInner() {
                         </small>
                       </span>
                       <span>
-                        <i className={tone}>{r.action}</i>
+                        <i className={tone} title={r.action}>{r.action}</i>
                         <small className="mono">{r.id.slice(0, 8)}</small>
                       </span>
                       <span className="target">

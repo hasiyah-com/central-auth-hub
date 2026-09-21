@@ -1,11 +1,75 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import Link from "next/link";
 import { Topbar } from "@/components/Topbar";
 import { Badge } from "@/components/Badge";
 import { SlidePanel } from "@/components/SlidePanel";
 import { clientFetch } from "@/lib/api";
+import "@/app/signal-room.css";
+import "@/app/signal-console.css";
+
+/* ── ไอคอนเส้น (โปรเจกต์ไม่ได้ติดตั้ง lucide) ─────────────────────────── */
+function NIcon({ children, size = 14 }: { children: ReactNode; size?: number }) {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width={size}
+      height={size}
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      {children}
+    </svg>
+  );
+}
+const IconBell = ({ size = 26 }: { size?: number }) => (
+  <NIcon size={size}>
+    <path d="M10.27 21a1.94 1.94 0 0 0 3.46 0" />
+    <path d="M3.26 15.53A2 2 0 0 0 5 18.5h14a2 2 0 0 0 1.74-2.97L19 12V9a7 7 0 1 0-14 0v3z" />
+  </NIcon>
+);
+const IconRefresh = ({ size = 14 }: { size?: number }) => (
+  <NIcon size={size}>
+    <path d="M3 12a9 9 0 0 1 15-6.7L21 8" />
+    <path d="M21 3v5h-5" />
+    <path d="M21 12a9 9 0 0 1-15 6.7L3 16" />
+    <path d="M3 21v-5h5" />
+  </NIcon>
+);
+const IconCheckAll = ({ size = 14 }: { size?: number }) => (
+  <NIcon size={size}>
+    <path d="M2 12.5 7 17l4-4" />
+    <path d="m11 15 4 2 7-9" />
+  </NIcon>
+);
+const IconCheckMark = ({ size = 14 }: { size?: number }) => (
+  <NIcon size={size}>
+    <path d="M20 6 9 17l-5-5" />
+  </NIcon>
+);
+const IconUndo = ({ size = 14 }: { size?: number }) => (
+  <NIcon size={size}>
+    <path d="M3 7v6h6" />
+    <path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13" />
+  </NIcon>
+);
+const IconArrow = ({ size = 13 }: { size?: number }) => (
+  <NIcon size={size}>
+    <path d="M5 12h14M13 6l6 6-6 6" />
+  </NIcon>
+);
 
 type NotifItem = {
   id: string;
@@ -42,12 +106,6 @@ const SEVERITY_TONE: Record<string, "warn" | "danger" | "default"> = {
   warning: "warn",
   critical: "danger",
   info: "default",
-};
-
-const SEVERITY_BG: Record<string, string> = {
-  critical: "bg-rose-50",
-  warning: "bg-amber-50",
-  info: "bg-blue-50",
 };
 
 function parseUTC(iso: string): Date {
@@ -203,55 +261,64 @@ export default function NotificationsPage() {
     return critical || unreadOnly[0];
   }, [flatItems]);
 
+  // filter chips — "ทั้งหมด" + หมวดที่มีจริง (เรียงตาม categoryOrder)
+  const chips = useMemo(() => {
+    const out: Array<{ key: string; label: string; count: number }> = [
+      { key: "all", label: "ทั้งหมด", count: data?.total ?? 0 },
+    ];
+    if (data) {
+      for (const key of categoryOrder) {
+        const cat = data.categories[key];
+        if (cat) out.push({ key, label: cat.label, count: cat.count });
+      }
+    }
+    return out;
+  }, [data]);
+
   return (
-    <>
-      <Topbar title="แจ้งเตือนทั้งหมด" />
-      <main className="p-8 max-w-7xl mx-auto w-full space-y-5">
-        {/* Header */}
-        <div className="flex items-end justify-between gap-3 flex-wrap">
-          <div>
-            <h2 className="text-sm font-bold text-ink-500 uppercase tracking-wider">
-              Notification Center
-            </h2>
-            <p className="text-xs text-ink-400 mt-1">
-              เรียงเวลาล่าสุด · auto-refresh 30s · มีทั้งหมด {data?.total ?? 0} รายการ
-            </p>
-          </div>
-          <div className="flex items-center gap-2 flex-wrap">
-            {data && (
-              <div
-                className={
-                  "px-4 py-2 rounded-lg text-sm font-bold tabular-nums " +
-                  (unreadCount > 0
-                    ? "bg-amber-500 text-white"
-                    : "bg-emerald-500 text-white")
-                }
-              >
-                {unreadCount > 0
-                  ? `${unreadCount} ยังไม่อ่าน`
-                  : "อ่านครบแล้ว"}
-              </div>
-            )}
-            {unreadCount > 0 && (
-              <button
-                onClick={clearAll}
-                disabled={busy === "clear"}
-                className="px-3 py-2 rounded-lg border border-emerald-300 hover:bg-emerald-50 text-xs font-semibold text-emerald-700 disabled:opacity-50"
-              >
-                Mark ทั้งหมดว่าอ่าน
-              </button>
-            )}
-            <button
-              onClick={load}
-              className="px-3 py-2 rounded-lg border border-ink-200 hover:bg-ink-50 text-xs font-semibold text-ink-700"
-            >
-              ⟳ รีเฟรช
-            </button>
-          </div>
+    <div className="sc cx-notifications-page">
+      <Topbar title="แจ้งเตือน" />
+
+      {/* ── Command bar (พื้นเข้ม) ── */}
+      <section className="cx-command">
+        <div>
+          <span>
+            <span className={`cx-dot${unreadCount > 0 ? " warn" : ""}`}>
+              {unreadCount > 0 && <i />}
+            </span>
+            notification center
+          </span>
+          <h1>แจ้งเตือน</h1>
         </div>
 
-        {/* Read/Unread tabs */}
-        <div className="inline-flex rounded-lg border border-ink-200 bg-white overflow-hidden text-xs font-semibold w-fit">
+        <div className="cx-live-actions">
+          {data && (
+            <span
+              className={
+                unreadCount > 0 ? "cx-notif-count pending" : "cx-notif-count"
+              }
+            >
+              {unreadCount > 0 ? `${unreadCount} ยังไม่อ่าน` : "อ่านครบแล้ว"}
+            </span>
+          )}
+          {unreadCount > 0 && (
+            <button onClick={clearAll} disabled={busy === "clear"}>
+              <IconCheckAll />
+              ทำเครื่องหมายว่าอ่านทั้งหมด
+            </button>
+          )}
+          <button onClick={load} title="รีเฟรช">
+            <IconRefresh />
+            รีเฟรช
+          </button>
+        </div>
+      </section>
+
+      <div className="cx-document">
+        {error && <div className="cx-inline-error">{error}</div>}
+
+        {/* แท็บ อ่าน/ยังไม่อ่าน */}
+        <div className="cx-seg" role="tablist" aria-label="สถานะการอ่าน">
           {(
             [
               { key: "unread", label: "ยังไม่อ่าน", count: unreadCount },
@@ -261,244 +328,176 @@ export default function NotificationsPage() {
           ).map((tab) => (
             <button
               key={tab.key}
+              className={readFilter === tab.key ? "on" : ""}
               onClick={() => setReadFilter(tab.key)}
-              className={
-                "px-4 py-2 transition border-r last:border-r-0 border-ink-200 " +
-                (readFilter === tab.key
-                  ? "bg-brand-600 text-white"
-                  : "text-ink-600 hover:bg-ink-50")
-              }
             >
-              {tab.label}{" "}
-              <span
-                className={
-                  "ml-1 px-1.5 py-0.5 rounded-full text-[10px] tabular-nums " +
-                  (readFilter === tab.key
-                    ? "bg-white/20"
-                    : "bg-ink-100 text-ink-700")
-                }
-              >
-                {tab.count}
-              </span>
+              {tab.label} · {tab.count}
             </button>
           ))}
         </div>
 
-        {error && (
-          <div className="p-4 rounded-lg bg-rose-50 border border-rose-200 text-rose-700 text-sm">
-            {error}
+        {loading && !data && (
+          <div className="cx-empty">
+            <strong>กำลังโหลด</strong>
           </div>
         )}
 
-        {loading && !data && (
-          <div className="text-ink-400 text-sm">กำลังโหลด…</div>
-        )}
-
-        {/* Featured card — most critical / latest */}
+        {/* featured — เคสวิกฤต/ล่าสุดที่ยังไม่อ่าน */}
         {featured && (
           <Link
             href={featured.link}
-            className={
-              "block rounded-xl border-2 p-5 hover:shadow-md transition group " +
-              (featured.severity === "critical"
-                ? "bg-rose-50 border-rose-300 hover:border-rose-500"
-                : featured.severity === "warning"
-                ? "bg-amber-50 border-amber-300 hover:border-amber-500"
-                : "bg-blue-50 border-blue-200 hover:border-blue-400")
-            }
+            className={`cx-notif-featured ${featured.severity}`}
           >
-            <div className="flex items-start gap-4">
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 mb-1 flex-wrap">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-ink-900/70">
-                    {featured.severity === "critical"
-                      ? "Highest Priority"
-                      : "ล่าสุด"}
-                  </span>
-                  <span className="text-xs text-ink-600">·</span>
-                  <span className="text-xs font-semibold text-ink-700">
-                    {featured.categoryIcon} {featured.categoryLabel}
-                  </span>
-                </div>
-                <h3 className="text-base font-extrabold text-ink-900 truncate">
-                  {featured.title}
-                </h3>
-                <p className="text-sm text-ink-700 mt-0.5 truncate">
-                  {featured.subtitle}
-                </p>
-                <div className="text-[11px] text-ink-500 font-mono mt-2">
-                  {fmtTime(featured.created_at)} · {timeAgo(featured.created_at)}
-                </div>
-              </div>
-              <div className="text-ink-700 group-hover:text-ink-900 font-bold text-2xl transition">
-                →
-              </div>
+            <div className="cx-notif-featured-head">
+              <span>
+                {featured.severity === "critical" ? "highest priority" : "ล่าสุด"}
+              </span>
+              <span>·</span>
+              <span>{featured.categoryLabel}</span>
             </div>
+            <h3>{featured.title}</h3>
+            <p>{featured.subtitle}</p>
+            <time>
+              {fmtTime(featured.created_at)} · {timeAgo(featured.created_at)}
+            </time>
           </Link>
         )}
 
-        {/* Category filter — dropdown (สะอาดกว่า chip grid) */}
-        {data && (
-          <CategoryDropdown
-            data={data}
-            activeFilter={activeFilter}
-            setActiveFilter={setActiveFilter}
-          />
+        {/* filter หมวด */}
+        {data && data.total > 0 && (
+          <div className="cx-filter-chips cx-notif-filter-chips">
+            {chips.map((c) => (
+              <button
+                key={c.key}
+                className={activeFilter === c.key ? "on" : ""}
+                disabled={c.count === 0 && c.key !== "all"}
+                onClick={() => setActiveFilter(c.key)}
+              >
+                <span className="cx-notif-tab-label" title={c.label}>
+                  {c.label}
+                </span>
+                <i className="mono">{c.count}</i>
+              </button>
+            ))}
+          </div>
         )}
 
-        {/* Notifications table */}
-        {data && data.total === 0 ? (
-          <div className="bg-white border border-ink-200 rounded-xl p-12 text-center">
-            <div className="text-lg font-bold text-ink-900">
-              ไม่มีแจ้งเตือน
+        {/* รายการ */}
+        <section className="cx-panel cx-notifications">
+          <header>
+            <div>
+              <span className="mono">notifications</span>
+              <h2>รายการแจ้งเตือน</h2>
             </div>
-            <div className="text-sm text-ink-500 mt-1">ระบบทำงานปกติ</div>
-          </div>
-        ) : (
-          filteredItems.length > 0 && (
-            <div className="bg-white border border-ink-200 rounded-xl overflow-hidden shadow-sm">
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead className="bg-ink-50">
-                    <tr>
-                      <th className="px-4 py-3 text-left text-[11px] font-bold text-ink-500 uppercase tracking-wider w-[140px]">
-                        เวลา
-                      </th>
-                      <th className="px-4 py-3 text-left text-[11px] font-bold text-ink-500 uppercase tracking-wider w-[110px]">
-                        Severity
-                      </th>
-                      <th className="px-4 py-3 text-left text-[11px] font-bold text-ink-500 uppercase tracking-wider w-[170px]">
-                        ประเภท
-                      </th>
-                      <th className="px-4 py-3 text-left text-[11px] font-bold text-ink-500 uppercase tracking-wider">
-                        รายละเอียด
-                      </th>
-                      <th className="px-4 py-3 text-right text-[11px] font-bold text-ink-500 uppercase tracking-wider w-[110px]">
-                        Action
-                      </th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-ink-100">
-                    {filteredItems.map((item) => {
-                      const rowKey = `${item.categoryKey}:${item.id}`;
-                      return (
-                        <tr
-                          key={rowKey}
-                          className={
-                            "hover:bg-ink-50/50 transition " +
-                            (item.is_read
-                              ? "opacity-60"
-                              : SEVERITY_BG[item.severity] || "")
-                          }
-                        >
-                          <td className="px-4 py-3 align-top">
-                            <div className="flex items-center gap-2">
-                              {!item.is_read && (
-                                <span
-                                  className="w-2 h-2 rounded-full bg-brand-500 animate-pulse"
-                                  title="ยังไม่อ่าน"
-                                />
-                              )}
-                              <div>
-                                <div className="text-xs font-mono text-ink-700">
-                                  {timeAgo(item.created_at)}
-                                </div>
-                                <div className="text-[10px] font-mono text-ink-400 mt-0.5">
-                                  {fmtTime(item.created_at)}
-                                </div>
-                              </div>
-                            </div>
-                          </td>
-                          <td className="px-4 py-3 align-top">
-                            <Badge
-                              tone={SEVERITY_TONE[item.severity] || "default"}
-                            >
-                              {item.severity.toUpperCase()}
-                            </Badge>
-                          </td>
-                          <td className="px-4 py-3 align-top">
-                            <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-ink-100 text-ink-800 text-xs font-semibold">
-                              <span>{item.categoryIcon}</span>
-                              <span className="truncate max-w-[140px]">
-                                {item.categoryLabel}
-                              </span>
-                            </div>
-                          </td>
-                          <td className="px-4 py-3 align-top min-w-0">
-                            <div
-                              className={
-                                "text-sm truncate " +
-                                (item.is_read
-                                  ? "font-normal text-ink-700"
-                                  : "font-bold text-ink-900")
-                              }
-                            >
-                              {item.title}
-                            </div>
-                            <div className="text-xs text-ink-500 truncate">
-                              {item.subtitle}
-                            </div>
-                          </td>
-                          <td className="px-4 py-3 text-right align-top">
-                            <div className="inline-flex items-center gap-2">
-                              {item.is_read ? (
-                                <button
-                                  onClick={() =>
-                                    markUnread(item.categoryKey, item.id)
-                                  }
-                                  disabled={busy === rowKey}
-                                  className="px-2 py-1.5 rounded-md border border-ink-200 hover:bg-ink-50 text-ink-700 text-xs font-semibold disabled:opacity-50"
-                                  title="Mark ว่ายังไม่อ่าน"
-                                >
-                                  ↺
-                                </button>
-                              ) : (
-                                <button
-                                  onClick={() =>
-                                    markRead(item.categoryKey, item.id)
-                                  }
-                                  disabled={busy === rowKey}
-                                  className="px-2 py-1.5 rounded-md border border-emerald-300 hover:bg-emerald-50 text-emerald-700 text-xs font-semibold disabled:opacity-50"
-                                  title="Mark ว่าอ่านแล้ว"
-                                >
-                                  อ่านแล้ว
-                                </button>
-                              )}
+            <span className="cx-chip outline mono">
+              {filteredItems.length} รายการ
+            </span>
+          </header>
+
+          {data && data.total === 0 ? (
+            <div className="cx-empty">
+              <IconBell />
+              <strong>ไม่มีการแจ้งเตือน</strong>
+              <span>ระบบทำงานปกติ</span>
+            </div>
+          ) : filteredItems.length === 0 ? (
+            <div className="cx-empty">
+              <IconBell />
+              <strong>
+                {readFilter === "unread"
+                  ? "ไม่มีรายการที่ยังไม่อ่าน"
+                  : "ไม่มีรายการในตัวกรองนี้"}
+              </strong>
+            </div>
+          ) : (
+            <div className="cx-table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th style={{ width: 140 }}>เวลา</th>
+                    <th style={{ width: 96 }}>Severity</th>
+                    <th style={{ width: 160 }}>ประเภท</th>
+                    <th>รายละเอียด</th>
+                    <th style={{ width: 130, textAlign: "right" }}>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredItems.map((item) => {
+                    const rowKey = `${item.categoryKey}:${item.id}`;
+                    return (
+                      <tr key={rowKey} className={item.is_read ? "is-read" : ""}>
+                        <td>
+                          <div className="cx-notif-time">
+                            {!item.is_read && (
+                              <span className="cx-notif-unread-dot" />
+                            )}
+                            {timeAgo(item.created_at)}
+                            <small>{fmtTime(item.created_at)}</small>
+                          </div>
+                        </td>
+                        <td>
+                          <Badge tone={SEVERITY_TONE[item.severity] || "default"}>
+                            {item.severity.toUpperCase()}
+                          </Badge>
+                        </td>
+                        <td>
+                          <span className="cx-chip">{item.categoryLabel}</span>
+                        </td>
+                        <td>
+                          <div className="cx-notif-title">{item.title}</div>
+                          <div className="cx-notif-sub">{item.subtitle}</div>
+                        </td>
+                        <td>
+                          <div className="cx-notif-actions">
+                            {item.is_read ? (
                               <button
-                                onClick={() => {
-                                  setSelected(item);
-                                  if (!item.is_read)
-                                    markRead(item.categoryKey, item.id);
-                                }}
-                                className="inline-flex items-center gap-1 px-3 py-1.5 rounded-md bg-ink-900 hover:bg-ink-700 text-white text-xs font-semibold transition"
+                                className="cx-row-action"
+                                onClick={() =>
+                                  markUnread(item.categoryKey, item.id)
+                                }
+                                disabled={busy === rowKey}
+                                title="ทำเครื่องหมายว่ายังไม่อ่าน"
+                                aria-label="ทำเครื่องหมายว่ายังไม่อ่าน"
                               >
-                                ดู →
+                                <IconUndo />
                               </button>
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
+                            ) : (
+                              <button
+                                className="cx-row-action"
+                                onClick={() =>
+                                  markRead(item.categoryKey, item.id)
+                                }
+                                disabled={busy === rowKey}
+                                title="ทำเครื่องหมายว่าอ่านแล้ว"
+                                aria-label="ทำเครื่องหมายว่าอ่านแล้ว"
+                              >
+                                <IconCheckMark />
+                              </button>
+                            )}
+                            <button
+                              className="cx-panel-action"
+                              onClick={() => {
+                                setSelected(item);
+                                if (!item.is_read)
+                                  markRead(item.categoryKey, item.id);
+                              }}
+                            >
+                              ดู
+                              <IconArrow />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
-          )
-        )}
+          )}
+        </section>
+      </div>
 
-        {/* Empty state เมื่อ filter ให้ list เปล่า */}
-        {data && data.total > 0 && filteredItems.length === 0 && (
-          <div className="bg-white border border-ink-200 rounded-xl p-10 text-center">
-            <div className="text-sm font-bold text-ink-900">
-              {readFilter === "unread"
-                ? "ไม่มีรายการที่ยังไม่อ่าน"
-                : "ไม่มีรายการในตัวกรองนี้"}
-            </div>
-          </div>
-        )}
-      </main>
-
-      {/* Detail slide panel — เปิดเมื่อกด "ดู →" */}
+      {/* Detail slide panel — เปิดเมื่อกด "ดู" */}
       <SlidePanel
         open={!!selected}
         onClose={() => setSelected(null)}
@@ -511,7 +510,7 @@ export default function NotificationsPage() {
           />
         )}
       </SlidePanel>
-    </>
+    </div>
   );
 }
 
