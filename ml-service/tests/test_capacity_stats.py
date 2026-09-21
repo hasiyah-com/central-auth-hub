@@ -53,6 +53,7 @@ RESID = [0.1] * SEQ.DIMS
 
 @pytest.fixture(autouse=True)
 def _clean():
+    SEQ.wait_for_background_fits(timeout=30)
     SEQ.reset_capacity_stats()
     SEQ._MODEL_CACHE.clear()
     SEQ._LOCKS.clear()
@@ -76,6 +77,7 @@ def test_one_fit_is_counted_and_warm_calls_do_not_fit():
     SEQ.score(r, "u1", RESID)
     SEQ.score(r, "u1", RESID)
     SEQ.score(r, "u1", RESID)
+    assert SEQ.wait_for_background_fits(timeout=30)  # fit อยู่เบื้องหลังแล้ว (§15)
     s = SEQ.capacity_stats()
     assert s["fits_total"] == 1
     assert s["max_fits_per_user"] == 1
@@ -97,6 +99,7 @@ def test_concurrent_cold_requests_fit_once_per_user():
         t.start()
     for t in threads:
         t.join()
+    assert SEQ.wait_for_background_fits(timeout=30)
     s = SEQ.capacity_stats()
     assert s["fits_total"] == 1
     assert s["max_fits_per_user"] == 1
@@ -107,6 +110,7 @@ def test_distinct_users_each_fit_once():
     for i in range(5):
         _seed(r, f"u{i}", 200, seed=i)
         SEQ.score(r, f"u{i}", RESID)
+    assert SEQ.wait_for_background_fits(timeout=30)
     s = SEQ.capacity_stats()
     assert s["fits_total"] == 5
     assert s["max_fits_per_user"] == 1
@@ -124,6 +128,7 @@ def test_stats_carry_no_user_identifiers():
     r = FakeRedis()
     _seed(r, "secret-user-id-b7", 200)
     SEQ.score(r, "secret-user-id-b7", RESID)
+    assert SEQ.wait_for_background_fits(timeout=30)
     assert "secret-user-id-b7" not in json.dumps(SEQ.capacity_stats())
 
 

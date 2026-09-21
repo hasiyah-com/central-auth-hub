@@ -49,6 +49,16 @@ REQUESTS_PER_LEVEL = 400
 STEADY_ROUNDS = 3
 COLD_BURST = 20
 
+# ── เกณฑ์ช่วงเย็นแบบ open-loop (§15 — กำหนดก่อนวัด) ──
+# ml-service เพิ่ง start · 400 คนที่มีประวัติ 2,000 แถวและยังไม่มีใครมีโมเดล · ยิงแบบ Poisson
+# 60 login/วินาที 60 วินาที · 400 arrival แรกเป็นคนละคนทั้งหมด (กรณีแย่สุดหลัง restart)
+COLD_RATE = 60.0
+COLD_SECONDS = 60.0
+COLD_USERS = 400
+COLD_OVER_DEADLINE_MAX = 0.01  # เกิน 500 ms ได้ไม่เกิน 1%
+COLD_BUCKET_S = 5.0
+WARMING_REASON = "model_warming"
+
 
 def _db_index(url: str) -> int:
     tail = url.rstrip("/").rsplit("/", 1)[-1]
@@ -88,6 +98,7 @@ class Gate:
         self.normal_features: list[float] = []
         self.probe_features: list[list[float]] = []
         self._features_by_user: dict[str, list[float]] = {}
+        self.cold_users: list[str] = []
         self.url = url.rstrip("/")
         self.workers = workers
         self.rng = random.Random(seed)
@@ -109,6 +120,17 @@ class Gate:
             pipe = self.r.pipeline()
             for _ in range(HISTORY_ROWS):
                 pipe.rpush(key, json.dumps([rng.gauss(0, 1) for _ in range(DIMS)]))
+            pipe.execute()
+
+    def seed_cold_users(self, n: int = COLD_USERS) -> None:
+        """ผู้ใช้ชุดแยกสำหรับวัดช่วงเย็น — ประวัติเต็ม 2,000 แถว (ต้นทุน fit สูงสุด)."""
+        self.cold_users = [f"cold-user-{i:04d}" for i in range(n)]
+        for i, u in enumerate(self.cold_users):
+            rng = random.Random(50_000 + i)
+            pipe = self.r.pipeline()
+            for _ in range(HISTORY_ROWS):
+                row = [rng.gauss(0, 1) for _ in range(DIMS)]
+                pipe.rpush(f"l3resid:{u}", json.dumps(row))
             pipe.execute()
 
     async def load_features(self, client: httpx.AsyncClient) -> None:
@@ -214,13 +236,17 @@ class Gate:
         lat = [ms for ms, _, _ in res]
         errors = [e for _, _, e in res if e]
         scores = {}
+        warming = 0
         for (u, r), (_, data, _) in zip(jobs, res):
-            if data:
+            if data and _is_warming(data):
+                warming += 1  # ไม่มีคะแนน — ไม่เข้าการเทียบ P3 (§15)
+            elif data:
                 scores.setdefault(_probe_key(u, r), set()).add(_score_of(data))
         return {
             "latency": summarize(lat, len(errors)),
             "error_kinds": sorted(set(errors)),
             "scores": {k: sorted(v) for k, v in scores.items()},
+            "warming": warming,
         }
 
     async def warm_until_stable(self, client) -> dict:
@@ -259,15 +285,83 @@ class Gate:
                 lat.append(ms)
                 if err:
                     errors.append(err)
+                elif data and _is_warming(data):
+                    warming[0] += 1
                 elif data:
                     scores.setdefault(_probe_key(u, r), set()).add(_score_of(data))
 
+        warming = [0]
         await asyncio.gather(*(worker() for _ in range(conc)))
         return {
             "latency": summarize(lat, len(errors)),
             "error_kinds": sorted(set(errors)),
             "scores": {k: sorted(v) for k, v in scores.items()},
             "raw_ms": lat,  # ใช้รวม p95 ข้ามรอบ (วิธีวัด v2) — ไม่เขียนลงผล
+            "warming": warming[0],
+        }
+
+    async def cold_open_loop(
+        self, client, rate: float, seconds: float, seed: int
+    ) -> dict:
+        """ช่วงเย็นแบบ open-loop — ผู้ใช้ชุด `cold_users` ที่ยังไม่มีใครมีโมเดล (§15)."""
+        times = arrival_times(rate, seconds, seed)
+        order = cold_user_order(len(self.cold_users), len(times))
+        n_high = round(self.high_score_share * len(self.cold_users))
+        high = self.probe_features[0] if self.probe_features else self.features
+        normal = self.normal_features or self.features
+        for idx, user in enumerate(self.cold_users):
+            self._features_by_user[user] = high if idx < n_high else normal
+        rng = random.Random(seed)
+        records: list[tuple[float, float, bool, str | None]] = []
+        lag: list[float] = []
+        start = time.perf_counter()
+
+        async def fire(at, user, resid):
+            ms, data, err = await self.call(client, user, resid, spread=True)
+            records.append((at, ms, bool(data) and _is_warming(data), err))
+
+        tasks = []
+        for at, idx in zip(times, order):
+            delay = at - (time.perf_counter() - start)
+            if delay > 0:
+                await asyncio.sleep(delay)
+            lag.append(max(0.0, (time.perf_counter() - start) - at) * 1000)
+            resid = [round(rng.gauss(0, 1), 6) for _ in range(DIMS)]
+            tasks.append(asyncio.create_task(fire(at, self.cold_users[idx], resid)))
+        await asyncio.gather(*tasks)
+
+        lat = [r[1] for r in records]
+        errors = [r[3] for r in records if r[3]]
+        warming = sum(1 for r in records if r[2])
+        buckets = []
+        for b in range(max(1, math.ceil(seconds / COLD_BUCKET_S))):
+            lo, hi = b * COLD_BUCKET_S, (b + 1) * COLD_BUCKET_S
+            rows = [r for r in records if lo <= r[0] < hi]
+            if not rows:
+                continue
+            buckets.append(
+                {
+                    "from_s": lo,
+                    "n": len(rows),
+                    "warming_share": round(sum(1 for r in rows if r[2]) / len(rows), 4),
+                    "p95_ms": round(pct([r[1] for r in rows], 0.95), 1),
+                }
+            )
+        warm_at = next(
+            (b["from_s"] for b in buckets if b["warming_share"] < 0.05), None
+        )
+        return {
+            "rate": rate,
+            "seconds": seconds,
+            "users": len(self.cold_users),
+            "offered": len(times),
+            "latency": summarize(lat, len(errors)),
+            "error_kinds": sorted(set(errors)),
+            "warming": warming,
+            "warming_share": round(warming / len(records), 4) if records else 0.0,
+            "time_to_warm_s": warm_at,
+            "buckets": buckets,
+            "max_schedule_lag_ms": round(max(lag), 1) if lag else 0.0,
         }
 
     async def open_loop(self, client, rate: float, seconds: float, seed: int) -> dict:
@@ -303,6 +397,27 @@ class Gate:
             "error_kinds": sorted(set(errors)),
             "max_schedule_lag_ms": round(max(lag), 1) if lag else 0.0,
         }
+
+
+def _is_warming(data: dict) -> bool:
+    return (data.get("sequence") or {}).get("abstain_reason") == WARMING_REASON
+
+
+def cold_user_order(n_users: int, n_arrivals: int) -> list[int]:
+    """ลำดับผู้ใช้ของ arrival — n_users ตัวแรกเป็นคนละคนทั้งหมด แล้ววนซ้ำ."""
+    return [i % n_users for i in range(n_arrivals)]
+
+
+def cold_pass(result: dict) -> bool:
+    """เกณฑ์ช่วงเย็น (§15): p95 <= 250 ms · error = 0 · เกิน 500 ms <= 1%."""
+    lat = result["latency"]
+    n = lat.get("n") or 0
+    over = (lat.get("over_deadline") or 0) / n if n else 1.0
+    return (
+        lat["p95_ms"] <= P95_BUDGET_MS
+        and lat["errors"] == 0
+        and over <= COLD_OVER_DEADLINE_MAX
+    )
 
 
 def arrival_times(rate: float, seconds: float, seed: int) -> list[float]:
@@ -400,9 +515,17 @@ async def run(a) -> dict:
         await gate.load_features(client)
         if not a.skip_seed:
             gate.seed_history()
+        cold_open = None
+        if a.cold_open_loop:
+            gate.seed_cold_users()
         ready = await gate.wait_ready(client)
         if ready < gate.workers:
             raise SystemExit(f"worker ตอบแค่ {ready}/{gate.workers} ภายใน 60 วินาที")
+        if a.cold_open_loop:  # ต้องมาก่อนทุกอย่าง — ยังไม่มีใครมีโมเดล
+            cold_open = await gate.cold_open_loop(
+                client, COLD_RATE, COLD_SECONDS, a.seed
+            )
+            cold_open["passed"] = cold_pass(cold_open)
         started = time.perf_counter()
         cold = await gate.cold_burst(client)
         cold_stats = await gate.stats(client)
@@ -436,6 +559,8 @@ async def run(a) -> dict:
         [{c: lvl["raw_ms"] for c, lvl in r["levels"].items()} for r in rounds]
     )
     result["open_loop"] = open_loop
+    result["cold_open_loop"] = cold_open
+    result["cold_burst_passed"] = cold_pass({"latency": cold["latency"]})
     return result
 
 
@@ -592,6 +717,11 @@ def main(argv=None) -> int:
         help="อัตรา login ต่อวินาทีของการยิงแบบ open-loop หลัง steady เช่น 10,30,60,120",
     )
     ap.add_argument("--open-loop-seconds", type=float, default=60.0)
+    ap.add_argument(
+        "--cold-open-loop",
+        action="store_true",
+        help="วัดช่วงเย็นแบบ open-loop ก่อนทุกขั้น (§15: 400 คน, 60/วินาที, 60 วินาที)",
+    )
     ap.add_argument("--skip-seed", action="store_true")
     ap.add_argument("--out")
     a = ap.parse_args(argv)

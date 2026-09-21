@@ -50,6 +50,7 @@ app = FastAPI(
 def startup():
     # ตรวจเกณฑ์ SHAP ของ point view ก่อนอย่างอื่น — ค่าผิดต้องไม่ start (ไม่เดาค่าให้)
     L3U.point_shap_min_score()
+    SEQ.fit_wait_seconds()  # งบรอ fit ผิด = ไม่ start (§15)
     try:
         load_model()
         print("Model loaded")

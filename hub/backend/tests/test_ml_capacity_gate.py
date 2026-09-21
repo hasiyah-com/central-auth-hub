@@ -493,6 +493,92 @@ def test_v2_decision_rule():
     assert not G.p1_v2_pass([230] * 10)  # median เกิน 225 แม้ทุกครั้ง ≤ 250
 
 
+# ── fit นอกเส้นทาง request (§15) ─────────────────────────────────────────────
+
+WARMING = {
+    "sequence": {"eligibility": "abstain", "abstain_reason": "model_warming"},
+    "point": {"anomaly_score": 0.4},
+}
+SCORED = {
+    "sequence": {"score": 0.1, "raw_score": 0.3, "eligibility": "challenge"},
+    "point": {"anomaly_score": 0.4},
+}
+
+
+def _mock(bodies_to_return):
+    import httpx
+
+    it = iter(bodies_to_return)
+
+    def handler(request):
+        return httpx.Response(200, json={"data": next(it)})
+
+    return httpx.MockTransport(handler)
+
+
+def test_warming_answers_are_counted_not_compared():
+    """P3 ที่ปรับการตีความแล้ว (อนุมัติ 2026-09-22): model_warming ไม่มีคะแนน จึงไม่เข้า
+    การเทียบ แต่ต้องนับแยกไว้."""
+    import asyncio
+
+    import httpx
+
+    g = _gate(0.0)
+    answers = [WARMING] * 12 + [SCORED] * 8
+
+    async def go():
+        async with httpx.AsyncClient(transport=_mock(answers)) as c:
+            return await g.cold_burst(c)
+
+    out = asyncio.run(go())
+    assert out["warming"] == 12
+    for sigs in out["scores"].values():
+        assert all(json.loads(s)["seq_score"] is not None for s in sigs)
+
+
+def test_cold_open_loop_sends_distinct_users_first():
+    """กรณีแย่สุดหลัง restart: N arrival แรกเป็นคนละคนทั้งหมด (ยังไม่มีใครมีโมเดล)."""
+    order = G.cold_user_order(n_users=50, n_arrivals=120)
+    assert len(set(order[:50])) == 50
+    assert order[50:100] == order[:50]
+
+
+def test_cold_open_loop_reports_warming_share_over_time():
+    import asyncio
+
+    import httpx
+
+    g = _gate(0.0)
+    g.cold_users = [f"cold-{i:04d}" for i in range(10)]
+    n = len(G.arrival_times(20.0, 1.0, 5))
+    answers = [WARMING] * (n // 2) + [SCORED] * (n - n // 2)
+
+    async def go():
+        async with httpx.AsyncClient(transport=_mock(answers)) as c:
+            return await g.cold_open_loop(c, rate=20.0, seconds=1.0, seed=5)
+
+    out = asyncio.run(go())
+    assert out["offered"] == n
+    assert out["warming"] == n // 2
+    assert 0.0 <= out["warming_share"] <= 1.0
+    assert out["buckets"] and all("warming_share" in b for b in out["buckets"])
+
+
+def test_cold_criterion_is_preregistered():
+    assert G.COLD_RATE == 60.0
+    assert G.COLD_SECONDS == 60.0
+    assert G.COLD_USERS == 400
+    assert G.COLD_OVER_DEADLINE_MAX == 0.01
+
+
+def test_cold_decision():
+    ok = {"latency": {"p95_ms": 240.0, "errors": 0, "over_deadline": 10, "n": 3600}}
+    assert G.cold_pass(ok)
+    assert not G.cold_pass({"latency": {**ok["latency"], "p95_ms": 251.0}})
+    assert not G.cold_pass({"latency": {**ok["latency"], "errors": 1}})
+    assert not G.cold_pass({"latency": {**ok["latency"], "over_deadline": 37}})
+
+
 def test_passing_input_is_not_mutated():
     kw = _passing()
     snap = copy.deepcopy(kw)

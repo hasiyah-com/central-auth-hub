@@ -411,7 +411,54 @@ B: 223.9, 202.0, 228.0, 205.9, 216.2, 204.1, 197.2, 201.9, 213.9, 204.6
   3. วิธีวัด v2 และเกณฑ์ open-loop ต้องให้ผู้ใช้ยอมรับเป็นนิยามของ gate · ขนาดผู้ใช้ 30,000 คนใน
      แบบจำลองเป็นสมมติฐาน
 
-## 15. รันซ้ำ
+## 15. fit นอกเส้นทาง request + เกณฑ์ช่วงเย็น — เขียนก่อนวัด (2026-09-22)
+
+ส่วนนี้ commit **ก่อน**วัดช่วงเย็นครั้งแรก · ผลจะเพิ่มใน §16 โดยไม่แก้ส่วนนี้
+
+### 15.1 ปัญหา
+
+fit หนึ่งคน ~165 ms (container) · จำกัด fit พร้อมกันอย่างเดียวไม่พอ (11 คน × 165 ms ≈ 1.8 วินาที
+แม้ไม่แย่ง GIL) · cache อยู่ต่อ process และหมดอายุ 1 ชม. → หลัง restart หรือ cache หมดอายุ
+แทบทุก login ต้อง fit · ที่ 30 login/วินาที งาน fit ≈ 5 CPU-วินาทีต่อวินาที เกินกำลัง 4 worker ·
+Gate ที่ผ่านมาไม่เห็นเพราะมีแค่ 20 ผู้ใช้ที่อุ่นแล้ว
+
+### 15.2 สิ่งที่เปลี่ยน (ผู้ใช้เลือกทางเลือก 1, 2026-09-22)
+
+- cache miss → ส่ง fit ให้ **thread เบื้องหลังตัวเดียวต่อ process** · request รอได้ไม่เกิน
+  `L3_FIT_WAIT_MS` (ค่าเริ่มต้น **150** · ช่วง 0–400 · ค่าผิด = ไม่ start) · ทัน → ให้คะแนนตามปกติ ·
+  ไม่ทัน → `eligibility = "abstain"` + `abstain_reason = "model_warming"` ทันที
+- คนเดียวกันไม่ fit ซ้ำขณะรอ · fit พังไม่ค้างสถานะ · คะแนนหลังโมเดลพร้อมเท่ากับการ fit แบบเดิม
+  (เทส `ml-service/tests/test_fit_offload.py`)
+- ตรวจในคอนเทนเนอร์จริงแล้ว: ผู้ใช้เย็นตอบ `model_warming` ภายใน 174–316 ms · หลัง fit เสร็จได้
+  คะแนนจริงใน 19–21 ms
+- **การตีความ P3 ที่ปรับ (ผู้ใช้อนุมัติ 2026-09-22):** คำตอบ `model_warming` ไม่มีคะแนน จึง
+  **ไม่เข้าการเทียบ** แต่นับแยกไว้ · ยังบังคับให้ทุก probe มีคะแนนจริง (`probes_checked == 20`,
+  ไม่มี probe ที่ไม่มีคะแนน)
+
+### 15.3 เกณฑ์ (กำหนดก่อนวัด)
+
+การตั้งค่า: reuseport 4 worker · probe คะแนนสูง 33% · ค่าเริ่มต้นของ ml-service (SHAP ≥ 0.50,
+งบรอ fit 150 ms) · **10 ครั้ง** แต่ละครั้งเปิด ml-service ใหม่ (`CAP_COLD_OPEN_LOOP=1`)
+
+- **C1 ช่วงเย็นแบบ open-loop** (ก่อนขั้นอื่นทั้งหมด): 400 ผู้ใช้ใหม่ × ประวัติ 2,000 แถว ·
+  Poisson 60 login/วินาที 60 วินาที · 400 arrival แรกเป็นคนละคน · ต่อครั้งผ่านเมื่อ p95 ≤ 250 ms,
+  error = 0 และเกิน 500 ms ≤ 1% (`cold_pass`) · **gate ผ่านเมื่อ ≥ 9/10 ครั้งผ่าน และ median ของ
+  p95 ≤ 225 ms**
+- **C2 cold burst** (20 พร้อมกันบนผู้ใช้ชุด cap ที่ยังเย็น): ใช้กฎเดียวกับ C1 ต่อครั้ง ·
+  gate ผ่านเมื่อ ≥ 9/10 ครั้งผ่าน
+- **ถดถอยของ steady state:** P1 v2 (§13) และ P2–P4 ทุกครั้ง ต้องยังผ่าน
+- **ข้อมูลประกอบ (ไม่ใช่เกณฑ์):** สัดส่วน `model_warming` รวมและต่อ 5 วินาที · เวลาจนสัดส่วน
+  warming < 5% · เทียบ steady กับ B ของ §14 ด้วย permutation test
+- การรันเพื่อตรวจเครื่องมือ (smoke) ก่อนวัดจริงจะ**ไม่นับ**ในการวิเคราะห์ และจะระบุไว้ใน §16
+
+### 15.4 ผลที่คาด (เขียนไว้ก่อนเพื่อเทียบ ไม่ใช่เกณฑ์)
+
+latency ช่วงเย็นควรอยู่ราวงบรอ + ค่าใช้จ่าย HTTP (~170–220 ms) จึงน่าจะผ่าน p95 ได้แต่ส่วนเผื่อน้อย ·
+สัดส่วน `model_warming` ช่วงแรกจะสูงมาก (L3 abstain เกือบทุก login ในช่วงนั้น) เพราะผู้ใช้ 400 คน ×
+4 worker = fit สูงสุด 1,600 ครั้ง × ~165 ms ÷ 4 thread ≈ 66 วินาที · thread fit ยังแย่ง GIL กับ
+request ใน process เดียวกัน จึงอาจทำให้ p95 สูงกว่าที่คาด
+
+## 16. รันซ้ำ
 
 ```bash
 bash scripts/test/ml_capacity_gate.sh            # 1 2 4
@@ -422,8 +469,9 @@ CAP_SERVER=reuseport CAP_HIGH_SCORE_SHARE=0.33 bash scripts/test/ml_capacity_gat
 CAP_SERVER=reuseport CAP_POINT_SHAP_MIN_SCORE=0 CAP_HIGH_SCORE_SHARE=0.33 bash scripts/test/ml_capacity_gate.sh 4   # พฤติกรรมเดิม
 CAP_SERVER=reuseport CAP_HIGH_SCORE_SHARE=0.33 CAP_OPEN_LOOP_RATES=10,30,60,120 bash scripts/test/ml_capacity_gate.sh 4   # open-loop
 (cd hub/backend && python -m scripts.ml_capacity_compare <dir A> <dir B>)   # เทียบ v2
+CAP_SERVER=reuseport CAP_HIGH_SCORE_SHARE=0.33 CAP_COLD_OPEN_LOOP=1 bash scripts/test/ml_capacity_gate.sh 4   # ช่วงเย็น (§15)
 ```
 
 ผลดิบ: `workers_{1,2,4}.json` + log ของ ml-service ต่อรอบ (เก็บใน `CAP_OUT` ไม่เข้า git)
 
-เทส: `hub/backend/tests/test_ml_capacity_gate.py` (38) · `hub/backend/tests/test_ml_capacity_compare.py` (4) · `ml-service/tests/test_capacity_stats.py` (10) · `ml-service/tests/test_explainer_init.py` (5) · `ml-service/tests/test_serve.py` (8, ตัวที่ใช้ socket จริงรันเฉพาะ Linux) · `ml-service/tests/test_point_shap_experiment.py` (8) · `ml-service/tests/test_point_shap_gating.py` (13)
+เทส: `hub/backend/tests/test_ml_capacity_gate.py` (43) · `hub/backend/tests/test_ml_capacity_compare.py` (4) · `ml-service/tests/test_capacity_stats.py` (10) · `ml-service/tests/test_explainer_init.py` (5) · `ml-service/tests/test_serve.py` (8, ตัวที่ใช้ socket จริงรันเฉพาะ Linux) · `ml-service/tests/test_point_shap_experiment.py` (8) · `ml-service/tests/test_point_shap_gating.py` (13) · `ml-service/tests/test_fit_offload.py` (13)
