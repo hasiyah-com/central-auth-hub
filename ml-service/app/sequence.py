@@ -435,6 +435,7 @@ def get_model(redis, user_id: str, key: str, n_raw: int) -> tuple[L3Model | None
 # ตัวนับนี้ตอบว่า fit ซ้ำต่อคนกี่ครั้ง (fit storm) · คืนเฉพาะจำนวน ไม่คืน user id
 _FIT_COUNTS: dict[str, int] = {}
 _FIT_COUNTS_GUARD = threading.Lock()
+_L3_REQUESTS = [0]  # request ที่ /v1/l3-evaluate ของ process นี้ — ดูว่า worker ได้งานเท่ากันไหม
 
 
 def _count_fit(user_id: str) -> None:
@@ -442,9 +443,15 @@ def _count_fit(user_id: str) -> None:
         _FIT_COUNTS[user_id] = _FIT_COUNTS.get(user_id, 0) + 1
 
 
+def count_l3_request() -> None:
+    with _FIT_COUNTS_GUARD:
+        _L3_REQUESTS[0] += 1
+
+
 def reset_capacity_stats() -> None:
     with _FIT_COUNTS_GUARD:
         _FIT_COUNTS.clear()
+        _L3_REQUESTS[0] = 0
 
 
 def _rss_kb() -> int | None:
@@ -464,12 +471,14 @@ def capacity_stats() -> dict:
 
     with _FIT_COUNTS_GUARD:
         counts = list(_FIT_COUNTS.values())
+        l3_requests = _L3_REQUESTS[0]
     return {
         "pid": os.getpid(),
         "fits_total": sum(counts),
         "max_fits_per_user": max(counts, default=0),
         "users_fitted": len(counts),
         "cache_entries": len(_MODEL_CACHE),
+        "l3_requests": l3_requests,
         "rss_kb": _rss_kb(),
     }
 

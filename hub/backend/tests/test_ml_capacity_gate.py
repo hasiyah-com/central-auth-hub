@@ -263,6 +263,62 @@ def test_load_uses_a_new_connection_per_request_like_the_hub():
     assert seen and all(v == "close" for v in seen), set(seen)
 
 
+def test_waits_until_every_worker_answers_before_measuring():
+    """health ตอบจาก worker ตัวเดียวก็ผ่าน — ต้องรอจนเห็นครบทุก pid ก่อน cold burst."""
+    import asyncio
+
+    import httpx
+
+    calls = {"n": 0}
+
+    def handler(request):
+        calls["n"] += 1
+        pid = 1 if calls["n"] < 5 else (calls["n"] % 3) + 1  # 4 ครั้งแรกเห็นแค่ pid 1
+        return httpx.Response(
+            200,
+            json={
+                "data": {
+                    "pid": pid,
+                    "fits_total": 0,
+                    "max_fits_per_user": 0,
+                    "cache_entries": 0,
+                    "rss_kb": 1,
+                }
+            },
+        )
+
+    gate = G.Gate.__new__(G.Gate)
+    gate.url = "http://ml"
+    gate.workers = 3
+
+    async def go():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as c:
+            return await gate.wait_ready(c, timeout_s=5)
+
+    assert asyncio.run(go()) == 3
+
+
+def test_reports_how_steady_load_was_shared_between_workers():
+    """ข้อมูลประกอบของข้อ 4 — ไม่ใช่เกณฑ์ผ่าน (เกณฑ์กำหนดไว้ก่อนวัดแล้ว)."""
+    kw = _passing(workers=2)
+    for s in kw["warm_stats"].values():
+        s["l3_requests"] = 100
+    last = kw["rounds"][-1]["stats"]
+    a, b = list(last)
+    last[a]["l3_requests"] = 100 + 900
+    last[b]["l3_requests"] = 100 + 300
+    out = _eval(kw)
+    share = out["load_share"]
+    assert share["per_process"] == {str(a): 900, str(b): 300}
+    assert share["max_over_mean"] == 1.5
+    assert out["passed"]  # ไม่กระทบผลผ่าน/ไม่ผ่าน
+
+
+def test_load_share_is_unknown_without_counters():
+    out = _eval(_passing())
+    assert out["load_share"]["max_over_mean"] is None
+
+
 def test_passing_input_is_not_mutated():
     kw = _passing()
     snap = copy.deepcopy(kw)

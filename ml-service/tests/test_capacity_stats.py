@@ -150,6 +150,17 @@ def test_endpoint_is_disabled_by_default(monkeypatch):
     assert _client(monkeypatch, False).get("/v1/l3-capacity-stats").status_code == 404
 
 
+def test_l3_requests_are_counted_per_process(monkeypatch):
+    """ใช้พิสูจน์ว่า worker ได้งานเท่ากันไหม (ข้อ 4) — นับที่ endpoint ที่ hub เรียกจริง."""
+    client = _client(monkeypatch, True)
+    before = client.get("/v1/l3-capacity-stats").json()["data"]["l3_requests"]
+    body = {"user_id": "u", "features": [0.0] * 23, "residual": None}
+    for _ in range(3):
+        client.post("/v1/l3-evaluate", json=body)
+    after = client.get("/v1/l3-capacity-stats").json()["data"]["l3_requests"]
+    assert after - before == 3
+
+
 def test_endpoint_returns_stats_when_enabled(monkeypatch):
     r = _client(monkeypatch, True).get("/v1/l3-capacity-stats")
     assert r.status_code == 200

@@ -330,6 +330,7 @@ def l3_evaluate(req: L3EvaluateRequest):
     ไม่คืน access decision ใดๆ โดยตั้งใจ: ผลลัพธ์ของ endpoint นี้ออกทางแกน
     monitoring อย่างเดียว (บังคับด้วย tests/test_l3_access_monitoring_split.py)
     """
+    SEQ.count_l3_request()
     r = _redis()
     data = L3U.evaluate(
         r,

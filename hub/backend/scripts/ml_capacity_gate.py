@@ -144,6 +144,23 @@ class Gate:
                 break
         return seen
 
+    async def wait_ready(self, client, timeout_s: float = 60.0) -> int:
+        """รอจนทุก worker ตอบ — health ผ่านจาก worker ตัวเดียวก็ได้ จึงไม่พอ.
+
+        คืนจำนวน pid ที่เห็น (น้อยกว่า workers = หมดเวลา)
+        """
+        seen: set[int] = set()
+        deadline = time.monotonic() + timeout_s
+        while len(seen) < self.workers and time.monotonic() < deadline:
+            try:
+                r = await client.get(
+                    f"{self.url}/v1/l3-capacity-stats", headers={"Connection": "close"}
+                )
+                seen.add(r.json()["data"]["pid"])
+            except Exception:  # noqa: BLE001 — worker ยังไม่ขึ้น
+                await asyncio.sleep(0.2)
+        return len(seen)
+
     # ── ขั้นตอน ────────────────────────────────────────────────────────────
     async def cold_burst(self, client) -> dict:
         """COLD_BURST พร้อมกัน: ครึ่งหนึ่งคนเดียวกัน (probe 0) อีกครึ่งคนละคน."""
@@ -256,6 +273,9 @@ async def run(a) -> dict:
         await gate.load_features(client)
         if not a.skip_seed:
             gate.seed_history()
+        ready = await gate.wait_ready(client)
+        if ready < gate.workers:
+            raise SystemExit(f"worker ตอบแค่ {ready}/{gate.workers} ภายใน 60 วินาที")
         started = time.perf_counter()
         cold = await gate.cold_burst(client)
         cold_stats = await gate.stats(client)
@@ -278,6 +298,25 @@ async def run(a) -> dict:
         rounds,
         time.perf_counter() - started,
     )
+
+
+def load_share(before: dict, after: dict) -> dict:
+    """request ของช่วง steady ที่แต่ละ worker ได้ — ข้อมูลประกอบ ไม่ใช่เกณฑ์ผ่าน.
+
+    max_over_mean = งานของ worker ที่ได้มากสุด / ค่าเฉลี่ย · 1.0 = เท่ากันพอดี
+    """
+    per = {}
+    for pid, s in after.items():
+        a1 = s.get("l3_requests")
+        a0 = (before.get(pid) or {}).get("l3_requests")
+        if a1 is None or a0 is None:
+            return {"per_process": None, "max_over_mean": None}
+        per[str(pid)] = a1 - a0
+    mean = sum(per.values()) / len(per) if per else 0
+    return {
+        "per_process": per,
+        "max_over_mean": round(max(per.values()) / mean, 3) if mean else None,
+    }
 
 
 def evaluate(workers, cold, cold_stats, warm, warm_stats, rounds, elapsed) -> dict:
@@ -380,6 +419,7 @@ def evaluate(workers, cold, cold_stats, warm, warm_stats, rounds, elapsed) -> di
         "elapsed_s": round(elapsed, 1),
         "passed": all(c["pass"] for c in checks.values()),
         "checks": checks,
+        "load_share": load_share(warm_stats, rounds[-1]["stats"]),
         "cold_burst": {k: v for k, v in cold.items() if k != "scores"},
         "rounds": [
             {c: lvl["latency"] for c, lvl in r["levels"].items()} for r in rounds

@@ -3,6 +3,7 @@
 #
 #   bash scripts/test/ml_capacity_gate.sh [workers...]     # ค่าเริ่มต้น: 1 2 4
 #   CAP_OUT=<dir> bash scripts/test/ml_capacity_gate.sh     # ที่เก็บผล (ค่าเริ่มต้น ./.capacity)
+#   CAP_SERVER=reuseport bash scripts/test/ml_capacity_gate.sh   # worker แยก socket (app.serve)
 #
 # ทุกค่าของ worker เปิด ml-service ตัวใหม่ (container `ml-cap`) → cache/lock เย็นทุก process
 # เท่ากับสภาพหลัง Docker restart · ข้อมูลเป็นของสังเคราะห์ใน Redis DB แยก (ค่าเริ่มต้น 13)
@@ -17,8 +18,11 @@ CAP_DB="${CAP_REDIS_DB:-13}"
 OUT="${CAP_OUT:-$ROOT/.capacity}"
 IMAGE_ML="${CAP_IMAGE_ML:-cah-hub-ml-service:latest}"
 IMAGE_HUB="${CAP_IMAGE_HUB:-cah-hub-hub-backend:latest}"
+# uvicorn = `uvicorn --workers` (socket ร่วม) · reuseport = `python -m app.serve` (socket ต่อ worker)
+CAP_SERVER="${CAP_SERVER:-uvicorn}"
 mkdir -p "$OUT"
 
+case "$CAP_SERVER" in uvicorn|reuseport) ;; *) echo "CAP_SERVER ต้องเป็น uvicorn | reuseport" >&2; exit 2 ;; esac
 case "$CAP_DB" in 0|15) echo "ปฏิเสธ Redis DB $CAP_DB (dev/ชุดเทส)" >&2; exit 2 ;; esac
 
 to_win() { if command -v cygpath >/dev/null; then cygpath -w "$1"; else echo "$1"; fi; }
@@ -34,12 +38,16 @@ MSYS_NO_PATHCONV=1 docker run --rm -v "$HUB_SRC:/app" -w /app "$IMAGE_HUB" \
 
 overall=0
 for W in $WORKERS; do
-  echo "== workers=$W" >&2
+  echo "== workers=$W server=$CAP_SERVER" >&2
   docker rm -f ml-cap >/dev/null 2>&1 || true
   MSYS_NO_PATHCONV=1 docker run -d --name ml-cap --network cah-net \
     -e REDIS_URL="redis://redis:6379/$CAP_DB" -e L3_CAPACITY_STATS=1 \
     -v "$ML_SRC:/app" -w /app "$IMAGE_ML" \
-    uvicorn app.main:app --host 0.0.0.0 --port 9000 --workers "$W" >/dev/null
+    $(if [ "$CAP_SERVER" = reuseport ]; then
+        echo python -m app.serve --host 0.0.0.0 --port 9000 --workers "$W"
+      else
+        echo uvicorn app.main:app --host 0.0.0.0 --port 9000 --workers "$W"
+      fi) >/dev/null
 
   # รอจน health ตอบ (ทุก worker โหลดโมเดล point view เสร็จ)
   for _ in $(seq 1 60); do
