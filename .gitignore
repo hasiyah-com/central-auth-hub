@@ -176,3 +176,6 @@ scripts/pii/*.docx
 *.tar
 *.tgz
 *.tar.gz
+
+# ผลดิบของ ML Capacity Gate (scripts/test/ml_capacity_gate.sh)
+.capacity/

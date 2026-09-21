@@ -424,9 +424,54 @@ def get_model(redis, user_id: str, key: str, n_raw: int) -> tuple[L3Model | None
         if hit is not None:
             return hit[2], hit[3]
         history = load_history(redis, user_id)
+        _count_fit(user_id)
         model = fit_user_model(history, n_history=len(history))
         _MODEL_CACHE[user_id] = (time.time(), n_raw, model, len(history))
         return model, len(history)
+
+
+# ── ตัวนับสำหรับ ML Capacity Gate ──────────────────────────────────────────
+# cache และ lock อยู่ในหน่วยความจำของแต่ละ process → worker N ตัว = N ชุดแยกกัน
+# ตัวนับนี้ตอบว่า fit ซ้ำต่อคนกี่ครั้ง (fit storm) · คืนเฉพาะจำนวน ไม่คืน user id
+_FIT_COUNTS: dict[str, int] = {}
+_FIT_COUNTS_GUARD = threading.Lock()
+
+
+def _count_fit(user_id: str) -> None:
+    with _FIT_COUNTS_GUARD:
+        _FIT_COUNTS[user_id] = _FIT_COUNTS.get(user_id, 0) + 1
+
+
+def reset_capacity_stats() -> None:
+    with _FIT_COUNTS_GUARD:
+        _FIT_COUNTS.clear()
+
+
+def _rss_kb() -> int | None:
+    """หน่วยความจำที่ process ใช้จริง (VmRSS) — None บนระบบที่ไม่มี /proc."""
+    try:
+        with open("/proc/self/status", encoding="ascii") as f:
+            for line in f:
+                if line.startswith("VmRSS:"):
+                    return int(line.split()[1])
+    except OSError:
+        return None
+    return None
+
+
+def capacity_stats() -> dict:
+    import os
+
+    with _FIT_COUNTS_GUARD:
+        counts = list(_FIT_COUNTS.values())
+    return {
+        "pid": os.getpid(),
+        "fits_total": sum(counts),
+        "max_fits_per_user": max(counts, default=0),
+        "users_fitted": len(counts),
+        "cache_entries": len(_MODEL_CACHE),
+        "rss_kb": _rss_kb(),
+    }
 
 
 def score(redis, user_id: str, residual: list[float], explain: bool = False) -> dict:

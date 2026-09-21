@@ -343,6 +343,22 @@ def l3_evaluate(req: L3EvaluateRequest):
     }
 
 
+@app.get("/v1/l3-capacity-stats")
+def l3_capacity_stats():
+    """ตัวนับของ process นี้สำหรับ ML Capacity Gate — ปิดไว้เป็นค่าเริ่มต้น.
+
+    เปิดด้วย `L3_CAPACITY_STATS=1` เท่านั้น (ml-service ไม่มี auth) · คืนเฉพาะจำนวน
+    ไม่คืน user id · เมื่อรันหลาย worker แต่ละครั้งจะได้ของ worker ที่รับ request นั้น
+    ผู้วัดต้องเรียกซ้ำแล้วรวมตาม `pid`
+    """
+    if os.getenv("L3_CAPACITY_STATS") != "1":
+        raise HTTPException(status_code=404, detail="Not Found")
+    return {
+        "data": SEQ.capacity_stats(),
+        "meta": {"version": "v1", "timestamp": datetime.now(timezone.utc).isoformat()},
+    }
+
+
 # ============ Backward-compatible (Week 5 old paths) ============
 
 
