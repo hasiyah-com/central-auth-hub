@@ -24,12 +24,13 @@ access decision ได้อีก (hub ส่ง IForest เข้า aggregate
 from __future__ import annotations
 
 import logging
+import math
 import os
 
 from app import sequence as SEQ
 from app.features import FEATURE_COUNT
 from app.model import explainer_status as point_explainer_status
-from app.model import predict_score, predict_with_explanation
+from app.model import explain_features, predict_score
 
 logger = logging.getLogger(__name__)
 
@@ -66,6 +67,26 @@ def point_shap_enabled() -> bool:
     return os.getenv(SKIP_POINT_SHAP_ENV) != "1"
 
 
+# ── SHAP ของ point view เฉพาะ login ที่คะแนนสูง (ML Capacity Gate §12, 2026-09-22) ──
+# SHAP กินเวลา 16–18% ของทุก request · hub ใช้เป็น iforest_explanation (หน้า ML / incident /
+# audit) จึงไม่ปิดทั้งหมด แต่คำนวณเฉพาะเมื่อ point score >= เกณฑ์ (ค่าเริ่มต้น = POINT_ANOMALY)
+# 0 = คำนวณทุก login แบบเดิม · ค่าผิด = ไม่ start (ตรวจใน main.startup)
+POINT_SHAP_MIN_SCORE_ENV = "L3_POINT_SHAP_MIN_SCORE"
+
+
+def point_shap_min_score() -> float:
+    raw = os.getenv(POINT_SHAP_MIN_SCORE_ENV)
+    if raw is None or raw.strip() == "":
+        return POINT_ANOMALY
+    try:
+        value = float(raw)
+    except ValueError:
+        value = math.nan
+    if not (0.0 <= value <= 1.0):  # nan ก็ไม่ผ่านเงื่อนไขนี้
+        raise ValueError(f"{POINT_SHAP_MIN_SCORE_ENV} ต้องเป็นตัวเลข 0–1 (ได้ {raw!r})")
+    return value
+
+
 def _point_view(features: list[float]) -> dict:
     """IForest 23 ฟีเจอร์ + SHAP — fail-safe: พังแล้วคืน 'ไม่ยิง' ไม่ raise."""
     quiet = {
@@ -79,10 +100,12 @@ def _point_view(features: list[float]) -> dict:
     if not features or len(features) != FEATURE_COUNT:
         return {**quiet, "error": "invalid_features"}
     try:
-        if point_shap_enabled():
-            score, explanation = predict_with_explanation(features, top_k=TOP_K)
-        else:  # ทดลองเท่านั้น — คะแนนเดิม แต่ไม่มีคำอธิบาย
-            score, explanation = predict_score(features), []
+        score = predict_score(features)
+        explanation = (
+            explain_features(features, top_k=TOP_K)
+            if point_shap_enabled() and score >= point_shap_min_score()
+            else []
+        )
         return {
             "available": True,
             "anomaly_score": round(float(score), 4),

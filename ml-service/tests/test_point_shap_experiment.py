@@ -24,32 +24,34 @@ EXPL = [{"feature": "hour_of_day", "shap": 0.2, "value": 3.0, "direction": "anom
 
 @pytest.fixture
 def calls(monkeypatch):
-    seen = {"with_explanation": 0, "score_only": 0}
+    # คะแนน 0.61 >= เกณฑ์ SHAP (0.50) — ค่าเริ่มต้นจึงต้องคำนวณ SHAP
+    seen = {"explain": 0, "score_only": 0}
 
-    def with_explanation(features, top_k=5):
-        seen["with_explanation"] += 1
-        return 0.61, list(EXPL)
+    def explain(features, top_k=5):
+        seen["explain"] += 1
+        return list(EXPL)
 
     def score_only(features):
         seen["score_only"] += 1
         return 0.61
 
-    monkeypatch.setattr(U, "predict_with_explanation", with_explanation)
+    monkeypatch.setattr(U, "explain_features", explain)
     monkeypatch.setattr(U, "predict_score", score_only)
+    monkeypatch.delenv("L3_POINT_SHAP_MIN_SCORE", raising=False)
     return seen
 
 
 def test_default_keeps_point_shap(calls, monkeypatch):
     monkeypatch.delenv("L3_EXPERIMENT_SKIP_POINT_SHAP", raising=False)
     out = U._point_view(FEATURES)
-    assert calls["with_explanation"] == 1 and calls["score_only"] == 0
+    assert calls["explain"] == 1 and calls["score_only"] == 1
     assert out["explanation"] == EXPL
 
 
 def test_experiment_skips_shap_but_keeps_the_same_score(calls, monkeypatch):
     monkeypatch.setenv("L3_EXPERIMENT_SKIP_POINT_SHAP", "1")
     out = U._point_view(FEATURES)
-    assert calls["with_explanation"] == 0 and calls["score_only"] == 1
+    assert calls["explain"] == 0 and calls["score_only"] == 1
     assert out["explanation"] == []
     assert out["anomaly_score"] == 0.61
     assert out["is_anomaly"] is True  # 0.61 >= POINT_ANOMALY — ตัดสินเหมือนเดิม
@@ -60,7 +62,7 @@ def test_only_the_exact_value_one_enables_the_experiment(calls, monkeypatch, val
     """ค่าอื่นทั้งหมดต้องได้พฤติกรรมเดิม — กันเปิดโดยไม่ตั้งใจ."""
     monkeypatch.setenv("L3_EXPERIMENT_SKIP_POINT_SHAP", value)
     U._point_view(FEATURES)
-    assert calls["with_explanation"] == 1
+    assert calls["explain"] == 1
 
 
 def test_capacity_stats_report_the_mode(monkeypatch):

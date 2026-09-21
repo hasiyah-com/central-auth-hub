@@ -72,7 +72,20 @@ def summarize(lat: list[float], errors: int) -> dict:
 
 
 class Gate:
-    def __init__(self, url: str, redis_url: str, workers: int, seed: int):
+    def __init__(
+        self,
+        url: str,
+        redis_url: str,
+        workers: int,
+        seed: int,
+        high_score_share: float = 0.0,
+    ):
+        if not 0.0 <= high_score_share <= 1.0:
+            raise ValueError(f"high_score_share ต้องอยู่ใน 0–1 (ได้ {high_score_share})")
+        self.high_score_share = high_score_share
+        self.normal_features: list[float] = []
+        self.probe_features: list[list[float]] = []
+        self._features_by_user: dict[str, list[float]] = {}
         self.url = url.rstrip("/")
         self.workers = workers
         self.rng = random.Random(seed)
@@ -98,11 +111,36 @@ class Gate:
 
     async def load_features(self, client: httpx.AsyncClient) -> None:
         info = (await client.get(f"{self.url}/v1/features-info")).json()["data"]
-        names = [f["name"] if isinstance(f, dict) else f for f in info["features"]]
-        vec = [0.0] * len(names)
+        self.set_feature_names(
+            [f["name"] if isinstance(f, dict) else f for f in info["features"]]
+        )
+
+    def set_feature_names(self, names: list[str]) -> None:
+        """feature สองชุด: ปกติ (point score ~0.41) และผิดปกติ (~0.52 · >= เกณฑ์ SHAP 0.50).
+
+        SHAP ของ point view คำนวณเฉพาะคะแนน >= 0.50 (§12) — ใช้ชุดปกติอย่างเดียวจะข้าม
+        SHAP ทุก request = วัดผิดสิ่ง · probe แรก `round(share × N_USERS)` ตัวใช้ชุดผิดปกติ
+        feature ของแต่ละ probe คงที่ตลอดการวัด (P3 เทียบคะแนนต่อ probe)
+        """
+        normal = [0.0] * len(names)
         if "permission_change_age" in names:
-            vec[names.index("permission_change_age")] = 365.0  # ค่ากลางตามสัญญา
-        self.features = vec
+            normal[names.index("permission_change_age")] = 365.0  # ค่ากลางตามสัญญา
+        high = list(normal)
+        for name, value in (
+            ("is_new_country", 1.0),
+            ("is_new_device", 1.0),
+            ("failed_logins_24h", 5.0),
+            ("is_thailand", 0.0),
+        ):
+            if name in names:
+                high[names.index(name)] = value
+        n_high = round(self.high_score_share * N_USERS)
+        self.normal_features = normal
+        self.features = normal
+        self.probe_features = [high if i < n_high else normal for i in range(N_USERS)]
+        self._features_by_user = {
+            u: f for (u, _), f in zip(self.probes, self.probe_features)
+        }
 
     # ── เรียก ─────────────────────────────────────────────────────────────
     async def call(self, client, user, resid, *, spread: bool = False):
@@ -113,7 +151,7 @@ class Gate:
         """
         body = {
             "user_id": user,
-            "features": self.features,
+            "features": self._features_by_user.get(user, self.features),
             "residual": resid,
             "access_decision": "allow",
         }
@@ -265,7 +303,7 @@ def _merge_scores(*maps: dict) -> dict[str, set]:
 
 
 async def run(a) -> dict:
-    gate = Gate(a.url, a.redis, a.workers, a.seed)
+    gate = Gate(a.url, a.redis, a.workers, a.seed, high_score_share=a.high_score_share)
     if _db_index(a.redis) in FORBIDDEN_DBS:
         raise SystemExit(f"ปฏิเสธ Redis DB {_db_index(a.redis)} — ใช้ DB แยก (เช่น 13)")
     limits = httpx.Limits(max_connections=64, max_keepalive_connections=64)
@@ -289,7 +327,7 @@ async def run(a) -> dict:
                 levels[str(c)] = await gate.steady(client, c)
             rounds.append({"levels": levels, "stats": await gate.stats(client)})
 
-    return evaluate(
+    result = evaluate(
         a.workers,
         cold,
         cold_stats,
@@ -298,6 +336,8 @@ async def run(a) -> dict:
         rounds,
         time.perf_counter() - started,
     )
+    result["high_score_share"] = gate.high_score_share
+    return result
 
 
 def _point_shap_mode(stats: dict):
@@ -440,6 +480,12 @@ def main(argv=None) -> int:
     ap.add_argument("--redis", required=True)
     ap.add_argument("--workers", type=int, required=True)
     ap.add_argument("--seed", type=int, default=20260921)
+    ap.add_argument(
+        "--high-score-share",
+        type=float,
+        default=0.0,
+        help="สัดส่วน probe ที่ point score >= 0.50 (ได้ SHAP) — 0 = ชุดปกติทั้งหมด",
+    )
     ap.add_argument("--skip-seed", action="store_true")
     ap.add_argument("--out")
     a = ap.parse_args(argv)

@@ -341,6 +341,66 @@ def test_mixed_or_unknown_point_shap_mode_is_reported_as_unknown():
     assert _eval(_passing())["point_shap"] is None  # ml-service รุ่นที่ยังไม่รายงาน
 
 
+def _gate(share):
+    g = G.Gate("http://ml", "redis://localhost:6379/13", 4, 1, high_score_share=share)
+    g.set_feature_names(
+        [
+            "is_new_country",
+            "is_new_device",
+            "failed_logins_24h",
+            "is_thailand",
+            "permission_change_age",
+        ]
+    )
+    return g
+
+
+@pytest.mark.parametrize("share,expected", [(0.0, 0), (0.33, 7), (1.0, 20)])
+def test_probe_mix_follows_the_high_score_share(share, expected):
+    """SHAP ของ point view คำนวณเฉพาะคะแนน >= 0.50 · feature ชุดเดียวที่คะแนน 0.405
+    จะทำให้ข้าม SHAP ทุก request = วัดผิดสิ่ง จึงต้องผสม probe คะแนนสูงตามสัดส่วน."""
+    g = _gate(share)
+    high = [f for f in g.probe_features if f != g.normal_features]
+    assert len(high) == expected
+
+
+def test_high_score_features_carry_anomaly_signals():
+    g = _gate(1.0)
+    f = g.probe_features[0]
+    assert f[0] == 1.0 and f[1] == 1.0 and f[2] >= 1.0  # new country / device / failed
+    assert g.normal_features[4] == 365.0  # permission_change_age ค่ากลางตามสัญญา
+
+
+def test_each_probe_keeps_the_same_features_every_call():
+    """P3 เทียบคะแนนต่อ probe — feature ของ probe ต้องคงที่ทุกครั้ง."""
+    import asyncio
+
+    import httpx
+
+    bodies = []
+
+    def handler(request):
+        bodies.append(json.loads(request.content))
+        return httpx.Response(200, json={"data": {"sequence": {}, "point": {}}})
+
+    g = _gate(0.33)
+
+    async def go():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as c:
+            await g.steady(c, 5)
+
+    asyncio.run(go())
+    by_user = {}
+    for b in bodies:
+        by_user.setdefault(b["user_id"], set()).add(tuple(b["features"]))
+    assert all(len(v) == 1 for v in by_user.values())
+
+
+def test_share_must_be_a_fraction():
+    with pytest.raises(ValueError):
+        G.Gate("http://ml", "redis://localhost:6379/13", 4, 1, high_score_share=1.5)
+
+
 def test_passing_input_is_not_mutated():
     kw = _passing()
     snap = copy.deepcopy(kw)

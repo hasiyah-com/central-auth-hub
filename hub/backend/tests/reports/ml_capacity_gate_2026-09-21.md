@@ -7,6 +7,8 @@
 > อัปเดต 2026-09-22: ข้อ 4 (SO_REUSEPORT) ใน §10 — 4 worker งานเท่ากันและผ่าน P2/P3/P4 ทุกครั้ง แต่ P1 ที่ c=20 ผ่าน 2 ใน 4 ครั้ง (185–255 ms) · ผลรวมยังไม่ผ่าน
 >
 > อัปเดต 2026-09-22: ทดลองข้าม SHAP ของ point view ใน §11 — p95 ลด 16–18% และ reuseport 4 worker ผ่านครบ 4/4 ครั้ง แต่ต้องแลกกับแท่ง SHAP ใน UI/incident/audit · ค่าจริงยังไม่เปลี่ยน รอตัดสินใจ
+>
+> อัปเดต 2026-09-22: ทางเลือก 2 (SHAP เฉพาะ point score ≥ 0.50) ใน §12 — ลดงาน 4–7% ที่ concurrency ต่ำ แต่ที่ c=20 ความแกว่งระหว่างครั้งใหญ่กว่าผล (ฝั่งที่ควรช้าสุดกลับผ่าน 3/3) · ผลรวมยังไม่ผ่าน
 
 | workers | P1 p95 steady | P2 fit storm | P3 ความสอดคล้อง | P4 หน่วยความจำ |
 |---|---|---|---|---|
@@ -241,15 +243,72 @@ P2/P3/P4 ผ่านทุกครั้งทั้งสองฝั่ง �
 
 **ค่าที่ใช้อยู่จริงไม่เปลี่ยน** — SHAP ยังคำนวณทุก request · ตัวเลือกทดลองปิดไว้
 
-## 12. รันซ้ำ
+## 12. ทางเลือก 2 — SHAP ของ point view เฉพาะ point score ≥ 0.50 — 2026-09-22
+
+**สิ่งที่เปลี่ยน (ค่าเริ่มต้นของ ml-service):** `_point_view` คำนวณคะแนนก่อน แล้วคำนวณ SHAP
+(`explain_features`) เฉพาะเมื่อคะแนน ≥ `L3_POINT_SHAP_MIN_SCORE` (ค่าเริ่มต้น = `POINT_ANOMALY`
+0.50 · `0` = ทุก login แบบเดิม · ค่าผิด = ไม่ start) · `predict_with_explanation` (ใช้โดย
+`/v1/score`) ยังคืนค่าเหมือนเดิม
+
+**ผลต่อ hub:** login ที่ point score < 0.50 จะไม่มี `iforest_explanation` → แท่ง SHAP ในหน้า ML /
+incident ไม่แสดงสำหรับ login เหล่านั้น (UI ซ่อนเองเมื่อว่าง ไม่ error) · audit ของ oauth ใส่ SHAP
+เฉพาะ `risk_score >= 0.3` อยู่แล้ว
+
+**ตรวจกับโมเดลจริง (800 เวกเตอร์):** คะแนนเท่าเดิมทุกตัว · 409 ตัวที่คะแนน ≥ 0.50 ได้ SHAP ตรงกับ
+เดิมทุกตัว · 391 ตัวที่ต่ำกว่าไม่มี SHAP
+
+**แก้ตัววัดก่อนวัด:** feature เดิมของตัววัดได้ point score 0.405 → ถ้าไม่แก้ SHAP จะถูกข้ามทุก
+request = วัดผิดสิ่ง · เพิ่ม `--high-score-share` ให้ probe ส่วนหนึ่งใช้ feature ผิดปกติ (score 0.518)
+
+### วัดสลับ 3 ฝั่ง × 3 ครั้ง (reuseport 4 worker, ช่วงเวลาเดียวกัน)
+
+| ฝั่ง | เกณฑ์ SHAP | probe คะแนนสูง | ความหมาย |
+|---|---|---|---|
+| A | 0 (ทุก request) | 33% | พฤติกรรมเดิม |
+| B | 0.50 | 33% | ทางเลือก 2 กับสัดส่วนใน `hub_db` (ข้อมูล dev) |
+| C | 0.50 | 100% | กรณีแย่สุด — ทุก login คะแนนสูง (ต้นทุนควรเท่ากับ A) |
+
+| concurrency | p95 A median (min–max) | B | C |
+|---|---|---|---|
+| 1 | 26.5 (23.8–29.2) | 24.6 (21.5–25.8) −7.2% | 27.4 (25.2–30.0) +3.4% |
+| 5 | 72.6 (57.4–85.9) | 69.4 (62.4–83.1) −4.4% | 77.0 (64.2–88.4) +6.1% |
+| 10 | 114.8 (107.8–131.9) | 110.1 (92.9–146.5) −4.1% | 125.9 (115.0–176.4) +9.7% |
+| 20 | 234.1 (193.1–289.3) | 200.3 (170.5–268.5) −14.4% | 221.6 (204.1–236.9) −5.3% |
+
+| ฝั่ง | c=20 p95 แย่สุดต่อครั้ง | ผ่านครบ |
+|---|---|---|
+| A | 234.1 / 289.3 / 268.1 | 1/3 |
+| B | 268.5 / 241.2 / 212.2 | 2/3 |
+| C | 219.8 / 236.9 / 228.8 | 3/3 |
+
+P2/P3/P4 ผ่านทุกครั้งทุกฝั่ง · log ไม่มี error
+
+### อ่านผล — แยกผลออกจากความแกว่งไม่ได้ที่ c=20
+
+- **ผลขัดกับตรรกะ:** C คำนวณ SHAP ทุก request (ต้นทุนเท่ากับ A) แต่ผ่าน 3/3 ขณะที่ A ผ่าน 1/3 →
+  ที่ c=20 ความแกว่งระหว่างครั้ง (170–290 ms) **ใหญ่กว่า**ผลของทางเลือก 2 · สามครั้งต่อฝั่ง
+  ไม่พอจะสรุปว่าทางเลือก 2 ทำให้ผ่าน
+- ที่ concurrency ต่ำ (ความแกว่งน้อยกว่า) B เร็วกว่า A 4–7% ซึ่งอยู่ในช่วงที่คาด (ประหยัด SHAP
+  ~2/3 ของ 16–18% ≈ 11% เมื่อ 33% ของ login ยังได้ SHAP) · C ช้ากว่า A 3–10% ในทิศที่คาดแต่เล็ก
+- เทียบกับ §11 (ปิด SHAP ทั้งหมด): ผลต่าง 16–18% สม่ำเสมอทุกระดับและผ่าน 4/4 — ผลใหญ่กว่า
+  ความแกว่งจึงเห็นชัด ส่วนทางเลือก 2 ได้ผลราวครึ่งหนึ่ง จึงจมอยู่ในความแกว่ง
+- **ข้อค้นพบด้านวิธีวิทยา:** P1 ที่ c=20 บนเครื่องนี้ตัดสินผ่าน/ไม่ผ่านด้วยความแกว่งมากกว่าด้วย
+  ความจุ เมื่อค่าอยู่ใกล้เพดาน · ถ้าจะใช้ตัดสินต่อ ต้องเพิ่มจำนวนครั้ง/request ต่อระดับ
+  (เปลี่ยนวิธีวัด — ต้องตกลงก่อนวัดรอบใหม่ ไม่ใช่ปรับหลังเห็นผล)
+
+**ผลรวม: ยังไม่ผ่าน** — ทางเลือก 2 ลดงานได้จริงแต่ไม่พอให้ผ่านแบบมีส่วนเผื่อที่ c=20
+
+## 13. รันซ้ำ
 
 ```bash
 bash scripts/test/ml_capacity_gate.sh            # 1 2 4
 CAP_OUT=/path bash scripts/test/ml_capacity_gate.sh 4
 CAP_SERVER=reuseport bash scripts/test/ml_capacity_gate.sh 4   # ตัวเปิด SO_REUSEPORT
 CAP_SERVER=reuseport CAP_SKIP_POINT_SHAP=1 bash scripts/test/ml_capacity_gate.sh 4   # ทดลองข้าม SHAP
+CAP_SERVER=reuseport CAP_HIGH_SCORE_SHARE=0.33 bash scripts/test/ml_capacity_gate.sh 4   # ทางเลือก 2
+CAP_SERVER=reuseport CAP_POINT_SHAP_MIN_SCORE=0 CAP_HIGH_SCORE_SHARE=0.33 bash scripts/test/ml_capacity_gate.sh 4   # พฤติกรรมเดิม
 ```
 
 ผลดิบ: `workers_{1,2,4}.json` + log ของ ml-service ต่อรอบ (เก็บใน `CAP_OUT` ไม่เข้า git)
 
-เทส: `hub/backend/tests/test_ml_capacity_gate.py` (24) · `ml-service/tests/test_capacity_stats.py` (10) · `ml-service/tests/test_explainer_init.py` (5) · `ml-service/tests/test_serve.py` (8, ตัวที่ใช้ socket จริงรันเฉพาะ Linux) · `ml-service/tests/test_point_shap_experiment.py` (8)
+เทส: `hub/backend/tests/test_ml_capacity_gate.py` (30) · `ml-service/tests/test_capacity_stats.py` (10) · `ml-service/tests/test_explainer_init.py` (5) · `ml-service/tests/test_serve.py` (8, ตัวที่ใช้ socket จริงรันเฉพาะ Linux) · `ml-service/tests/test_point_shap_experiment.py` (8) · `ml-service/tests/test_point_shap_gating.py` (13)

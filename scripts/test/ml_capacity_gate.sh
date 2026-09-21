@@ -5,6 +5,8 @@
 #   CAP_OUT=<dir> bash scripts/test/ml_capacity_gate.sh     # ที่เก็บผล (ค่าเริ่มต้น ./.capacity)
 #   CAP_SERVER=reuseport bash scripts/test/ml_capacity_gate.sh   # worker แยก socket (app.serve)
 #   CAP_SKIP_POINT_SHAP=1 ...   # ทดลองเท่านั้น: ข้าม SHAP ของ point view (ห้ามใช้ใน production)
+#   CAP_HIGH_SCORE_SHARE=0.33 ...   # สัดส่วน probe ที่ point score >= 0.50 (ได้ SHAP)
+#   CAP_POINT_SHAP_MIN_SCORE=0 ...  # เกณฑ์ SHAP ของ ml-service (ว่าง = ค่าเริ่มต้น 0.50 · 0 = ทุก login)
 #
 # ทุกค่าของ worker เปิด ml-service ตัวใหม่ (container `ml-cap`) → cache/lock เย็นทุก process
 # เท่ากับสภาพหลัง Docker restart · ข้อมูลเป็นของสังเคราะห์ใน Redis DB แยก (ค่าเริ่มต้น 13)
@@ -39,11 +41,12 @@ MSYS_NO_PATHCONV=1 docker run --rm -v "$HUB_SRC:/app" -w /app "$IMAGE_HUB" \
 
 overall=0
 for W in $WORKERS; do
-  echo "== workers=$W server=$CAP_SERVER skip_point_shap=${CAP_SKIP_POINT_SHAP:-0}" >&2
+  echo "== workers=$W server=$CAP_SERVER skip_point_shap=${CAP_SKIP_POINT_SHAP:-0} high_score_share=${CAP_HIGH_SCORE_SHARE:-0}" >&2
   docker rm -f ml-cap >/dev/null 2>&1 || true
   MSYS_NO_PATHCONV=1 docker run -d --name ml-cap --network cah-net \
     -e REDIS_URL="redis://redis:6379/$CAP_DB" -e L3_CAPACITY_STATS=1 \
     -e L3_EXPERIMENT_SKIP_POINT_SHAP="${CAP_SKIP_POINT_SHAP:-0}" \
+    -e L3_POINT_SHAP_MIN_SCORE="${CAP_POINT_SHAP_MIN_SCORE:-}" \
     -v "$ML_SRC:/app" -w /app "$IMAGE_ML" \
     $(if [ "$CAP_SERVER" = reuseport ]; then
         echo python -m app.serve --host 0.0.0.0 --port 9000 --workers "$W"
@@ -63,7 +66,8 @@ for W in $WORKERS; do
   MSYS_NO_PATHCONV=1 docker run --rm --network cah-net \
     -v "$HUB_SRC:/app" -v "$OUT_W:/out" -w /app "$IMAGE_HUB" \
     python -m scripts.ml_capacity_gate --url http://ml-cap:9000 --workers "$W" \
-      --redis "redis://redis:6379/$CAP_DB" --out "/out/workers_$W.json"
+      --redis "redis://redis:6379/$CAP_DB" --out "/out/workers_$W.json" \
+      --high-score-share "${CAP_HIGH_SCORE_SHARE:-0}"
   rc=$?
   set -e
   docker logs ml-cap > "$OUT/ml-cap_workers_$W.log" 2>&1 || true

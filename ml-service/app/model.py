@@ -147,11 +147,19 @@ def predict_with_explanation(
 
     ถ้า explainer unavailable → คืน explanation=[] (fail-safe, Hub ทำงานต่อได้)
     """
-    score = predict_score(features)
+    return predict_score(features), explain_features(features, top_k=top_k)
+
+
+def explain_features(features: list[float], top_k: int = 5) -> list[dict]:
+    """SHAP อย่างเดียว (ไม่คำนวณคะแนน) — ให้ point view เลือกคำนวณเฉพาะ login ที่คะแนนสูง.
+
+    รูปแบบผลลัพธ์เหมือน explanation ของ `predict_with_explanation` · explainer ใช้ไม่ได้
+    หรือคำนวณพัง → [] (fail-safe)
+    """
     explainer = _load_explainer()
 
     if explainer is None:
-        return score, []
+        return []
 
     try:
         X = np.array([features], dtype=float)
@@ -181,10 +189,10 @@ def predict_with_explanation(
             }
             for i, val in indexed
         ]
-        return score, explanation
+        return explanation
     except Exception as e:
         # Fail-safe — log warning + คืน [] (Hub ทำงานต่อได้แม้ explain พัง)
         log.warning(
             "SHAP explain failed for one sample — returning empty. Reason: %s", e
         )
-        return score, []
+        return []
