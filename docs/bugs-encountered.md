@@ -500,6 +500,13 @@
 - **กฎ:** secret ใน `Settings` ต้องเป็น `SecretStr` และเรียก `.get_secret_value()` ตรงจุดที่ใช้เท่านั้น · URL ที่ต้องส่งให้ไลบรารีเป็น str ให้ปิดรหัสผ่าน/path ใน repr และ dump · ฟิลด์ใหม่ที่ชื่อคล้าย secret ต้องจัดประเภท (เทสบังคับ) · ถ้าค่าเคยหลุดออกนอกเครื่อง ให้ถือว่ารั่วและ rotate
 - **Verify:** `tests/test_settings_secrets.py` (รวมการจำลองเหตุการณ์จริง `test_the_original_incident_attribute_error_is_clean`)
 
+**B79. SHAP explainer ของ point view สร้างซ้ำทุก request ที่มาพร้อมกันตอน process เย็น — แบบเดียวกับ B63 แต่คนละจุด**
+- อาการ: ML Capacity Gate — 20 request พร้อมกันบน ml-service ที่เพิ่ง start ใช้ 15.2 วินาที (worker 1 ตัว) ทุกตัวเกินเพดาน L3 500 ms · request แรกของ process 1,115 ms เทียบกับครั้งถัดไป 20 ms
+- สาเหตุ: `model._load_explainer()` เช็ค status แล้วค่อย import `shap` + สร้าง TreeExplainer (~0.9 วินาที) โดยไม่มีล็อก → request ที่มาพร้อมกันผ่านการเช็คทุกตัวแล้วสร้างซ้ำ (เทสจำลองได้ 20 ครั้งจาก 20 thread) · B63 ใส่ล็อกให้ fit รายคนแล้ว แต่ explainer ของ point view ตกหล่น
+- **กฎ:** lazy-init ของงานหนักที่ใช้ร่วมกันทั้ง process ต้องมีล็อกแบบ double-check (ทางเดินปกติหลังสร้างเสร็จไม่แตะล็อก) และถ้าทำได้ให้สร้างตั้งแต่ startup · ตอนพังต้องจำสถานะ `unavailable` ไม่ลองใหม่ทุก request
+- ผลหลังแก้: request แรก 22 ms · cold burst 15.2 → 4.8 วินาที (worker 1), 3.7 → 1.6 วินาที (worker 4) · ที่เหลือเกิน 500 ms มาจาก fit หลายคนพร้อมกันแย่ง GIL (ยังไม่แก้)
+- **Verify:** `ml-service/tests/test_explainer_init.py` · `hub/backend/tests/reports/ml_capacity_gate_2026-09-21.md` §9
+
 ---
 
 ## วิธีเพิ่ม bug ใหม่

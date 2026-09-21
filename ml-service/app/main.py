@@ -30,6 +30,7 @@ from app.model import (
     load_model,
     model_loaded,
     predict_with_explanation,
+    warm_explainer,
 )
 
 # Threshold
@@ -52,6 +53,13 @@ def startup():
         print("Model loaded")
     except FileNotFoundError as e:
         print(f" {e}")
+        return
+    # สร้าง SHAP explainer ตอนนี้เลย — request แรกเคยต้องจ่าย ~0.9 วินาที และถ้ามา
+    # พร้อมกันหลายตัวจะสร้างซ้ำ (ML Capacity Gate 2026-09-21) · พังแล้ว service ยังต้องขึ้น
+    try:
+        print(f"SHAP explainer: {warm_explainer()}")
+    except Exception as e:  # noqa: BLE001
+        print(f" SHAP explainer warm-up failed: {e}")
 
 
 # ── Redis (L3 sequence history) — lazy + fail-safe ตาม B21 ──
