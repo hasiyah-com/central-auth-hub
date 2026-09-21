@@ -300,6 +300,12 @@ async def run(a) -> dict:
     )
 
 
+def _point_shap_mode(stats: dict):
+    """True/False เมื่อทุก worker รายงานตรงกัน · None = ไม่รู้หรือไม่ตรงกัน."""
+    modes = {s.get("point_shap") for s in stats.values()}
+    return modes.pop() if len(modes) == 1 and None not in modes else None
+
+
 def load_share(before: dict, after: dict) -> dict:
     """request ของช่วง steady ที่แต่ละ worker ได้ — ข้อมูลประกอบ ไม่ใช่เกณฑ์ผ่าน.
 
@@ -420,6 +426,7 @@ def evaluate(workers, cold, cold_stats, warm, warm_stats, rounds, elapsed) -> di
         "passed": all(c["pass"] for c in checks.values()),
         "checks": checks,
         "load_share": load_share(warm_stats, rounds[-1]["stats"]),
+        "point_shap": _point_shap_mode(rounds[-1]["stats"]),
         "cold_burst": {k: v for k, v in cold.items() if k != "scores"},
         "rounds": [
             {c: lvl["latency"] for c, lvl in r["levels"].items()} for r in rounds

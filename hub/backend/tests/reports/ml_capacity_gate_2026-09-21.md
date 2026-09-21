@@ -5,6 +5,8 @@
 > อัปเดต: แก้ข้อ 1 (B79) แล้ววัดซ้ำใน §9 — cold ลด 2–3 เท่า, worker 4 ตัวผ่าน P2/P4 แต่ยังไม่ผ่าน P1 ที่ c=20 · ผลรวมยังไม่ผ่าน
 >
 > อัปเดต 2026-09-22: ข้อ 4 (SO_REUSEPORT) ใน §10 — 4 worker งานเท่ากันและผ่าน P2/P3/P4 ทุกครั้ง แต่ P1 ที่ c=20 ผ่าน 2 ใน 4 ครั้ง (185–255 ms) · ผลรวมยังไม่ผ่าน
+>
+> อัปเดต 2026-09-22: ทดลองข้าม SHAP ของ point view ใน §11 — p95 ลด 16–18% และ reuseport 4 worker ผ่านครบ 4/4 ครั้ง แต่ต้องแลกกับแท่ง SHAP ใน UI/incident/audit · ค่าจริงยังไม่เปลี่ยน รอตัดสินใจ
 
 | workers | P1 p95 steady | P2 fit storm | P3 ความสอดคล้อง | P4 หน่วยความจำ |
 |---|---|---|---|---|
@@ -196,14 +198,58 @@ request ของ steady) · ข้อ 4 (แจกงาน worker ให้เ
 - **cold ยังเกิน 500 ms** (reuseport 4 worker p50 1.2–1.7 วินาที, เกิน 18–20/20) — ข้อ 2 ยังไม่ได้ทำ
 - ค่าที่ใช้อยู่จริงใน `docker-compose.yml` ยังเป็น uvicorn worker 1 ตัว — **ยังไม่ได้เปลี่ยน**
 
-## 11. รันซ้ำ
+## 11. ข้อ 3 (ทดลองเท่านั้น) — ข้าม SHAP ของ point view วัดว่าได้คืนเท่าไร — 2026-09-22
+
+**ทำไมยังไม่แก้จริง:** hub ใช้ `point.explanation` จริง — `risk_engine.py:291` นำไปเป็น
+`iforest_explanation` → บันทึกใน `login_sessions.risk_breakdown` (oauth/passkey) → แท่ง SHAP
+ในหน้า ML (`SessionDetailPanel.tsx`), incident (`incident_service.py:1067`,
+`IncidentDetailModal.tsx`) และ audit เมื่อ `risk_score >= 0.3` (`oauth.py:839`) · hub ส่ง
+`explain=False` เสมอ ถ้าข้ามตาม `explain` ข้อมูลเหล่านี้จะว่างทุก login เงียบๆ · ใน `hub_db`
+มี 210 session ที่เก็บ SHAP ไว้ (ล่าสุด 2026-09-20)
+
+**การทดลอง:** env `L3_EXPERIMENT_SKIP_POINT_SHAP=1` (ปิดไว้เป็นค่าเริ่มต้น เปิดได้ด้วยค่า `1`
+เท่านั้น · `/v1/l3-capacity-stats` รายงาน `point_shap` และผลวัดบันทึกโหมดไว้) ใช้
+`predict_score` แทน `predict_with_explanation` · ตรวจกับโมเดลจริง 500 เวกเตอร์ คะแนนต่างกัน
+**0** (ตัดสินเหมือนเดิม) · reuseport 4 worker วัดสลับ เปิด/ปิด/เปิด/ปิด ... อย่างละ 4 ครั้ง
+(12 รอบ steady ต่อฝั่ง) ในช่วงเวลาเดียวกัน
+
+| concurrency | p95 SHAP เปิด (median, min–max) | p95 SHAP ปิด | ต่าง (median) |
+|---|---|---|---|
+| 1 | 25.7 (23.2–28.2) | 21.1 (20.2–21.6) | −4.6 ms (−17.9%) |
+| 5 | 75.7 (64.0–82.3) | 61.8 (56.8–72.5) | −13.9 ms (−18.4%) |
+| 10 | 119.2 (104.0–134.0) | 98.5 (91.3–116.3) | −20.7 ms (−17.4%) |
+| 20 | 223.1 (175.2–272.4) | 187.8 (158.7–221.6) | −35.3 ms (−15.8%) |
+
+| ฝั่ง | c=20 p95 แย่สุดต่อครั้ง | ผ่าน P1 | ผ่านครบ P1–P4 |
+|---|---|---|---|
+| SHAP เปิด (ค่าปัจจุบัน) | 222.5 / 253.5 / 272.4 / 234.1 | 2/4 | 2/4 |
+| SHAP ปิด | 190.5 / 185.2 / 221.6 / 192.3 | **4/4** | **4/4** |
+
+P2/P3/P4 ผ่านทุกครั้งทั้งสองฝั่ง · สัดส่วนงาน max/mean 1.008–1.077 · cold ไม่ต่างกัน
+(p50 1.2–1.7 วินาทีทั้งสองฝั่ง — SHAP ไม่ใช่สาเหตุของ cold)
+
+**อ่านผล**
+
+- SHAP ของ point view กินเวลาราว **16–18%** ของทุกระดับ — มากกว่าที่ประเมินจาก micro-benchmark
+  (~9%) เพราะ micro-benchmark ไม่รวม serialization ของ explanation และการแย่ง GIL ใต้โหลด
+- ปิดแล้ว reuseport 4 worker ผ่านครบ 4/4 ครั้ง ส่วนเผื่อที่ c=20 เหลือ 28–65 ms
+- **ราคาที่ต้องจ่าย:** แท่ง SHAP ในหน้า ML / incident / audit หายทุก login — เป็นการตัดสินใจ
+  ด้าน product ไม่ใช่ด้านประสิทธิภาพ
+- ทางกลางที่ยังไม่ได้วัด: คำนวณ SHAP เฉพาะ login ที่ point score สูง · ใน `hub_db` (ข้อมูล dev
+  ไม่ใช่ traffic จริง) มี point score ≥ 0.50 อยู่ 232 จาก 705 session (33%) และ ≥ 0.70 แค่ 1 ·
+  ถ้าตัดที่ 0.50 จะเหลืองาน SHAP ราว 1/3 แต่ login ที่ score ต่ำจะไม่มีแท่ง SHAP
+
+**ค่าที่ใช้อยู่จริงไม่เปลี่ยน** — SHAP ยังคำนวณทุก request · ตัวเลือกทดลองปิดไว้
+
+## 12. รันซ้ำ
 
 ```bash
 bash scripts/test/ml_capacity_gate.sh            # 1 2 4
 CAP_OUT=/path bash scripts/test/ml_capacity_gate.sh 4
 CAP_SERVER=reuseport bash scripts/test/ml_capacity_gate.sh 4   # ตัวเปิด SO_REUSEPORT
+CAP_SERVER=reuseport CAP_SKIP_POINT_SHAP=1 bash scripts/test/ml_capacity_gate.sh 4   # ทดลองข้าม SHAP
 ```
 
 ผลดิบ: `workers_{1,2,4}.json` + log ของ ml-service ต่อรอบ (เก็บใน `CAP_OUT` ไม่เข้า git)
 
-เทส: `hub/backend/tests/test_ml_capacity_gate.py` (22) · `ml-service/tests/test_capacity_stats.py` (10) · `ml-service/tests/test_explainer_init.py` (5) · `ml-service/tests/test_serve.py` (8, ตัวที่ใช้ socket จริงรันเฉพาะ Linux)
+เทส: `hub/backend/tests/test_ml_capacity_gate.py` (24) · `ml-service/tests/test_capacity_stats.py` (10) · `ml-service/tests/test_explainer_init.py` (5) · `ml-service/tests/test_serve.py` (8, ตัวที่ใช้ socket จริงรันเฉพาะ Linux) · `ml-service/tests/test_point_shap_experiment.py` (8)

@@ -363,7 +363,7 @@ def l3_capacity_stats():
     if os.getenv("L3_CAPACITY_STATS") != "1":
         raise HTTPException(status_code=404, detail="Not Found")
     return {
-        "data": SEQ.capacity_stats(),
+        "data": {**SEQ.capacity_stats(), "point_shap": L3U.point_shap_enabled()},
         "meta": {"version": "v1", "timestamp": datetime.now(timezone.utc).isoformat()},
     }
 

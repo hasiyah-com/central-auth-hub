@@ -319,6 +319,28 @@ def test_load_share_is_unknown_without_counters():
     assert out["load_share"]["max_over_mean"] is None
 
 
+def test_result_records_whether_point_shap_was_on():
+    """ผลของการทดลองข้าม SHAP ต้องแยกได้จากผลปกติ — ไม่งั้นเอาไปเทียบผิดชุด."""
+    kw = _passing()
+    for s in kw["rounds"][-1]["stats"].values():
+        s["point_shap"] = False
+    assert _eval(kw)["point_shap"] is False
+
+    kw = _passing()
+    for s in kw["rounds"][-1]["stats"].values():
+        s["point_shap"] = True
+    assert _eval(kw)["point_shap"] is True
+
+
+def test_mixed_or_unknown_point_shap_mode_is_reported_as_unknown():
+    kw = _passing()
+    vals = [True, False]
+    for s, v in zip(kw["rounds"][-1]["stats"].values(), vals):
+        s["point_shap"] = v
+    assert _eval(kw)["point_shap"] is None
+    assert _eval(_passing())["point_shap"] is None  # ml-service รุ่นที่ยังไม่รายงาน
+
+
 def test_passing_input_is_not_mutated():
     kw = _passing()
     snap = copy.deepcopy(kw)

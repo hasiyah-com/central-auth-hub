@@ -24,11 +24,12 @@ access decision ได้อีก (hub ส่ง IForest เข้า aggregate
 from __future__ import annotations
 
 import logging
+import os
 
 from app import sequence as SEQ
 from app.features import FEATURE_COUNT
 from app.model import explainer_status as point_explainer_status
-from app.model import predict_with_explanation
+from app.model import predict_score, predict_with_explanation
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +56,15 @@ TOP_K = 5
 DUP_FLAGGED_KEY = "l3dup:flagged"
 DUP_DUPLICATE_KEY = "l3dup:dup"
 
+# ── ตัวเลือกทดลองสำหรับ ML Capacity Gate เท่านั้น — ห้ามเปิดใน production ──
+# hub นำ point.explanation ไปเป็น iforest_explanation (risk_engine.py) แล้วบันทึกใน
+# login_sessions → แท่ง SHAP ในหน้า ML / incident / audit · เปิดแล้วข้อมูลเหล่านี้ว่างเงียบๆ
+SKIP_POINT_SHAP_ENV = "L3_EXPERIMENT_SKIP_POINT_SHAP"
+
+
+def point_shap_enabled() -> bool:
+    return os.getenv(SKIP_POINT_SHAP_ENV) != "1"
+
 
 def _point_view(features: list[float]) -> dict:
     """IForest 23 ฟีเจอร์ + SHAP — fail-safe: พังแล้วคืน 'ไม่ยิง' ไม่ raise."""
@@ -69,7 +79,10 @@ def _point_view(features: list[float]) -> dict:
     if not features or len(features) != FEATURE_COUNT:
         return {**quiet, "error": "invalid_features"}
     try:
-        score, explanation = predict_with_explanation(features, top_k=TOP_K)
+        if point_shap_enabled():
+            score, explanation = predict_with_explanation(features, top_k=TOP_K)
+        else:  # ทดลองเท่านั้น — คะแนนเดิม แต่ไม่มีคำอธิบาย
+            score, explanation = predict_score(features), []
         return {
             "available": True,
             "anomaly_score": round(float(score), 4),
