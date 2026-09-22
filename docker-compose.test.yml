@@ -16,4 +16,9 @@ services:
       REDIS_URL: redis://redis:6379/${TEST_REDIS_DB:-15}
     volumes:
       - ./ml-service:/app
+    # worker เดียวโดยตั้งใจ (ต่างจาก ml-service ที่ deploy ซึ่งใช้ app.serve 4 worker) —
+    # cache โมเดลของ L3 แยกต่อ process จนกว่าจะมี cache ร่วม · ถ้าใช้ 4 worker ในชุดเทส
+    # request ของผู้ใช้คนเดียวจะสลับไปลง worker ที่ยังเย็นแล้วได้ model_warming ซ้ำ
+    # ทำให้เทส functional ขึ้นกับการแจกงานของ kernel · พฤติกรรมหลาย worker วัดใน
+    # ML Capacity Gate (hub/backend/tests/reports/ml_capacity_gate_2026-09-21.md) แทน
     command: uvicorn app.main:app --host 0.0.0.0 --port 9000

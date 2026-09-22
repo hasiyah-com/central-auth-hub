@@ -15,6 +15,8 @@
 > อัปเดต 2026-09-22: ย้าย fit ออกจากเส้นทาง request (§15–16) — ช่วงเย็นแบบ open-loop (C1) **ผ่าน** 10/10 (median p95 200 ms) · cold burst (C2) **ไม่ผ่าน** 2/10 (p95 ~245–280 ms) · steady ไม่ถดถอย · L3 abstain ~70% ของ login ในนาทีแรกหลัง restart
 >
 > อัปเดต 2026-09-22: ลดงบรอ fit (§17–18) — ที่ 50 ms ผ่าน C1, C2 และ steady ครบ 10/10 · เปลี่ยนค่าเริ่มต้นเป็น 50 ms ตามกฎที่เขียนก่อนวัด · **ML Capacity Gate ผ่านตามเกณฑ์ที่ตกลงไว้** ที่ reuseport 4 worker · ค่าจริงใน compose ยังไม่เปลี่ยน · L3 abstain ~71% ในนาทีแรกหลัง restart
+>
+> อัปเดต 2026-09-22: ต่อเข้ากับ hub (§19) — hub ส่ง abstain_reason ต่อ · compose ใช้ app.serve 4 worker · gate ของ hub กับโค้ดใหม่ 1451 passed · **ปัญหาเปิด:** L3 ไม่สม่ำเสมอต่อผู้ใช้เมื่อหลาย worker (cache แยกต่อ process) — ต้องมี cache ร่วมก่อนเปิด Shadow Pilot
 
 | workers | P1 p95 steady | P2 fit storm | P3 ความสอดคล้อง | P4 หน่วยความจำ |
 |---|---|---|---|---|
@@ -584,7 +586,50 @@ C1 เกิน 500 ms = 0 ทุกครั้งทุกค่า · steady 
 - **ความครอบคลุมของ L3 หลัง restart ยังเท่าเดิม** (~71% abstain ในนาทีแรก) — การลดงบแก้ latency
   ไม่ได้แก้การครอบคลุม · ต้องใช้ cache ร่วมข้าม worker/restart ถ้าต้องการแก้
 
-## 19. รันซ้ำ
+## 19. ต่อเข้ากับ hub และเปลี่ยนค่า deploy — 2026-09-22
+
+### 19.1 gate ของ hub กับโค้ด ml-service ใหม่ (ก่อนแก้)
+
+gate ที่ผ่านมาใช้ `ml-service-test` ซึ่ง mount โค้ด ml-service ของ tree หลัก (โค้ดเก่า) · รันใหม่
+โดยให้ `ml-service-test` ใช้โค้ดจาก worktree:
+
+| ml-service-test | ผล |
+|---|---|
+| worker เดียว | 6 failed / 1434 passed |
+| `app.serve` 4 worker | 10 failed / 1430 passed |
+
+เทสที่ล้มทั้งหมดเป็นเทส L3 ที่ถือว่าเรียกครั้งแรกได้คะแนน (`test_l3_stability`, `test_l3_remote_e2e`,
+`test_l3_explainability`, `test_l3_unified`) — ตอนนี้ได้ `model_warming` ตามที่ออกแบบ ·
+ที่ 4 worker ผู้ใช้คนเดียวได้ผลปนกัน `{0.742, 0.0}` (worker ที่ fit แล้ว กับ worker ที่ยังเย็น)
+
+### 19.2 สิ่งที่แก้ (ทางเลือก 1 ที่ผู้ใช้เลือก)
+
+- **hub ส่ง `abstain_reason` ต่อ** (`l3_sequence_client._coerce`) — เดิมถูกทิ้งเพราะเก็บเฉพาะฟิลด์ที่รู้จัก ·
+  hub จึงแยก "โมเดลยังไม่พร้อม" กับ "ประวัติไม่พอ" ไม่ได้ (อาการแบบ B61) · รับเฉพาะ `model_warming`
+  ค่าอื่นปัดเป็น None · เทส `tests/test_l3_warming_contract.py` (9)
+- helper `_ok` ของเทส L3 ทั้ง 4 ไฟล์ถือ `model_warming` เป็น "ยังไม่พร้อม" แบบเดียวกับ `l3_timeout` เดิม
+- เทสใหม่บนเส้นทางจริง `tests/test_l3_warming_e2e.py` (2): request แรกของผู้ใช้ใหม่ไม่ใช่ error,
+  บอก `model_warming`, ตอบภายใน 400 ms · หลัง fit ได้คะแนนตาม tier
+- `docker-compose.yml`: ml-service → `python -m app.serve --workers 4` (ไม่มี `--reload`)
+- `docker-compose.test.yml`: `ml-service-test` คง worker เดียว**โดยตั้งใจ** — เทส functional ต้องไม่ขึ้นกับ
+  การแจกงานของ kernel · พฤติกรรมหลาย worker วัดใน Gate นี้แทน
+
+### 19.3 ผลหลังแก้ (โค้ด worktree ทั้ง hub และ ml-service)
+
+| ml-service-test | ผล |
+|---|---|
+| worker เดียว (ค่าของชุดเทส) | **1451 passed, 0 failed** · ไม่มี state รั่ว |
+| `app.serve` 4 worker (ข้อมูลประกอบ) | 1 failed / 1450 passed — `test_concurrent_requests_multi_user_no_crosstalk` warm ไม่ทันใน 4 ครั้ง |
+| Performance Gate (worker เดียว) | 3 passed |
+
+### 19.4 ปัญหาที่ยังเปิด — ความสม่ำเสมอของ L3 ต่อผู้ใช้
+
+cache โมเดลแยกต่อ process: ที่ 4 worker ผู้ใช้คนเดียวได้ `model_warming` สลับกับคะแนนจริงจนกว่าทุก worker
+จะ fit ครบ และเกิดซ้ำทุกครั้งที่ cache หมดอายุ (1 ชม.) · หลัง restart L3 abstain ~71% ในนาทีแรก (§16, §18) ·
+**Gate นี้วัดความเร็ว ไม่ได้วัดความสม่ำเสมอ** — ต้องแก้ด้วย cache โมเดลร่วม (งานถัดไป) ก่อนเปิด Shadow Pilot
+เพราะข้อมูล shadow จะปนระหว่าง "L3 ดูแล้ว" กับ "L3 ยังไม่พร้อม"
+
+## 20. รันซ้ำ
 
 ```bash
 bash scripts/test/ml_capacity_gate.sh            # 1 2 4
