@@ -5,8 +5,25 @@ import Link from "next/link";
 import { Topbar } from "@/components/Topbar";
 import { DataTable, type Column } from "@/components/DataTable";
 import { Badge } from "@/components/Badge";
+import { LineChart } from "@/components/LineChart";
+import { LatencyBandChart } from "@/components/LatencyBandChart";
 import { clientFetch } from "@/lib/api";
 import { mutateWithStepup, runWithStepup } from "@/lib/passkey";
+import "@/app/signal-console.css";
+
+function formatDuration(sec: number): string {
+  if (sec < 60) return `${sec}s`;
+  const m = Math.floor(sec / 60);
+  if (m < 60) return `${m}m`;
+  const h = Math.floor(m / 60);
+  const rem = m % 60;
+  return rem ? `${h}h ${rem}m` : `${h}h`;
+}
+
+function parseUTC(iso: string): Date {
+  const hasTz = /[+-]\d{2}:?\d{2}$|Z$/i.test(iso);
+  return new Date(hasTz ? iso : iso + "Z");
+}
 
 /** ดึงข้อความ error อ่านง่าย — รองรับ no_passkey + ยกเลิก Passkey */
 function errText(e: unknown, fallback: string): string {
@@ -85,10 +102,65 @@ type CsvUploadResponse = {
   skipped_details: Array<{ email: string; reason: string }>;
 };
 
-const STATUS_TONE: Record<string, "good" | "warn" | "danger" | "default"> = {
-  active: "good",
-  pending: "warn",
-  suspended: "danger",
+type StatsResponse = {
+  subsystem: { id: string; name: string };
+  range: { days: number; from: string; to: string };
+  total_logins: number;
+  unique_users: number;
+  active_now: number;
+  decision_breakdown: Record<string, number>;
+  daily: Array<{ date: string; count: number }>;
+};
+
+type HealthPoint = {
+  at?: string | null;
+  status?: string | null;
+  latency_ms?: number | null;
+};
+
+type HealthHistoryResponse = {
+  points: HealthPoint[];
+  count: number;
+  avg_latency_ms: number | null;
+  max_latency_ms: number | null;
+  healthy_ratio: number | null;
+  interval_sec: number;
+};
+
+type ActiveSession = {
+  session_id: string;
+  user_id: string | null;
+  user_email: string | null;
+  full_name: string | null;
+  user_type: string | null;
+  ip: string | null;
+  geo_country: string | null;
+  geo_city: string | null;
+  browser: string | null;
+  os_name: string | null;
+  device_type: string | null;
+  decision: string | null;
+  login_at: string | null;
+  session_expires_at: string | null;
+  duration_sec: number;
+};
+
+type ActiveSessionsResponse = {
+  subsystem: { id: string; name: string };
+  count: number;
+  sessions: ActiveSession[];
+};
+
+type AuditItem = {
+  id: string;
+  actor_id: string | null;
+  actor_email: string | null;
+  actor_user_type: string | null;
+  actor_is_hub_admin: boolean;
+  action: string;
+  ip: string | null;
+  metadata: Record<string, unknown> | null;
+  created_at: string | null;
 };
 
 export default function DeveloperSubsystemDetailPage({
@@ -299,11 +371,74 @@ export default function DeveloperSubsystemDetailPage({
       });
   }, [id]);
 
+  // ── Insights (KPI / health / active sessions / audit) — owner-scoped ──
+  const [stats, setStats] = useState<StatsResponse | null>(null);
+  const [healthHist, setHealthHist] = useState<HealthHistoryResponse | null>(
+    null
+  );
+  const [active, setActive] = useState<ActiveSessionsResponse | null>(null);
+  const [audit, setAudit] = useState<AuditItem[] | null>(null);
+  const [auditOffset, setAuditOffset] = useState(0);
+  const [auditTotal, setAuditTotal] = useState(0);
+  const AUDIT_PAGE = 50;
+
+  const loadStats = useCallback(() => {
+    clientFetch<StatsResponse>(`/developer/subsystems/${id}/stats?days=7`)
+      .then(setStats)
+      .catch(() => setStats(null));
+  }, [id]);
+
+  const loadHealthHistory = useCallback(() => {
+    clientFetch<HealthHistoryResponse>(
+      `/developer/subsystems/${id}/health-history`
+    )
+      .then(setHealthHist)
+      .catch(() => setHealthHist(null));
+  }, [id]);
+
+  const loadActive = useCallback(() => {
+    clientFetch<ActiveSessionsResponse>(
+      `/developer/subsystems/${id}/active-sessions`
+    )
+      .then(setActive)
+      .catch(() => setActive(null));
+  }, [id]);
+
+  const loadAudit = useCallback(
+    (offset: number = 0) => {
+      clientFetch<{ items: AuditItem[]; total: number }>(
+        `/developer/subsystems/${id}/audit?skip=${offset}&limit=${AUDIT_PAGE}`
+      )
+        .then((d) => {
+          setAudit(d.items || []);
+          setAuditTotal(d.total || 0);
+          setAuditOffset(offset);
+        })
+        .catch(() => {
+          setAudit([]);
+          setAuditTotal(0);
+        });
+    },
+    [id]
+  );
+
   useEffect(() => {
     loadSubsystem();
     loadWhitelist();
     loadPendings();
-  }, [loadSubsystem, loadWhitelist, loadPendings]);
+    loadStats();
+    loadHealthHistory();
+    loadActive();
+    loadAudit(0);
+  }, [
+    loadSubsystem,
+    loadWhitelist,
+    loadPendings,
+    loadStats,
+    loadHealthHistory,
+    loadActive,
+    loadAudit,
+  ]);
 
   // Sync newRole กับ allowed_roles ของ subsystem
   useEffect(() => {
@@ -398,17 +533,14 @@ export default function DeveloperSubsystemDetailPage({
     return (
       <>
         <Topbar title="ระบบย่อย" />
-        <main className="p-8 max-w-3xl mx-auto">
-          <div className="p-4 rounded-lg bg-rose-50 border border-rose-200 text-rose-700 text-sm mb-4">
-            {error}
-          </div>
-          <Link
-            href="/developer/subsystems"
-            className="cx-back"
-          >
-            My Subsystems
-          </Link>
-        </main>
+        <div className="sc">
+          <main className="cx-document">
+            <div className="cx-msg err">{error}</div>
+            <Link href="/developer/subsystems" className="cx-back">
+              My Subsystems
+            </Link>
+          </main>
+        </div>
       </>
     );
   }
@@ -417,9 +549,9 @@ export default function DeveloperSubsystemDetailPage({
     return (
       <>
         <Topbar title="ระบบย่อย" />
-        <main className="p-8 max-w-3xl mx-auto text-ink-400 text-sm">
-          กำลังโหลด…
-        </main>
+        <div className="sc">
+          <main className="cx-document text-ink-400 text-sm">กำลังโหลด…</main>
+        </div>
       </>
     );
   }
@@ -526,56 +658,221 @@ export default function DeveloperSubsystemDetailPage({
       {verifying && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40">
           <div className="bg-white rounded-2xl px-6 py-5 shadow-xl flex items-center gap-3 text-sm text-ink-700">
-            กำลังยืนยันด้วย Passkey… ทำตามที่อุปกรณ์แจ้ง (ข้อมูลในฟอร์มยังอยู่)
+            กำลังยืนยันด้วย Passkey… ทำตามที่อุปกรณ์
           </div>
         </div>
       )}
       <Topbar title={sub.name} />
-      <main className="p-8 max-w-7xl mx-auto w-full space-y-6">
-        {/* Header */}
-        <div className="flex items-end justify-between gap-4 flex-wrap">
+      <div className="sc">
+      <section className="cx-command">
+        <div>
+          <span>
+            <span className="cx-dot">
+              <i />
+            </span>
+            developer portal
+          </span>
+          <h1>Subsystem Detail</h1>
+        </div>
+        <div className="cx-command-actions">
+          <span
+            className={`cx-hero-status${
+              sub.status === "suspended"
+                ? " danger"
+                : sub.status === "pending"
+                ? " warn"
+                : ""
+            }`}
+          >
+            {sub.status.toUpperCase()}
+          </span>
+          <button onClick={openEditModal} className="cx-hero-btn">
+            แก้ไข
+          </button>
+          <button
+            onClick={rotateSecret}
+            disabled={rotateBusy}
+            className="cx-hero-btn warn"
+            title="ขอ rotate client_secret (admin ต้อง approve)"
+          >
+            {rotateBusy ? "…" : "ขอ Rotate Secret"}
+          </button>
+        </div>
+      </section>
+
+      <main className="cx-document">
+        <Link href="/developer/subsystems" className="cx-back">
+          My Subsystems
+        </Link>
+
+        {/* ── Hero identity ── */}
+        <section className="cx-identity-hero">
           <div>
-            <Link
-              href="/developer/subsystems"
-              className="cx-back"
-            >
-              Developer Portal
-            </Link>
-            <h2 className="mt-2 text-2xl font-extrabold text-ink-900">
+            <span>subsystem</span>
+            <h2>
               {sub.name}
+              {sub.description && <small>{sub.description}</small>}
             </h2>
-            {sub.description && (
-              <p className="mt-1 text-sm text-ink-500 max-w-2xl">
-                {sub.description}
-              </p>
+            <code>client_id · {sub.client_id}</code>
+            {sub.created_at && (
+              <span className="cx-hero-dates">
+                ลงทะเบียน{" "}
+                {new Date(sub.created_at).toISOString().slice(0, 10)}
+              </span>
             )}
           </div>
-          <div className="flex flex-col items-end gap-2">
-            <Badge tone={STATUS_TONE[sub.status] || "default"}>
-              ● {sub.status.toUpperCase()}
-            </Badge>
-            <div className="flex flex-wrap gap-2 justify-end">
-              <button
-                onClick={openEditModal}
-                className="px-3 py-1.5 rounded-lg border border-ink-200 hover:bg-ink-50 text-xs font-semibold text-ink-700 transition"
-              >
-                แก้ไข
-              </button>
-              <button
-                onClick={rotateSecret}
-                disabled={rotateBusy}
-                className="px-3 py-1.5 rounded-lg border border-amber-200 hover:bg-amber-50 text-xs font-semibold text-amber-700 disabled:opacity-50 transition"
-                title="ขอ rotate client_secret (admin ต้อง approve)"
-              >
-                {rotateBusy ? "…" : "ขอ Rotate Secret"}
-              </button>
+          <div className="cx-hero-metrics">
+            <span>
+              whitelist
+              <b>{whitelist.length}</b>
+            </span>
+            <span>
+              scope
+              <b>{sub.scope.length}</b>
+            </span>
+          </div>
+        </section>
+
+        {/* ── KPI 7 วัน + Daily Logins ── */}
+        {stats && (
+          <section>
+            <div className="cx-kpis four">
+              <KpiCard
+                label="Login total"
+                sub="7 วันล่าสุด"
+                value={stats.total_logins.toLocaleString("en-US")}
+                tone="brand"
+              />
+              <KpiCard
+                label="Unique users"
+                sub="7 วันล่าสุด"
+                value={stats.unique_users.toLocaleString("en-US")}
+                tone="default"
+              />
+              <KpiCard
+                label="Active ตอนนี้"
+                value={stats.active_now.toLocaleString("en-US")}
+                tone={stats.active_now > 0 ? "good" : "default"}
+              />
+              <KpiCard
+                label="Block / would_block"
+                sub="7 วันล่าสุด"
+                value={(
+                  (stats.decision_breakdown.block || 0) +
+                  (stats.decision_breakdown.would_block || 0)
+                ).toLocaleString("en-US")}
+                tone="danger"
+              />
             </div>
-            <div className="text-[11px] text-ink-400 font-mono">
-              ลงทะเบียน{" "}
-              {new Date(sub.created_at).toISOString().slice(0, 10)}
+            {stats.daily.length > 0 &&
+              (() => {
+                const max = Math.max(...stats.daily.map((x) => x.count), 1);
+                return (
+                  <section className="cx-panel">
+                    <header>
+                      <div>
+                        <span>daily logins · 7 วัน</span>
+                        <h2>Daily Logins</h2>
+                      </div>
+                      <span className="cx-chip mono">max {max}</span>
+                    </header>
+                    <div className="cx-panel-body">
+                      <LineChart
+                        labels={stats.daily.map((d) => d.date.slice(5))}
+                        series={[
+                          {
+                            name: "Login",
+                            color: "#6366f1",
+                            values: stats.daily.map((d) => d.count),
+                          },
+                        ]}
+                        height={170}
+                        valueSuffix=" logins"
+                      />
+                    </div>
+                  </section>
+                );
+              })()}
+          </section>
+        )}
+
+        {/* ── Health — latency ย้อนหลัง (จากประวัติจริง) ── */}
+        <section className="cx-panel">
+          <header>
+            <div>
+              <span>health · ping ทุก 5 นาที</span>
+              <h2>Health & Availability</h2>
+            </div>
+            <button onClick={loadHealthHistory} className="cx-refresh">
+              refresh
+            </button>
+          </header>
+          <div className="cx-panel-body">
+            <div className="bg-white rounded-xl border border-ink-200 shadow-sm p-5 grid grid-cols-3 gap-4">
+              <div>
+                <FieldLabel>latency เฉลี่ย</FieldLabel>
+                <div className="text-2xl font-extrabold text-ink-900 tabular-nums">
+                  {healthHist?.avg_latency_ms != null
+                    ? healthHist.avg_latency_ms
+                    : "—"}
+                  <span className="ml-1 text-xs font-normal text-ink-400">
+                    ms
+                  </span>
+                </div>
+              </div>
+              <div>
+                <FieldLabel>latency สูงสุด</FieldLabel>
+                <div className="text-2xl font-extrabold text-ink-900 tabular-nums">
+                  {healthHist?.max_latency_ms != null
+                    ? healthHist.max_latency_ms
+                    : "—"}
+                  <span className="ml-1 text-xs font-normal text-ink-400">
+                    ms
+                  </span>
+                </div>
+              </div>
+              <div>
+                <FieldLabel>รอบที่ healthy</FieldLabel>
+                <div className="text-2xl font-extrabold text-emerald-600 tabular-nums">
+                  {healthHist?.healthy_ratio != null
+                    ? `${Math.round(healthHist.healthy_ratio * 1000) / 10}%`
+                    : "—"}
+                </div>
+                <div className="text-[11px] text-ink-400">
+                  จาก {healthHist?.count ?? 0} รอบที่บันทึกไว้
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-3 bg-white border border-ink-200 p-4">
+              <div className="text-[10px] font-mono font-semibold text-ink-500 uppercase tracking-wider mb-2">
+                Response time · min–max band
+              </div>
+              {healthHist && healthHist.points.length > 0 ? (
+                <LatencyBandChart
+                  points={healthHist.points.map((p) => ({
+                    at: p.at ?? null,
+                    latency_ms:
+                      typeof p.latency_ms === "number" ? p.latency_ms : null,
+                  }))}
+                  height={200}
+                  formatLabel={(at) =>
+                    parseUTC(at).toLocaleTimeString("th-TH", {
+                      timeZone: "Asia/Bangkok",
+                      hour: "2-digit",
+                      minute: "2-digit",
+                      hour12: false,
+                    })
+                  }
+                />
+              ) : (
+                <div className="text-sm text-ink-400 text-center py-8">
+                  ยังไม่มีประวัติ — health loop บันทึกทุก 5 นาที
+                </div>
+              )}
             </div>
           </div>
-        </div>
+        </section>
 
         {/* Pending change requests banner */}
         {pendings.length > 0 && (
@@ -603,25 +900,17 @@ export default function DeveloperSubsystemDetailPage({
           </div>
         )}
 
-        {msg && (
-          <div
-            className={
-              "p-3 rounded-lg text-sm " +
-              (msg.kind === "ok"
-                ? "bg-emerald-50 border border-emerald-200 text-emerald-700"
-                : "bg-rose-50 border border-rose-200 text-rose-700")
-            }
-          >
-            {msg.text}
-          </div>
-        )}
+        {msg && <div className={`cx-msg ${msg.kind}`}>{msg.text}</div>}
 
         {/* Identity card */}
-        <section>
-          <h3 className="text-xs font-bold text-ink-500 uppercase tracking-wider mb-3">
-            ข้อมูล OAuth Client
-          </h3>
-          <div className="bg-white rounded-xl border border-ink-200 shadow-sm p-6 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-5">
+        <section className="cx-panel">
+          <header>
+            <div>
+              <span>oauth client</span>
+              <h2>OAuth Client</h2>
+            </div>
+          </header>
+          <div className="cx-panel-body grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-5">
             <div>
               <FieldLabel>Client ID</FieldLabel>
               <div className="font-mono text-[13px] text-ink-900 break-all bg-ink-50 px-3 py-2 rounded border border-ink-100">
@@ -648,14 +937,38 @@ export default function DeveloperSubsystemDetailPage({
                 ))}
               </div>
             </div>
+
+            <div className="md:col-span-2">
+              <FieldLabel>Redirect URIs</FieldLabel>
+              {sub.redirect_uris && sub.redirect_uris.length > 0 ? (
+                <ul className="space-y-1.5">
+                  {sub.redirect_uris.map((u) => (
+                    <li
+                      key={u}
+                      className="font-mono text-[12px] text-ink-700 break-all"
+                    >
+                      {u}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <div className="text-sm text-ink-400">
+                  ยังไม่ได้ลงทะเบียน redirect URI
+                </div>
+              )}
+            </div>
           </div>
         </section>
 
         {/* Whitelist */}
-        <section>
-          <h3 className="text-xs font-bold text-ink-500 uppercase tracking-wider mb-3">
-            Whitelist · ผู้ใช้ที่อนุญาตให้เข้า subsystem นี้
-          </h3>
+        <section className="cx-panel">
+          <header>
+            <div>
+              <span>access whitelist</span>
+              <h2>Whitelist</h2>
+            </div>
+          </header>
+          <div className="cx-panel-body">
 
           {whitelistError && (
             <div className="mb-3 p-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-xs">
@@ -666,50 +979,52 @@ export default function DeveloperSubsystemDetailPage({
           {/* Add user form */}
           <form
             onSubmit={addUser}
-            className="mb-3 bg-white rounded-xl border border-ink-200 shadow-sm p-4 flex flex-wrap items-end gap-3"
+            className="mb-3 rounded-xl border border-ink-200 bg-white shadow-sm p-4"
           >
-            <div className="flex-1 min-w-[220px]">
-              <FieldLabel>เพิ่ม user (อีเมล)</FieldLabel>
-              <input
-                type="email"
-                placeholder="user@uni.ac.th"
-                value={newEmail}
-                onChange={(e) => setNewEmail(e.target.value)}
-                required
-                className="w-full px-3 py-2 rounded-lg border border-ink-200 focus:outline-none focus:border-brand-500 text-sm"
-              />
-            </div>
-            <div>
-              <FieldLabel>Role in sub</FieldLabel>
-              <select
-                value={newRole}
-                onChange={(e) => setNewRole(e.target.value)}
-                className="px-3 py-2 rounded-lg border border-ink-200 focus:outline-none focus:border-brand-500 text-sm"
-              >
-                {(sub.allowed_roles && sub.allowed_roles.length > 0
-                  ? sub.allowed_roles
-                  : ["user"]
-                ).map((r) => (
-                  <option key={r} value={r}>
-                    {r}
-                  </option>
-                ))}
-              </select>
-              <div className="text-[10px] text-ink-400 mt-1">
-                ระบบรับ: {(sub.allowed_roles || ["user"]).join(", ")}
+            <div className="flex flex-wrap items-end gap-3">
+              <div className="flex-1 min-w-[220px]">
+                <FieldLabel>เพิ่ม user (อีเมล)</FieldLabel>
+                <input
+                  type="email"
+                  placeholder="user@uni.ac.th"
+                  value={newEmail}
+                  onChange={(e) => setNewEmail(e.target.value)}
+                  required
+                  className="h-10 w-full px-3 rounded-lg border border-ink-200 focus:outline-none focus:border-brand-500 text-sm"
+                />
               </div>
+              <div className="w-40">
+                <FieldLabel>Role in sub</FieldLabel>
+                <select
+                  value={newRole}
+                  onChange={(e) => setNewRole(e.target.value)}
+                  className="h-10 w-full px-3 rounded-lg border border-ink-200 bg-white focus:outline-none focus:border-brand-500 text-sm"
+                >
+                  {(sub.allowed_roles && sub.allowed_roles.length > 0
+                    ? sub.allowed_roles
+                    : ["user"]
+                  ).map((r) => (
+                    <option key={r} value={r}>
+                      {r}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <button
+                type="submit"
+                disabled={busyAdd}
+                className="h-10 px-5 rounded-lg bg-brand-600 hover:bg-brand-700 text-white text-sm font-semibold disabled:opacity-50 transition"
+              >
+                {busyAdd ? "กำลังเพิ่ม…" : "+ เพิ่ม"}
+              </button>
             </div>
-            <button
-              type="submit"
-              disabled={busyAdd}
-              className="px-4 py-2 rounded-lg bg-brand-600 hover:bg-brand-700 text-white text-sm font-semibold disabled:opacity-50 transition"
-            >
-              {busyAdd ? "กำลังเพิ่ม…" : "+ เพิ่ม"}
-            </button>
+            <div className="mt-2 text-[10px] text-ink-400">
+              ระบบรับ role: {(sub.allowed_roles || ["user"]).join(", ")}
+            </div>
           </form>
 
           {/* CSV upload */}
-          <div className="mb-3 bg-white rounded-xl border border-dashed border-ink-300 p-4 flex flex-wrap items-center gap-3">
+          <div className="mb-3 rounded-xl border border-ink-200 bg-ink-50/60 p-4 flex flex-wrap items-center gap-3">
             <div className="flex-1 min-w-[200px]">
               <div className="text-xs font-bold text-ink-700">
                 อัปโหลด CSV (bulk add)
@@ -728,7 +1043,7 @@ export default function DeveloperSubsystemDetailPage({
                 if (f) uploadCsv(f);
               }}
               disabled={csvUploading}
-              className="text-xs"
+              className="text-xs file:mr-3 file:rounded-lg file:border-0 file:bg-ink-200 file:px-3 file:py-1.5 file:text-xs file:font-semibold file:text-ink-700 hover:file:bg-ink-300"
             />
             {csvUploading && (
               <span className="text-xs text-ink-500 animate-pulse">
@@ -767,12 +1082,224 @@ export default function DeveloperSubsystemDetailPage({
             }
             emptyMessage="ยังไม่มี user ใน whitelist"
           />
+          </div>
+        </section>
+
+        {/* ── Active Sessions (read-only) ── */}
+        <section className="cx-panel cx-active-panel">
+          <header>
+            <div>
+              <span>active sessions · realtime</span>
+              <h2>
+                Active Sessions{" "}
+                {active && (
+                  <span className="text-sky-600 font-extrabold tabular-nums">
+                    ({active.count})
+                  </span>
+                )}
+              </h2>
+            </div>
+            <button onClick={loadActive} className="cx-refresh" title="Refresh">
+              refresh
+            </button>
+          </header>
+          <div className="overflow-hidden">
+            {active === null ? (
+              <div className="p-6 text-center text-ink-400 text-sm">
+                กำลังโหลด…
+              </div>
+            ) : active.sessions.length === 0 ? (
+              <div className="p-6 text-center text-ink-400 text-sm">
+                ไม่มี session ที่ยังใช้งานได้ตอนนี้
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-ink-50">
+                    <tr className="text-left text-[11px] font-bold text-ink-500 uppercase tracking-wider">
+                      <th className="px-4 py-3">ผู้ใช้</th>
+                      <th className="px-4 py-3">Type</th>
+                      <th className="px-4 py-3">Device</th>
+                      <th className="px-4 py-3">IP / Country</th>
+                      <th className="px-4 py-3">Login</th>
+                      <th className="px-4 py-3">ระยะเวลา</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-ink-100">
+                    {active.sessions.map((s) => (
+                      <tr key={s.session_id} className="hover:bg-ink-50/50">
+                        <td className="px-4 py-3">
+                          <div className="font-semibold text-ink-900">
+                            {s.full_name || s.user_email || "—"}
+                          </div>
+                          <div className="text-[11px] text-ink-500 font-mono">
+                            {s.user_email}
+                          </div>
+                        </td>
+                        <td className="px-4 py-3">
+                          <Badge
+                            tone={s.user_type === "admin" ? "danger" : "brand"}
+                          >
+                            {(s.user_type || "—").toUpperCase()}
+                          </Badge>
+                        </td>
+                        <td className="px-4 py-3 text-xs text-ink-700">
+                          {[s.browser, s.os_name].filter(Boolean).join(" · ") ||
+                            "—"}
+                        </td>
+                        <td className="px-4 py-3 font-mono text-[11px] text-ink-700">
+                          <div>{s.ip || "—"}</div>
+                          {s.geo_country && (
+                            <div className="text-ink-400 uppercase">
+                              {s.geo_country}
+                              {s.geo_city ? ` · ${s.geo_city}` : ""}
+                            </div>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 font-mono text-[11px] text-ink-500">
+                          {s.login_at
+                            ? parseUTC(s.login_at).toLocaleString("th-TH", {
+                                timeZone: "Asia/Bangkok",
+                                hour: "2-digit",
+                                minute: "2-digit",
+                                second: "2-digit",
+                                hour12: false,
+                              })
+                            : "—"}
+                        </td>
+                        <td className="px-4 py-3 text-xs tabular-nums">
+                          <div className="font-semibold text-sky-700">
+                            {formatDuration(s.duration_sec)}
+                          </div>
+                          {s.session_expires_at && (
+                            <div
+                              className="text-[10px] text-ink-400"
+                              title="session น่าจะหมดอายุประมาณนี้ (ตาม cookie subsystem)"
+                            >
+                              valid ถึง ~
+                              {parseUTC(s.session_expires_at).toLocaleTimeString(
+                                "th-TH",
+                                {
+                                  timeZone: "Asia/Bangkok",
+                                  hour: "2-digit",
+                                  minute: "2-digit",
+                                  hour12: false,
+                                }
+                              )}
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </section>
+
+        {/* ── Audit Trail ── */}
+        <section className="cx-panel">
+          <header>
+            <div>
+              <span>
+                audit trail · {auditTotal.toLocaleString("en-US")} รายการ
+              </span>
+              <h2>Audit Trail</h2>
+            </div>
+            {auditTotal > AUDIT_PAGE && (
+              <div className="flex items-center gap-2 text-xs">
+                <button
+                  onClick={() =>
+                    loadAudit(Math.max(0, auditOffset - AUDIT_PAGE))
+                  }
+                  disabled={auditOffset === 0}
+                  className="px-2 py-1 rounded border border-ink-200 hover:bg-ink-50 disabled:opacity-40"
+                >
+                  ← ก่อนหน้า
+                </button>
+                <span className="text-ink-500 font-mono">
+                  {auditOffset + 1}–
+                  {Math.min(auditOffset + AUDIT_PAGE, auditTotal)} / {auditTotal}
+                </span>
+                <button
+                  onClick={() => loadAudit(auditOffset + AUDIT_PAGE)}
+                  disabled={auditOffset + AUDIT_PAGE >= auditTotal}
+                  className="px-2 py-1 rounded border border-ink-200 hover:bg-ink-50 disabled:opacity-40"
+                >
+                  ถัดไป →
+                </button>
+              </div>
+            )}
+          </header>
+          <div className="overflow-hidden">
+            {audit === null ? (
+              <div className="p-6 text-center text-ink-400 text-sm">
+                กำลังโหลด…
+              </div>
+            ) : audit.length === 0 ? (
+              <div className="p-6 text-center text-ink-400 text-sm">
+                ไม่มี activity
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-ink-50">
+                    <tr className="text-left text-[11px] font-bold text-ink-500 uppercase tracking-wider">
+                      <th className="px-4 py-3">เวลา</th>
+                      <th className="px-4 py-3">ผู้กระทำ</th>
+                      <th className="px-4 py-3">การกระทำ</th>
+                      <th className="px-4 py-3">IP</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-ink-100">
+                    {audit.map((a) => (
+                      <tr key={a.id} className="hover:bg-ink-50/50">
+                        <td className="px-4 py-3 font-mono text-[11px] whitespace-nowrap">
+                          {a.created_at
+                            ? parseUTC(a.created_at).toLocaleString("th-TH", {
+                                timeZone: "Asia/Bangkok",
+                                year: "numeric",
+                                month: "2-digit",
+                                day: "2-digit",
+                                hour: "2-digit",
+                                minute: "2-digit",
+                                second: "2-digit",
+                                hour12: false,
+                              })
+                            : "—"}
+                        </td>
+                        <td className="px-4 py-3">
+                          {a.actor_email ? (
+                            <span className="font-mono text-xs">
+                              {a.actor_email}
+                            </span>
+                          ) : (
+                            <span className="text-ink-400 italic text-xs">
+                              system
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3">
+                          <Badge tone="default">{a.action}</Badge>
+                        </td>
+                        <td className="px-4 py-3 font-mono text-xs">
+                          {a.ip || "—"}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
         </section>
 
         <div className="pt-4 text-center text-[11px] text-ink-400 font-mono">
           subsystem_id: {sub.id}
         </div>
       </main>
+      </div>
 
       {/* Edit modal */}
       {editOpen && (
@@ -906,5 +1433,33 @@ function FieldLabel({ children }: { children: React.ReactNode }) {
     <div className="text-[11px] font-bold uppercase tracking-wider text-ink-500 mb-1.5">
       {children}
     </div>
+  );
+}
+
+function KpiCard({
+  label,
+  value,
+  tone = "default",
+  sub,
+}: {
+  label: string;
+  value: string;
+  tone?: "default" | "brand" | "good" | "danger";
+  sub?: string;
+}) {
+  const toneClass =
+    tone === "good"
+      ? "signal"
+      : tone === "danger"
+      ? "danger"
+      : tone === "brand"
+      ? "info"
+      : "";
+  return (
+    <article className={`cx-kpi ${toneClass}`}>
+      <span>{label}</span>
+      <strong className="mono">{value}</strong>
+      {sub && <small className="mono">{sub}</small>}
+    </article>
   );
 }

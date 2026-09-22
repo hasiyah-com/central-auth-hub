@@ -12,7 +12,7 @@ import io
 from datetime import datetime, timedelta
 from urllib.parse import urlparse
 
-from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
 from pydantic import BaseModel, EmailStr, field_validator
 from sqlalchemy.orm import Session
 
@@ -657,6 +657,76 @@ def get_whitelist(
             for al, u in rows
         ],
     }
+
+
+# ============ 4.5 Subsystem insights (owner-scoped, read-only) ============
+# ให้หน้า developer portal detail แสดง KPI / health / active-session / audit
+# ชุดเดียวกับหน้า admin (/admin/subsystems/{id}/...) แต่ scope เฉพาะ subsystem ที่
+# ตัวเองเป็นเจ้าของ (`_get_owned_subsystem` — admin override ได้, มี IDOR audit).
+# logic ใช้ร่วมกับ admin ผ่าน app.services.subsystem_insights (กันข้อมูลไม่ตรงกัน).
+
+
+@router.get("/subsystems/{subsystem_id}/stats")
+def my_subsystem_stats(
+    subsystem_id: str,
+    request: Request,
+    days: int = Query(7, ge=1, le=90, description="กี่วันย้อนหลัง"),
+    user: User = Depends(require_developer),
+    db: Session = Depends(get_db),
+):
+    """KPI 7 วัน + daily logins ของ subsystem ที่ตัวเองเป็นเจ้าของ."""
+    from app.services import subsystem_insights
+
+    subsystem = _get_owned_subsystem(subsystem_id, user, db, request)
+    return subsystem_insights.stats_payload(db, subsystem, days=days)
+
+
+@router.get("/subsystems/{subsystem_id}/health-history")
+def my_subsystem_health_history(
+    subsystem_id: str,
+    request: Request,
+    limit: int = Query(288, ge=1, le=288, description="จำนวนจุดล่าสุด (5 นาที/จุด)"),
+    user: User = Depends(require_developer),
+    db: Session = Depends(get_db),
+):
+    """ประวัติ health (latency) ของ subsystem ที่ตัวเองเป็นเจ้าของ."""
+    from app.services import subsystem_insights
+
+    subsystem = _get_owned_subsystem(subsystem_id, user, db, request)
+    return subsystem_insights.health_history_payload(subsystem, limit=limit)
+
+
+@router.get("/subsystems/{subsystem_id}/active-sessions")
+def my_subsystem_active_sessions(
+    subsystem_id: str,
+    request: Request,
+    user: User = Depends(require_developer),
+    db: Session = Depends(get_db),
+):
+    """User ที่ session ยัง valid ใน subsystem (read-only — dev สั่ง revoke ไม่ได้)."""
+    from app.services import subsystem_insights
+
+    subsystem = _get_owned_subsystem(subsystem_id, user, db, request)
+    return subsystem_insights.active_sessions_payload(db, subsystem)
+
+
+@router.get("/subsystems/{subsystem_id}/audit")
+def my_subsystem_audit(
+    subsystem_id: str,
+    request: Request,
+    action: str | None = Query(None, description="filter by action"),
+    skip: int = 0,
+    limit: int = Query(50, ge=1, le=200),
+    user: User = Depends(require_developer),
+    db: Session = Depends(get_db),
+):
+    """Audit trail เฉพาะ subsystem ที่ตัวเองเป็นเจ้าของ — paginated."""
+    from app.services import subsystem_insights
+
+    subsystem = _get_owned_subsystem(subsystem_id, user, db, request)
+    return subsystem_insights.audit_payload(
+        db, subsystem, action=action, skip=skip, limit=limit
+    )
 
 
 # ============ 5. เพิ่ม user ทีละคน (หลังลงทะเบียนแล้ว) ============
