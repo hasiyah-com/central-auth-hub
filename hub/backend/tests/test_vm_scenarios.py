@@ -212,3 +212,24 @@ async def test_runner_goes_through_the_real_login_path_and_sends_nothing(monkeyp
             db.query(User).filter(User.id == uid).delete()
             db.commit()
         db.close()
+
+
+@pytest.mark.asyncio
+async def test_reset_removes_only_the_vm_test_accounts():
+    """สาธิตซ้ำต้องได้ผลเดิม — ล้างเฉพาะบัญชี vm-*@example.test ห้ามแตะผู้ใช้อื่น."""
+    from app.database import SessionLocal
+    from app.models import LoginSession, User
+    from scripts import run_vm_scenarios as RUN
+
+    db = SessionLocal()
+    try:
+        before_others = db.query(User).filter(~User.email.like("vm-%")).count()
+        u = RUN.ensure_user(db, "vm-student-01")
+        db.add(LoginSession(user_id=u.id, ip="10.99.0.1", decision="allow"))
+        db.commit()
+        out = RUN.reset_test_users(db)
+        assert out["users"] >= 1 and out["sessions"] >= 1
+        assert db.query(User).filter(User.email.like("vm-%")).count() == 0
+        assert db.query(User).filter(~User.email.like("vm-%")).count() == before_others
+    finally:
+        db.close()

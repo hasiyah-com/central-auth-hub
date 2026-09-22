@@ -1,8 +1,8 @@
 {
-  "frozen_at": "2026-09-22T18:58:28+00:00",
-  "git_commit": "eb69c39b75de7b8e5ffcd2b65442b29ffddd715f",
+  "frozen_at": "2026-09-22T19:03:27+00:00",
+  "git_commit": "c2d59f236a81c4a69d427b8b878e575fb14a9a4c",
   "git_branch": "feature/hybrid-accuracy-validation",
-  "reason": "ย้าย ConditionalParams ไป app/security/conditional_params.py (โมดูลใบ) — validator ของ Settings ต้องตรวจค่าตอน start โดยไม่ import risk_fusion ซึ่งวนกลับมาหา config ทำให้แอป start ไม่ขึ้นเมื่อตั้ง L3_CONDITIONAL_PARAMS จริง (เจอตอนสาธิตใน VM) · risk_fusion re-export ชื่อเดิม ไม่มีการเปลี่ยนตรรกะการให้คะแนนหรือการตัดสิน · เพิ่มไฟล์ใหม่เข้า FROZEN_FILES · เทสใหม่รัน process จริงกันการกลับมาเป็นซ้ำ (test_app_starts_with_conditional_params_set_in_the_environment)",
+  "reason": "risk_engine คำนวณ conditional_shadow ในเส้นทาง policy denied ด้วย (zone=policy_denied) — เดิมหายทั้งแถวจึงแยกไม่ออกว่า 'ไม่มีผล' หรือ 'ไม่ได้วัด' (เจอตอนสาธิต VM-A06) · ผลจำลองเท่านั้น ไม่เปลี่ยนการตัดสินจริง · เทส test_conditional_shadow_exists_even_when_policy_denies",
   "scope": "เฉพาะตรรกะการให้คะแนนและการตัดสิน (app/security/*) — generator และ harness ของการทดลอง **ไม่** ถูก freeze เพราะต้องแก้เพื่อเพิ่มโปรไฟล์ผู้ใช้",
   "unfreeze_when": "เหมือนเดิม: ตัดสินเกณฑ์/น้ำหนักจากข้อมูล production replay หรือ Shadow Pilot",
   "hash_method": "sha256 ของไฟล์หลัง normalize CRLF -> LF",
@@ -17,7 +17,7 @@
     "app/security/conditional_params.py": "a10c834193c06712612709301254611a17691ad39a2285354b494a7b1b71a1b7",
     "app/security/risk_aggregator.py": "51c2a61257481a07b6818ad5be6eb90e6aaa0e5fd036f91e6aa67ca9fd957b22",
     "app/security/iforest_scorer.py": "40f8f959c0f1e6741e209db77e9224e7278eea99c6fc603da8d3966c8ed6f398",
-    "app/security/risk_engine.py": "a5a9633b48f7a374d5eceba0de2483c4cb1b9f93f42f68a5ce391e2eb5c2b4b9"
+    "app/security/risk_engine.py": "d4d79d4ba6bb53482b2565b1bb8b16c2e4239424aa4690bf33ed05760ea42250"
   },
   "history": [
     {
@@ -106,6 +106,20 @@
         "app/security/risk_fusion.py": {
           "old": "67c64fe68d6c88bf8df33a8b3862425cd1a236f35f8499507d578b09da94a0f0",
           "new": "dda653c117224d2083883b4dfbf9421f83df4237d7d51232664a2504c1463756"
+        }
+      }
+    },
+    {
+      "frozen_at": "2026-09-22T19:03:27+00:00",
+      "git_commit": "c2d59f236a81c4a69d427b8b878e575fb14a9a4c",
+      "reason": "risk_engine คำนวณ conditional_shadow ในเส้นทาง policy denied ด้วย (zone=policy_denied) — เดิมหายทั้งแถวจึงแยกไม่ออกว่า 'ไม่มีผล' หรือ 'ไม่ได้วัด' (เจอตอนสาธิต VM-A06) · ผลจำลองเท่านั้น ไม่เปลี่ยนการตัดสินจริง · เทส test_conditional_shadow_exists_even_when_policy_denies",
+      "files_changed": [
+        "app/security/risk_engine.py"
+      ],
+      "hash_changes": {
+        "app/security/risk_engine.py": {
+          "old": "a5a9633b48f7a374d5eceba0de2483c4cb1b9f93f42f68a5ce391e2eb5c2b4b9",
+          "new": "d4d79d4ba6bb53482b2565b1bb8b16c2e4239424aa4690bf33ed05760ea42250"
         }
       }
     }

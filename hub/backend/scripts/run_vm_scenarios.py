@@ -147,10 +147,32 @@ async def run_event(db, scen: VS.Scenario, ev: VS.Event, n: int) -> dict:
     return _summary(scen, ev, sess)
 
 
-async def run(out_path: str | None) -> int:
+def reset_test_users(db) -> dict:
+    """ลบ session และบัญชีทดสอบ `vm-*@example.test` — สาธิตซ้ำแล้วได้ผลเดิม.
+
+    feature หลายตัวอิงประวัติของผู้ใช้ (login_count_24h, log_minutes_since_last_login, is_new_device)
+    รันสองรอบติดโดยไม่ล้างจึงได้คนละผล — เจอจริงตอนสาธิตรอบแรก 2026-09-23
+    แตะเฉพาะบัญชีทดสอบที่สคริปต์นี้สร้างเองเท่านั้น
+    """
+    from app.models import LoginSession
+
+    users = db.query(User).filter(User.email.like("vm-%@" + VS.TEST_DOMAIN)).all()
+    n_sessions = 0
+    for u in users:
+        n_sessions += (
+            db.query(LoginSession).filter(LoginSession.user_id == u.id).delete()
+        )
+        db.delete(u)
+    db.commit()
+    return {"users": len(users), "sessions": n_sessions}
+
+
+async def run(out_path: str | None, reset: bool = False) -> int:
     assert_local_stack()
     catalog = VS.load_catalog()
     db = SessionLocal()
+    if reset:
+        print(f"ล้างข้อมูลบัญชีทดสอบก่อนเริ่ม: {reset_test_users(db)}", flush=True)
     results = []
     try:
         n = 0
@@ -186,8 +208,11 @@ async def run(out_path: str | None) -> int:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", default=None)
+    ap.add_argument(
+        "--reset", action="store_true", help="ล้าง session/บัญชีทดสอบก่อน เพื่อให้ผลทำซ้ำได้"
+    )
     args = ap.parse_args()
-    return asyncio.run(run(args.out))
+    return asyncio.run(run(args.out, reset=args.reset))
 
 
 if __name__ == "__main__":

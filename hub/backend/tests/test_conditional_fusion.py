@@ -351,3 +351,39 @@ def test_ambiguous_high_matches_the_production_challenge_default():
 
     assert AMBIGUOUS_HIGH == RF.DEFAULT_THRESHOLDS["challenge"]
     assert RF.AMBIGUOUS_HIGH is AMBIGUOUS_HIGH
+
+
+@pytest.mark.asyncio
+async def test_conditional_shadow_exists_even_when_policy_denies(monkeypatch):
+    """เจอตอนสาธิต VM-A06: policy ปฏิเสธ -> engine คืนค่าก่อน conditional จึงหายไปทั้งแถว.
+
+    ต้องมีครบทุก login ไม่งั้นข้อมูล shadow อ่านไม่ออกว่า 'ไม่มีผล' หรือ 'ไม่ได้วัด' (บทเรียน B61)
+    """
+    from app.config import settings
+    from app.security import risk_engine
+    from app.security.policy_gate import PolicyOutcome
+    from app.security.rule_engine import FEAT
+    from app.services import l3_sequence_client as CLI
+
+    async def fake_l3(user_id, features, residual, access_decision="allow"):
+        return _unified()
+
+    monkeypatch.setattr(CLI, "evaluate_l3", fake_l3)
+    monkeypatch.setattr(risk_engine, "get_user_profile", lambda db, uid: None)
+    monkeypatch.setattr(settings, "l3_conditional_params", P.to_json())
+    monkeypatch.setattr(settings, "l3_mode", "shadow_hybrid")
+    monkeypatch.setattr(
+        risk_engine,
+        "evaluate_policy",
+        lambda *a, **k: PolicyOutcome(
+            denied=True, reasons=["abuse_lockout"], policy="abuse"
+        ),
+    )
+    v = [0.0] * 23
+    v[FEAT["permission_change_age"]] = 365.0
+    out = await risk_engine.evaluate_login_risk(
+        v, "u1", ip=None, geo_country=None, db=None, subsystem_id=None
+    )
+    cond = out["breakdown"]["conditional_shadow"]
+    assert cond["zone"] == "policy_denied"
+    assert cond["decision"] == out["breakdown"]["baseline_shadow"]["decision"]

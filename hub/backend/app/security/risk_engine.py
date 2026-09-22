@@ -70,6 +70,11 @@ def _hybrid_enabled() -> bool:
     return bool(getattr(settings, "hybrid_shadow_enabled", True))
 
 
+def _conditional_params() -> ConditionalParams:
+    """แปลงค่า config ที่ตรวจแล้วตอน start — เรียกที่เดียวเพื่อไม่ให้สองเส้นทางอ่านคนละแบบ."""
+    return ConditionalParams.from_json(settings.l3_conditional_params)
+
+
 def _shadow_result(decision) -> dict:
     return {
         "final_risk": decision.total_score,
@@ -112,6 +117,16 @@ async def evaluate_login_risk(
         decision = fuse(policy, [], shadow_mode=shadow_mode)
         denied = _shadow_result(decision)
         enabled = _hybrid_enabled()
+        # conditional ต้องมีครบทุก login — ไม่งั้นแยกไม่ออกว่า "ไม่มีผล" หรือ "ไม่ได้วัด"
+        denied_conditional = (
+            {
+                **denied,
+                "zone": "policy_denied",
+                "params": _conditional_params().to_dict(),
+            }
+            if settings.l3_conditional_params and enabled
+            else None
+        )
         return _result(
             decision,
             l3=None,
@@ -121,6 +136,7 @@ async def evaluate_login_risk(
             hybrid=denied if enabled else None,
             hybrid_enabled=enabled,
             latency_total_ms=int((perf_counter() - started) * 1000),
+            conditional=denied_conditional,
         )
 
     # ── 1. L1 Rule evidence ──
@@ -218,7 +234,7 @@ async def evaluate_login_risk(
         and hybrid_enabled
         and mode in _L3_IN_HYBRID_SHADOW
     ):
-        params = ConditionalParams.from_json(settings.l3_conditional_params)
+        params = _conditional_params()
         cond_raw = fuse_conditional(policy, [*l1_l2, anomaly_live], params=params, **kw)
         conditional_shadow = {
             **_shadow_result(cond_raw),
