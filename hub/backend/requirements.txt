@@ -67,3 +67,5 @@ pytest==8.3.3
 pytest-asyncio==0.24.0
 # soft-webauthn — software authenticator สำหรับ full WebAuthn ceremony tests (Phase 6)
 soft-webauthn==0.1.4
+# PyYAML — โหลด catalog สถานการณ์ทดสอบใน VM (scripts/vm_scenarios.py) · เดิมมีมาแบบ transitive
+PyYAML==6.0.3
