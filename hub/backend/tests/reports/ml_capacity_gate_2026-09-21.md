@@ -629,7 +629,48 @@ cache โมเดลแยกต่อ process: ที่ 4 worker ผู้ใ
 **Gate นี้วัดความเร็ว ไม่ได้วัดความสม่ำเสมอ** — ต้องแก้ด้วย cache โมเดลร่วม (งานถัดไป) ก่อนเปิด Shadow Pilot
 เพราะข้อมูล shadow จะปนระหว่าง "L3 ดูแล้ว" กับ "L3 ยังไม่พร้อม"
 
-## 20. รันซ้ำ
+## 20. แบ่ง worker ตามผู้ใช้ + บันทึก abstain_reason — เขียนก่อนวัด (2026-09-22)
+
+ส่วนนี้ commit **ก่อน**วัด · ผลจะเพิ่มใน §21 โดยไม่แก้ส่วนนี้
+
+### 20.1 สิ่งที่เปลี่ยน (ผู้ใช้เลือก 2026-09-22)
+
+- **ml-service** `app.serve --shard-base-port 9100`: worker ช่อง i ฟังพอร์ตเฉพาะ 9100+i เพิ่มจากพอร์ตร่วม
+  9000 · พอร์ตเฉพาะไม่ใช้ SO_REUSEPORT (bind ซ้ำไม่ได้ — ตรวจในคอนเทนเนอร์แล้ว) · ช่องเดิมได้พอร์ตเดิมเมื่อ
+  worker ถูกเปิดใหม่ · ตรวจแล้ว: 9100–9103 → pid เดียวต่อพอร์ต 4 ตัวไม่ซ้ำกัน
+- **hub** `L3_SHARD_URLS` + `l3_sequence_client.l3_base_url`: ผู้ใช้ไป worker จาก sha256(user_id) mod n
+  (ไม่ใช้ `hash()` ของ Python ที่สุ่มต่อ process) · ไม่ตั้ง = แบบเดิม · URL ผิดรูป/ซ้ำ = ไม่ start ·
+  shard ล่ม = L3 quiet พร้อม `l3_unreachable` (login ไม่ล้ม) · เทส `tests/test_l3_sharding.py` (16)
+- **risk_engine** `_l3_summary` บันทึก `abstain_reason` ลง `risk_breakdown.l3` · ข้อมูลเท่านั้น ไม่เปลี่ยน
+  การตัดสินจริงหรือผลจำลอง · re-freeze พร้อมประวัติ (อนุมัติ 2026-09-22) · เทส
+  `tests/test_l3_abstain_reason_recorded.py` (3)
+- gate ของ hub (worktree ทั้ง hub และ ml-service, ml-service-test worker เดียว): 1475 passed, 0 failed
+
+### 20.2 เกณฑ์ใหม่ C3 — ความสม่ำเสมอต่อผู้ใช้
+
+วัดในช่วงเย็นแบบ open-loop (§15): **จำนวนคำตอบ `model_warming` ที่มาถึงหลังคะแนนจริงครั้งแรกของผู้ใช้
+คนนั้นทำเสร็จแล้ว** (`consistency_violations`) · request ที่มาก่อนคะแนนแรกเสร็จไม่นับ
+
+### 20.3 การทดลอง
+
+- การตั้งค่า: `app.serve` 4 worker + `--shard-base-port 9100` · ตัววัดส่งงานด้วย `shard_index` ตัวเดียวกับ
+  hub · ค่าเริ่มต้นของ ml-service (SHAP ≥ 0.50, งบรอ fit 50 ms) · probe คะแนนสูง 33% ·
+  `CAP_COLD_OPEN_LOOP=1` · **10 ครั้ง**
+- **ข้อมูลเทียบ (ไม่ใช้ตัดสิน):** แบบเดิมไม่แบ่ง worker 3 ครั้ง — เพื่อแสดงว่า C3 วัดปัญหาที่มีอยู่จริง
+
+### 20.4 เกณฑ์ผ่าน (ทุกข้อ)
+
+- **C3:** `consistency_violations == 0` **ทุกครั้ง** (10/10)
+- **P2 แบบ shard:** แต่ละ process fit แต่ละคน ≤ 1 ครั้ง · ผลรวม fit ของผู้ใช้ชุด cap หลังช่วงเย็น = 20
+  (fit ครั้งเดียวทั้งระบบ) · ไม่มี fit เพิ่มช่วง steady · เห็นครบ 4 worker
+- **C1, C2, P1 v2, P3, P4:** กฎเดียวกับ §13/§15/§17 (C1 ≥ 9/10 และ median p95 ≤ 225 · C2 ≥ 9/10 ·
+  P1 v2 ทุกระดับ · P3/P4 ทุกครั้ง)
+- **ข้อจำกัดที่รู้ก่อนวัด:** ผู้ใช้ชุด cap มี 20 คน แบ่ง 4 worker ด้วย hash อาจไม่เท่ากัน (เช่น 7/5/4/4) ·
+  งานของ c=20 จะเอียงไปทาง worker ที่ได้ผู้ใช้มากกว่า · ถ้า P1 ไม่ผ่านจะรายงานพร้อมสัดส่วนงาน
+  (`load_share`) ตามจริง **ไม่เปลี่ยนเกณฑ์และไม่เพิ่มผู้ใช้หลังเห็นผล**
+- ข้อมูลประกอบ: สัดส่วน `model_warming` ช่วงเย็น, เวลาจนต่ำกว่า 5%, fit รวมของผู้ใช้ชุด cold
+
+## 21. รันซ้ำ
 
 ```bash
 bash scripts/test/ml_capacity_gate.sh            # 1 2 4
@@ -641,6 +682,7 @@ CAP_SERVER=reuseport CAP_POINT_SHAP_MIN_SCORE=0 CAP_HIGH_SCORE_SHARE=0.33 bash s
 CAP_SERVER=reuseport CAP_HIGH_SCORE_SHARE=0.33 CAP_OPEN_LOOP_RATES=10,30,60,120 bash scripts/test/ml_capacity_gate.sh 4   # open-loop
 (cd hub/backend && python -m scripts.ml_capacity_compare <dir A> <dir B>)   # เทียบ v2
 CAP_SERVER=reuseport CAP_HIGH_SCORE_SHARE=0.33 CAP_COLD_OPEN_LOOP=1 bash scripts/test/ml_capacity_gate.sh 4   # ช่วงเย็น (§15)
+CAP_SERVER=reuseport CAP_SHARD=1 CAP_HIGH_SCORE_SHARE=0.33 CAP_COLD_OPEN_LOOP=1 bash scripts/test/ml_capacity_gate.sh 4   # แบ่ง worker ตามผู้ใช้ (§20)
 ```
 
 ผลดิบ: `workers_{1,2,4}.json` + log ของ ml-service ต่อรอบ (เก็บใน `CAP_OUT` ไม่เข้า git)

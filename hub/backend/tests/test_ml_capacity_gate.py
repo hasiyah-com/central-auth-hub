@@ -622,6 +622,55 @@ def test_wait_outcomes_unknown_when_not_reported():
     assert G.wait_outcomes({1: {}})["scored_share"] is None
 
 
+# ── แบ่ง worker ตามผู้ใช้ + C3 ความสม่ำเสมอ (§20) ───────────────────────────
+
+
+def test_consistency_violations_count_warming_after_a_completed_score():
+    """C3: เมื่อผู้ใช้ได้คะแนนจริงแล้ว request ที่มาหลังคะแนนนั้นเสร็จต้องไม่ได้ warming อีก.
+    record = (user, arrival_s, done_s, warming)."""
+    records = [
+        ("a", 0.0, 0.05, True),  # ครั้งแรก warming — ปกติ
+        ("a", 1.0, 1.02, False),  # ได้คะแนน เสร็จที่ 1.02
+        ("a", 2.0, 2.05, True),  # มาทีหลัง 1.02 แต่ warming → ละเมิด
+        ("b", 0.5, 0.55, False),
+        ("b", 0.51, 0.60, True),  # มาก่อนคะแนนแรกเสร็จ (0.55) → ไม่นับ
+        ("b", 3.0, 3.01, False),
+    ]
+    assert G.consistency_violations(records) == 1
+
+
+def test_no_violation_when_every_later_request_is_scored():
+    records = [("a", 0.0, 0.05, True), ("a", 1.0, 1.1, False), ("a", 2.0, 2.1, False)]
+    assert G.consistency_violations(records) == 0
+
+
+def test_shard_urls_follow_the_hub_hash():
+    from app.services.l3_sequence_client import shard_index
+
+    g = _gate(0.0)
+    g.shard_base_port, g.shard_count = 9100, 4
+    for u in ("cap-user-00", "cold-user-0007", "x"):
+        assert g.url_for(u) == f"http://ml:{9100 + shard_index(u, 4)}"
+
+
+def test_without_shards_every_user_uses_the_shared_url():
+    g = _gate(0.0)
+    assert g.url_for("cap-user-00") == "http://ml"
+
+
+def test_p2_in_shard_mode_expects_one_fit_per_user_in_total():
+    kw = _passing(workers=4)
+    per = [6, 5, 5, 4]  # รวม 20 = N_USERS — แต่ละคน fit ครั้งเดียวทั้งระบบ
+    for st in (kw["warm_stats"], *(r["stats"] for r in kw["rounds"])):
+        for (pid, s), n in zip(st.items(), per):
+            s["fits_total"] = n
+    assert G.evaluate(**kw, shard_mode=True)["checks"]["P2_fit_storm"]["pass"]
+    # ถ้ามีคนถูก fit สองที่ ยอดรวมจะเกิน N_USERS → ต้องล้ม
+    for st in (kw["warm_stats"], *(r["stats"] for r in kw["rounds"])):
+        next(iter(st.values()))["fits_total"] += 1
+    assert not G.evaluate(**kw, shard_mode=True)["checks"]["P2_fit_storm"]["pass"]
+
+
 def test_passing_input_is_not_mutated():
     kw = _passing()
     snap = copy.deepcopy(kw)

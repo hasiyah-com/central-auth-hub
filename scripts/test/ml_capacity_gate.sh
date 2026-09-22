@@ -9,7 +9,8 @@
 #   CAP_POINT_SHAP_MIN_SCORE=0 ...  # เกณฑ์ SHAP ของ ml-service (ว่าง = ค่าเริ่มต้น 0.50 · 0 = ทุก login)
 #   CAP_OPEN_LOOP_RATES=10,30,60,120 CAP_OPEN_LOOP_SECONDS=60 ...  # ยิงแบบ open-loop หลัง steady
 #   CAP_COLD_OPEN_LOOP=1 ...   # ช่วงเย็นแบบ open-loop ก่อนทุกขั้น (400 คน, 60/วินาที, 60 วินาที)
-#   CAP_FIT_WAIT_MS=150 ...    # งบรอ fit ของ ml-service (ว่าง = ค่าเริ่มต้น 150)
+#   CAP_FIT_WAIT_MS=50 ...     # งบรอ fit ของ ml-service (ว่าง = ค่าเริ่มต้น 50)
+#   CAP_SHARD=1 ...            # L3 แยกตามผู้ใช้: worker มีพอร์ตเฉพาะ 9100+i (ต้องใช้ reuseport)
 #   เทียบสองฝั่ง: python -m scripts.ml_capacity_compare <dir A> <dir B>   (ใน hub/backend)
 #
 # ทุกค่าของ worker เปิด ml-service ตัวใหม่ (container `ml-cap`) → cache/lock เย็นทุก process
@@ -45,7 +46,10 @@ MSYS_NO_PATHCONV=1 docker run --rm -v "$HUB_SRC:/app" -w /app "$IMAGE_HUB" \
 
 overall=0
 for W in $WORKERS; do
-  echo "== workers=$W server=$CAP_SERVER skip_point_shap=${CAP_SKIP_POINT_SHAP:-0} high_score_share=${CAP_HIGH_SCORE_SHARE:-0}" >&2
+  echo "== workers=$W server=$CAP_SERVER shard=${CAP_SHARD:-0} skip_point_shap=${CAP_SKIP_POINT_SHAP:-0} high_score_share=${CAP_HIGH_SCORE_SHARE:-0}" >&2
+  if [ "${CAP_SHARD:-0}" = 1 ] && [ "$CAP_SERVER" != reuseport ]; then
+    echo "CAP_SHARD=1 ใช้ได้กับ CAP_SERVER=reuseport เท่านั้น" >&2; exit 2
+  fi
   docker rm -f ml-cap >/dev/null 2>&1 || true
   MSYS_NO_PATHCONV=1 docker run -d --name ml-cap --network cah-net \
     -e REDIS_URL="redis://redis:6379/$CAP_DB" -e L3_CAPACITY_STATS=1 \
@@ -54,7 +58,8 @@ for W in $WORKERS; do
     -e L3_FIT_WAIT_MS="${CAP_FIT_WAIT_MS:-}" \
     -v "$ML_SRC:/app" -w /app "$IMAGE_ML" \
     $(if [ "$CAP_SERVER" = reuseport ]; then
-        echo python -m app.serve --host 0.0.0.0 --port 9000 --workers "$W"
+        echo python -m app.serve --host 0.0.0.0 --port 9000 --workers "$W" \
+          $([ "${CAP_SHARD:-0}" = 1 ] && echo --shard-base-port 9100)
       else
         echo uvicorn app.main:app --host 0.0.0.0 --port 9000 --workers "$W"
       fi) >/dev/null
@@ -75,7 +80,8 @@ for W in $WORKERS; do
       --high-score-share "${CAP_HIGH_SCORE_SHARE:-0}" \
       --open-loop-rates "${CAP_OPEN_LOOP_RATES:-}" \
       --open-loop-seconds "${CAP_OPEN_LOOP_SECONDS:-60}" \
-      $([ "${CAP_COLD_OPEN_LOOP:-0}" = 1 ] && echo --cold-open-loop)
+      $([ "${CAP_COLD_OPEN_LOOP:-0}" = 1 ] && echo --cold-open-loop) \
+      $([ "${CAP_SHARD:-0}" = 1 ] && echo --shard-base-port 9100)
   rc=$?
   set -e
   docker logs ml-cap > "$OUT/ml-cap_workers_$W.log" 2>&1 || true

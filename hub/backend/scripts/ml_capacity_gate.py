@@ -99,6 +99,9 @@ class Gate:
         self.probe_features: list[list[float]] = []
         self._features_by_user: dict[str, list[float]] = {}
         self.cold_users: list[str] = []
+        # L3 แยกตามผู้ใช้ (§20) — None = ส่งทุกคนไป self.url แบบเดิม
+        self.shard_base_port: int | None = None
+        self.shard_count = 0
         self.url = url.rstrip("/")
         self.workers = workers
         self.rng = random.Random(seed)
@@ -167,6 +170,18 @@ class Gate:
         }
 
     # ── เรียก ─────────────────────────────────────────────────────────────
+    def url_for(self, user: str) -> str:
+        """URL ของ L3 สำหรับผู้ใช้คนนี้ — ใช้ shard_index ตัวเดียวกับ hub (B66: วัดสิ่งที่ deploy)."""
+        if not self.shard_base_port or self.shard_count < 1:
+            return self.url
+        from urllib.parse import urlsplit
+
+        from app.services.l3_sequence_client import shard_index
+
+        parts = urlsplit(self.url)
+        port = self.shard_base_port + shard_index(user, self.shard_count)
+        return f"{parts.scheme}://{parts.hostname}:{port}"
+
     async def call(self, client, user, resid, *, spread: bool = False):
         """spread=True เปิด connection ใหม่ — ให้ request กระจายไปทุก worker.
 
@@ -183,7 +198,7 @@ class Gate:
         t0 = time.perf_counter()
         try:
             r = await client.post(
-                f"{self.url}/v1/l3-evaluate", json=body, headers=headers
+                f"{self.url_for(user)}/v1/l3-evaluate", json=body, headers=headers
             )
             ms = (time.perf_counter() - t0) * 1000
             if r.status_code != 200:
@@ -326,12 +341,17 @@ class Gate:
             self._features_by_user[user] = high if idx < n_high else normal
         rng = random.Random(seed)
         records: list[tuple[float, float, bool, str | None]] = []
+        timeline: list[tuple[str, float, float, bool]] = []  # C3
         lag: list[float] = []
         start = time.perf_counter()
 
         async def fire(at, user, resid):
             ms, data, err = await self.call(client, user, resid, spread=True)
-            records.append((at, ms, bool(data) and _is_warming(data), err))
+            warming = bool(data) and _is_warming(data)
+            records.append((at, ms, warming, err))
+            if data and not err:
+                done = time.perf_counter() - start
+                timeline.append((user, at, done, warming))
 
         tasks = []
         for at, idx in zip(times, order):
@@ -375,6 +395,7 @@ class Gate:
             "time_to_warm_s": warm_at,
             "buckets": buckets,
             "max_schedule_lag_ms": round(max(lag), 1) if lag else 0.0,
+            "consistency_violations": consistency_violations(timeline),
         }
 
     async def open_loop(self, client, rate: float, seconds: float, seed: int) -> dict:
@@ -431,6 +452,24 @@ def wait_outcomes(stats: dict) -> dict:
         "warming": warming,
         "scored_share": round(scored / total, 4) if known and total else None,
     }
+
+
+def consistency_violations(records) -> int:
+    """C3 (§20): นับคำตอบ model_warming ที่มาถึง**หลัง**คะแนนจริงครั้งแรกของผู้ใช้คนนั้นเสร็จ.
+
+    record = (user, arrival_s, done_s, warming) · request ที่มาก่อนคะแนนแรกเสร็จไม่นับ
+    (ยังไม่มีทางรู้ว่าโมเดลพร้อม) · แบ่ง worker ตามผู้ใช้แล้วค่านี้ต้องเป็น 0
+    """
+    first_scored_done: dict[str, float] = {}
+    for user, _at, done, warming in records:
+        if not warming:
+            prev = first_scored_done.get(user)
+            first_scored_done[user] = done if prev is None else min(prev, done)
+    return sum(
+        1
+        for user, at, _done, warming in records
+        if warming and user in first_scored_done and at > first_scored_done[user]
+    )
 
 
 def cold_user_order(n_users: int, n_arrivals: int) -> list[int]:
@@ -538,6 +577,9 @@ def _merge_scores(*maps: dict) -> dict[str, set]:
 
 async def run(a) -> dict:
     gate = Gate(a.url, a.redis, a.workers, a.seed, high_score_share=a.high_score_share)
+    if a.shard_base_port:
+        gate.shard_base_port = a.shard_base_port
+        gate.shard_count = a.workers
     if _db_index(a.redis) in FORBIDDEN_DBS:
         raise SystemExit(f"ปฏิเสธ Redis DB {_db_index(a.redis)} — ใช้ DB แยก (เช่น 13)")
     limits = httpx.Limits(max_connections=64, max_keepalive_connections=64)
@@ -590,8 +632,10 @@ async def run(a) -> dict:
         rounds,
         time.perf_counter() - started,
         fit_baseline=fit_baseline,
+        shard_mode=bool(a.shard_base_port),
     )
     result["high_score_share"] = gate.high_score_share
+    result["shard_base_port"] = a.shard_base_port
     result["pooled"] = pool_levels(
         [{c: lvl["raw_ms"] for c, lvl in r["levels"].items()} for r in rounds]
     )
@@ -636,6 +680,7 @@ def evaluate(
     rounds,
     elapsed,
     fit_baseline: dict | None = None,
+    shard_mode: bool = False,
 ) -> dict:
     checks = {}
 
@@ -674,9 +719,12 @@ def evaluate(
     fits_after_steady = sum(s["fits_total"] for s in final.values())
     # ช่วงเย็นแบบ open-loop (§15) fit ผู้ใช้ชุด cold ไปก่อน · นับเฉพาะส่วนที่เพิ่มจากฐาน
     base = fit_baseline or {}
-    exact = all(
-        s["fits_total"] - base.get(pid, 0) == N_USERS for pid, s in final.items()
-    )
+    deltas = {pid: s["fits_total"] - base.get(pid, 0) for pid, s in final.items()}
+    if shard_mode:
+        # แบ่ง worker ตามผู้ใช้ (§20): แต่ละคน fit ครั้งเดียวทั้งระบบ → ผลรวม = N_USERS
+        exact = sum(deltas.values()) == N_USERS
+    else:
+        exact = all(d == N_USERS for d in deltas.values())
     checks["P2_fit_storm"] = {
         "pass": per_proc_max <= 1
         and exact
@@ -687,7 +735,8 @@ def evaluate(
         "processes_seen": len(final),
         "fits_per_process_final": {str(p): s["fits_total"] for p, s in final.items()},
         "fit_baseline": {str(p): v for p, v in base.items()},
-        "expected_fits_per_process": N_USERS,
+        "expected_fits_per_process": None if shard_mode else N_USERS,
+        "expected_fits_total": N_USERS if shard_mode else None,
         "fits_after_warm": fits_after_warm,
         "fits_after_steady": fits_after_steady,
         "warm": warm,
@@ -769,6 +818,12 @@ def main(argv=None) -> int:
         help="อัตรา login ต่อวินาทีของการยิงแบบ open-loop หลัง steady เช่น 10,30,60,120",
     )
     ap.add_argument("--open-loop-seconds", type=float, default=60.0)
+    ap.add_argument(
+        "--shard-base-port",
+        type=int,
+        default=None,
+        help="ส่ง L3 ไปพอร์ตเฉพาะของ worker ตาม shard_index ของ hub (§20)",
+    )
     ap.add_argument(
         "--cold-open-loop",
         action="store_true",
