@@ -229,6 +229,50 @@ def _duplicate_stats(redis, flagged: bool, duplicate: bool) -> tuple[float | Non
         return None, 0
 
 
+OVERLOAD_REASON = "per_user_overload"
+
+
+def overload_result() -> dict:
+    """คำตอบเมื่อผู้ใช้คนนี้มีคำขอ L3 ค้างเกินเพดาน (app/limiter.py).
+
+    ไม่เรียกโมเดล ไม่แตะ cache ของ sequence และไม่แตะตัวนับ duplicate · รูปร่างเดียวกับ
+    evaluate() เพื่อให้ hub แปลงผลด้วยโค้ดเดิม · ออกทางแกน monitoring = normal เท่านั้น
+    """
+    point = {
+        "available": False,
+        "anomaly_score": 0.0,
+        "is_anomaly": False,
+        "explanation": [],
+        "explainer": point_explainer_status(),
+        "error": None,
+    }
+    seq = {
+        **dict(SEQ.QUIET),
+        "eligibility": "abstain",
+        "abstain_reason": OVERLOAD_REASON,
+        "error": None,
+    }
+    return {
+        "monitoring_decision": MONITORING_NORMAL,
+        "is_anomaly": False,
+        "unique_to_l3": False,
+        "detected_by": [],
+        "duplicate_ratio": None,
+        "duplicate_window": 0,
+        "diagnostic_factors": [],
+        "diagnostic_method": SEQ.DIAGNOSTIC_METHOD,
+        "baseline_version": SEQ.BASELINE_VERSION,
+        "model_attribution": [],
+        "model_attribution_caveat": ATTRIBUTION_CAVEAT,
+        "point": point,
+        "sequence": seq,
+        "model_version": {
+            "point": "iforest-23feat",
+            "sequence": SEQ.MODEL_VERSION,
+        },
+    }
+
+
 def evaluate(
     redis,
     user_id: str,

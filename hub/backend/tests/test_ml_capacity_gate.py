@@ -750,3 +750,123 @@ def test_passing_input_is_not_mutated():
     snap = copy.deepcopy(kw)
     _eval(kw)
     assert kw == snap
+
+
+# ── §25 hot-user protection: ml-service ตอบ per_user_overload เมื่อผู้ใช้คนเดียวค้างเกินเพดาน ──
+
+OVERLOAD = {
+    "sequence": {"eligibility": "abstain", "abstain_reason": "per_user_overload"},
+    "point": {"anomaly_score": 0.0},
+}
+
+
+def test_overload_answers_are_counted_not_compared_in_the_burst():
+    """คำตอบที่ถูกจำกัดไม่มีคะแนน — ห้ามเข้า P3 และห้ามนับเป็น warming."""
+    import asyncio
+
+    import httpx
+
+    g = _gate(0.0)
+    answers = [OVERLOAD] * 8 + [SCORED] * 12
+
+    async def go():
+        async with httpx.AsyncClient(transport=_mock(answers)) as c:
+            return await g.cold_burst(c)
+
+    out = asyncio.run(go())
+    assert out["overload"] == 8
+    assert out["warming"] == 0
+    for sigs in out["scores"].values():
+        assert all(json.loads(s)["seq_score"] is not None for s in sigs)
+
+
+def test_steady_counts_overload_and_reports_served_latency():
+    import asyncio
+
+    import httpx
+
+    g = _gate(0.0)
+    n = G.REQUESTS_PER_LEVEL
+    answers = [OVERLOAD, SCORED] * (n // 2)
+
+    async def go():
+        async with httpx.AsyncClient(transport=_mock(answers)) as c:
+            return await g.steady(c, 1)
+
+    out = asyncio.run(go())
+    assert out["overload"] == n // 2
+    assert out["warming"] == 0
+    assert out["served_latency"]["n"] == n - n // 2
+    assert out["latency"]["n"] == n  # เกณฑ์เดิมยังวัดทุก request
+
+
+def test_overload_is_neither_a_score_nor_warming_for_c3():
+    """C3: overload หลังคะแนนแรกไม่ใช่การผิดสัญญา · overload ก่อนหน้าไม่ใช่ 'ได้คะแนนแล้ว'."""
+    import asyncio
+
+    import httpx
+
+    g = _gate(0.0)
+    g.cold_users = ["only-one"]
+    n = len(G.arrival_times(20.0, 1.0, 5))
+    answers = [OVERLOAD] + [WARMING] * (n - 1)
+
+    async def go():
+        async with httpx.AsyncClient(transport=_mock(answers)) as c:
+            return await g.cold_open_loop(c, rate=20.0, seconds=1.0, seed=5)
+
+    out = asyncio.run(go())
+    assert out["consistency_violations"] == 0
+    assert out["overload"] == 1
+    assert out["warming"] == n - 1
+
+
+def test_hot_user_constants_are_preregistered():
+    assert G.HOT_OTHERS_OVERLOAD_MAX == 0.01
+    assert G.HOT_MIN_RUNS == 10
+
+
+def _hot_run(others_p95=200.0, others_errors=0, others_overload=0, fired=5):
+    n = G.REQUESTS_PER_LEVEL
+    return {
+        "p1_v3": {
+            "mixed_others": {
+                "latency": {"p95_ms": others_p95, "errors": others_errors, "n": n},
+                "overload": others_overload,
+            },
+            "per_user_overload_fired": fired,
+        }
+    }
+
+
+def test_hot_user_summary_uses_the_p1_v2_rule_on_other_users():
+    ok = [_hot_run() for _ in range(9)] + [_hot_run(others_p95=260.0)]
+    s = G.hot_user_summary(ok)
+    assert s["others_p95_pass"] and s["passed"]
+    assert not G.hot_user_summary([_hot_run(others_p95=230.0)] * 10)["passed"]
+    two_over = [_hot_run()] * 8 + [_hot_run(others_p95=260.0)] * 2
+    assert not G.hot_user_summary(two_over)["passed"]
+
+
+def test_hot_user_summary_fails_if_other_users_are_limited_or_error():
+    limit = int(G.REQUESTS_PER_LEVEL * G.HOT_OTHERS_OVERLOAD_MAX)
+    assert G.hot_user_summary([_hot_run(others_overload=limit)] * 10)["passed"]
+    assert not G.hot_user_summary([_hot_run(others_overload=limit + 1)] * 10)["passed"]
+    assert not G.hot_user_summary([_hot_run(others_errors=1)] * 10)["passed"]
+
+
+def test_hot_user_summary_requires_the_limiter_to_have_fired():
+    """บทเรียน B61: ผ่านเพราะตัวจำกัดไม่เคยทำงาน ต้องไม่นับว่าผ่าน."""
+    assert not G.hot_user_summary([_hot_run(fired=0)] * 10)["passed"]
+    assert not G.hot_user_summary([_hot_run(fired=None)] * 10)["passed"]
+
+
+def test_hot_user_summary_needs_ten_runs():
+    assert not G.hot_user_summary([_hot_run()] * 9)["passed"]
+
+
+def test_overload_fired_is_the_sum_over_workers():
+    before = {1: {"per_user_overload": 3}, 2: {"per_user_overload": 0}}
+    after = {1: {"per_user_overload": 10}, 2: {"per_user_overload": 4}}
+    assert G.overload_delta(before, after) == 11
+    assert G.overload_delta({1: {}}, {1: {}}) is None

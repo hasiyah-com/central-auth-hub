@@ -23,6 +23,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, field_validator
 
 from app import l3_unified as L3U
+from app import limiter as LIM
 from app import sequence as SEQ
 from app.features import FEATURE_COUNT, FEATURE_NAMES, FEATURE_RANGES
 from app.model import (
@@ -46,11 +47,17 @@ app = FastAPI(
 )
 
 
+# เพดานคำขอ L3 ค้างพร้อมกันต่อผู้ใช้ (§25) — startup สร้างใหม่ตาม env
+L3_LIMITER = LIM.PerUserLimiter(LIM.DEFAULT_LIMIT)
+
+
 @app.on_event("startup")
 def startup():
     # ตรวจเกณฑ์ SHAP ของ point view ก่อนอย่างอื่น — ค่าผิดต้องไม่ start (ไม่เดาค่าให้)
     L3U.point_shap_min_score()
     SEQ.fit_wait_seconds()  # งบรอ fit ผิด = ไม่ start (§15)
+    global L3_LIMITER
+    L3_LIMITER = LIM.PerUserLimiter(LIM.limit_from_env())  # เพดานผิด = ไม่ start (§25)
     try:
         load_model()
         print("Model loaded")
@@ -335,14 +342,19 @@ def l3_evaluate(req: L3EvaluateRequest):
     """
     SEQ.count_l3_request()
     r = _redis()
-    data = L3U.evaluate(
-        r,
-        req.user_id,
-        req.features,
-        req.residual,
-        req.access_decision,
-        explain=req.explain,
-    )
+    # ผู้ใช้คนเดียวยิงถี่ต้องไม่ทำให้ผู้ใช้อื่นบน worker เดียวกันช้า (§24.4) — เกินเพดานตอบทันที
+    with L3_LIMITER.slot(req.user_id) as ok:
+        if ok:
+            data = L3U.evaluate(
+                r,
+                req.user_id,
+                req.features,
+                req.residual,
+                req.access_decision,
+                explain=req.explain,
+            )
+        else:
+            data = L3U.overload_result()
     return {
         "data": data,
         "meta": {
@@ -370,6 +382,8 @@ def l3_capacity_stats():
             **SEQ.capacity_stats(),
             "point_shap": L3U.point_shap_enabled(),
             "point_shap_min_score": L3U.point_shap_min_score(),
+            "per_user_overload": L3_LIMITER.refused,
+            "per_user_limit": L3_LIMITER.limit,
         },
         "meta": {"version": "v1", "timestamp": datetime.now(timezone.utc).isoformat()},
     }

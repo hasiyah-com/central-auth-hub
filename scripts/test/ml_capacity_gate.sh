@@ -10,6 +10,7 @@
 #   CAP_OPEN_LOOP_RATES=10,30,60,120 CAP_OPEN_LOOP_SECONDS=60 ...  # ยิงแบบ open-loop หลัง steady
 #   CAP_COLD_OPEN_LOOP=1 ...   # ช่วงเย็นแบบ open-loop ก่อนทุกขั้น (400 คน, 60/วินาที, 60 วินาที)
 #   CAP_FIT_WAIT_MS=50 ...     # งบรอ fit ของ ml-service (ว่าง = ค่าเริ่มต้น 50)
+#   CAP_PER_USER_LIMIT=2 ...   # เพดานคำขอ L3 ค้างต่อผู้ใช้ของ ml-service (ว่าง = ค่าเริ่มต้น 2, §25)
 #   CAP_SHARD=1 ...            # L3 แยกตามผู้ใช้: worker มีพอร์ตเฉพาะ 9100+i (ต้องใช้ reuseport)
 #   CAP_P1V3=1 ...             # P1 v3: steady บนผู้ใช้ชุด cold 400 คน + hot user (ต้องมี CAP_COLD_OPEN_LOOP=1)
 #   เทียบสองฝั่ง: python -m scripts.ml_capacity_compare <dir A> <dir B>   (ใน hub/backend)
@@ -57,6 +58,7 @@ for W in $WORKERS; do
     -e L3_EXPERIMENT_SKIP_POINT_SHAP="${CAP_SKIP_POINT_SHAP:-0}" \
     -e L3_POINT_SHAP_MIN_SCORE="${CAP_POINT_SHAP_MIN_SCORE:-}" \
     -e L3_FIT_WAIT_MS="${CAP_FIT_WAIT_MS:-}" \
+    -e L3_PER_USER_MAX_INFLIGHT="${CAP_PER_USER_LIMIT:-}" \
     -v "$ML_SRC:/app" -w /app "$IMAGE_ML" \
     $(if [ "$CAP_SERVER" = reuseport ]; then
         echo python -m app.serve --host 0.0.0.0 --port 9000 --workers "$W" \

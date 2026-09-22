@@ -824,7 +824,61 @@ C2 ใช้ผู้ใช้ชุด cap 20 คนตามนิยามเ
 - **Capacity Gate ยังไม่ผ่าน** — C2 = 8/10 · และมีความเสี่ยง hot user ที่ต้องแก้
 - สถานะไม่เปลี่ยน: **ห้าม merge เข้า `main` · ห้ามเปิด Shadow Pilot** · การแบ่ง worker ยังเป็น opt-in
 
-## 25. รันซ้ำ
+## 25. hot-user protection — เขียนก่อนวัด (2026-09-22)
+
+ส่วนนี้ commit **ก่อน**วัด · ผลจะเพิ่มใน §26 โดยไม่แก้ส่วนนี้ · ผล §24 (C2 = 8/10 ไม่ผ่าน, hot user
+เกินเพดาน) **คงไว้ตามเดิม** · §25 วัดระบบที่มีตัวจำกัดแล้ว จึงเป็น**คนละคอนฟิก**กับ §24 (บทเรียน B66) —
+ผลที่นี่ไม่ทำให้ §24 กลายเป็นผ่านย้อนหลัง
+
+### 25.1 สิ่งที่เปลี่ยน
+
+- `ml-service/app/limiter.py` — จำกัดคำขอ L3 ที่**ค้างพร้อมกัน**ต่อ `user_id` ภายในแต่ละ process ·
+  เพดาน `L3_PER_USER_MAX_INFLIGHT` ค่าเริ่มต้น **2** (ช่วง 1–50, ค่าผิด = ไม่ start)
+- เกินเพดาน → `/v1/l3-evaluate` ตอบทันทีด้วย `sequence.eligibility = "abstain"` +
+  `abstain_reason = "per_user_overload"` · `monitoring_decision = normal` · ไม่เรียกโมเดล ไม่ fit
+  ไม่แตะ cache และตัวนับ duplicate
+- ตัวนับ `per_user_overload` ต่อ process ใน `/v1/l3-capacity-stats` (ใช้ต่อใน Shadow Pilot)
+- hub รับเหตุผล `per_user_overload` (whitelist ใน `l3_sequence_client.py`) และบันทึกใน
+  `risk_breakdown["l3"].abstain_reason` · **login ไม่ถูกจำกัด** — การตัดสินเท่ากับ L3 abstain ธรรมดา
+  ทุกประการ (`tests/test_l3_per_user_overload.py`)
+- ตัววัด: คำตอบที่ถูกจำกัด**ไม่มีคะแนน** → ไม่เข้าการเทียบ P3 และไม่นับเป็น warming ใน C3 · นับแยกเป็น
+  `overload` ทุกขั้น
+
+### 25.2 การตั้งค่า (เหมือน §23 ทุกอย่าง ยกเว้นตัวจำกัด)
+
+`CAP_SERVER=reuseport CAP_SHARD=1 CAP_HIGH_SCORE_SHARE=0.33 CAP_COLD_OPEN_LOOP=1 CAP_P1V3=1` · 4 worker ·
+เพดานค่าเริ่มต้น 2 · ลำดับ:
+
+1. **ชุด hot user เดิมก่อน** — รัน 1 ครั้งเพื่อยืนยันว่าตัวจำกัดทำงานจริง (ตัวนับ > 0) · **ไม่นับรวม**ใน
+   10 ครั้ง · ถ้าต้องแก้โค้ดหลังรันนี้ จะบันทึกไว้ใน §26 พร้อมเหตุผล
+2. **Capacity Gate 10 ครั้ง** แต่ละครั้งเปิด ml-service ใหม่ · ตัดสินจาก 10 ครั้งนี้เท่านั้น ·
+   ไม่เพิ่มรอบ ไม่ตัดรอบ
+
+### 25.3 เกณฑ์ผ่าน
+
+| เกณฑ์ | กฎ | ตัดสินด้วย |
+|---|---|---|
+| **H — hot user** | ผู้ใช้อื่นในกรณีผสม (ข): median p95 ≤ 225 ms และ ≥ 9/10 ครั้ง ≤ 250 ms (กฎ P1 v2 เดิม) · error = 0 · ถูกจำกัด ≤ 1% ของ request **ทุกครั้ง** · ตัวจำกัดทำงานจริง (> 0) **ทุกครั้ง** | `hot_user_summary()` |
+| **P1 v3** | กฎ §23.3 เดิม · และรายงานแยกว่าผ่าน 10/10 ครั้งทุกระดับหรือไม่ (เป้าที่ผู้ใช้ตั้ง) | `p1_v3_summary()` |
+| **C2** | **นิยามและเกณฑ์เดิม ไม่แก้** — ≥ 9/10 ครั้ง | เดิม |
+| **C3** | `consistency_violations == 0` และไม่มี `model_warming` ในช่วง steady ของ P1 v3 — ทุกครั้ง | เดิม |
+| C1, P2 แบบ shard, P3, P4 | กฎเดิม · P3 = ไม่มีคะแนนขัดกันจากคำขอพร้อมกัน (คำตอบที่ถูกจำกัดไม่นับ) | เดิม |
+
+Capacity Gate ผ่านเมื่อ**ทุกเกณฑ์**ในตารางผ่าน
+
+### 25.4 ข้อสังเกตที่ต้องรายงานคู่กับ C2 (ไม่ใช่เกณฑ์)
+
+C2 ส่ง request ของผู้ใช้คนเดียวกัน 10 ตัวพร้อมกัน · เพดาน 2 ทำให้ ~8 ตัวได้คำตอบที่ถูกจำกัดทันที →
+p95 ของ C2 วัด request ที่ผ่านโมเดลจริงน้อยลง · จึงรายงาน**จำนวนที่ถูกจำกัด**ใน C2 ทุกครั้ง และถ้า C2 ผ่าน
+ต้องระบุว่าผ่านภายใต้ตัวจำกัด (พฤติกรรมที่ deploy จริง ไม่ใช่การเปลี่ยนนิยาม) · hot user (ก) คนเดียว c=20
+เป็น closed-loop — คำขอที่ถูกจำกัดจะยิงใหม่ทันที ซึ่งหนักกว่า hub จริง (hub เรียก L3 หนึ่งครั้งต่อ login)
+
+### 25.5 ถ้าผ่าน
+
+ยังไม่เปิดอะไร — ต้องทำต่อก่อน: baseline migration (`alembic upgrade head` จากฐานข้อมูลว่าง) → Functional
+Gate 3 รอบ + CI → จึงพิจารณา **Shadow Pilot** (ห้าม L3 บังคับ step-up หรือ block)
+
+## 26. รันซ้ำ
 
 ```bash
 bash scripts/test/ml_capacity_gate.sh            # 1 2 4
@@ -838,6 +892,7 @@ CAP_SERVER=reuseport CAP_HIGH_SCORE_SHARE=0.33 CAP_OPEN_LOOP_RATES=10,30,60,120 
 CAP_SERVER=reuseport CAP_HIGH_SCORE_SHARE=0.33 CAP_COLD_OPEN_LOOP=1 bash scripts/test/ml_capacity_gate.sh 4   # ช่วงเย็น (§15)
 CAP_SERVER=reuseport CAP_SHARD=1 CAP_HIGH_SCORE_SHARE=0.33 CAP_COLD_OPEN_LOOP=1 bash scripts/test/ml_capacity_gate.sh 4   # แบ่ง worker ตามผู้ใช้ (§20)
 CAP_SERVER=reuseport CAP_SHARD=1 CAP_HIGH_SCORE_SHARE=0.33 CAP_COLD_OPEN_LOOP=1 CAP_P1V3=1 bash scripts/test/ml_capacity_gate.sh 4   # P1 v3 (§23)
+CAP_SERVER=reuseport CAP_SHARD=1 CAP_HIGH_SCORE_SHARE=0.33 CAP_COLD_OPEN_LOOP=1 CAP_P1V3=1 bash scripts/test/ml_capacity_gate.sh 4   # hot-user protection (§25, เพดานค่าเริ่มต้น 2)
 ```
 
 ผลดิบ: `workers_{1,2,4}.json` + log ของ ml-service ต่อรอบ (เก็บใน `CAP_OUT` ไม่เข้า git)

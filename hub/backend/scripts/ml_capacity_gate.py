@@ -58,6 +58,11 @@ COLD_USERS = 400
 COLD_OVER_DEADLINE_MAX = 0.01  # เกิน 500 ms ได้ไม่เกิน 1%
 COLD_BUCKET_S = 5.0
 WARMING_REASON = "model_warming"
+# ml-service จำกัดคำขอ L3 ค้างพร้อมกันต่อผู้ใช้ (§25) — ไม่มีคะแนน ไม่ใช่ warming
+OVERLOAD_REASON = "per_user_overload"
+# §25 hot-user protection — เขียนก่อนวัด
+HOT_OTHERS_OVERLOAD_MAX = 0.01  # ผู้ใช้อื่นในกรณีผสมถูกจำกัดได้ไม่เกิน 1% ของ request
+HOT_MIN_RUNS = 10
 
 # ── P1 v3 (§23 — กำหนดก่อนวัด) ──
 # steady บนผู้ใช้ชุด cold 400 คน (อุ่นแล้ว) แทนชุด cap 20 คนที่ hash เอียง 3/9/4/4 ใน §21
@@ -272,9 +277,11 @@ class Gate:
         lat = [ms for ms, _, _ in res]
         errors = [e for _, _, e in res if e]
         scores = {}
-        warming = 0
+        warming = overload = 0
         for (u, r), (_, data, _) in zip(jobs, res):
-            if data and _is_warming(data):
+            if data and _is_overload(data):
+                overload += 1  # ถูกจำกัดต่อผู้ใช้ (§25) — ไม่มีคะแนน
+            elif data and _is_warming(data):
                 warming += 1  # ไม่มีคะแนน — ไม่เข้าการเทียบ P3 (§15)
             elif data:
                 scores.setdefault(_probe_key(u, r), set()).add(_score_of(data))
@@ -283,6 +290,7 @@ class Gate:
             "error_kinds": sorted(set(errors)),
             "scores": {k: sorted(v) for k, v in scores.items()},
             "warming": warming,
+            "overload": overload,
         }
 
     async def warm_until_stable(self, client) -> dict:
@@ -316,6 +324,7 @@ class Gate:
 
     async def steady(self, client, conc: int, probes=None) -> dict:
         lat: list[float] = []
+        served: list[float] = []  # ไม่รวมคำตอบที่ถูกจำกัด — ข้อมูลประกอบ (§25)
         errors: list[str] = []
         scores: dict[str, set] = {}
         queue = list(range(REQUESTS_PER_LEVEL))
@@ -330,12 +339,17 @@ class Gate:
                 lat.append(ms)
                 if err:
                     errors.append(err)
+                elif data and _is_overload(data):
+                    overload[0] += 1
+                    continue
                 elif data and _is_warming(data):
                     warming[0] += 1
                 elif data:
                     scores.setdefault(_probe_key(u, r), set()).add(_score_of(data))
+                served.append(ms)
 
         warming = [0]
+        overload = [0]
         await asyncio.gather(*(worker() for _ in range(conc)))
         return {
             "latency": summarize(lat, len(errors)),
@@ -343,6 +357,8 @@ class Gate:
             "scores": {k: sorted(v) for k, v in scores.items()},
             "raw_ms": lat,  # ใช้รวม p95 ข้ามรอบ (วิธีวัด v2) — ไม่เขียนลงผล
             "warming": warming[0],
+            "overload": overload[0],
+            "served_latency": summarize(served, 0),
         }
 
     async def cold_open_loop(
@@ -360,11 +376,16 @@ class Gate:
         records: list[tuple[float, float, bool, str | None]] = []
         timeline: list[tuple[str, float, float, bool]] = []  # C3
         lag: list[float] = []
+        overload = [0]
         start = time.perf_counter()
 
         async def fire(at, user, resid):
             ms, data, err = await self.call(client, user, resid, spread=True)
             warming = bool(data) and _is_warming(data)
+            if data and _is_overload(data):
+                overload[0] += 1  # ไม่ใช่ทั้งคะแนนและ warming — ไม่เข้า C3 (§25)
+                records.append((at, ms, False, err))
+                return
             records.append((at, ms, warming, err))
             if data and not err:
                 done = time.perf_counter() - start
@@ -408,6 +429,7 @@ class Gate:
             "latency": summarize(lat, len(errors)),
             "error_kinds": sorted(set(errors)),
             "warming": warming,
+            "overload": overload[0],
             "warming_share": round(warming / len(records), 4) if records else 0.0,
             "time_to_warm_s": warm_at,
             "buckets": buckets,
@@ -452,6 +474,54 @@ class Gate:
 
 def _is_warming(data: dict) -> bool:
     return (data.get("sequence") or {}).get("abstain_reason") == WARMING_REASON
+
+
+def _is_overload(data: dict) -> bool:
+    return (data.get("sequence") or {}).get("abstain_reason") == OVERLOAD_REASON
+
+
+def overload_delta(before: dict, after: dict):
+    """จำนวนครั้งที่ตัวจำกัดต่อผู้ใช้ทำงานระหว่างสองจุด รวมทุก worker · None = ไม่มีตัวนับ."""
+    total, known = 0, False
+    for pid, s in after.items():
+        a1 = s.get("per_user_overload")
+        if a1 is None:
+            continue
+        known = True
+        total += int(a1) - int((before.get(pid) or {}).get("per_user_overload") or 0)
+    return total if known else None
+
+
+def hot_user_summary(runs: list[dict]) -> dict:
+    """ตัดสิน hot-user protection ตาม §25 (เขียนก่อนวัด).
+
+    ผู้ใช้อื่นในกรณีผสม: กฎ P1 v2 เดิม (median p95 <= 225 และ >= 9/10 ครั้ง <= 250) · error = 0 ·
+    ถูกจำกัด <= 1% ของ request ทุกครั้ง · ตัวจำกัดต้องทำงานจริง (> 0) ทุกครั้ง (บทเรียน B61)
+    """
+    p95s, clean, fired = [], True, True
+    for r in runs:
+        v3 = r.get("p1_v3") or {}
+        others = v3.get("mixed_others") or {}
+        lat = others.get("latency") or {}
+        p95s.append(lat.get("p95_ms"))
+        n = lat.get("n") or 0
+        if lat.get("errors") != 0 or not n:
+            clean = False
+        elif (others.get("overload") or 0) > HOT_OTHERS_OVERLOAD_MAX * n:
+            clean = False
+        if not (v3.get("per_user_overload_fired") or 0) > 0:
+            fired = False
+    enough = len(runs) >= HOT_MIN_RUNS
+    p95_ok = enough and None not in p95s and p1_v2_pass(p95s)
+    return {
+        "runs": len(runs),
+        "enough_runs": enough,
+        "others_p95": p95s,
+        "others_p95_pass": p95_ok,
+        "others_clean": clean,
+        "limiter_fired": fired,
+        "passed": bool(p95_ok and clean and fired),
+    }
 
 
 def wait_outcomes(stats: dict) -> dict:
@@ -733,11 +803,13 @@ async def run_p1_v3(gate: "Gate", client) -> dict:
     after = await gate.stats(client)
 
     hot = probes[0]
+    hot_before = await gate.stats(client)
     hot_only = await gate.steady(client, V3_HOT_CONCURRENCY, probes=[hot])
     mixed_hot, mixed_rest = await asyncio.gather(
         gate.steady(client, 10, probes=[hot]),
         gate.steady(client, 10, probes=probes[1:]),
     )
+    hot_after = await gate.stats(client)
     strip = lambda o: {k: v for k, v in o.items() if k not in ("raw_ms", "scores")}  # noqa: E731
     return {
         "users": len(probes),
@@ -749,6 +821,8 @@ async def run_p1_v3(gate: "Gate", client) -> dict:
         "hot_user": strip(hot_only),
         "mixed_hot": strip(mixed_hot),
         "mixed_others": strip(mixed_rest),
+        # ตัวจำกัดต่อผู้ใช้ทำงานกี่ครั้งในช่วง hot user (§25) · None = ml-service ไม่มีตัวนับ
+        "per_user_overload_fired": overload_delta(hot_before, hot_after),
     }
 
 

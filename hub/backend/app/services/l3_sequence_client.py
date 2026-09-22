@@ -34,7 +34,8 @@ QUIET: dict = {
 
 # ค่าที่ยอมรับจาก ml-service — ค่าอื่นปัดเป็น None (payload ภายนอก ห้ามไหลเข้ามาตรงๆ)
 # model_warming: fit อยู่ใน thread เบื้องหลัง ยังไม่ทันงบรอ (ML Capacity Gate §15)
-_ABSTAIN_REASONS = ("model_warming",)
+# per_user_overload: ผู้ใช้คนนี้มีคำขอ L3 ค้างเกินเพดานที่ ml-service (§25) — login ไม่ถูกจำกัด
+_ABSTAIN_REASONS = ("model_warming", "per_user_overload")
 
 
 def parse_shard_urls(raw: str) -> list[str]:
