@@ -6,6 +6,8 @@
 > - ผลล่าสุด (§24): **P1 v3 ผ่าน** (ผู้ใช้ 400 คน, median p95 c=20 = 210.6 ms, 10/10 ≤ 250) และ **C3 ผ่าน**
 > - แต่ **C2 cold burst ไม่ผ่าน** (8/10, สองครั้งที่ล้มได้ 250.4 และ 250.6 ms) และพบ**ความเสี่ยง hot user**
 >   (ผู้ใช้อื่นใน worker เดียวกัน p95 289–312 ms) · ผล **P1 v2 = ไม่ผ่าน** (§21) คงไว้ตามเดิม
+> - hot-user protection (§25–26): **H ผ่าน** (ผู้ใช้อื่น p95 192–220 ms, ไม่ถูกจำกัดเลย) · C2 ผ่าน 10/10
+>   ภายใต้ตัวจำกัด · C3 ผ่าน · แต่ **P1 v3 ไม่ผ่าน** (c=20 median 232.3 ms, 8/10 ≤ 250) → Gate ยังไม่ผ่าน
 > - ค่าที่ deploy ใน `docker-compose.yml`: `app.serve` 4 worker **ไม่แบ่งตามผู้ใช้** ·
 >   การแบ่งเป็น opt-in ผ่าน `docker-compose.shard.yml`
 > - ถ้า Gate ผ่านในอนาคต ให้เปิดเฉพาะ **Shadow Pilot** ก่อน — ไม่ให้ L3 บังคับ step-up หรือ block
@@ -878,7 +880,61 @@ p95 ของ C2 วัด request ที่ผ่านโมเดลจริ
 ยังไม่เปิดอะไร — ต้องทำต่อก่อน: baseline migration (`alembic upgrade head` จากฐานข้อมูลว่าง) → Functional
 Gate 3 รอบ + CI → จึงพิจารณา **Shadow Pilot** (ห้าม L3 บังคับ step-up หรือ block)
 
-## 26. รันซ้ำ
+## 26. ผล hot-user protection — 2026-09-22
+
+วัดตาม §25 (commit `a630549` ก่อนวัด) · เพดานค่าเริ่มต้น 2 · 10 ครั้ง · error = 0 ทุกครั้ง · ตัดสินด้วย
+`hot_user_summary()` และ `p1_v3_summary()` · ไม่เพิ่มรอบ ไม่ตัดรอบ
+
+### 26.1 รันยืนยันก่อน (ไม่นับ)
+
+ตัวจำกัดทำงาน 630 ครั้ง · ผู้ใช้อื่นในกรณีผสม p95 180 ms (§24: 312) และไม่ถูกจำกัดเลย · **ไม่ได้แก้โค้ด
+หลังรันนี้**
+
+### 26.2 H — hot user: **ผ่าน**
+
+| กรณี | p95 ต่อครั้ง | p99 median | เกิน 500 ms | ถูกจำกัด (จาก 400) |
+|---|---|---|---|---|
+| (ก) ผู้ใช้คนเดียว c=20 | 168–197 (§24: 502–578) | 237 | 0 ทุกครั้ง | 280–317 |
+| (ข) ผู้ใช้ hot c=10 | 185–213 (§24: 329–351) | 242 | 0 ทุกครั้ง | 259–300 |
+| (ข) **ผู้ใช้อื่น 399 คน** c=10 | **192–220** (§24: 289–312) · median 209.3 · 10/10 ≤ 250 | 258 | 0 ทุกครั้ง | **0 ทุกครั้ง** |
+
+ตัวจำกัดทำงาน 554–616 ครั้งต่อรันในช่วง hot user · request ของ hot user ที่ผ่านโมเดลจริงมี p95 184–245 ms
+
+### 26.3 เกณฑ์อื่น
+
+| เกณฑ์ | ผล |
+|---|---|
+| **P1 v3** | **ไม่ผ่าน** — c=20: median 232.3 ms (> 225) และ ≤ 250 ms เพียง **8/10** (258.6, 232.7, 243.6, **253.2**, 201.0, 231.9, 217.8, 214.1, 231.2, 236.7) · c=1/5/10 ผ่าน 10/10 (median 24.3 / 71.7 / 108.8) |
+| C2 cold burst | ผ่าน 10/10 (p95 130–188 ms) — **ภายใต้ตัวจำกัด**: ถูกจำกัด 8 จาก 20 ทุกครั้ง (§25.4) · ไม่ทำให้ C2 ของ §24 ผ่านย้อนหลัง |
+| C3 | ผ่าน — `consistency_violations` = 0 และไม่มี warming ในช่วง steady ทุกครั้ง |
+| C1 ช่วงเย็น | ผ่าน 10/10 (p95 90–97 ms) · ไม่มีการจำกัดในช่วงเย็น |
+| P2 แบบ shard / P3 / P4 | ผ่านทุกครั้ง — P3 ไม่มีคะแนนขัดกันจากคำขอพร้อมกัน |
+
+### 26.4 P1 v3 ที่ล้ม — สิ่งที่รู้และไม่รู้
+
+- §24 (ไม่มีตัวจำกัด) c=20 = 200–233 ms ผ่าน 10/10 · §26 = 201–259 ms · ช่วงของสองชุดซ้อนกันมาก
+- ตัวจำกัดอยู่บนเส้นทางของทุก request (lock หนึ่งครั้งตอนเข้าและออก) แต่**ยังไม่ได้วัด**ว่าเป็นสาเหตุ ·
+  ตัววัดไม่ได้บันทึกจำนวนที่ถูกจำกัดในช่วง steady ของ P1 v3 (ผู้ใช้ 400 คน โอกาสมี 3 คำขอของคนเดียวค้างพร้อมกัน
+  ต่ำ แต่ไม่ได้พิสูจน์ว่าเป็นศูนย์)
+- จึง**ไม่สรุป**ว่าตัวจำกัดทำให้ช้าลง หรือเป็นความแปรปรวนของเครื่อง — บันทึกตามเกณฑ์ว่า**ไม่ผ่าน**
+
+### 26.5 ผลต่อชุดเทส
+
+- Functional Gate รอบแรกล้ม 1 ตัว: `test_l3_explainability.py::test_concurrent_requests_agree` ยิงผู้ใช้เดียว
+  20 คำขอพร้อมกัน → คำตอบที่ถูกจำกัดไม่มีคะแนน (0.0) ปนเข้าการเทียบ · **ไม่ขยายเพดานใน env เทส** (คอนฟิกต้องตรง
+  production, B66) — แก้เทสให้เทียบเฉพาะคำตอบที่ได้คะแนน และคำตอบที่เหลือต้องเป็น `per_user_overload` เท่านั้น
+  (ยังต้องสำเร็จครบ 20)
+- `test_concurrent_burst_mostly_within_timeout` (Performance Gate) นับคำตอบที่ถูกจำกัดเป็น "ไม่ timeout" —
+  ยังจริงสำหรับ login แต่**ไม่ได้พิสูจน์ว่าโมเดลประมวลผลครบ 20 ตัว**อีกต่อไป
+- หลังแก้: Functional Gate 1497 passed / 0 failed / ไม่มี state รั่ว · Performance Gate 3 passed · ml-service 80 passed
+
+### 26.6 ตัดสิน
+
+- **H ผ่าน** — ผู้ใช้คนเดียวที่ยิงถี่ไม่ทำให้ผู้ใช้อื่นช้าเกินเพดานอีก และผู้ใช้อื่นไม่ถูกจำกัด
+- **Capacity Gate ยังไม่ผ่าน** — P1 v3 = ไม่ผ่านในคอนฟิกนี้
+- สถานะไม่เปลี่ยน: **ห้าม merge เข้า `main` · ห้ามเปิด Shadow Pilot**
+
+## 27. รันซ้ำ
 
 ```bash
 bash scripts/test/ml_capacity_gate.sh            # 1 2 4
@@ -892,7 +948,7 @@ CAP_SERVER=reuseport CAP_HIGH_SCORE_SHARE=0.33 CAP_OPEN_LOOP_RATES=10,30,60,120 
 CAP_SERVER=reuseport CAP_HIGH_SCORE_SHARE=0.33 CAP_COLD_OPEN_LOOP=1 bash scripts/test/ml_capacity_gate.sh 4   # ช่วงเย็น (§15)
 CAP_SERVER=reuseport CAP_SHARD=1 CAP_HIGH_SCORE_SHARE=0.33 CAP_COLD_OPEN_LOOP=1 bash scripts/test/ml_capacity_gate.sh 4   # แบ่ง worker ตามผู้ใช้ (§20)
 CAP_SERVER=reuseport CAP_SHARD=1 CAP_HIGH_SCORE_SHARE=0.33 CAP_COLD_OPEN_LOOP=1 CAP_P1V3=1 bash scripts/test/ml_capacity_gate.sh 4   # P1 v3 (§23)
-CAP_SERVER=reuseport CAP_SHARD=1 CAP_HIGH_SCORE_SHARE=0.33 CAP_COLD_OPEN_LOOP=1 CAP_P1V3=1 bash scripts/test/ml_capacity_gate.sh 4   # hot-user protection (§25, เพดานค่าเริ่มต้น 2)
+CAP_SERVER=reuseport CAP_SHARD=1 CAP_HIGH_SCORE_SHARE=0.33 CAP_COLD_OPEN_LOOP=1 CAP_P1V3=1 bash scripts/test/ml_capacity_gate.sh 4   # hot-user protection (§25–26, เพดานค่าเริ่มต้น 2)
 ```
 
 ผลดิบ: `workers_{1,2,4}.json` + log ของ ml-service ต่อรอบ (เก็บใน `CAP_OUT` ไม่เข้า git)

@@ -303,13 +303,21 @@ async def test_concurrent_requests_agree(seeded, monkeypatch):
     ok = [o for o in outs if o["error"] is None]
     errors = sorted({o["error"] for o in outs if o["error"] is not None})
     assert len(ok) == 20, f"สำเร็จเพียง {len(ok)}/20 · error {errors}"
-    scores = {o["sequence"]["raw_score"] for o in ok}
+    # ตั้งแต่ §25: ml-service จำกัดคำขอค้างพร้อมกันต่อผู้ใช้ (ค่าเริ่มต้น 2 เหมือน production)
+    # คำขอที่เกินเพดานได้ per_user_overload ไม่มีคะแนน — ห้ามนำมาเทียบ แต่ต้องเป็นเหตุผลนี้เท่านั้น
+    reasons = {(o.get("sequence") or {}).get("abstain_reason") for o in ok}
+    scored = [o for o in ok if (o["sequence"] or {}).get("abstain_reason") is None]
+    assert reasons <= {None, "per_user_overload"}, f"เหตุผลที่ไม่คาด: {reasons}"
+    assert scored, "ไม่มีคำขอที่ได้คะแนนเลย"
+    scores = {o["sequence"]["raw_score"] for o in scored}
     tops = {
-        o["diagnostic_factors"][0]["feature"] for o in ok if o["diagnostic_factors"]
+        o["diagnostic_factors"][0]["feature"] for o in scored if o["diagnostic_factors"]
     }
     assert len(scores) == 1, f"คะแนนไม่ตรงกัน: {scores}"
     assert len(tops) <= 1, f"คำอธิบายไม่ตรงกัน: {tops}"
-    print(f"\n  concurrency 20 -> สำเร็จ {len(ok)} · คะแนนเดียว {scores}")
+    print(
+        f"\n  concurrency 20 -> สำเร็จ {len(ok)} · ได้คะแนน {len(scored)} · คะแนนเดียว {scores}"
+    )
 
 
 @pytest.mark.performance
