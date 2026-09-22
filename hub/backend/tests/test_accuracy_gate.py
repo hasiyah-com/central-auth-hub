@@ -367,3 +367,39 @@ def test_harness_g_without_params_is_refused():
             gamma=0.35,
             thresholds={},
         )
+
+
+# ══════════════ 9. สูตรลัดของสคริปต์วัด ต้องเท่ากับ resolve_action ══════════════
+
+
+def test_caught_fast_matches_the_production_resolver():
+    pytest.importorskip("app.security.risk_fusion")
+    import itertools
+
+    import exp_accuracy_gate as EXP
+    from app.security.risk_fusion import ResolverInput, resolve_action
+
+    grid = itertools.product(
+        (0.2, 0.9989, 0.9995, 1.0),
+        (False, True),
+        (None, "warn", "challenge"),
+        (None, "anomaly", "rule"),
+        ((), (0.3,), (0.9999,)),
+        (None, "warn"),
+    )
+    n = 0
+    for score, denied, mn, prim, other, cap in grid:
+        inp = ResolverInput(
+            final_score=score,
+            policy_denied=denied,
+            policy_min_action=mn,
+            primary_layer=prim,
+            other_evidence=other,
+            action_cap=cap,
+        )
+        for t in (0.999, 0.9995):
+            thr = EXP._thr(0.98, t, 1.0)
+            exact = resolve_action(inp, thr)[0] in ("challenge", "block")
+            assert EXP.caught_fast(inp, t) == exact, (inp, t)
+            n += 1
+    assert n > 500
