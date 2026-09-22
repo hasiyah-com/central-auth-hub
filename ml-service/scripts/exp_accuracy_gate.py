@@ -142,19 +142,9 @@ class Store:
                     c["scores"].sort()
 
 
-def caught_fast(inp: ResolverInput, t: float) -> bool:
-    """ถึง challenge ที่ threshold t ไหม — สูตรลัดที่ตรวจเทียบกับ resolve_action ทุกครั้งที่รัน."""
-    if inp.policy_denied or inp.policy_min_action in ("challenge", "block"):
-        return True
-    return inp.action_cap not in ("allow", "warn") and inp.final_score >= t
-
-
-def _thr(warn: float, t_c: float, t_b: float) -> dict:
-    return {
-        "warn": AG.warn_threshold(warn, t_c),
-        "challenge": t_c,
-        "block": max(t_b, t_c),
-    }
+# ตรรกะการตัดสินอยู่ใน accuracy_gate (stdlib ล้วน) — เทสได้โดยไม่ต้องมี numpy
+caught_fast = AG.caught_fast
+_thr = AG.thresholds_at
 
 
 def challenge_fpr_by_size(store: Store, t: float) -> dict:

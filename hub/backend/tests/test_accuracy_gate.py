@@ -376,7 +376,6 @@ def test_caught_fast_matches_the_production_resolver():
     pytest.importorskip("app.security.risk_fusion")
     import itertools
 
-    import exp_accuracy_gate as EXP
     from app.security.risk_fusion import ResolverInput, resolve_action
 
     grid = itertools.product(
@@ -398,8 +397,8 @@ def test_caught_fast_matches_the_production_resolver():
             action_cap=cap,
         )
         for t in (0.999, 0.9995):
-            thr = EXP._thr(0.98, t, 1.0)
+            thr = AG.thresholds_at(0.98, t, 1.0)
             exact = resolve_action(inp, thr)[0] in ("challenge", "block")
-            assert EXP.caught_fast(inp, t) == exact, (inp, t)
+            assert AG.caught_fast(inp, t) == exact, (inp, t)
             n += 1
     assert n > 500

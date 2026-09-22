@@ -250,3 +250,18 @@ def select_g(results: list[dict]) -> dict:
             -(r["params"]["w_point"] + r["params"]["w_sequence"]),
         ),
     )
+
+
+def thresholds_at(warn: float, t_c: float, t_b: float) -> dict:
+    return {"warn": warn_threshold(warn, t_c), "challenge": t_c, "block": max(t_b, t_c)}
+
+
+def caught_fast(inp, t: float) -> bool:
+    """ถึง challenge ที่ threshold t ไหม — สูตรลัดของการกวาด threshold.
+
+    อยู่ในโมดูล stdlib ล้วนโดยตั้งใจ: ต้องทดสอบเทียบกับ `resolve_action` ได้ในที่ที่ไม่มี numpy
+    (CI ของ backend) ไม่ใช่เฉพาะในเครื่องที่มี harness ครบ (บทเรียน B61)
+    """
+    if inp.policy_denied or inp.policy_min_action in ("challenge", "block"):
+        return True
+    return inp.action_cap not in ("allow", "warn") and inp.final_score >= t

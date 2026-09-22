@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import copy
+from pathlib import Path
 
 import pytest
 
@@ -339,7 +340,7 @@ def test_app_starts_with_conditional_params_set_in_the_environment():
         capture_output=True,
         text=True,
         env=env,
-        cwd="/app",
+        cwd=str(Path(__file__).resolve().parents[1]),
     )
     assert out.returncode == 0, out.stderr[-1500:]
     assert "ambiguous_low" in out.stdout
