@@ -11,6 +11,7 @@
 #   CAP_COLD_OPEN_LOOP=1 ...   # ช่วงเย็นแบบ open-loop ก่อนทุกขั้น (400 คน, 60/วินาที, 60 วินาที)
 #   CAP_FIT_WAIT_MS=50 ...     # งบรอ fit ของ ml-service (ว่าง = ค่าเริ่มต้น 50)
 #   CAP_SHARD=1 ...            # L3 แยกตามผู้ใช้: worker มีพอร์ตเฉพาะ 9100+i (ต้องใช้ reuseport)
+#   CAP_P1V3=1 ...             # P1 v3: steady บนผู้ใช้ชุด cold 400 คน + hot user (ต้องมี CAP_COLD_OPEN_LOOP=1)
 #   เทียบสองฝั่ง: python -m scripts.ml_capacity_compare <dir A> <dir B>   (ใน hub/backend)
 #
 # ทุกค่าของ worker เปิด ml-service ตัวใหม่ (container `ml-cap`) → cache/lock เย็นทุก process
@@ -81,7 +82,8 @@ for W in $WORKERS; do
       --open-loop-rates "${CAP_OPEN_LOOP_RATES:-}" \
       --open-loop-seconds "${CAP_OPEN_LOOP_SECONDS:-60}" \
       $([ "${CAP_COLD_OPEN_LOOP:-0}" = 1 ] && echo --cold-open-loop) \
-      $([ "${CAP_SHARD:-0}" = 1 ] && echo --shard-base-port 9100)
+      $([ "${CAP_SHARD:-0}" = 1 ] && echo --shard-base-port 9100) \
+      $([ "${CAP_P1V3:-0}" = 1 ] && echo --p1-v3)
   rc=$?
   set -e
   docker logs ml-cap > "$OUT/ml-cap_workers_$W.log" 2>&1 || true

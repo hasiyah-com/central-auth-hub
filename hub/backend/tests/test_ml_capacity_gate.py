@@ -671,6 +671,80 @@ def test_p2_in_shard_mode_expects_one_fit_per_user_in_total():
     assert not G.evaluate(**kw, shard_mode=True)["checks"]["P2_fit_storm"]["pass"]
 
 
+# ── P1 v3 (§23 — เขียนก่อนวัด): ผู้ใช้ ≥ 400 คน + hot user ─────────────────────
+
+
+def test_v3_constants_are_preregistered():
+    assert G.V3_USERS >= 400
+    assert G.V3_ROUNDS == 3
+    assert G.V3_HOT_CONCURRENCY == 20
+    # เกณฑ์เดิมของ P1 v2 — ห้ามแก้ย้อนหลัง
+    assert G.P95_BUDGET_MS == 250.0
+    assert G.P1_V2_MEDIAN_MAX_MS == 225.0
+    assert G.P1_V2_RUN_SHARE == 0.9
+
+
+def test_v3_probes_cover_every_cold_user_with_fixed_inputs():
+    g = _gate(0.33)
+    g.cold_users = [f"cold-user-{i:04d}" for i in range(400)]
+    a = g.v3_probes()
+    b = g.v3_probes()
+    assert len(a) == 400 and a == b  # คงที่ทุกครั้ง (P3 เทียบต่อ probe ได้)
+    assert len({u for u, _ in a}) == 400
+
+
+def test_steady_can_run_on_any_probe_set():
+    import asyncio
+
+    import httpx
+
+    seen = []
+
+    def handler(request):
+        seen.append(json.loads(request.content)["user_id"])
+        return httpx.Response(200, json={"data": {"sequence": {}, "point": {}}})
+
+    g = _gate(0.0)
+    probes = [(f"v3-{i}", [0.0] * 6) for i in range(50)]
+
+    async def go():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as c:
+            return await g.steady(c, 5, probes=probes)
+
+    out = asyncio.run(go())
+    assert len(out["raw_ms"]) == G.REQUESTS_PER_LEVEL
+    assert set(seen) <= {u for u, _ in probes}
+    assert len(set(seen)) > 20  # ไม่ใช่ผู้ใช้ชุด cap 20 คนเดิม
+
+
+def test_v3_summary_applies_the_unchanged_p1_rule():
+    def run(p95_20, warming=0, share=1.05):
+        return {
+            "p1_v3": {
+                "pooled": {c: {"p95_ms": 100.0} for c in ("1", "5", "10")}
+                | {"20": {"p95_ms": p95_20}},
+                "warming_after_warm": warming,
+                "load_share": {"max_over_mean": share},
+            },
+            "cold_open_loop": {"consistency_violations": 0},
+        }
+
+    ok = [run(200.0) for _ in range(9)] + [run(260.0)]
+    s = G.p1_v3_summary(ok)
+    assert s["p1_pass"] and s["c3_pass"] and s["passed"]
+
+    assert not G.p1_v3_summary([run(230.0) for _ in range(10)])[
+        "p1_pass"
+    ]  # median > 225
+    bad_c3 = ok[:-1] + [run(200.0, warming=1)]
+    assert not G.p1_v3_summary(bad_c3)["c3_pass"]
+
+
+def test_v3_summary_needs_ten_runs():
+    s = G.p1_v3_summary([])
+    assert s["passed"] is False
+
+
 def test_passing_input_is_not_mutated():
     kw = _passing()
     snap = copy.deepcopy(kw)

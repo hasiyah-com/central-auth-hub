@@ -59,6 +59,14 @@ COLD_OVER_DEADLINE_MAX = 0.01  # เกิน 500 ms ได้ไม่เกิ
 COLD_BUCKET_S = 5.0
 WARMING_REASON = "model_warming"
 
+# ── P1 v3 (§23 — กำหนดก่อนวัด) ──
+# steady บนผู้ใช้ชุด cold 400 คน (อุ่นแล้ว) แทนชุด cap 20 คนที่ hash เอียง 3/9/4/4 ใน §21
+# เกณฑ์ตัดสินใช้ของ P1 v2 เดิมทุกตัว (P95_BUDGET_MS, P1_V2_*) — ห้ามแก้ย้อนหลัง
+V3_USERS = COLD_USERS
+V3_ROUNDS = 3
+V3_HOT_CONCURRENCY = 20  # ผู้ใช้คนเดียวยิงพร้อมกัน 20 — กรณี hot user
+V3_MIN_RUNS = 10
+
 
 def _db_index(url: str) -> int:
     tail = url.rstrip("/").rsplit("/", 1)[-1]
@@ -298,17 +306,26 @@ class Gate:
             prev_total = total
         return {"rounds": rounds, "stable": stable >= 2, "fits_total": prev_total}
 
-    async def steady(self, client, conc: int) -> dict:
+    def v3_probes(self) -> list[tuple[str, list[float]]]:
+        """probe คงที่ต่อผู้ใช้ชุด cold — residual เดิมทุกครั้ง (P3 เทียบคะแนนต่อ probe ได้)."""
+        out = []
+        for i, u in enumerate(self.cold_users[:V3_USERS]):
+            rng = random.Random(70_000 + i)
+            out.append((u, [round(rng.gauss(0, 1), 6) for _ in range(DIMS)]))
+        return out
+
+    async def steady(self, client, conc: int, probes=None) -> dict:
         lat: list[float] = []
         errors: list[str] = []
         scores: dict[str, set] = {}
         queue = list(range(REQUESTS_PER_LEVEL))
         rng = random.Random(conc)
+        pool = probes if probes is not None else self.probes
 
         async def worker():
             while queue:
                 queue.pop()
-                u, r = self.probes[rng.randrange(len(self.probes))]
+                u, r = pool[rng.randrange(len(pool))]
                 ms, data, err = await self.call(client, u, r, spread=True)
                 lat.append(ms)
                 if err:
@@ -477,6 +494,34 @@ def cold_user_order(n_users: int, n_arrivals: int) -> list[int]:
     return [i % n_users for i in range(n_arrivals)]
 
 
+def p1_v3_summary(runs: list[dict]) -> dict:
+    """ตัดสิน P1 v3 ตาม §23: กฎของ P1 v2 เดิมทุกระดับ + C3 = 0 ทุกครั้ง + ต้องมี ≥ 10 ครั้ง."""
+    per_level: dict[str, list[float]] = {}
+    c3_ok = True
+    shares = []
+    for r in runs:
+        v3 = r.get("p1_v3") or {}
+        for lvl, s in (v3.get("pooled") or {}).items():
+            per_level.setdefault(lvl, []).append(s["p95_ms"])
+        if (r.get("cold_open_loop") or {}).get("consistency_violations") != 0:
+            c3_ok = False
+        if v3.get("warming_after_warm") != 0:
+            c3_ok = False
+        shares.append((v3.get("load_share") or {}).get("max_over_mean"))
+    enough = len(runs) >= V3_MIN_RUNS
+    p1 = enough and bool(per_level) and all(p1_v2_pass(v) for v in per_level.values())
+    return {
+        "runs": len(runs),
+        "enough_runs": enough,
+        "per_run_p95": per_level,
+        "median_p95": {k: statistics.median(v) for k, v in per_level.items()},
+        "p1_pass": p1,
+        "c3_pass": c3_ok and enough,
+        "load_share_max_over_mean": shares,
+        "passed": p1 and c3_ok and enough,
+    }
+
+
 def cold_pass(result: dict) -> bool:
     """เกณฑ์ช่วงเย็น (§15): p95 <= 250 ms · error = 0 · เกิน 500 ms <= 1%."""
     lat = result["latency"]
@@ -576,6 +621,8 @@ def _merge_scores(*maps: dict) -> dict[str, set]:
 
 
 async def run(a) -> dict:
+    if a.p1_v3 and not a.cold_open_loop:
+        raise SystemExit("--p1-v3 ต้องใช้คู่ --cold-open-loop (ใช้ผู้ใช้ชุด cold 400 คน)")
     gate = Gate(a.url, a.redis, a.workers, a.seed, high_score_share=a.high_score_share)
     if a.shard_base_port:
         gate.shard_base_port = a.shard_base_port
@@ -589,6 +636,7 @@ async def run(a) -> dict:
             gate.seed_history()
         cold_open = None
         fit_baseline = None
+        p1_v3 = None
         if a.cold_open_loop:
             gate.seed_cold_users()
         ready = await gate.wait_ready(client)
@@ -604,6 +652,13 @@ async def run(a) -> dict:
             after_cold = await gate.stats(client)
             fit_baseline = {pid: s["fits_total"] for pid, s in after_cold.items()}
             cold_open["wait_outcomes"] = wait_outcomes(after_cold)
+            if a.p1_v3:
+                p1_v3 = await run_p1_v3(gate, client)
+                # ฐานของ P2 ต้องนับหลัง v3 (v3 fit ผู้ใช้ชุด cold ที่ยังไม่ครบ)
+                fit_baseline = {
+                    pid: s["fits_total"]
+                    for pid, s in (await gate.stats(client)).items()
+                }
         started = time.perf_counter()
         cold = await gate.cold_burst(client)
         cold_stats = await gate.stats(client)
@@ -641,9 +696,60 @@ async def run(a) -> dict:
     )
     result["open_loop"] = open_loop
     result["cold_open_loop"] = cold_open
+    result["p1_v3"] = p1_v3
     result["cold_burst_passed"] = cold_pass({"latency": cold["latency"]})
     result["wait_outcomes_total"] = wait_outcomes(rounds[-1]["stats"])
     return result
+
+
+async def run_p1_v3(gate: "Gate", client) -> dict:
+    """steady บนผู้ใช้ชุด cold ทั้ง 400 คน + hot user (§23).
+
+    1) อุ่นทุกคน (ส่งครบทุกคนจนไม่มี warming) 2) steady V3_ROUNDS × CONCURRENCY
+    3) สัดส่วนงานของทุก worker 4) hot user: คนเดียว c=20 · ผสม: hot c=10 + คนอื่น c=10
+    """
+    probes = gate.v3_probes()
+    warm_passes = 0
+    for _ in range(6):
+        warm_passes += 1
+        res = await asyncio.gather(
+            *(gate.call(client, u, r, spread=True) for u, r in probes)
+        )
+        if not any(d and _is_warming(d) for _, d, _ in res):
+            break
+        await gate.wait_fits_idle(client)
+    before = await gate.stats(client)
+
+    raw_rounds, rounds_p95, warming = [], [], 0
+    for _ in range(V3_ROUNDS):
+        raw, p95 = {}, {}
+        for c in CONCURRENCY:
+            out = await gate.steady(client, c, probes=probes)
+            raw[str(c)] = out["raw_ms"]
+            p95[str(c)] = out["latency"]["p95_ms"]
+            warming += out["warming"]
+        raw_rounds.append(raw)
+        rounds_p95.append(p95)
+    after = await gate.stats(client)
+
+    hot = probes[0]
+    hot_only = await gate.steady(client, V3_HOT_CONCURRENCY, probes=[hot])
+    mixed_hot, mixed_rest = await asyncio.gather(
+        gate.steady(client, 10, probes=[hot]),
+        gate.steady(client, 10, probes=probes[1:]),
+    )
+    strip = lambda o: {k: v for k, v in o.items() if k not in ("raw_ms", "scores")}  # noqa: E731
+    return {
+        "users": len(probes),
+        "warm_passes": warm_passes,
+        "pooled": pool_levels(raw_rounds),
+        "rounds_p95": rounds_p95,
+        "warming_after_warm": warming,
+        "load_share": load_share(before, after),
+        "hot_user": strip(hot_only),
+        "mixed_hot": strip(mixed_hot),
+        "mixed_others": strip(mixed_rest),
+    }
 
 
 def _point_shap_mode(stats: dict):
@@ -823,6 +929,11 @@ def main(argv=None) -> int:
         type=int,
         default=None,
         help="ส่ง L3 ไปพอร์ตเฉพาะของ worker ตาม shard_index ของ hub (§20)",
+    )
+    ap.add_argument(
+        "--p1-v3",
+        action="store_true",
+        help="P1 v3 (§23): steady บนผู้ใช้ชุด cold 400 คน + hot user · ต้องใช้คู่ --cold-open-loop",
     )
     ap.add_argument(
         "--cold-open-loop",

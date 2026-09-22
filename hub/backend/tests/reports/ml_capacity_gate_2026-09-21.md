@@ -729,7 +729,49 @@ fit ของผู้ใช้ชุด cap หลังช่วงเย็�
   `tests/test_schema_snapshot.py` บังคับให้ snapshot ตรง alembic head · จำลองขั้นตอนของ CI ในเครื่อง
   (ฐานข้อมูลว่างใหม่ + env ชุดเดียวกับ CI): **1418 passed, 0 failed**
 
-## 23. รันซ้ำ
+## 23. P1 v3 — การทดลองใหม่ เขียนก่อนวัด (2026-09-22)
+
+ส่วนนี้ commit **ก่อน**วัด · ผลจะเพิ่มใน §24 โดยไม่แก้ส่วนนี้ · **ผล P1 v2 = ไม่ผ่าน (§21) คงไว้ตามเดิม**
+P1 v3 เป็นการทดลองใหม่ที่ตอบคำถามต่างออกไป ไม่ใช่การวัดซ้ำเพื่อแทนผลเดิม
+
+### 23.1 คำถาม
+
+§21 ล้มเพราะ steady ใช้ผู้ใช้ชุด cap 20 คน ซึ่ง hash ไป worker เป็น 3/9/4/4 (max/mean 1.9) · คำถามของ
+P1 v3: **เมื่อผู้ใช้มีจำนวนสมจริง (≥ 400 คน) การแบ่ง worker ตามผู้ใช้ผ่าน P1 ด้วยเกณฑ์เดิมหรือไม่** และ
+**ความเสี่ยงจากผู้ใช้คนเดียวที่ร้องขอถี่ (hot user) มีขนาดเท่าไร**
+
+### 23.2 การตั้งค่า
+
+- `app.serve` 4 worker + `--shard-base-port 9100` · ตัววัดส่งงานด้วย `shard_index` ตัวเดียวกับ hub
+- ค่าเริ่มต้นของ ml-service (SHAP ≥ 0.50, งบรอ fit 50 ms) · probe คะแนนสูง 33%
+- `CAP_SHARD=1 CAP_COLD_OPEN_LOOP=1 CAP_P1V3=1` · **10 ครั้ง** แต่ละครั้งเปิด ml-service ใหม่
+- ลำดับในแต่ละครั้ง: ช่วงเย็นแบบ open-loop (§15, 400 ผู้ใช้ใหม่) → รอ fit ว่าง → **P1 v3** → ขั้นเดิมของ
+  ผู้ใช้ชุด cap (cold burst, warm-up, steady เดิม — ใช้ตรวจ P2/P3/P4)
+- **P1 v3:** อุ่นผู้ใช้ชุด cold ทั้ง 400 คน (ส่งครบทุกคนจนไม่มี `model_warming`) → steady 3 รอบ ×
+  concurrency 1/5/10/20 × 400 request ต่อระดับ สุ่มผู้ใช้จาก 400 คน (probe คงที่ต่อคน) → p95 รวม 1,200
+  request ต่อระดับต่อครั้ง · บันทึก request ต่อ worker ทุกตัว (`load_share`)
+- **hot user:** (ก) ผู้ใช้คนเดียว c=20 · (ข) ผสม: ผู้ใช้คนเดียว c=10 พร้อมกับผู้ใช้อื่นอีก 399 คน c=10
+
+### 23.3 เกณฑ์ผ่าน (ใช้ตัวเลขเดิมของ P1 v2 — ไม่แก้ย้อนหลัง)
+
+- **P1 v3:** ทุกระดับ concurrency — median ของ p95 รวมต่อครั้ง ≤ **225 ms** และอย่างน้อย **9/10** ครั้ง
+  ≤ **250 ms** (รวม c=20)
+- **C3:** `consistency_violations == 0` ในช่วงเย็น **และ** ไม่มี `model_warming` ในช่วง steady ของ P1 v3
+  (ทุกคนอุ่นแล้ว) — **ทุกครั้ง**
+- **C1, C2, P2 แบบ shard, P3, P4:** กฎเดิม (§13/§15/§20)
+- ตัดสินด้วย `p1_v3_summary()` ใน `scripts/ml_capacity_gate.py` (มีเทส) · ต้องมีครบ ≥ 10 ครั้ง
+
+### 23.4 hot user — ข้อมูลประกอบ ไม่ใช่เกณฑ์ผ่าน
+
+รายงาน p95 / p99 / error ของ (ก) และ (ข) แยกผู้ใช้ hot กับผู้ใช้อื่น · ถ้าผู้ใช้อื่นใน (ข) มี p95 เกิน 250 ms
+จะบันทึกเป็นความเสี่ยงที่ต้องแก้ก่อนเปิดใช้การแบ่ง worker จริง (เช่น จำกัดอัตราต่อผู้ใช้) แม้ P1 v3 จะผ่าน
+
+### 23.5 ถ้าผ่าน
+
+ยังเปิดได้แค่ **Shadow Pilot** และยังต้องตัดสินแยกว่าจะเปิดการแบ่ง worker เป็นค่าเริ่มต้นหรือไม่ ·
+ไม่ให้ L3 บังคับ step-up หรือ block
+
+## 24. รันซ้ำ
 
 ```bash
 bash scripts/test/ml_capacity_gate.sh            # 1 2 4
@@ -742,6 +784,7 @@ CAP_SERVER=reuseport CAP_HIGH_SCORE_SHARE=0.33 CAP_OPEN_LOOP_RATES=10,30,60,120 
 (cd hub/backend && python -m scripts.ml_capacity_compare <dir A> <dir B>)   # เทียบ v2
 CAP_SERVER=reuseport CAP_HIGH_SCORE_SHARE=0.33 CAP_COLD_OPEN_LOOP=1 bash scripts/test/ml_capacity_gate.sh 4   # ช่วงเย็น (§15)
 CAP_SERVER=reuseport CAP_SHARD=1 CAP_HIGH_SCORE_SHARE=0.33 CAP_COLD_OPEN_LOOP=1 bash scripts/test/ml_capacity_gate.sh 4   # แบ่ง worker ตามผู้ใช้ (§20)
+CAP_SERVER=reuseport CAP_SHARD=1 CAP_HIGH_SCORE_SHARE=0.33 CAP_COLD_OPEN_LOOP=1 CAP_P1V3=1 bash scripts/test/ml_capacity_gate.sh 4   # P1 v3 (§23)
 ```
 
 ผลดิบ: `workers_{1,2,4}.json` + log ของ ml-service ต่อรอบ (เก็บใน `CAP_OUT` ไม่เข้า git)
