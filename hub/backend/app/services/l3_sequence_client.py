@@ -10,6 +10,8 @@ Fail-safe ตาม B21: ml-service ล่ม/ช้า/ตอบผิดรู
 
 from __future__ import annotations
 
+import hashlib
+
 import httpx
 
 from app.config import settings
@@ -33,6 +35,31 @@ QUIET: dict = {
 # ค่าที่ยอมรับจาก ml-service — ค่าอื่นปัดเป็น None (payload ภายนอก ห้ามไหลเข้ามาตรงๆ)
 # model_warming: fit อยู่ใน thread เบื้องหลัง ยังไม่ทันงบรอ (ML Capacity Gate §15)
 _ABSTAIN_REASONS = ("model_warming",)
+
+
+def parse_shard_urls(raw: str) -> list[str]:
+    return [u.strip() for u in (raw or "").split(",") if u.strip()]
+
+
+def shard_index(user_id: str, n: int) -> int:
+    """worker ของผู้ใช้คนนี้ — sha256 คงที่ข้าม process/restart (ห้ามใช้ hash() ของ Python)."""
+    if n <= 1:
+        return 0
+    digest = hashlib.sha256(user_id.encode("utf-8")).digest()
+    return int.from_bytes(digest[:8], "big") % n
+
+
+def l3_base_url(user_id: str) -> str:
+    """URL ของ L3 สำหรับผู้ใช้คนนี้ — มี shard ก็ใช้ shard ของเขา ไม่มีก็ใช้ ml_service_url.
+
+    ผู้ใช้คนหนึ่งต้องไป worker เดิมเสมอ: cache โมเดลอยู่ต่อ process · ถ้าสลับ worker จะได้
+    model_warming สลับกับคะแนนจริง (ML Capacity Gate §19.4)
+    """
+    urls = parse_shard_urls(settings.l3_shard_urls)
+    if not urls:
+        return settings.ml_service_url
+    return urls[shard_index(user_id, len(urls))]
+
 
 DIMS = 6  # ต้องตรงกับ l3_sequence.DIMS (มี test parity กันไว้)
 
@@ -90,7 +117,7 @@ async def get_sequence_score(user_id: str, residual: list[float] | None) -> dict
     try:
         async with httpx.AsyncClient(timeout=settings.l3_timeout_seconds) as client:
             r = await client.post(
-                f"{settings.ml_service_url}/v1/sequence-score",
+                f"{l3_base_url(user_id)}/v1/sequence-score",
                 json={
                     "user_id": str(user_id),
                     "residual": [float(x) for x in residual] if residual else None,
@@ -238,7 +265,7 @@ async def evaluate_l3(
     try:
         async with httpx.AsyncClient(timeout=settings.l3_timeout_seconds) as client:
             r = await client.post(
-                f"{settings.ml_service_url}/v1/l3-evaluate",
+                f"{l3_base_url(user_id)}/v1/l3-evaluate",
                 json={
                     "user_id": str(user_id),
                     "features": [float(x) for x in features],

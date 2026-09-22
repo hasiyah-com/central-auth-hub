@@ -2,7 +2,7 @@
 
 from urllib.parse import urlsplit, urlunsplit
 
-from pydantic import Field, SecretStr, field_serializer
+from pydantic import Field, SecretStr, field_serializer, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # default ที่ห้ามใช้ใน production — ถ้าเจอตัวเหล่านี้ + app_env=production จะ fail-fast
@@ -131,6 +131,10 @@ class Settings(BaseSettings):
 
     # ML Service
     ml_service_url: str = "http://ml-service:9000"
+    # L3 แยกตามผู้ใช้ (ML Capacity Gate §19–20) — URL ของพอร์ตเฉพาะแต่ละ worker คั่นด้วย ,
+    # ผู้ใช้คนหนึ่งไป worker เดิมเสมอ (sha256 ของ user_id) → cache โมเดลสม่ำเสมอ ·
+    # ว่าง = ใช้ ml_service_url ตัวเดียวแบบเดิม · URL ผิดรูป/ซ้ำ = ไม่ start
+    l3_shard_urls: str = ""
     ml_timeout_seconds: float = 2.0
     # Hub → subsystem health check verify TLS ของ subsystem ไหม (pre-flight ก่อน OAuth).
     # prod บน cert flaky (self-signed) → ตั้ง false เพื่อไม่ mark subsystem down ผิดๆ
@@ -280,6 +284,22 @@ class Settings(BaseSettings):
     def _serialize_url(self, value: str, info):
         """model_dump/json ของ Settings — ปิดเหมือน repr (ค่าบน attribute ไม่เปลี่ยน)."""
         return _mask_url(value, opaque_path=info.field_name in _URL_OPAQUE_FIELDS)
+
+    @field_validator("l3_shard_urls")
+    @classmethod
+    def _check_shard_urls(cls, v: str) -> str:
+        if not v or not v.strip():
+            return ""
+        urls = [u.strip() for u in v.split(",")]
+        if any(not u for u in urls):
+            raise ValueError("l3_shard_urls มีช่องว่างระหว่าง ,")
+        for u in urls:
+            parts = urlsplit(u)
+            if parts.scheme not in ("http", "https") or not parts.hostname:
+                raise ValueError(f"l3_shard_urls ผิดรูป: {u!r}")
+        if len(set(urls)) != len(urls):
+            raise ValueError("l3_shard_urls มี URL ซ้ำ — worker เดียวจะได้งานสองส่วน")
+        return v
 
     def __repr_args__(self):
         """repr/str ของ Settings — ปิดรหัสผ่านใน URL (B78)."""

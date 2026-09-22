@@ -36,12 +36,35 @@ def make_socket(host: str, port: int) -> socket.socket:
     return s
 
 
-def _run_worker(app: str, host: str, port: int, log_level: str) -> None:
+def make_shard_socket(host: str, port: int) -> socket.socket:
+    """พอร์ตเฉพาะของ worker หนึ่งตัว (L3 แยกตามผู้ใช้) — **ไม่ใช้** SO_REUSEPORT.
+
+    ถ้าให้ reuseport process อื่นจะ bind พอร์ตเดียวกันได้ แล้วงานของ shard ถูกแบ่งเงียบๆ ·
+    SO_REUSEADDR พอให้ worker ที่เปิดใหม่ bind พอร์ตเดิมได้ทันทีหลังตัวเก่าตาย
+    """
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    s.bind((host, port))
+    s.listen(2048)
+    return s
+
+
+def worker_ports(slot: int, a: argparse.Namespace) -> tuple[int, int | None]:
+    """(พอร์ตร่วม, พอร์ตเฉพาะของช่องนี้) — ช่องเดิมได้พอร์ตเดิมเสมอแม้ worker ถูกเปิดใหม่."""
+    shard = None if a.shard_base_port is None else a.shard_base_port + slot
+    return a.port, shard
+
+
+def _run_worker(
+    app: str, host: str, port: int, log_level: str, shard_port: int | None = None
+) -> None:
     import uvicorn
 
-    sock = make_socket(host, port)  # เปิดหลัง fork — socket ของ worker นี้เท่านั้น
+    socks = [make_socket(host, port)]  # เปิดหลัง fork — socket ของ worker นี้เท่านั้น
+    if shard_port is not None:
+        socks.append(make_shard_socket(host, shard_port))
     config = uvicorn.Config(app, log_level=log_level)
-    uvicorn.Server(config).run(sockets=[sock])
+    uvicorn.Server(config).run(sockets=socks)
 
 
 class Supervisor:
@@ -103,9 +126,21 @@ def parse_args(argv=None) -> argparse.Namespace:
     ap.add_argument("--port", type=int, default=9000)
     ap.add_argument("--workers", type=int, default=1)
     ap.add_argument("--log-level", default="info")
+    ap.add_argument(
+        "--shard-base-port",
+        type=int,
+        default=None,
+        help="worker ช่อง i ฟังพอร์ต base+i เพิ่ม (L3 แยกตามผู้ใช้) — ไม่ระบุ = ไม่มี",
+    )
     a = ap.parse_args(argv)
     if a.workers < 1:
         ap.error("--workers ต้องมากกว่า 0")
+    if a.shard_base_port is not None:
+        lo, hi = a.shard_base_port, a.shard_base_port + a.workers - 1
+        if lo < 1 or hi > 65535:
+            ap.error(f"--shard-base-port ทำให้ได้พอร์ต {lo}–{hi} ซึ่งเกินช่วง 1–65535")
+        if lo <= a.port <= hi:
+            ap.error(f"พอร์ต shard {lo}–{hi} ทับพอร์ตร่วม {a.port}")
     return a
 
 
@@ -116,9 +151,10 @@ def main(argv=None) -> int:
     ctx = multiprocessing.get_context("spawn")
 
     def spawn(i: int):
+        shared, shard = worker_ports(i, a)
         p = ctx.Process(
             target=_run_worker,
-            args=(a.app, a.host, a.port, a.log_level),
+            args=(a.app, a.host, shared, a.log_level, shard),
             name=f"ml-worker-{i}",
         )
         p.start()
@@ -134,7 +170,12 @@ def main(argv=None) -> int:
     signal.signal(signal.SIGINT, _stop)
     sup.start()
     print(
-        f"serve: {a.workers} worker บน {a.host}:{a.port} (SO_REUSEPORT)",
+        f"serve: {a.workers} worker บน {a.host}:{a.port} (SO_REUSEPORT)"
+        + (
+            ""
+            if a.shard_base_port is None
+            else f" · shard {a.shard_base_port}–{a.shard_base_port + a.workers - 1}"
+        ),
         file=sys.stderr,
         flush=True,
     )
