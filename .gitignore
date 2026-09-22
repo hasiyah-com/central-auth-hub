@@ -48,6 +48,9 @@ build/
 backups/
 *.sql
 *.sql.gz
+# ข้อยกเว้นเดียว: schema snapshot ของ CI — โครงสร้างอย่างเดียว ไม่มีข้อมูล
+# (tests/test_schema_snapshot.py บังคับว่าไม่มี COPY/INSERT และไม่มีอีเมล)
+!hub/backend/tests/support/schema/hub_schema.sql
 
 # ============ Docker ============
 postgres_data/

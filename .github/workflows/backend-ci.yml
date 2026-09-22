@@ -23,10 +23,11 @@ jobs:
         env:
           POSTGRES_USER: hub
           POSTGRES_PASSWORD: devpassword  # pragma: allowlist secret
-          POSTGRES_DB: hub_db
+          # ชุดเทสปฏิเสธ hub_db / Redis DB 0 แบบ fail-closed (tests/support/env_guard.py)
+          POSTGRES_DB: hub_test
         ports: ["5432:5432"]
         options: >-
-          --health-cmd "pg_isready -U hub -d hub_db"
+          --health-cmd "pg_isready -U hub -d hub_test"
           --health-interval 10s --health-timeout 5s --health-retries 5
       redis:
         image: redis:7
@@ -37,8 +38,9 @@ jobs:
 
     env:
       APP_ENV: development
-      DATABASE_URL: postgresql+psycopg2://hub:devpassword@localhost:5432/hub_db  # pragma: allowlist secret
-      REDIS_URL: redis://localhost:6379/0
+      DATABASE_URL: postgresql+psycopg2://hub:devpassword@localhost:5432/hub_test  # pragma: allowlist secret
+      REDIS_URL: redis://localhost:6379/15
+      TEST_ENVIRONMENT: "1"
       SECRET_KEY: ci-secret-key-not-for-production-0123456789  # pragma: allowlist secret
       SECRET_ENCRYPTION_KEY: ci-encryption-key-not-for-production-9876  # pragma: allowlist secret
       JWT_PRIVATE_KEY_PATH: ${{ github.workspace }}/hub/backend/keys/jwt_private.pem
@@ -68,10 +70,18 @@ jobs:
           openssl genpkey -algorithm RSA -out keys/jwt_private.pem -pkeyopt rsa_keygen_bits:2048
           openssl rsa -in keys/jwt_private.pem -pubout -out keys/jwt_public.pem
 
-      - name: Create tables + seed users
+      # สูตรเดียวกับ scripts/test/setup_test_db.sh (clone schema ของ hub_db แล้ว stamp head)
+      # CI ไม่มี hub_db จึงใช้ snapshot ใน repo · create_all ใช้ไม่ได้ (ไม่สร้าง trigger ของ
+      # Expert Review) · alembic upgrade จากฐานข้อมูลว่างใช้ไม่ได้ (baseline migration ค้างอยู่)
+      # snapshot ต้องตรง alembic head — tests/test_schema_snapshot.py บังคับไว้
+      - name: Load schema snapshot + stamp alembic + seed
+        env:
+          PGPASSWORD: devpassword  # pragma: allowlist secret
         run: |
-          python -c "from app.database import Base, engine; import app.models; Base.metadata.create_all(engine)"
+          psql -h localhost -U hub -d hub_test -v ON_ERROR_STOP=1 -q -f tests/support/schema/hub_schema.sql
+          alembic stamp head
           echo y | python -m app.seeds.seed_users
+          python -m scripts.seed_test_fixtures
 
       - name: Run pytest (exclude standalone scripts)
         run: |
@@ -84,4 +94,5 @@ jobs:
             --ignore=tests/test_l3_stability.py \
             --ignore=tests/test_l3_unified.py \
             --ignore=tests/test_l3_remote_e2e.py \
+            --ignore=tests/test_l3_warming_e2e.py \
             -p no:cacheprovider
