@@ -278,3 +278,69 @@ def test_selection_ignores_combinations_that_miss_the_matched_fpr():
     bad = _cal(0.90, 0.99, 0.004)
     bad["reachable"] = False
     assert AG.select_g([ok, bad]) is ok
+
+
+# ══════════════ 8. harness config G เรียก production ตัวเดียวกัน (B66) ══════════════
+
+
+def test_harness_g_equals_production_fuse_conditional():
+    """harness G กับ production fuse_conditional ต้องได้ผลเดียวกันบนหลักฐานชุดเดียวกัน."""
+    pytest.importorskip("app.security.risk_fusion")
+    from app.security import risk_fusion as RF
+    from app.security.behavior_profiling import evaluate_behavior
+    from app.security.policy_gate import PolicyOutcome
+    from app.security.risk_evidence import behavior_evidence, rule_evidence
+    from app.security.rule_engine import FEAT, evaluate_rules
+    from hybrid_experiment import configs as CFG
+
+    vec = [0.0] * 23
+    vec[FEAT["permission_change_age"]] = 365.0
+    vec[FEAT["is_new_device"]] = 1.0
+    vec[FEAT["login_count_24h"]] = 6.0
+    rule = evaluate_rules(vec, db=None, user_id="u", ip=None, geo_country=None)
+    beh = evaluate_behavior(vec, None)
+    params = RF.ConditionalParams(
+        ambiguous_low=0.3, w_point=1.0, w_sequence=0.5, low_zone_agree=0.9
+    )
+    thr = {"warn": 0.5, "challenge": 0.7, "block": 0.85}
+    ident = lambda layer, raw: float(raw)  # noqa: E731
+    l3 = CFG.L3Scores(point_raw=0.8, sequence_raw=0.95, sequence_eligible=True)
+
+    got = CFG.evaluate(
+        CFG.with_params(CFG.CONFIGS["G"], params),
+        PolicyOutcome(),
+        rule,
+        beh,
+        l3,
+        calibrate_fn=ident,
+        gamma=0.35,
+        thresholds=thr,
+    )
+    evs = [rule_evidence(rule), behavior_evidence(beh)]
+    for ev in evs:
+        ev.evidence_score = float(ev.raw_score or 0.0)
+    evs.append(CFG._anomaly_evidence(l3, CFG.CONFIGS["G"].views, ident))
+    want = RF.fuse_conditional(
+        PolicyOutcome(), evs, gamma=0.35, thresholds=thr, params=params
+    )
+    assert got.breakdown["fusion"] == "conditional"
+    assert (got.total_score, got.decision) == (want.total_score, want.decision)
+    assert got.breakdown["resolver"] == want.breakdown["resolver"]
+    assert got.breakdown["conditional"] == want.breakdown["conditional"]
+
+
+def test_harness_g_without_params_is_refused():
+    pytest.importorskip("app.security.risk_fusion")
+    from hybrid_experiment import configs as CFG
+
+    with pytest.raises(ValueError, match="params"):
+        CFG.evaluate(
+            CFG.CONFIGS["G"],
+            None,
+            None,
+            None,
+            CFG.L3Scores(),
+            calibrate_fn=lambda *_: 0.0,
+            gamma=0.35,
+            thresholds={},
+        )

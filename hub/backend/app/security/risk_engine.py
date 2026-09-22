@@ -24,7 +24,12 @@ from app.security.risk_evidence import (
     behavior_evidence,
     rule_evidence,
 )
-from app.security.risk_fusion import fuse, is_surfaced
+from app.security.risk_fusion import (
+    ConditionalParams,
+    fuse,
+    fuse_conditional,
+    is_surfaced,
+)
 from app.security.rule_engine import evaluate_rules
 
 logger = logging.getLogger(__name__)
@@ -205,6 +210,22 @@ async def evaluate_login_risk(
         # ไม่ได้คำนวณ hybrid ในโหมดนี้ — คัดลอก baseline มาตรง ๆ และบอกไว้ใน l3
         hybrid_shadow = dict(baseline_shadow)
 
+    # ── candidate G (conditional L3 fusion) — ผลจำลองชุดที่สาม ไม่มีทางไปตัดสินจริง ──
+    # ตามสวิตช์เดียวกับ hybrid (kill switch ปิด = ไม่คำนวณ) · params ถูกตรวจตอน start แล้ว
+    conditional_shadow = None
+    if (
+        settings.l3_conditional_params
+        and hybrid_enabled
+        and mode in _L3_IN_HYBRID_SHADOW
+    ):
+        params = ConditionalParams.from_json(settings.l3_conditional_params)
+        cond_raw = fuse_conditional(policy, [*l1_l2, anomaly_live], params=params, **kw)
+        conditional_shadow = {
+            **_shadow_result(cond_raw),
+            "zone": cond_raw.breakdown["conditional"]["zone"],
+            "params": params.to_dict(),
+        }
+
     logger.info(
         "[risk_engine] user=%s risk=%.3f decision=%s primary=%s l3_mode=%s "
         "baseline=%s hybrid=%s",
@@ -227,6 +248,7 @@ async def evaluate_login_risk(
         hybrid_enabled=hybrid_enabled,
         latency_total_ms=int((perf_counter() - started) * 1000),
         latency_l3_ms=latency_l3_ms,
+        conditional=conditional_shadow,
     )
 
 
@@ -242,6 +264,7 @@ def _result(
     hybrid_enabled: bool = True,
     latency_total_ms: int | None = None,
     latency_l3_ms: int | None = None,
+    conditional: dict | None = None,
 ) -> dict:
     """รูปแบบผลลัพธ์ — คีย์เดิมคงไว้ทั้งหมดเพื่อไม่ให้ router ต้องแก้."""
     point = (l3 or {}).get("point") or {}
@@ -281,6 +304,8 @@ def _result(
     breakdown["baseline_shadow"] = base
     breakdown["hybrid_shadow"] = hyb
     breakdown["hybrid_shadow_enabled"] = hybrid_enabled
+    if conditional is not None:
+        breakdown["conditional_shadow"] = conditional
 
     return {
         # ── แกนเดียวของการตัดสิน — มาจาก L4 เท่านั้น ──

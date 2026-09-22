@@ -135,6 +135,9 @@ class Settings(BaseSettings):
     # ผู้ใช้คนหนึ่งไป worker เดิมเสมอ (sha256 ของ user_id) → cache โมเดลสม่ำเสมอ ·
     # ว่าง = ใช้ ml_service_url ตัวเดียวแบบเดิม · URL ผิดรูป/ซ้ำ = ไม่ start
     l3_shard_urls: str = ""
+    # candidate G (conditional L3 fusion) — คำนวณเป็นผลจำลองชุดที่สามใน risk_breakdown เท่านั้น
+    # JSON ของ risk_fusion.ConditionalParams · ว่าง = ไม่คำนวณ · key ผิด/ค่าผิดช่วง = ไม่ start
+    l3_conditional_params: str = ""
     ml_timeout_seconds: float = 2.0
     # Hub → subsystem health check verify TLS ของ subsystem ไหม (pre-flight ก่อน OAuth).
     # prod บน cert flaky (self-signed) → ตั้ง false เพื่อไม่ mark subsystem down ผิดๆ
@@ -300,6 +303,15 @@ class Settings(BaseSettings):
         if len(set(urls)) != len(urls):
             raise ValueError("l3_shard_urls มี URL ซ้ำ — worker เดียวจะได้งานสองส่วน")
         return v
+
+    @field_validator("l3_conditional_params")
+    @classmethod
+    def _check_conditional_params(cls, v: str) -> str:
+        if not v or not v.strip():
+            return ""
+        from app.security.risk_fusion import ConditionalParams
+
+        return ConditionalParams.from_json(v).to_json()
 
     def __repr_args__(self):
         """repr/str ของ Settings — ปิดรหัสผ่านใน URL (B78)."""

@@ -19,7 +19,7 @@ production เรียกจริง -> วัดคนละระบบก�
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Callable
 
 from app.security.evidence import Evidence, abstain
@@ -27,7 +27,13 @@ from app.security.iforest_scorer import map_score
 from app.security.policy_gate import PolicyOutcome
 from app.security.risk_aggregator import aggregate as legacy_aggregate
 from app.security.risk_evidence import behavior_evidence, rule_evidence
-from app.security.risk_fusion import RiskDecision, fuse, fuse_weighted_sum
+from app.security.risk_fusion import (
+    ConditionalParams,
+    RiskDecision,
+    fuse,
+    fuse_conditional,
+    fuse_weighted_sum,
+)
 
 LAYER_ANOMALY = "anomaly"
 
@@ -51,8 +57,16 @@ class ExpConfig:
     name: str
     question: str
     views: tuple[str, ...] = ()
-    fusion: str = "max_corroboration"  # max_corroboration | weighted_sum | legacy
+    fusion: str = (
+        "max_corroboration"  # max_corroboration | weighted_sum | legacy | conditional
+    )
     _run: Callable | None = field(default=None, repr=False)
+    # เฉพาะ fusion="conditional" (candidate G) — เลือกจาก grid บน calibration (accuracy_gate)
+    params: ConditionalParams | None = None
+
+
+def with_params(cfg: "ExpConfig", params: ConditionalParams) -> "ExpConfig":
+    return replace(cfg, params=params)
 
 
 def _anomaly_evidence(l3: L3Scores, views: tuple[str, ...], calibrate_fn) -> Evidence:
@@ -98,6 +112,8 @@ def evaluate(
     thresholds: dict[str, float],
 ) -> RiskDecision:
     """ประเมินหนึ่งเหตุการณ์ตาม config — ทุกเส้นทางเรียกโค้ด production."""
+    if cfg.fusion == "conditional" and cfg.params is None:
+        raise ValueError("config G ต้องมี params (เลือกจาก grid บน calibration)")
     if cfg.fusion == "legacy":
         # ระบบเดิมทั้งดุ้น: ผลบวกคะแนนดิบ + map_score + threshold ชุดเดิม
         # ใช้ตอบว่า "ระบบเก่าทำได้เท่าไร" เท่านั้น ไม่ใช่ทางเลือกที่จะ deploy
@@ -117,6 +133,10 @@ def evaluate(
 
     if cfg.fusion == "weighted_sum":
         return fuse_weighted_sum(policy, evidences, thresholds=thresholds)
+    if cfg.fusion == "conditional":
+        return fuse_conditional(
+            policy, evidences, gamma=gamma, thresholds=thresholds, params=cfg.params
+        )
     return fuse(policy, evidences, gamma=gamma, thresholds=thresholds)
 
 
@@ -134,6 +154,14 @@ CONFIGS: dict[str, ExpConfig] = {
         "เปรียบเทียบวิธี fusion",
         (VIEW_POINT, VIEW_SEQUENCE),
         "weighted_sum",
+    ),
+    # Accuracy Gate 2026-09-23 — L3 มีน้ำหนักตามความมั่นใจของ L1/L2 (ต้อง with_params ก่อนใช้)
+    "G": ExpConfig(
+        "G",
+        "Conditional L3 fusion",
+        "L3 ตามเงื่อนไขช่วยตระกูลที่อ่อนได้ไหมที่ FPR เท่ากัน",
+        (VIEW_POINT, VIEW_SEQUENCE),
+        "conditional",
     ),
 }
 

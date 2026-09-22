@@ -1,8 +1,8 @@
 {
-  "frozen_at": "2026-09-22T07:20:06+00:00",
-  "git_commit": "ab509a455b172b90e7599678291bb64147ca75f7",
-  "git_branch": "HEAD",
-  "reason": "risk_engine._l3_summary บันทึก abstain_reason (model_warming) ลง risk_breakdown.l3 เพื่อแยก 'L3 ยังไม่พร้อม' ออกจาก 'L3 ดูแล้วไม่ยิง' ในข้อมูล shadow (ML Capacity Gate §19-20) · ข้อมูลเท่านั้น ไม่เปลี่ยนการตัดสินจริงหรือผลจำลอง (เทส test_recording_the_reason_does_not_change_the_decision) · ผู้ใช้อนุมัติ re-freeze 2026-09-22",
+  "frozen_at": "2026-09-22T17:50:05+00:00",
+  "git_commit": "5d5ec3c25ab895ea1262664f2be186db1a4fe8a1",
+  "git_branch": "feature/hybrid-accuracy-validation",
+  "reason": "Conditional L3 fusion (candidate G, Accuracy Gate 2026-09-23 ระยะที่ 5): risk_fusion เพิ่ม ConditionalParams/fuse_conditional และ ResolverInput.action_cap (ค่าเริ่มต้น None ไม่เปลี่ยนผล fuse เดิม — tests/test_conditional_fusion.py::test_existing_fuse_is_unchanged_by_the_new_field) · risk_engine บันทึก conditional_shadow ลง risk_breakdown เป็นผลจำลองชุดที่สาม เฉพาะเมื่อตั้ง L3_CONDITIONAL_PARAMS และโหมด shadow_hybrid/hybrid_stepup · ไม่เปลี่ยนการตัดสินจริง ผล baseline หรือ hybrid (test_14_conditional_shadow_never_changes_the_actual_decision) · โค้ดอยู่ใน commit ถัดจาก 5d5ec3c บน feature/hybrid-accuracy-validation · ผู้ใช้อนุมัติ re-freeze ในแผนพัฒนา 2026-09-23 ข้อ 5.5",
   "scope": "เฉพาะตรรกะการให้คะแนนและการตัดสิน (app/security/*) — generator และ harness ของการทดลอง **ไม่** ถูก freeze เพราะต้องแก้เพื่อเพิ่มโปรไฟล์ผู้ใช้",
   "unfreeze_when": "เหมือนเดิม: ตัดสินเกณฑ์/น้ำหนักจากข้อมูล production replay หรือ Shadow Pilot",
   "hash_method": "sha256 ของไฟล์หลัง normalize CRLF -> LF",
@@ -13,10 +13,10 @@
     "app/security/rule_engine.py": "d775ba9908624842c134f31fd62af16255062fe4eb3de83375d8e085fdb72873",
     "app/security/behavior_profiling.py": "f8659bf7fb7771c51d0c574a14baaca2bd8d7716d9e8b74d13dd0b7732f7d855",
     "app/security/risk_evidence.py": "afda6b7407067fcf5a983d7cbdf35fd4fd611693880632c0d5c67d00ca5719a9",
-    "app/security/risk_fusion.py": "74b1f24d91f3d32762e2de7e4ab2a65123eef5e11c7940c2955dc801cd8f1744",
+    "app/security/risk_fusion.py": "67c64fe68d6c88bf8df33a8b3862425cd1a236f35f8499507d578b09da94a0f0",
     "app/security/risk_aggregator.py": "51c2a61257481a07b6818ad5be6eb90e6aaa0e5fd036f91e6aa67ca9fd957b22",
     "app/security/iforest_scorer.py": "40f8f959c0f1e6741e209db77e9224e7278eea99c6fc603da8d3966c8ed6f398",
-    "app/security/risk_engine.py": "68fb86031933977196b1368af6c89b6becb64012724f99a2a6a52e5b61cc3be2"
+    "app/security/risk_engine.py": "a5a9633b48f7a374d5eceba0de2483c4cb1b9f93f42f68a5ce391e2eb5c2b4b9"
   },
   "history": [
     {
@@ -67,6 +67,25 @@
         "app/security/risk_engine.py": {
           "old": "7e2c983edbbe5aa98ecd87546e00b26269274ab30b34f6c9b1c0796ca922ea31",
           "new": "68fb86031933977196b1368af6c89b6becb64012724f99a2a6a52e5b61cc3be2"
+        }
+      }
+    },
+    {
+      "frozen_at": "2026-09-22T17:50:05+00:00",
+      "git_commit": "5d5ec3c25ab895ea1262664f2be186db1a4fe8a1",
+      "reason": "Conditional L3 fusion (candidate G, Accuracy Gate 2026-09-23 ระยะที่ 5): risk_fusion เพิ่ม ConditionalParams/fuse_conditional และ ResolverInput.action_cap (ค่าเริ่มต้น None ไม่เปลี่ยนผล fuse เดิม — tests/test_conditional_fusion.py::test_existing_fuse_is_unchanged_by_the_new_field) · risk_engine บันทึก conditional_shadow ลง risk_breakdown เป็นผลจำลองชุดที่สาม เฉพาะเมื่อตั้ง L3_CONDITIONAL_PARAMS และโหมด shadow_hybrid/hybrid_stepup · ไม่เปลี่ยนการตัดสินจริง ผล baseline หรือ hybrid (test_14_conditional_shadow_never_changes_the_actual_decision) · โค้ดอยู่ใน commit ถัดจาก 5d5ec3c บน feature/hybrid-accuracy-validation · ผู้ใช้อนุมัติ re-freeze ในแผนพัฒนา 2026-09-23 ข้อ 5.5",
+      "files_changed": [
+        "app/security/risk_engine.py",
+        "app/security/risk_fusion.py"
+      ],
+      "hash_changes": {
+        "app/security/risk_engine.py": {
+          "old": "68fb86031933977196b1368af6c89b6becb64012724f99a2a6a52e5b61cc3be2",
+          "new": "a5a9633b48f7a374d5eceba0de2483c4cb1b9f93f42f68a5ce391e2eb5c2b4b9"
+        },
+        "app/security/risk_fusion.py": {
+          "old": "74b1f24d91f3d32762e2de7e4ab2a65123eef5e11c7940c2955dc801cd8f1744",
+          "new": "67c64fe68d6c88bf8df33a8b3862425cd1a236f35f8499507d578b09da94a0f0"
         }
       }
     }

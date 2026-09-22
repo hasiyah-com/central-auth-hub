@@ -81,6 +81,16 @@
 
 ชุดที่ไปไม่ถึง FPR เป้าถูกตัดทิ้งก่อน · เลือกแล้ว freeze ก่อนแตะ validation
 
+### 4.2 การออกแบบของ G ที่ตรึงไว้ตอน implement (ก่อนวัดใด ๆ · commit ระยะที่ 5)
+
+- ขอบบนของช่วงกำกวม `AMBIGUOUS_HIGH` = **0.70 คงที่** (ค่า challenge เริ่มต้นของ production) ไม่ผูกกับ threshold
+  ที่กวาด → คะแนนของ G ไม่ขึ้นกับ threshold จึงกวาดหา FPR เท่ากันผ่าน `resolve_action` ตัวเดียวกับ B/E ได้
+- "ยกได้สูงสุด warn" ในช่วงเสี่ยงต่ำ ส่งผ่าน `ResolverInput.action_cap` (ใหม่ · ค่าเริ่มต้น None ไม่เปลี่ยน B/E) ·
+  policy floor ชนะเพดานเสมอ · L3 ห้าม block คนเดียวทุกช่วง (`SOLO_BLOCK_FORBIDDEN` เดิม)
+- ช่วง high ใช้ L3 เป็นหลักฐานสนับสนุนด้วย gamma เดียวกับ fusion เดิม
+- production: `L3_CONDITIONAL_PARAMS` (JSON) ว่าง = ไม่คำนวณ · ตั้งแล้วบันทึก `conditional_shadow` ใน
+  `risk_breakdown` เป็นผลจำลองชุดที่สาม เฉพาะโหมด `shadow_hybrid`/`hybrid_stepup` · key ผิด/ค่าผิดช่วง = ไม่ start
+
 ## 5. ห้ามทำ
 
 - ปรับ threshold หรือพารามิเตอร์หลังเห็น validation แล้ววัดชุดเดิมซ้ำ

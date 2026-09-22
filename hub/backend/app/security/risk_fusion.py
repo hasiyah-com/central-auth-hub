@@ -84,6 +84,9 @@ class ResolverInput:
     primary_layer: str | None = None
     # evidence ของชั้นที่นับได้ทั้งหมด **ยกเว้น** primary — ใช้ตรวจ corroboration
     other_evidence: tuple[float, ...] = ()
+    # เพดานของ action จากคะแนน (conditional fusion: L3 ในช่วงเสี่ยงต่ำยกได้สูงสุด warn)
+    # ไม่ลด policy floor · None = ไม่จำกัด (fuse / fuse_weighted_sum ไม่ตั้งค่านี้)
+    action_cap: str | None = None
 
     def to_dict(self) -> dict:
         return {
@@ -92,6 +95,7 @@ class ResolverInput:
             "policy_min_action": self.policy_min_action,
             "primary_layer": self.primary_layer,
             "other_evidence": list(self.other_evidence),
+            "action_cap": self.action_cap,
         }
 
     @classmethod
@@ -102,6 +106,7 @@ class ResolverInput:
             policy_min_action=d.get("policy_min_action"),
             primary_layer=d.get("primary_layer"),
             other_evidence=tuple(float(x) for x in d.get("other_evidence") or ()),
+            action_cap=d.get("action_cap"),
         )
 
 
@@ -116,6 +121,8 @@ def resolve_action(
     if inp.policy_denied:
         return "block", False
     action = _action_for(inp.final_score, thresholds)
+    if inp.action_cap and _RANK[action] > _RANK[inp.action_cap]:
+        action = inp.action_cap  # เพดานจากคะแนน ใช้ก่อน policy floor — floor จึงชนะเสมอ
     if inp.policy_min_action:
         action = _stronger(action, inp.policy_min_action)
     solo_capped = False
@@ -295,6 +302,160 @@ def fuse_weighted_sum(
             "final_risk_score": final,
             "fusion": "weighted_sum",
             "primary_layer": primary.layer if primary else None,
+            "solo_block_capped": solo_capped,
+            "resolver": resolver.to_dict(),
+        },
+    )
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Conditional L3 fusion — candidate G (Accuracy Gate 2026-09-23) · shadow เท่านั้น
+# ══════════════════════════════════════════════════════════════════════════════
+#
+# L3 ไม่ได้น้ำหนักเท่ากันทุก login — ขึ้นกับว่า L1/L2 มั่นใจแค่ไหน:
+#
+#   b = คะแนนของ L1/L2 ล้วน (fuse เดิม)
+#   high       b >= AMBIGUOUS_HIGH        L3 เป็นแค่หลักฐานสนับสนุน: b + gamma·a·(1-b)
+#   ambiguous  ambiguous_low <= b < high  L3 ช่วยแยก: b + a_w·(1-b) · a_w = max(w_point·p, w_sequence·q)
+#   low        b < ambiguous_low          เหมือน ambiguous แต่ถ้าสองมุมมองไม่เห็นตรงกัน
+#                                         (ทั้งคู่ >= low_zone_agree) ยกได้สูงสุด warn
+#   l3_abstain ไม่มีมุมมองที่นับได้       = baseline L1/L2 เป๊ะ
+#
+# L3 ห้าม block คนเดียวทุกช่วง (SOLO_BLOCK_FORBIDDEN) · policy floor ชนะเสมอ ·
+# AMBIGUOUS_HIGH คงที่ ไม่ผูกกับ threshold ที่กวาด — คะแนนจึงไม่ขึ้นกับ threshold และกวาดหา
+# FPR เท่ากันผ่าน resolve_action ได้โดยไม่คำนวณใหม่
+
+AMBIGUOUS_HIGH = DEFAULT_THRESHOLDS["challenge"]  # 0.70
+_CONDITIONAL_KEYS = ("ambiguous_low", "w_point", "w_sequence", "low_zone_agree")
+
+
+@dataclass(frozen=True)
+class ConditionalParams:
+    ambiguous_low: float
+    w_point: float
+    w_sequence: float
+    low_zone_agree: float
+
+    def __post_init__(self) -> None:
+        if not (0.0 <= self.ambiguous_low < AMBIGUOUS_HIGH):
+            raise ValueError(
+                f"ambiguous_low ต้องอยู่ใน [0, {AMBIGUOUS_HIGH}) (ได้ {self.ambiguous_low})"
+            )
+        for name in ("w_point", "w_sequence", "low_zone_agree"):
+            v = getattr(self, name)
+            if not (0.0 <= v <= 1.0):
+                raise ValueError(f"{name} ต้องอยู่ใน [0, 1] (ได้ {v})")
+
+    def to_dict(self) -> dict:
+        return {k: getattr(self, k) for k in _CONDITIONAL_KEYS}
+
+    def to_json(self) -> str:
+        import json
+
+        return json.dumps(self.to_dict(), sort_keys=True)
+
+    @classmethod
+    def from_json(cls, raw: str) -> "ConditionalParams":
+        """เข้มงวด: key ต้องครบและไม่มี key แปลกปลอม — config ที่ไม่รู้จักห้ามเงียบ."""
+        import json
+
+        data = json.loads(raw)
+        if not isinstance(data, dict):
+            raise ValueError("conditional params ต้องเป็น JSON object")
+        unknown = sorted(set(data) - set(_CONDITIONAL_KEYS))
+        missing = sorted(set(_CONDITIONAL_KEYS) - set(data))
+        if unknown:
+            raise ValueError(f"key ที่ไม่รู้จัก: {', '.join(unknown)}")
+        if missing:
+            raise ValueError(f"ขาด key: {', '.join(missing)}")
+        return cls(**{k: float(data[k]) for k in _CONDITIONAL_KEYS})
+
+
+def fuse_conditional(
+    policy: PolicyOutcome,
+    evidences: list[Evidence],
+    *,
+    gamma: float = DEFAULT_GAMMA,
+    thresholds: dict[str, float] | None = None,
+    params: ConditionalParams,
+    shadow_mode: bool = False,
+) -> RiskDecision:
+    """candidate G — ดูคำอธิบายด้านบน · ใช้ fuse เดิมคำนวณ L1/L2 และ resolve_action ตัวเดียวกัน."""
+    thr = thresholds or DEFAULT_THRESHOLDS
+    l12 = [e for e in evidences if e.layer != "anomaly"]
+    anomaly = next((e for e in evidences if e.layer == "anomaly"), None)
+    base = fuse(policy, l12, gamma=gamma, thresholds=thr)
+    b = base.total_score
+    views: dict = {}
+    if anomaly is not None and anomaly.counts:
+        views = {
+            v: float(s)
+            for v, s in (anomaly.detail.get("views") or {}).items()
+            if v in ("point", "sequence")
+        }
+    p, q = views.get("point"), views.get("sequence")
+    weighted = [
+        w * s for w, s in ((params.w_point, p), (params.w_sequence, q)) if s is not None
+    ]
+    a = max(weighted) if weighted else 0.0
+    l12_counted = [e for e in l12 if e.counts]
+    base_primary = (base.breakdown.get("resolver") or {}).get("primary_layer")
+    cap = None
+
+    if policy.denied:
+        zone, final, primary = "policy_denied", 1.0, None
+    elif not views:
+        zone, final, primary = "l3_abstain", b, base_primary
+    elif b >= AMBIGUOUS_HIGH:
+        zone, primary = "high", base_primary
+        final = b + gamma * max(views.values()) * (1.0 - b)
+    else:
+        zone = "ambiguous" if b >= params.ambiguous_low else "low"
+        final = b + a * (1.0 - b)
+        primary = "anomaly" if a > 0 else base_primary
+        if zone == "low":
+            agree = (
+                p is not None and q is not None and min(p, q) >= params.low_zone_agree
+            )
+            cap = None if agree else "warn"
+    final = round(min(max(final, 0.0), 1.0), 6)
+
+    resolver = ResolverInput(
+        final_score=final,
+        policy_denied=policy.denied,
+        policy_min_action=policy.min_action,
+        primary_layer=primary,
+        other_evidence=tuple(
+            e.evidence_score
+            for e in l12_counted
+            if primary == "anomaly" or e.layer != primary
+        ),
+        action_cap=cap,
+    )
+    action, solo_capped = resolve_action(resolver, thr)
+    decision = f"would_{action}" if (shadow_mode and action != "allow") else action
+    reasons = list(base.reasons)
+    if zone not in ("l3_abstain", "policy_denied") and a > 0:
+        reasons.append(f"l3_conditional_{zone} weighted={a:.3f}")
+    return RiskDecision(
+        total_score=final,
+        decision=decision,
+        reasons=reasons,
+        breakdown={
+            "thresholds": dict(thr),
+            "gamma": gamma,
+            "policy": policy.to_contract(),
+            "evidence": {e.layer: e.to_contract() for e in evidences},
+            "final_risk_score": final,
+            "fusion": "conditional",
+            "conditional": {
+                "zone": zone,
+                "params": params.to_dict(),
+                "ambiguous_high": AMBIGUOUS_HIGH,
+                "l1_l2_score": b,
+                "l3_views": {k: round(v, 4) for k, v in views.items()},
+                "l3_weighted": round(a, 6),
+            },
             "solo_block_capped": solo_capped,
             "resolver": resolver.to_dict(),
         },
