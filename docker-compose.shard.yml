@@ -1,0 +1,20 @@
+# เปิดการแบ่ง worker ของ ml-service ตามผู้ใช้ (opt-in — ยังอยู่ระหว่างทดลอง)
+#
+#   docker compose -f docker-compose.yml -f docker-compose.shard.yml up -d ml-service hub-backend
+#
+# worker ช่อง i ฟังพอร์ต 9100+i เพิ่ม · hub ส่ง L3 ของผู้ใช้คนหนึ่งไป worker เดิมเสมอ
+# (sha256 ของ user_id) → cache โมเดลสม่ำเสมอต่อผู้ใช้
+#
+# สถานะ (hub/backend/tests/reports/ml_capacity_gate_2026-09-21.md §20–21):
+#   C3 ความสม่ำเสมอ = 0 ทุกครั้ง · หลัง restart L3 ครอบคลุมใน 25–30 วินาที
+#   **P1 v2 ไม่ผ่าน** (ผู้ใช้ชุดวัด 20 คน hash เอียง 3/9/4/4) · กำลังวัด P1 v3 ด้วยผู้ใช้ ≥ 400 คน
+#   ห้ามใช้เป็นค่าเริ่มต้นจนกว่า Capacity Gate จะผ่าน
+#
+# จำนวน worker กับรายการ URL ต้องตรงกัน — เปลี่ยนอย่างหนึ่งต้องเปลี่ยนอีกอย่าง
+services:
+  ml-service:
+    command: python -m app.serve --host 0.0.0.0 --port 9000 --workers 4 --shard-base-port 9100
+
+  hub-backend:
+    environment:
+      L3_SHARD_URLS: http://ml-service:9100,http://ml-service:9101,http://ml-service:9102,http://ml-service:9103

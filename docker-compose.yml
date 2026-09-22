@@ -67,10 +67,9 @@ services:
     # (hub/backend/tests/reports/ml_capacity_gate_2026-09-21.md §10–18) · RAM รวม ~1.2 GB
     # `uvicorn --workers` ใช้ socket ร่วมแล้วงานไม่เท่ากัน (worker บางตัวค้างเย็น) — อย่าเปลี่ยนกลับ
     # ไม่มี --reload แล้ว: แก้โค้ด ml-service ต้อง `docker compose restart ml-service`
-    # --shard-base-port: worker ช่อง i ฟัง 9100+i เพิ่ม · hub ส่ง L3 ของผู้ใช้คนหนึ่งไป worker
-    # เดิมเสมอ (L3_SHARD_URLS ของ hub-backend) → cache โมเดลสม่ำเสมอต่อผู้ใช้ (§19–20)
-    # ถ้าเปลี่ยนจำนวน worker ต้องแก้ L3_SHARD_URLS ให้ตรงกันด้วย
-    command: python -m app.serve --host 0.0.0.0 --port 9000 --workers 4 --shard-base-port 9100
+    # การแบ่ง worker ตามผู้ใช้ (L3_SHARD_URLS) เป็น opt-in — ยังอยู่ระหว่างทดลอง (ML Capacity Gate
+    # §20–21: C3 ผ่าน แต่ P1 v2 ไม่ผ่าน) · เปิดด้วย docker-compose.shard.yml
+    command: python -m app.serve --host 0.0.0.0 --port 9000 --workers 4
 
   hub-backend:
     build:
@@ -82,8 +81,6 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-hub}:${POSTGRES_PASSWORD:-devpassword}@postgres:5432/${POSTGRES_DB:-hub_db}
       REDIS_URL: redis://redis:6379/0
-      # พอร์ตเฉพาะของ ml-service แต่ละ worker — ต้องตรงกับ --workers/--shard-base-port ด้านบน
-      L3_SHARD_URLS: http://ml-service:9100,http://ml-service:9101,http://ml-service:9102,http://ml-service:9103
     # Linux ต้อง map host.docker.internal เอง (Windows/Mac มี built-in อยู่แล้ว)
     # ใช้ตอน subsystem รันบน Windows host (XAMPP Apache port 80, Node dev server ฯลฯ)
     extra_hosts:

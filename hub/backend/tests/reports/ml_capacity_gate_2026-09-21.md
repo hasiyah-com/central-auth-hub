@@ -1,5 +1,15 @@
 # ML Capacity Gate — ml-service (L3) ต่อจำนวน worker — 2026-09-21
 
+> ## สถานะ ณ 2026-09-22 — **Capacity Gate ยังไม่ผ่าน**
+>
+> - **ห้าม merge เข้า `main`** และ **ห้ามเปิด Shadow Pilot** จนกว่า Gate จะผ่าน
+> - ผลล่าสุด: แบ่ง worker ตามผู้ใช้ (§20–21) — C3 ความสม่ำเสมอผ่าน แต่ **P1 v2 = ไม่ผ่าน**
+>   (median p95 c=20 = 338 ms) · ผลนี้คงไว้ตามเดิม · การวัดต่อไปคือ **P1 v3** ซึ่งเป็นการทดลองใหม่
+>   ไม่ใช่การแทนที่ผล P1 v2
+> - ค่าที่ deploy ใน `docker-compose.yml`: `app.serve` 4 worker **ไม่แบ่งตามผู้ใช้** ·
+>   การแบ่งเป็น opt-in ผ่าน `docker-compose.shard.yml`
+> - ถ้า Gate ผ่านในอนาคต ให้เปิดเฉพาะ **Shadow Pilot** ก่อน — ไม่ให้ L3 บังคับ step-up หรือ block
+
 **ผลรวม: ไม่ผ่าน** ไม่มีค่าจำนวน worker ใดที่ผ่านครบทั้ง 4 เกณฑ์ · Shadow Pilot ยังเปิดไม่ได้
 
 > อัปเดต: แก้ข้อ 1 (B79) แล้ววัดซ้ำใน §9 — cold ลด 2–3 เท่า, worker 4 ตัวผ่าน P2/P4 แต่ยังไม่ผ่าน P1 ที่ c=20 · ผลรวมยังไม่ผ่าน
@@ -706,7 +716,20 @@ fit ของผู้ใช้ชุด cap หลังช่วงเย็�
   และมีความเสี่ยงจริงอีกแบบ: ผู้ใช้คนเดียวที่ login ถี่จะลงที่ worker เดียวเสมอ
 - C2 ผ่านแต่ใกล้เพดาน (สูงสุด 238 ms) — cold burst ทั้ง 20 request ของผู้ใช้ชุด cap ลงตาม hash เช่นกัน
 
-## 22. รันซ้ำ
+## 22. checkpoint ก่อน P1 v3 — 2026-09-22
+
+- **compose เปลี่ยนเป็น opt-in:** `docker-compose.yml` ใช้ `app.serve` 4 worker ไม่มี `--shard-base-port`
+  และ hub ไม่มี `L3_SHARD_URLS` · เปิดการแบ่งด้วย
+  `docker compose -f docker-compose.yml -f docker-compose.shard.yml up -d ml-service hub-backend`
+- **Backend CI แก้แล้ว:** เดิมใช้ `hub_db` + Redis DB 0 และไม่ตั้ง `TEST_ENVIRONMENT=1` → ตัวกัน env
+  ปฏิเสธทุกรอบ · เปลี่ยนเป็น `hub_test` + DB 15 + `TEST_ENVIRONMENT=1` · schema สร้างจาก snapshot
+  (`tests/support/schema/hub_schema.sql`, สร้างด้วย `scripts/test/dump_test_schema.sh`) เพราะ
+  `create_all` ไม่สร้าง trigger ของ Expert Review (5 เทสล้ม) และ `alembic upgrade head` จากฐานข้อมูลว่าง
+  ใช้ไม่ได้ (ล้มที่ `DROP INDEX ix_mfa_challenges_created_at` — baseline migration ค้างอยู่ แยกเป็นงานต่อ) ·
+  `tests/test_schema_snapshot.py` บังคับให้ snapshot ตรง alembic head · จำลองขั้นตอนของ CI ในเครื่อง
+  (ฐานข้อมูลว่างใหม่ + env ชุดเดียวกับ CI): **1418 passed, 0 failed**
+
+## 23. รันซ้ำ
 
 ```bash
 bash scripts/test/ml_capacity_gate.sh            # 1 2 4
