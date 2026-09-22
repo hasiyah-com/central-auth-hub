@@ -24,6 +24,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 
+from app.security.conditional_params import AMBIGUOUS_HIGH, ConditionalParams
 from app.security.evidence import Evidence
 from app.security.policy_gate import PolicyOutcome
 
@@ -325,52 +326,9 @@ def fuse_weighted_sum(
 # AMBIGUOUS_HIGH คงที่ ไม่ผูกกับ threshold ที่กวาด — คะแนนจึงไม่ขึ้นกับ threshold และกวาดหา
 # FPR เท่ากันผ่าน resolve_action ได้โดยไม่คำนวณใหม่
 
-AMBIGUOUS_HIGH = DEFAULT_THRESHOLDS["challenge"]  # 0.70
-_CONDITIONAL_KEYS = ("ambiguous_low", "w_point", "w_sequence", "low_zone_agree")
 
-
-@dataclass(frozen=True)
-class ConditionalParams:
-    ambiguous_low: float
-    w_point: float
-    w_sequence: float
-    low_zone_agree: float
-
-    def __post_init__(self) -> None:
-        if not (0.0 <= self.ambiguous_low < AMBIGUOUS_HIGH):
-            raise ValueError(
-                f"ambiguous_low ต้องอยู่ใน [0, {AMBIGUOUS_HIGH}) (ได้ {self.ambiguous_low})"
-            )
-        for name in ("w_point", "w_sequence", "low_zone_agree"):
-            v = getattr(self, name)
-            if not (0.0 <= v <= 1.0):
-                raise ValueError(f"{name} ต้องอยู่ใน [0, 1] (ได้ {v})")
-
-    def to_dict(self) -> dict:
-        return {k: getattr(self, k) for k in _CONDITIONAL_KEYS}
-
-    def to_json(self) -> str:
-        import json
-
-        return json.dumps(self.to_dict(), sort_keys=True)
-
-    @classmethod
-    def from_json(cls, raw: str) -> "ConditionalParams":
-        """เข้มงวด: key ต้องครบและไม่มี key แปลกปลอม — config ที่ไม่รู้จักห้ามเงียบ."""
-        import json
-
-        data = json.loads(raw)
-        if not isinstance(data, dict):
-            raise ValueError("conditional params ต้องเป็น JSON object")
-        unknown = sorted(set(data) - set(_CONDITIONAL_KEYS))
-        missing = sorted(set(_CONDITIONAL_KEYS) - set(data))
-        if unknown:
-            raise ValueError(f"key ที่ไม่รู้จัก: {', '.join(unknown)}")
-        if missing:
-            raise ValueError(f"ขาด key: {', '.join(missing)}")
-        return cls(**{k: float(data[k]) for k in _CONDITIONAL_KEYS})
-
-
+# ConditionalParams ย้ายไป `conditional_params.py` (โมดูลใบ) เพราะ config ต้องตรวจค่าตอน start
+# โดยไม่ import ชั้นที่วนกลับมาหา config — re-export ไว้ที่นี่เพื่อไม่ให้ call site เดิมต้องแก้
 def fuse_conditional(
     policy: PolicyOutcome,
     evidences: list[Evidence],

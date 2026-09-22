@@ -312,3 +312,42 @@ def test_13d_settings_refuse_an_invalid_candidate_config():
 
     with pytest.raises(ValueError):
         Settings(l3_conditional_params='{"ambiguous_low": 5}')
+
+
+def test_app_starts_with_conditional_params_set_in_the_environment():
+    """RED ก่อนแก้: validator ใน config import risk_fusion -> policy_gate -> models -> config (วน).
+
+    เทสเดิมไม่เจอเพราะเรียก Settings() ตอน app.config โหลดเสร็จแล้ว · ของจริงคือ process ใหม่ที่มี
+    env ตั้งไว้ → ต้องรันใน subprocess เท่านั้นจึงพิสูจน์ได้ (บทเรียน B61)
+    """
+    import os
+    import subprocess
+    import sys
+
+    env = {
+        **os.environ,
+        "L3_CONDITIONAL_PARAMS": (
+            '{"ambiguous_low": 0.3, "low_zone_agree": 0.9, "w_point": 0.5, "w_sequence": 0.5}'
+        ),
+    }
+    out = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "from app.config import settings; print(settings.l3_conditional_params)",
+        ],
+        capture_output=True,
+        text=True,
+        env=env,
+        cwd="/app",
+    )
+    assert out.returncode == 0, out.stderr[-1500:]
+    assert "ambiguous_low" in out.stdout
+
+
+def test_ambiguous_high_matches_the_production_challenge_default():
+    """ค่าคงที่ในโมดูลใบต้องไม่หลุดจากค่า challenge เริ่มต้นของ production."""
+    from app.security.conditional_params import AMBIGUOUS_HIGH
+
+    assert AMBIGUOUS_HIGH == RF.DEFAULT_THRESHOLDS["challenge"]
+    assert RF.AMBIGUOUS_HIGH is AMBIGUOUS_HIGH

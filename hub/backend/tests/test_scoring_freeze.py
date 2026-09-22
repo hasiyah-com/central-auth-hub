@@ -38,6 +38,7 @@ FROZEN_FILES = [
     "app/security/behavior_profiling.py",
     "app/security/risk_evidence.py",
     "app/security/risk_fusion.py",
+    "app/security/conditional_params.py",
     "app/security/risk_aggregator.py",
     "app/security/iforest_scorer.py",
     "app/security/risk_engine.py",

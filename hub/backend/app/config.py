@@ -309,7 +309,7 @@ class Settings(BaseSettings):
     def _check_conditional_params(cls, v: str) -> str:
         if not v or not v.strip():
             return ""
-        from app.security.risk_fusion import ConditionalParams
+        from app.security.conditional_params import ConditionalParams
 
         return ConditionalParams.from_json(v).to_json()
 
