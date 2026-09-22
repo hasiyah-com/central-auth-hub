@@ -934,7 +934,47 @@ Gate 3 รอบ + CI → จึงพิจารณา **Shadow Pilot** (ห�
 - **Capacity Gate ยังไม่ผ่าน** — P1 v3 = ไม่ผ่านในคอนฟิกนี้
 - สถานะไม่เปลี่ยน: **ห้าม merge เข้า `main` · ห้ามเปิด Shadow Pilot**
 
-## 27. รันซ้ำ
+## 27. การทดลองแยกหาสาเหตุ: ตัวจำกัด A/B — เขียนก่อนวัด (2026-09-22)
+
+ส่วนนี้ commit **ก่อน**วัด · ผลจะเพิ่มใน §28 โดยไม่แก้ส่วนนี้ · **ไม่ใช่การรัน Capacity Gate เพิ่ม** ·
+ผลของ §24 (C2 ไม่ผ่าน) และ §26 (P1 v3 ไม่ผ่าน) **คงไว้ตามเดิม** และห้ามใช้ผลของส่วนนี้ทำให้กลายเป็นผ่านย้อนหลัง
+
+### 27.1 คำถามที่ต้องตอบ
+
+1. **Q1** ตัวจำกัดทำให้ steady-state ช้าลงจริงหรือไม่
+2. **Q2** รอบที่ P1 ล้มสัมพันธ์กับ overload หรือทรัพยากรของเครื่องหรือไม่
+3. **Q3** เพดาน 2 เหมาะสมหรือควรปรับ
+4. **Q4** ถ้าปิดตัวจำกัด hot user ทำให้ผู้ใช้อื่นช้าลงเท่าใด
+
+### 27.2 การออกแบบ
+
+- แขน **A**: `L3_PER_USER_MAX_INFLIGHT=2` (ค่าที่ deploy) · แขน **B**: `=50` (เพดานสูงสุดที่ยอมรับ ≈ ไม่จำกัด)
+- **10 คู่** แต่ละคู่รัน A และ B ติดกัน · ลำดับสลับ: คู่คี่ `A-B` · คู่คู่ `B-A`
+- ทุกรันใช้คำสั่งเดียวกับ §25 (`CAP_SERVER=reuseport CAP_SHARD=1 CAP_HIGH_SCORE_SHARE=0.33
+  CAP_COLD_OPEN_LOOP=1 CAP_P1V3=1`, 4 worker) · seed เดียวกัน (20260921) ผู้ใช้ 400 คน concurrency 1/5/10/20 ·
+  เปิด ml-service ใหม่ทุกรัน · ต่างกันเฉพาะเพดาน
+- บันทึกแยกช่วง **cold / steady (P1 v3) / hot / cap** (`phase_record`): `per_user_overload`, request ต่อ worker และ
+  max/mean, CPU ต่อ worker (`cpu_s` ของ process ÷ เวลา) และ CPU ms ต่อ request, RSS สูงสุด, และของเครื่อง
+  (Docker VM จาก `/proc`): สัดส่วน CPU ไม่ว่าง, steal, load1, MemAvailable
+- วิเคราะห์ด้วย `scripts/ml_capacity_ab.py` (มีเทส) · ใช้ p95 รวมของ P1 v3 ต่อรัน
+
+### 27.3 กฎการตีความ (ค่าคงที่ในโค้ด)
+
+| คำถาม | กฎ |
+|---|---|
+| **Q1** | ต่อระดับ c: d = p95(A) − p95(B) ในคู่เดียวกัน · "ช้าลง" เมื่อ median d > 0 **และ** ขอบล่าง bootstrap 95% CI > 0 **และ** exact sign-flip p < 0.05 · "ช้าลงอย่างมีนัย" เมื่อช้าลงและ median d ≥ **5 ms** · นอกนั้น = **ไม่มีหลักฐาน** (ไม่ใช่ "พิสูจน์ว่าไม่ช้า" — รายงาน CI ประกอบ) |
+| **Q2** | ทั้ง 20 รัน: Spearman ระหว่าง p95 ที่ c=20 กับ overload ช่วง steady / CPU ไม่ว่างของ VM / steal / load1 / CPU ms ต่อ request · "สัมพันธ์" เมื่อ \|rho\| ≥ 0.5 และ permutation p < 0.05 · n = 20 อำนาจทดสอบต่ำ — ไม่สัมพันธ์ ≠ ไม่มีผล · และแสดงทุกรันที่ c=20 > 250 ms พร้อมค่าประกอบ |
+| **Q3** | เพดาน 2 **เหมาะสม** เมื่อครบทุกข้อ: (ก) ช่วง steady ของ A ถูกจำกัด ≤ **0.1%** ของ request ทุกคู่ (ผู้ใช้ปกติไม่โดน) (ข) Q1 ที่ c=20 ไม่ใช่ "ช้าลงอย่างมีนัย" (ค) แขน A ผ่านกฎ H ของ §25 · ถ้า (ก) หรือ (ข) ไม่ผ่าน → พิจารณาเพดานสูงขึ้น · ถ้า (ค) ไม่ผ่าน → พิจารณาต่ำลง |
+| **Q4** | d = p95 ผู้ใช้อื่นกรณีผสม (B) − (A) ในคู่เดียวกัน · รายงาน median, CI, p และจำนวนรันของ B ที่ผู้ใช้อื่น > 250 ms |
+
+### 27.4 สิ่งที่จะไม่ทำ
+
+- ไม่เพิ่มหรือตัดคู่ ไม่รันซ้ำเฉพาะคู่ที่ผลไม่ถูกใจ · ถ้ารันใดพัง (error / ml-service ไม่ขึ้น) บันทึกไว้และคู่นั้น
+  เป็นโมฆะทั้งคู่ — ไม่รันแทน
+- ไม่เปลี่ยนเพดานที่ deploy จากผลนี้โดยตรง — ถ้า Q3 ชี้ว่าควรปรับ ต้องเสนอ ขออนุมัติ และวัดใหม่แบบเขียนเกณฑ์ก่อน
+- ไม่ใช้ผลของแขน A หรือ B แทนผล Capacity Gate
+
+## 28. รันซ้ำ
 
 ```bash
 bash scripts/test/ml_capacity_gate.sh            # 1 2 4
@@ -949,6 +989,7 @@ CAP_SERVER=reuseport CAP_HIGH_SCORE_SHARE=0.33 CAP_COLD_OPEN_LOOP=1 bash scripts
 CAP_SERVER=reuseport CAP_SHARD=1 CAP_HIGH_SCORE_SHARE=0.33 CAP_COLD_OPEN_LOOP=1 bash scripts/test/ml_capacity_gate.sh 4   # แบ่ง worker ตามผู้ใช้ (§20)
 CAP_SERVER=reuseport CAP_SHARD=1 CAP_HIGH_SCORE_SHARE=0.33 CAP_COLD_OPEN_LOOP=1 CAP_P1V3=1 bash scripts/test/ml_capacity_gate.sh 4   # P1 v3 (§23)
 CAP_SERVER=reuseport CAP_SHARD=1 CAP_HIGH_SCORE_SHARE=0.33 CAP_COLD_OPEN_LOOP=1 CAP_P1V3=1 bash scripts/test/ml_capacity_gate.sh 4   # hot-user protection (§25–26, เพดานค่าเริ่มต้น 2)
+bash scripts/test/ml_capacity_ab.sh   # การทดลอง A/B ของตัวจำกัด (§27) — วิเคราะห์ด้วย python -m scripts.ml_capacity_ab <out>
 ```
 
 ผลดิบ: `workers_{1,2,4}.json` + log ของ ml-service ต่อรอบ (เก็บใน `CAP_OUT` ไม่เข้า git)

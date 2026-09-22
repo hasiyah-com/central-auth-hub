@@ -480,6 +480,128 @@ def _is_overload(data: dict) -> bool:
     return (data.get("sequence") or {}).get("abstain_reason") == OVERLOAD_REASON
 
 
+def _read(path: str):
+    try:
+        with open(path, encoding="ascii") as f:
+            return f.read()
+    except OSError:
+        return None
+
+
+def parse_host(proc_stat, loadavg, meminfo):
+    """สถานะของเครื่อง (Docker VM) จาก /proc — None เมื่ออ่านไม่ได้ (เช่นรันบน Windows).
+
+    ตัววัดรันในคอนเทนเนอร์ /proc/stat จึงเป็นของทั้ง VM ที่ ml-service ใช้ร่วม (§27)
+    """
+    try:
+        first = proc_stat.splitlines()[0].split()
+        if first[0] != "cpu":
+            return None
+        user, nice, system, idle, iowait, irq, softirq, steal = (
+            int(x) for x in first[1:9]
+        )
+        load1 = float(loadavg.split()[0])
+        avail = next(
+            int(line.split()[1])
+            for line in meminfo.splitlines()
+            if line.startswith("MemAvailable:")
+        )
+    except (AttributeError, IndexError, ValueError, StopIteration):
+        return None
+    return {
+        "total": user + nice + system + idle + iowait + irq + softirq + steal,
+        "idle": idle + iowait,
+        "steal": steal,
+        "load1": load1,
+        "mem_available_kb": avail,
+    }
+
+
+def read_host():
+    return parse_host(
+        _read("/proc/stat"), _read("/proc/loadavg"), _read("/proc/meminfo")
+    )
+
+
+def host_delta(a, b):
+    """สัดส่วน CPU ของ VM ที่ไม่ว่าง (ไม่รวม steal) และ steal ในช่วงระหว่างสอง snapshot."""
+    if not a or not b:
+        return None
+    total = b["total"] - a["total"]
+    if total <= 0:
+        return None
+    idle = b["idle"] - a["idle"]
+    steal = b["steal"] - a["steal"]
+    return {
+        "busy_share": round((total - idle - steal) / total, 4),
+        "steal_share": round(steal / total, 4),
+        "load1": b["load1"],
+        "mem_available_kb": b["mem_available_kb"],
+    }
+
+
+def phase_record(before: dict, after: dict, host_a, host_b, seconds: float) -> dict:
+    """ตัวเลขของหนึ่งช่วง (§27) — นับเฉพาะ worker ที่เห็นทั้งก่อนและหลัง (รู้ฐาน)."""
+    pids = sorted(set(before) & set(after))
+    reqs, utils, cpu_total, overload = [], [], 0.0, 0
+    cpu_known = bool(pids)
+    over_known = bool(pids)
+    for pid in pids:
+        a, b = before[pid], after[pid]
+        reqs.append(int(b.get("l3_requests") or 0) - int(a.get("l3_requests") or 0))
+        if b.get("per_user_overload") is None or a.get("per_user_overload") is None:
+            over_known = False
+        else:
+            overload += int(b["per_user_overload"]) - int(a["per_user_overload"])
+        if None in (a.get("cpu_s"), b.get("cpu_s"), a.get("mono_s"), b.get("mono_s")):
+            cpu_known = False
+            continue
+        cpu = float(b["cpu_s"]) - float(a["cpu_s"])
+        wall = float(b["mono_s"]) - float(a["mono_s"])
+        cpu_total += cpu
+        utils.append(round(cpu / wall, 4) if wall > 0 else None)
+    total_req = sum(reqs)
+    mean = total_req / len(reqs) if reqs else 0
+    return {
+        "seconds": round(seconds, 2),
+        "workers_compared": len(pids),
+        "requests": total_req,
+        "requests_per_worker": sorted(reqs),
+        "max_over_mean": round(max(reqs) / mean, 3) if mean else None,
+        "overload": overload if over_known else None,
+        "cpu_util_per_worker": sorted(u for u in utils if u is not None)
+        if cpu_known
+        else None,
+        "cpu_ms_per_request": (
+            round(cpu_total * 1000 / total_req, 3) if cpu_known and total_req else None
+        ),
+        "rss_kb_max": max(
+            (int(after[p].get("rss_kb") or 0) for p in pids), default=None
+        ),
+        "host": host_delta(host_a, host_b),
+    }
+
+
+class _Phase:
+    """จับ stats + host + เวลา ที่ต้นและปลายช่วง."""
+
+    def __init__(self, gate: "Gate", client):
+        self.gate, self.client = gate, client
+
+    async def start(self):
+        self.t0 = time.perf_counter()
+        self.host0 = read_host()
+        self.s0 = await self.gate.stats(self.client)
+        return self
+
+    async def stop(self) -> dict:
+        s1 = await self.gate.stats(self.client)
+        host1 = read_host()
+        return phase_record(
+            self.s0, s1, self.host0, host1, time.perf_counter() - self.t0
+        )
+
+
 def overload_delta(before: dict, after: dict):
     """จำนวนครั้งที่ตัวจำกัดต่อผู้ใช้ทำงานระหว่างสองจุด รวมทุก worker · None = ไม่มีตัวนับ."""
     total, known = 0, False
@@ -712,10 +834,13 @@ async def run(a) -> dict:
         ready = await gate.wait_ready(client)
         if ready < gate.workers:
             raise SystemExit(f"worker ตอบแค่ {ready}/{gate.workers} ภายใน 60 วินาที")
+        phases: dict = {}
         if a.cold_open_loop:  # ต้องมาก่อนทุกอย่าง — ยังไม่มีใครมีโมเดล
+            ph = await _Phase(gate, client).start()
             cold_open = await gate.cold_open_loop(
                 client, COLD_RATE, COLD_SECONDS, a.seed
             )
+            phases["cold"] = await ph.stop()
             cold_open["passed"] = cold_pass(cold_open)
             # ให้ fit ของช่วงเย็นจบก่อน แล้วเก็บเป็นฐานของ P2
             await gate.wait_fits_idle(client)
@@ -730,6 +855,7 @@ async def run(a) -> dict:
                     for pid, s in (await gate.stats(client)).items()
                 }
         started = time.perf_counter()
+        ph_cap = await _Phase(gate, client).start()
         cold = await gate.cold_burst(client)
         cold_stats = await gate.stats(client)
         warm = await gate.warm_until_stable(client)
@@ -741,6 +867,7 @@ async def run(a) -> dict:
             for c in CONCURRENCY:
                 levels[str(c)] = await gate.steady(client, c)
             rounds.append({"levels": levels, "stats": await gate.stats(client)})
+        phases["cap"] = await ph_cap.stop()
 
         open_loop = []
         for rate in a.open_loop_rates:
@@ -767,6 +894,7 @@ async def run(a) -> dict:
     result["open_loop"] = open_loop
     result["cold_open_loop"] = cold_open
     result["p1_v3"] = p1_v3
+    result["phases"] = phases
     result["cold_burst_passed"] = cold_pass({"latency": cold["latency"]})
     result["wait_outcomes_total"] = wait_outcomes(rounds[-1]["stats"])
     return result
@@ -789,6 +917,7 @@ async def run_p1_v3(gate: "Gate", client) -> dict:
             break
         await gate.wait_fits_idle(client)
     before = await gate.stats(client)
+    ph_steady = await _Phase(gate, client).start()
 
     raw_rounds, rounds_p95, warming = [], [], 0
     for _ in range(V3_ROUNDS):
@@ -801,15 +930,18 @@ async def run_p1_v3(gate: "Gate", client) -> dict:
         raw_rounds.append(raw)
         rounds_p95.append(p95)
     after = await gate.stats(client)
+    steady_phase = await ph_steady.stop()
 
     hot = probes[0]
     hot_before = await gate.stats(client)
+    ph_hot = await _Phase(gate, client).start()
     hot_only = await gate.steady(client, V3_HOT_CONCURRENCY, probes=[hot])
     mixed_hot, mixed_rest = await asyncio.gather(
         gate.steady(client, 10, probes=[hot]),
         gate.steady(client, 10, probes=probes[1:]),
     )
     hot_after = await gate.stats(client)
+    hot_phase = await ph_hot.stop()
     strip = lambda o: {k: v for k, v in o.items() if k not in ("raw_ms", "scores")}  # noqa: E731
     return {
         "users": len(probes),
@@ -823,6 +955,7 @@ async def run_p1_v3(gate: "Gate", client) -> dict:
         "mixed_others": strip(mixed_rest),
         # ตัวจำกัดต่อผู้ใช้ทำงานกี่ครั้งในช่วง hot user (§25) · None = ml-service ไม่มีตัวนับ
         "per_user_overload_fired": overload_delta(hot_before, hot_after),
+        "phases": {"steady": steady_phase, "hot": hot_phase},
     }
 
 

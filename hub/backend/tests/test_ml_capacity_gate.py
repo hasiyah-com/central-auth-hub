@@ -870,3 +870,135 @@ def test_overload_fired_is_the_sum_over_workers():
     after = {1: {"per_user_overload": 10}, 2: {"per_user_overload": 4}}
     assert G.overload_delta(before, after) == 11
     assert G.overload_delta({1: {}}, {1: {}}) is None
+
+
+# ── §27 A/B: บันทึกแยกช่วง (cold / steady / hot / cap) ─────────────────────────
+
+PROC_STAT_A = "cpu  100 0 50 800 10 0 0 40 0 0\ncpu0 1 1 1 1 1 1 1 1 0 0\n"
+PROC_STAT_B = "cpu  160 0 70 860 10 0 0 60 0 0\ncpu0 1 1 1 1 1 1 1 1 0 0\n"
+LOADAVG = "3.50 2.00 1.00 5/300 1234\n"
+MEMINFO = "MemTotal:  8000000 kB\nMemFree: 1000000 kB\nMemAvailable:  4000000 kB\n"
+
+
+def test_host_snapshot_parses_proc_files():
+    h = G.parse_host(PROC_STAT_A, LOADAVG, MEMINFO)
+    # user nice system idle iowait irq softirq steal
+    assert h["total"] == 1000
+    assert h["idle"] == 810  # idle + iowait
+    assert h["steal"] == 40
+    assert h["load1"] == 3.5
+    assert h["mem_available_kb"] == 4000000
+
+
+def test_host_snapshot_is_none_when_unreadable():
+    assert G.parse_host(None, LOADAVG, MEMINFO) is None
+    assert G.parse_host("garbage", LOADAVG, MEMINFO) is None
+
+
+def test_host_delta_is_busy_and_steal_share_of_the_interval():
+    a = G.parse_host(PROC_STAT_A, LOADAVG, MEMINFO)
+    b = G.parse_host(PROC_STAT_B, LOADAVG, MEMINFO)
+    d = G.host_delta(a, b)
+    # ช่วงนี้: total +160, idle +60, steal +20 -> busy (ไม่รวม steal) = 80
+    assert d["busy_share"] == pytest.approx(80 / 160)
+    assert d["steal_share"] == pytest.approx(20 / 160)
+    assert d["load1"] == 3.5
+    assert d["mem_available_kb"] == 4000000
+    assert G.host_delta(None, b) is None
+    assert G.host_delta(a, a) is None  # ช่วงยาว 0 หารไม่ได้
+
+
+def _w(pid, req, cpu, mono, over=0, rss=100_000):
+    return {
+        pid: {
+            "pid": pid,
+            "l3_requests": req,
+            "cpu_s": cpu,
+            "mono_s": mono,
+            "per_user_overload": over,
+            "rss_kb": rss,
+        }
+    }
+
+
+def test_phase_record_sums_workers_and_reports_share():
+    before = {**_w(1, 100, 10.0, 50.0, 1), **_w(2, 100, 20.0, 60.0, 0)}
+    after = {
+        **_w(1, 400, 13.0, 60.0, 5, 120_000),
+        **_w(2, 200, 21.0, 70.0, 2, 110_000),
+    }
+    rec = G.phase_record(before, after, None, None, seconds=10.0)
+    assert rec["overload"] == 6
+    assert rec["requests"] == 400
+    assert rec["requests_per_worker"] == [100, 300]
+    assert rec["max_over_mean"] == pytest.approx(300 / 200)
+    assert rec["cpu_util_per_worker"] == [pytest.approx(0.1), pytest.approx(0.3)]
+    assert rec["cpu_ms_per_request"] == pytest.approx(4000.0 / 400)
+    assert rec["rss_kb_max"] == 120_000
+    assert rec["host"] is None
+    assert rec["seconds"] == 10.0
+
+
+def test_phase_record_marks_missing_counters_as_unknown():
+    before = {1: {"pid": 1, "l3_requests": 0}}
+    after = {1: {"pid": 1, "l3_requests": 10}}
+    rec = G.phase_record(before, after, None, None, seconds=1.0)
+    assert rec["overload"] is None
+    assert rec["cpu_util_per_worker"] is None
+    assert rec["cpu_ms_per_request"] is None
+
+
+def test_phase_record_ignores_workers_seen_only_on_one_side():
+    """worker ที่ไม่เห็นใน before ไม่รู้ฐาน — ไม่นับ แทนที่จะนับตัวสะสมทั้งก้อนเป็นของช่วงนี้."""
+    before = {**_w(1, 100, 1.0, 1.0)}
+    after = {**_w(1, 150, 2.0, 2.0), **_w(2, 9999, 50.0, 50.0)}
+    rec = G.phase_record(before, after, None, None, seconds=1.0)
+    assert rec["requests"] == 50
+    assert rec["workers_compared"] == 1
+
+
+def test_p1_v3_result_carries_steady_and_hot_phases(monkeypatch):
+    """ต่อสายจริง: run_p1_v3 ต้องแนบช่วง steady และ hot พร้อม overload/CPU ต่อช่วง."""
+    import asyncio
+    import itertools
+
+    import httpx
+
+    monkeypatch.setattr(G, "V3_ROUNDS", 1)
+    monkeypatch.setattr(G, "CONCURRENCY", (1,))
+    monkeypatch.setattr(G, "REQUESTS_PER_LEVEL", 10)
+    monkeypatch.setattr(G, "V3_HOT_CONCURRENCY", 2)
+    tick = itertools.count(1)
+
+    def handler(request):
+        if request.url.path == "/v1/l3-capacity-stats":
+            n = next(tick)
+            return httpx.Response(
+                200,
+                json={
+                    "data": {
+                        "pid": 7,
+                        "l3_requests": n * 3,
+                        "per_user_overload": n,
+                        "cpu_s": n * 0.01,
+                        "mono_s": n * 0.1,
+                        "rss_kb": 1000,
+                        "fits_pending": 0,
+                    }
+                },
+            )
+        return httpx.Response(200, json={"data": SCORED})
+
+    g = G.Gate("http://ml", "redis://localhost:6379/13", 1, 1)
+    g.cold_users = [f"cold-{i:04d}" for i in range(5)]
+
+    async def go():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as c:
+            return await G.run_p1_v3(g, c)
+
+    out = asyncio.run(go())
+    for name in ("steady", "hot"):
+        ph = out["phases"][name]
+        assert ph["workers_compared"] == 1
+        assert ph["overload"] > 0 and ph["requests"] > 0
+        assert ph["cpu_ms_per_request"] is not None

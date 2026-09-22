@@ -173,3 +173,23 @@ def test_endpoint_returns_stats_when_enabled(monkeypatch):
     assert {"pid", "fits_total", "max_fits_per_user", "cache_entries", "rss_kb"} <= set(
         body
     )
+
+
+def test_stats_report_process_cpu_seconds():
+    """A/B §27: ต้องแยกได้ว่าช้าเพราะ worker ใช้ CPU ต่อ request มากขึ้น หรือเพราะเครื่องแย่ง CPU."""
+    import time
+
+    a = SEQ.capacity_stats()["cpu_s"]
+    t0 = time.process_time()
+    while time.process_time() - t0 < 0.05:
+        sum(i * i for i in range(1000))
+    b = SEQ.capacity_stats()["cpu_s"]
+    assert isinstance(a, float)
+    assert b - a >= 0.04
+
+
+def test_stats_report_monotonic_clock():
+    """ตัววัดคำนวณ CPU utilisation ต่อ worker จากช่วงเวลาของ process เดียวกัน."""
+    a = SEQ.capacity_stats()["mono_s"]
+    b = SEQ.capacity_stats()["mono_s"]
+    assert isinstance(a, float) and b >= a

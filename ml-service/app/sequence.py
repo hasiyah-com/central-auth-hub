@@ -564,6 +564,9 @@ def capacity_stats() -> dict:
         "fit_wait_scored": wait_scored,
         "fits_pending": sum(1 for f in list(_PENDING.values()) if not f.done()),
         "rss_kb": _rss_kb(),
+        # CPU ของทั้ง process (ทุก thread) + นาฬิกาเดียวกัน — ตัววัดคิด utilisation ต่อ worker (§27)
+        "cpu_s": time.process_time(),
+        "mono_s": time.monotonic(),
     }
 
 

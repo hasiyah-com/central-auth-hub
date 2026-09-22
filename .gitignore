@@ -182,3 +182,4 @@ scripts/pii/*.docx
 
 # ผลดิบของ ML Capacity Gate (scripts/test/ml_capacity_gate.sh)
 .capacity/
+.capacity-ab/
