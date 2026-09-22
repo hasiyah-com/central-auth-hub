@@ -58,7 +58,32 @@ SIZES = (50, 100, 500, 1000, 5000)
 # FPR เป้าหมายตอนตั้ง threshold บน calibration (ต่ำกว่างบเพื่อเผื่อ tail shift ข้ามประชากร
 # ที่เคยวัดได้ 0.73% -> 1.18% ใน Round 2c)
 MATCHED_FPR = {"challenge": 0.005, "block": 0.001}
-THRESHOLD_GRID = tuple(round(0.40 + 0.005 * i, 3) for i in range(120))  # 0.400 … 0.995
+# amendment 1 (ก่อนวัด): คะแนนที่ calibrate ด้วย ECDF + gamma 1.0 ของเหตุการณ์ปกติอยู่ที่ q99.5 = 0.99977
+# (probe seed 401 size 50 ของ calibration) → grid ที่หยุดที่ 0.995 ไปไม่ถึง FPR 0.5% ทุก candidate
+THRESHOLD_GRID = (
+    tuple(round(0.40 + 0.005 * i, 3) for i in range(120))  # 0.400 … 0.995
+    + tuple(round(0.9951 + 0.0001 * i, 4) for i in range(49))  # 0.9951 … 0.9999
+    + tuple(round(0.99991 + 0.00001 * i, 5) for i in range(9))  # 0.99991 … 0.99999
+    + tuple(round(0.999991 + 0.000001 * i, 6) for i in range(9))  # … 0.999999
+)
+
+# amendment 1: gamma ของแต่ละ candidate = per_config_gamma ใน frozen_config.json ของ Round 2c
+# (B = 1.0, E = 1.0) · G ใช้ของ E เพื่อให้ต่างจาก E เฉพาะวิธีรวม L3
+CANDIDATE_GAMMA_FROM = {"B": "B", "E": "E", "G": "E"}
+
+
+def warn_threshold(frozen_warn: float, challenge: float) -> float:
+    """warn ไม่ใช่เกณฑ์ตัดสิน — ใช้ค่าเดิมของ config แต่ห้ามสูงกว่า challenge ที่ตั้งใหม่."""
+    return min(frozen_warn, challenge)
+
+
+def campaign_key(user: str, scenario: str, seed: int, size: int) -> str:
+    """หน่วยนับของ Campaign recall = กลุ่มการโจมตีหนึ่งกลุ่ม (ผู้ใช้ × scenario × seed × size).
+
+    ต่างจากตระกูล `campaign` ใน FAMILY_TARGETS ซึ่งเป็น recall ระดับเหตุการณ์ของ scenario ชื่อนั้น
+    """
+    return f"{user}:{scenario}:{seed}:{size}"
+
 
 # B = baseline L1+L2 · E = hybrid ปัจจุบัน (point + sequence, max+corroboration)
 # G = conditional L3 fusion (candidate) — gate ตัดสิน G เท่านั้น B/E เป็นตัวเทียบ

@@ -181,9 +181,32 @@ def test_unreachable_target_is_reported_not_hidden():
 
 
 def test_threshold_grid_is_preregistered():
+    """แก้ไขก่อนวัด (amendment 1): grid เดิมหยุดที่ 0.995 แต่คะแนนที่ calibrate ด้วย ECDF + gamma 1.0
+    ของเหตุการณ์ปกติอยู่ที่ q99.5 = 0.99977 → เพิ่มช่วงละเอียดถึง 0.999999."""
     g = AG.THRESHOLD_GRID
-    assert g[0] == 0.40 and g[-1] == 0.995
-    assert all(round(b - a, 3) == 0.005 for a, b in zip(g, g[1:]))
+    coarse = [x for x in g if x <= 0.995]
+    assert coarse[0] == 0.40 and coarse[-1] == 0.995 and len(coarse) == 120
+    assert all(round(b - a, 3) == 0.005 for a, b in zip(coarse, coarse[1:]))
+    assert g[-1] == 0.999999
+    assert list(g) == sorted(set(g))  # เรียงขึ้น ไม่ซ้ำ
+    assert {0.9999, 0.99999, 0.999999} <= set(g)
+    assert len(g) == 120 + 49 + 9 + 9
+
+
+def test_gamma_and_warn_rule_are_fixed_before_measuring():
+    """amendment 1: gamma มาจาก frozen_config ของ Round 2c · G ใช้ของ E · warn = min(warn เดิม, challenge)."""
+    assert AG.CANDIDATE_GAMMA_FROM == {"B": "B", "E": "E", "G": "E"}
+    assert AG.warn_threshold(0.98, 0.9990) == 0.98
+    assert AG.warn_threshold(0.9995, 0.9990) == 0.9990
+
+
+def test_campaign_recall_counts_attack_groups_not_the_campaign_family():
+    """amendment 1: Campaign recall (ข้อ 2) = ระดับกลุ่มการโจมตี (ผู้ใช้ × scenario × seed × size)
+    ส่วนตระกูล `campaign` ในข้อ 2.1 เป็น recall ระดับเหตุการณ์ — คนละตัวชี้วัด."""
+    assert (
+        AG.campaign_key("U01", "subtle_slow_burst", 501, 50)
+        == "U01:subtle_slow_burst:501:50"
+    )
 
 
 # ══════════════ 6. คำตัดสินรวม ══════════════
