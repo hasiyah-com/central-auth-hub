@@ -309,7 +309,7 @@ export function Sidebar() {
 
       <EnvChip />
 
-      <nav className="flex-1 overflow-y-auto px-3 py-4">
+      <nav className="no-scrollbar flex-1 overflow-y-auto px-3 py-4">
         {isAdmin && (
           <>
             <NavGroup title="Command" items={ADMIN_COMMAND} pathname={pathname} badgeFor={badgeFor} />

@@ -195,3 +195,10 @@ button, a, input, select, textarea { -webkit-tap-highlight-color: transparent; }
   background: #17253a;
   border-color: #45596f;
 }
+
+
+
+
+/* ซ่อน scrollbar แต่ยังเลื่อนได้ (ใช้กับ sidebar nav) */
+.no-scrollbar { scrollbar-width: none; -ms-overflow-style: none; }
+.no-scrollbar::-webkit-scrollbar { width: 0; height: 0; display: none; }

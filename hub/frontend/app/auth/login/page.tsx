@@ -23,19 +23,15 @@ export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // แจ้งผลจาก flow เปลี่ยนบัญชี Google (redirect กลับมาที่หน้า login)
   const [notice, setNotice] = useState<{ kind: "ok" | "err"; text: string } | null>(
     null
   );
-  // Global auth-policy — admin อาจปิด Google หรือ Passkey
   const [policy, setPolicy] = useState<{ google: boolean; passkey: boolean }>({
     google: true,
     passkey: true,
   });
 
   useEffect(() => {
-    // อ่านผล change-google จาก query (redirect กลับมาแบบ full-page — ไม่ใช้ useSearchParams
-    // เลี่ยง Suspense boundary requirement)
     const q = new URLSearchParams(window.location.search);
     if (q.get("google_changed") === "1") {
       setNotice({
@@ -140,7 +136,7 @@ export default function LoginPage() {
         <div className="login-context">
           <div className="context-kicker"><LineIcon size={14}><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="2"/><path d="M12 2v3M22 12h-3M12 22v-3M2 12h3"/></LineIcon><span className="mono">SECURE ACCESS · TH-SOUTH-01</span></div>
           <h1>ยืนยันตัวตน<br />ก่อนเข้าสู่<span> Signal Room</span></h1>
-          <p>ศูนย์ควบคุม Identity, Permission และ Security Operations ของมหาวิทยาลัย</p>
+          <p></p>
           <div className="trust-rail" aria-label="คุณสมบัติความปลอดภัย">
             <div className="rail-line"><i/><i/><i/></div>
             <div className="trust-point active"><span><LineIcon><path d="M7 12a5 5 0 0 1 10 0v5M5 12a7 7 0 0 1 14 0v4M9 12a3 3 0 0 1 6 0v8M12 12v9"/></LineIcon></span><div><b>Phishing-resistant</b><small>Passkey · WebAuthn</small></div></div>
@@ -151,7 +147,7 @@ export default function LoginPage() {
 
         <section className="login-panel" aria-labelledby="login-title">
           <div className="panel-scanline" />
-          <div className="login-panel-head"><span className="login-overline mono">ADMIN AUTHENTICATION</span><h2 id="login-title">เข้าสู่ระบบผู้ดูแล</h2><p>ใช้บัญชีมหาวิทยาลัยที่ได้รับสิทธิ์เท่านั้น</p></div>
+          <div className="login-panel-head"><span className="login-overline mono">ADMIN AUTHENTICATION</span><h2 id="login-title">เข้าสู่ระบบผู้ดูแล</h2><p></p></div>
 
           {notice && <div className={notice.kind === "ok" ? "login-ready" : "login-error"}>{notice.text}</div>}
 

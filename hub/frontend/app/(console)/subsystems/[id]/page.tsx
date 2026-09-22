@@ -10,12 +10,10 @@ import { LineChart } from "@/components/LineChart";
 import { LatencyBandChart } from "@/components/LatencyBandChart";
 import { clientFetch } from "@/lib/api";
 import { mutateWithStepup, runWithStepup } from "@/lib/passkey";
-// design system ที่ port จากดีไซน์ตัวจริง — .sc = ชุด cx-* ของหน้าคอนโซล
-import "../../../signal-room.css";
-import "../../../signal-console.css";
+// import "../../../signal-room.css";
+// import "../../../signal-console.css";
 import { AccessPolicyCard } from "./_components/AccessPolicyCard";
 
-/** ดึงข้อความ error ที่อ่านได้ — รองรับ detail เป็น object (no_passkey) + ยกเลิก Passkey */
 function errText(e: unknown, fallback: string): string {
   if (e instanceof DOMException && e.name === "NotAllowedError")
     return "ยกเลิกการยืนยัน Passkey — ลองอีกครั้ง";
