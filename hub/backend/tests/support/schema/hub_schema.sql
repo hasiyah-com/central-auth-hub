@@ -1,11 +1,11 @@
 -- schema snapshot ของฐานข้อมูลเทส (เฉพาะโครงสร้าง ไม่มีข้อมูล)
--- alembic head: f6a7b8c9d0e1
+-- alembic head: a7b8c9d0e1f2
 -- สร้างด้วย scripts/test/dump_test_schema.sh จาก hub_db
 --
 -- PostgreSQL database dump
 --
 
-\restrict gB5p6sUPUnGuq8BVFi8aePHh2u1lz4UTStGDumjZ8nk44NAZr8zdbKhdCmxXZKG
+\restrict vsYrdT1YKoHOFlwsgak6Pso2xTHppU9X4akb07Lg70kmXadG4JGs4fNcHthTVgR
 
 -- Dumped from database version 15.17
 -- Dumped by pg_dump version 15.17
@@ -373,7 +373,7 @@ CREATE TABLE public.subsystems (
     owner_user_id uuid,
     created_at timestamp without time zone,
     approved_at timestamp without time zone,
-    allowed_roles character varying[] DEFAULT '{user}'::text[] NOT NULL,
+    allowed_roles character varying[] DEFAULT '{user}'::character varying[] NOT NULL,
     access_revoke_webhook_url text,
     previous_client_secret_hash text,
     previous_secret_expires_at timestamp without time zone,
@@ -1271,4 +1271,4 @@ ALTER TABLE ONLY public.user_totp_credentials
 -- PostgreSQL database dump complete
 --
 
-\unrestrict gB5p6sUPUnGuq8BVFi8aePHh2u1lz4UTStGDumjZ8nk44NAZr8zdbKhdCmxXZKG
+\unrestrict vsYrdT1YKoHOFlwsgak6Pso2xTHppU9X4akb07Lg70kmXadG4JGs4fNcHthTVgR

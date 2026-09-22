@@ -2,11 +2,11 @@
 
 ที่มา (2026-09-22): Backend CI ใช้ `hub_db` + Redis DB 0 → ตัวกัน env ปฏิเสธทุกรอบ · แก้เป็น
 `hub_test` + DB 15 แล้ว แต่ CI สร้าง schema ด้วย `create_all` ซึ่ง**ไม่สร้าง trigger/server default**
-ที่ migration ของ Expert Review สร้าง → เทสด้าน integrity ล้ม 5 ตัว · และ `alembic upgrade head`
-จากฐานข้อมูลว่างใช้ไม่ได้ (migration ช่วงต้นอ้างถึง index ที่ไม่มี — ปัญหา baseline ที่ค้างอยู่)
+ที่ migration ของ Expert Review สร้าง → เทสด้าน integrity ล้ม 5 ตัว · ตั้งแต่ B80 CI สร้างฐานด้วย
+`alembic upgrade head` จากฐานว่าง แล้วเทียบกับ snapshot นี้ทีละรายการ
 
 ในเครื่อง `setup_test_db.sh` clone schema จาก `hub_db` ด้วย `pg_dump -s` · CI จึงใช้ snapshot ของ
-schema เดียวกันที่เก็บใน repo (`tests/support/schema/hub_schema.sql`) แล้ว stamp head ·
+schema เดียวกันที่เก็บใน repo (`tests/support/schema/hub_schema.sql`) เป็นตัวอ้างอิง ·
 ความเสี่ยงคือ snapshot เก่ากว่า migration — เทสนี้บังคับให้ head ใน snapshot ตรงกับ head จริง
 """
 

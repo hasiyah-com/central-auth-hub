@@ -6,8 +6,8 @@
 # ทำอะไรบ้าง
 #   1. drop/create ฐานข้อมูล hub_test (ตัด connection ค้างก่อน)
 #   2. clone schema จาก hub_db แล้ว stamp head
-#      (migration chain สร้างจากศูนย์ไม่ได้ — baseline 609c11174142 เป็น diff จาก
-#       ฐานข้อมูลที่มีอยู่แล้ว ขึ้นต้นด้วย DROP ของเดิม · การทำ baseline จริงเป็นงานแยก)
+#      (ตั้งแต่ B80 migration chain สร้างจากฐานว่างได้แล้ว — ดู scripts/test/verify_migrations.sh ·
+#       ในเครื่องยัง clone จาก hub_db เพื่อให้ตรงกับฐานที่ใช้พัฒนาจริง)
 #   3. seed users + subsystem ของเทส
 #   4. ล้าง Redis DB ของเทสด้วยการไล่ลบทีละ key (ไม่ใช้ FLUSHDB)
 #   5. พิมพ์ manifest ไว้เทียบว่าแต่ละรอบเริ่มจากสถานะเดียวกัน

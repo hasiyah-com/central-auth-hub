@@ -507,6 +507,23 @@
 - ผลหลังแก้: request แรก 22 ms · cold burst 15.2 → 4.8 วินาที (worker 1), 3.7 → 1.6 วินาที (worker 4) · ที่เหลือเกิน 500 ms มาจาก fit หลายคนพร้อมกันแย่ง GIL (ยังไม่แก้)
 - **Verify:** `ml-service/tests/test_explainer_init.py` · `hub/backend/tests/reports/ml_capacity_gate_2026-09-21.md` §9
 
+**B80. migration chain เริ่มจากฐานว่างไม่ได้ และ schema ของ dev ต่างจากที่ migration สร้าง — ซ่อนอยู่เพราะไม่มีใครสร้างฐานจากศูนย์**
+- อาการ: `alembic upgrade head` บนฐานว่างล้มที่ `DROP INDEX ix_mfa_challenges_created_at` · CI ต้องโหลด snapshot ของ head แทน ·
+  พอทำให้เริ่มจากศูนย์ได้แล้วเทียบทีละรายการ พบ (1) `login_sessions.is_attack_ip/is_account_takeover` มี `DEFAULT false`
+  ใน hub_db แต่ migration ไม่มี (2) `subsystems.allowed_roles` default ต่างกัน (`::text[]` / `::character varying[]`)
+  (3) `alembic check` ล้ม: model ประกาศ `user_totp_credentials.user_id` เป็น unique index แต่ migration สร้าง UNIQUE constraint
+- สาเหตุ: baseline `609c11174142` เป็น autogenerate **diff** จากฐานที่แอปสร้างตารางเองก่อนใช้ Alembic ไม่ใช่ baseline จริง ·
+  autogenerate ไม่เทียบ server default → default ที่เพิ่มนอกระบบใน dev ไม่เคยเข้า migration · ไม่มีเส้นทางใดตรวจว่า
+  migration chain กับฐานจริงตรงกัน (CI โหลด snapshot แล้ว `stamp head` ซึ่งไม่ได้พิสูจน์อะไร)
+- **กฎ:** (1) baseline ต้องสร้างจากฐานว่างได้ — ใช้ snapshot คงที่ของ schema **ณ revision นั้น** (ของ `609c` สร้างจาก models ที่
+  `da0003b`) ห้ามใช้ models ปัจจุบันหรือ snapshot ของ head · ฐานที่มีตารางบางส่วนต้องหยุดแบบ fail-closed
+  (2) CI ต้องสร้างฐานเทสด้วย `alembic upgrade head` จากฐานว่าง แล้วเทียบกับ snapshot ของ head **ทีละรายการ** จาก catalog
+  (3) การเทียบกับข้อความของ pg_dump ต้องให้สองฝั่งผ่าน dump -> โหลดกลับเหมือนกัน — CHECK ความหมายเดียวกันถูก deparse
+  ต่างกันหลังโหลดกลับ (เจอจริงกับ `expert_reviews`)
+- แก้: baseline แยก empty / legacy / partial · migration `a7b8c9d0e1f2` ตั้ง default ให้ทุกฐานเหมือนกัน · model TOTP ตรงกับฐาน
+- **Verify:** `scripts/test/verify_migrations.sh` (ฐานว่าง / สภาพเดิม / กลางทาง / ค้างครึ่งหนึ่ง) ·
+  `tests/test_baseline_migration.py` · `tests/test_schema_drift_alignment.py` · Backend CI ขั้น "Migrate empty database to head"
+
 ---
 
 ## วิธีเพิ่ม bug ใหม่

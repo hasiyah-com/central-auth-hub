@@ -229,8 +229,13 @@ class LoginSession(Base):
     login_method = Column(String(20), nullable=True, index=True)
 
     # Ground truth labels (ตรงกับ RBA dataset columns)
-    is_attack_ip = Column(Boolean, default=False)  # IP อยู่ใน blacklist
-    is_account_takeover = Column(Boolean, default=False)  # admin ยืนยันว่าเป็น attacker จริง
+    # server_default ตรงกับ hub_db และ migration a7b8c9d0e1f2 (align_schema_drift)
+    is_attack_ip = Column(
+        Boolean, default=False, server_default=text("false")
+    )  # IP อยู่ใน blacklist
+    is_account_takeover = Column(
+        Boolean, default=False, server_default=text("false")
+    )  # admin ยืนยันว่าเป็น attacker จริง
 
     created_at = Column(DateTime, default=datetime.utcnow, index=True)
     # NULL = session ยังเปิด / มีค่า = ปิดเมื่อ subsystem แจ้ง logout (back-channel)
@@ -525,13 +530,17 @@ class UserTotpCredential(Base):
     """
 
     __tablename__ = "user_totp_credentials"
+    # ตรงกับที่ migration a1b2c3d4e5f6 สร้างจริง: UNIQUE constraint + index ธรรมดา
+    # (เดิมประกาศ unique=True ที่คอลัมน์ → alembic check เห็นเป็น unique index คนละแบบ, 2026-09-22)
+    __table_args__ = (
+        UniqueConstraint("user_id", name="user_totp_credentials_user_id_key"),
+    )
 
     id = uuid_pk()
     user_id = Column(
         UUID(as_uuid=True),
         ForeignKey("users.id", ondelete="CASCADE"),
         nullable=False,
-        unique=True,
         index=True,
     )
     secret_encrypted = Column(Text, nullable=False)  # Fernet (SECRET_ENCRYPTION_KEY)

@@ -4,9 +4,8 @@
 #   bash scripts/test/dump_test_schema.sh            # เขียน hub/backend/tests/support/schema/hub_schema.sql
 #   SCHEMA_OUT=<path> bash scripts/test/dump_test_schema.sh
 #
-# ทำไมต้องมี: `alembic upgrade head` จากฐานข้อมูลว่างใช้ไม่ได้ (migration ช่วงต้นอ้าง index ที่ไม่มี)
-# และ `create_all` ไม่สร้าง trigger/server default ของ Expert Review · ในเครื่อง setup_test_db.sh
-# clone schema จาก hub_db ด้วย pg_dump -s — snapshot นี้คือ schema ชุดเดียวกันสำหรับ CI
+# ทำไมต้องมี: เป็น schema อ้างอิงของ hub_db — CI สร้างฐานด้วย `alembic upgrade head` จากฐานว่าง
+# แล้วเทียบกับ snapshot นี้ทีละรายการ (B80) · ถ้าต่างกัน แปลว่า migration กับฐานจริงไม่ตรงกัน
 #
 # เฉพาะโครงสร้าง (-s) ไม่มีข้อมูล · รันใหม่ทุกครั้งที่มี migration ใหม่ —
 # tests/test_schema_snapshot.py จะล้มถ้า head ใน snapshot ไม่ตรงกับ alembic head

@@ -4,7 +4,7 @@
 #   bash scripts/test/verify_test_schema.sh
 #
 # ที่ต้องมีสคริปต์นี้เพราะ `hub_test` ถูกสร้างด้วยการ **clone schema จาก hub_db**
-# (migration chain สร้างจากศูนย์ไม่ได้ — baseline 609c11174142 เป็น diff จากฐานข้อมูลเดิม)
+# (การตรวจทั้ง chain จากฐานว่างอยู่ที่ scripts/test/verify_migrations.sh — B80)
 # `alembic stamp head` เพียงบันทึกเลข revision **ไม่ได้พิสูจน์ว่า schema ถูกต้อง**
 # จึงต้องตรวจของจริงที่ migration e5f6a7b8c9d0 สร้างไว้ว่ามีครบใน hub_test
 set -euo pipefail
@@ -63,7 +63,7 @@ check "index shadow_epoch_id + l3_changed_shadow_decision" \
   "SELECT count(*) FROM pg_indexes WHERE tablename='login_sessions' AND indexname IN ('ix_login_sessions_shadow_epoch_id','ix_login_sessions_l3_changed_shadow_decision');" 2
 
 echo "== alembic =="
-EXPECTED_HEAD="f6a7b8c9d0e1"  # pragma: allowlist secret
+EXPECTED_HEAD="a7b8c9d0e1f2"  # pragma: allowlist secret
 check "alembic_version = $EXPECTED_HEAD" \
   "SELECT version_num FROM alembic_version;" "$EXPECTED_HEAD"
 
