@@ -149,9 +149,7 @@ export function AnomalyTable<T extends BaseRow>({
                     <ScoreCell score={row.risk_score ?? row.score} iforestRaw={row.score} />
                   </td>
                   <td className="px-4 py-3">
-                    <Badge tone={DECISION_TONE[row.decision || "unknown"] || "default"}>
-                      {(row.decision || "unknown").toUpperCase()}
-                    </Badge>
+                    <DecisionText decision={row.decision} />
                   </td>
                   <td className="px-4 py-3 text-ink-700">
                     <DeviceCell row={row} />
@@ -184,12 +182,32 @@ export function AnomalyTable<T extends BaseRow>({
 
 // ── Sub-cells ──
 
+// Decision = ตัวอักษรสีล้วน ไม่มีทรงแคปซูล (ตามดีไซน์) — สีตาม DECISION_TONE
+const DECISION_TEXT: Record<string, string> = {
+  good: "text-emerald-700",
+  warn: "text-amber-600",
+  danger: "text-rose-600",
+  default: "text-ink-500",
+};
+
+function DecisionText({ decision }: { decision: string | null }) {
+  const key = decision || "unknown";
+  const color = DECISION_TEXT[DECISION_TONE[key] || "default"];
+  return (
+    <span
+      className={`text-[13px] font-bold uppercase tracking-wide ${color}`}
+    >
+      {key.toUpperCase()}
+    </span>
+  );
+}
+
 function SubsystemCell({ row }: { row: Anomaly }) {
   // subsystem_name = null → Hub-direct (Admin Console / Developer Portal)
   if (!row.subsystem_name) {
     return (
       <div>
-        <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-brand-100 text-brand-700 text-xs font-semibold">
+        <div className="inline-flex items-center gap-1.5 px-2 py-0.5 bg-brand-100 text-brand-700 text-xs font-semibold">
           ระบบหลัก
         </div>
         <div className="text-[10px] text-ink-400 mt-0.5">Hub-direct</div>
@@ -204,7 +222,7 @@ function SubsystemCell({ row }: { row: Anomaly }) {
     : "";
   return (
     <div>
-      <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-ink-100 text-ink-800 text-xs font-semibold">
+      <div className="inline-flex items-center gap-1.5 px-2 py-0.5 bg-ink-100 text-ink-800 text-xs font-semibold">
         {icon && <span>{icon}</span>}
         <span>{row.subsystem_name}</span>
       </div>
@@ -225,12 +243,12 @@ function UserCell({ row }: { row: BaseRow & Record<string, unknown> }) {
         <Link
           href={`/ml/users/${userId}`}
           onClick={(event) => event.stopPropagation()}
-          className="font-semibold text-ink-900 underline decoration-ink-300 underline-offset-4 hover:text-brand-700 hover:decoration-brand-500"
+          className="text-[15px] font-semibold text-ink-900 underline decoration-ink-300 underline-offset-4 hover:text-brand-700 hover:decoration-brand-500"
         >
           {email}
         </Link>
       ) : (
-        <div className="font-semibold text-ink-900">{email}</div>
+        <div className="text-[15px] font-semibold text-ink-900">{email}</div>
       )}
       {sessionId && (
         <div className="mt-0.5 font-mono text-[10px] text-ink-400">
