@@ -344,6 +344,9 @@ def _l3_summary(
             "combined_evidence": (max(views.values()) if views else None),
             "combined_method": "max",
             "eligibility": seq.get("eligibility"),
+            # เหตุที่ abstain — "model_warming" = โมเดลของผู้ใช้ยังไม่พร้อม (fit อยู่เบื้องหลัง)
+            # แยกจาก abstain เพราะประวัติไม่พอ · การวิเคราะห์ shadow ต้องแยกสองกรณีนี้ (B61)
+            "abstain_reason": seq.get("abstain_reason"),
             "n_history": seq.get("n_history"),
             # None = ไม่ได้คำนวณ hybrid (สวิตช์ปิด) · ต่างจาก False ที่แปลว่าวัดแล้วไม่เปลี่ยน
             "changed_shadow_decision": None

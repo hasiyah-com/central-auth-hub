@@ -1,10 +1,10 @@
 {
-  "frozen_at": "2026-09-17T05:03:47+00:00",
-  "git_commit": "7a2a351521d2f0a7dc8aa9d0d447194f512ed497",
-  "git_branch": "feature/hybrid-risk-round2",
-  "reason": "เพิ่มสวิตช์ปิดฉุกเฉิน HYBRID_SHADOW_ENABLED และเพดานเวลารวมของ L3 (asyncio.wait_for นับตั้งแต่เริ่ม _evaluate_l3) ใน risk_engine.py — แผน Hybrid Shadow ขั้นที่ 3/13 · สวิตช์ปิดแล้วไม่คำนวณ hybrid และไม่นับ L3 ในการรวมคะแนนใด ๆ · หมดเวลาแล้ว L3 abstain พร้อม l3_timeout · ค่าเริ่มต้นและโหมด shadow ปัจจุบันให้การตัดสินจริงเท่าเดิม ยืนยันด้วย tests/test_hybrid_shadow_switch.py และ tests/test_shadow_invariant.py · harness ของ P48/P48-T2 ไม่ import risk_engine",
+  "frozen_at": "2026-09-22T07:20:06+00:00",
+  "git_commit": "ab509a455b172b90e7599678291bb64147ca75f7",
+  "git_branch": "HEAD",
+  "reason": "risk_engine._l3_summary บันทึก abstain_reason (model_warming) ลง risk_breakdown.l3 เพื่อแยก 'L3 ยังไม่พร้อม' ออกจาก 'L3 ดูแล้วไม่ยิง' ในข้อมูล shadow (ML Capacity Gate §19-20) · ข้อมูลเท่านั้น ไม่เปลี่ยนการตัดสินจริงหรือผลจำลอง (เทส test_recording_the_reason_does_not_change_the_decision) · ผู้ใช้อนุมัติ re-freeze 2026-09-22",
   "scope": "เฉพาะตรรกะการให้คะแนนและการตัดสิน (app/security/*) — generator และ harness ของการทดลอง **ไม่** ถูก freeze เพราะต้องแก้เพื่อเพิ่มโปรไฟล์ผู้ใช้",
-  "unfreeze_when": "รอบ Hybrid Shadow Pilot จบ (ขั้นที่ 14-16 ของแผน) หรือมีการตกลงร่วมกันให้เปลี่ยน scoring",
+  "unfreeze_when": "เหมือนเดิม: ตัดสินเกณฑ์/น้ำหนักจากข้อมูล production replay หรือ Shadow Pilot",
   "hash_method": "sha256 ของไฟล์หลัง normalize CRLF -> LF",
   "files": {
     "app/security/evidence.py": "89d0317acafd622f61b7298f6e0adf41e223e33e09bd1c23e730e6d7bcf14e33",
@@ -16,7 +16,7 @@
     "app/security/risk_fusion.py": "74b1f24d91f3d32762e2de7e4ab2a65123eef5e11c7940c2955dc801cd8f1744",
     "app/security/risk_aggregator.py": "51c2a61257481a07b6818ad5be6eb90e6aaa0e5fd036f91e6aa67ca9fd957b22",
     "app/security/iforest_scorer.py": "40f8f959c0f1e6741e209db77e9224e7278eea99c6fc603da8d3966c8ed6f398",
-    "app/security/risk_engine.py": "7e2c983edbbe5aa98ecd87546e00b26269274ab30b34f6c9b1c0796ca922ea31"
+    "app/security/risk_engine.py": "68fb86031933977196b1368af6c89b6becb64012724f99a2a6a52e5b61cc3be2"
   },
   "history": [
     {
@@ -55,6 +55,20 @@
         }
       },
       "note": "hash หลัง ruff-format (จัดรูปแบบอย่างเดียว) — แก้ในรายการเดียวกันก่อน commit"
+    },
+    {
+      "frozen_at": "2026-09-22T07:20:06+00:00",
+      "git_commit": "ab509a455b172b90e7599678291bb64147ca75f7",
+      "reason": "risk_engine._l3_summary บันทึก abstain_reason (model_warming) ลง risk_breakdown.l3 เพื่อแยก 'L3 ยังไม่พร้อม' ออกจาก 'L3 ดูแล้วไม่ยิง' ในข้อมูล shadow (ML Capacity Gate §19-20) · ข้อมูลเท่านั้น ไม่เปลี่ยนการตัดสินจริงหรือผลจำลอง (เทส test_recording_the_reason_does_not_change_the_decision) · ผู้ใช้อนุมัติ re-freeze 2026-09-22",
+      "files_changed": [
+        "app/security/risk_engine.py"
+      ],
+      "hash_changes": {
+        "app/security/risk_engine.py": {
+          "old": "7e2c983edbbe5aa98ecd87546e00b26269274ab30b34f6c9b1c0796ca922ea31",
+          "new": "68fb86031933977196b1368af6c89b6becb64012724f99a2a6a52e5b61cc3be2"
+        }
+      }
     }
   ]
 }
