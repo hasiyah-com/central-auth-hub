@@ -25,8 +25,14 @@ QUIET: dict = {
     "n_history": 0,
     "model_version": "iforest-l3-seq-v1",
     "explanation": [],
+    # เหตุที่ abstain เมื่อ ml-service บอกมา — แยก "โมเดลยังไม่พร้อม" ออกจาก "ประวัติไม่พอ" (B61)
+    "abstain_reason": None,
     "error": None,
 }
+
+# ค่าที่ยอมรับจาก ml-service — ค่าอื่นปัดเป็น None (payload ภายนอก ห้ามไหลเข้ามาตรงๆ)
+# model_warming: fit อยู่ใน thread เบื้องหลัง ยังไม่ทันงบรอ (ML Capacity Gate §15)
+_ABSTAIN_REASONS = ("model_warming",)
 
 DIMS = 6  # ต้องตรงกับ l3_sequence.DIMS (มี test parity กันไว้)
 
@@ -67,6 +73,9 @@ def _coerce(data: dict) -> dict:
         "explanation": data.get("explanation")
         if isinstance(data.get("explanation"), list)
         else [],
+        "abstain_reason": data.get("abstain_reason")
+        if data.get("abstain_reason") in _ABSTAIN_REASONS
+        else None,
         "error": None,
     }
 

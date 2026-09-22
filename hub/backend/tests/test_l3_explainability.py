@@ -72,9 +72,13 @@ async def _ok(resid, explain=False, access="allow", tries: int = 5) -> dict:
     """เรียกจนสำเร็จ — call แรกตอน cache เย็นอาจ timeout ตามที่ออกแบบไว้ (B63)."""
     for i in range(tries):
         out = await evaluate_l3(USER, _features(), resid, access, explain=explain)
-        if out["error"] is None:
+        # ตั้งแต่ ML Capacity Gate §15: cache miss ตอบ abstain_reason=model_warming ทันที
+        # (fit อยู่เบื้องหลัง) แทนการ timeout — ถือเป็นสภาพ "ยังไม่พร้อม" แบบเดียวกัน
+        warming = (out.get("sequence") or {}).get("abstain_reason") == "model_warming"
+        if out["error"] is None and not warming:
             return out
-        assert out["error"] == "l3_timeout", f"ml-service ไม่พร้อม: {out['error']}"
+        if not warming:
+            assert out["error"] == "l3_timeout", f"ml-service ไม่พร้อม: {out['error']}"
         await asyncio.sleep(0.5 * (i + 1))
     raise AssertionError(f"ml-service ยัง warm ไม่เสร็จหลัง {tries} ครั้ง")
 
