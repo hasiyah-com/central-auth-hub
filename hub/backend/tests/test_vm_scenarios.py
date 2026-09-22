@@ -138,3 +138,77 @@ def test_invalid_catalog_is_refused(tmp_path):
     )
     with pytest.raises(ValueError, match="X1"):
         VS.load_catalog(bad)
+
+
+# ══════════════ ตัวรันสถานการณ์ (scripts/run_vm_scenarios.py) ══════════════
+
+
+def _s(rank_action, lo, hi=None):
+    from scripts import run_vm_scenarios as RUN  # noqa: F401
+
+    return {
+        "decision_rank": VS.rank(rank_action),
+        "expected_min": lo,
+        "expected_max": hi,
+    }
+
+
+def test_expectation_check_uses_both_bounds():
+    from scripts import run_vm_scenarios as RUN
+
+    assert RUN.meets_expectation(_s("challenge", "challenge"))
+    assert RUN.meets_expectation(_s("block", "challenge"))
+    assert not RUN.meets_expectation(_s("warn", "challenge"))
+    assert RUN.meets_expectation(_s("warn", "allow", "warn"))
+    assert not RUN.meets_expectation(_s("challenge", "allow", "warn"))
+
+
+def test_runner_refuses_outside_development(monkeypatch):
+    from app.config import settings
+    from scripts import run_vm_scenarios as RUN
+
+    monkeypatch.setattr(settings, "app_env", "production")
+    with pytest.raises(SystemExit, match="APP_ENV"):
+        RUN.assert_local_stack()
+
+
+def test_user_type_comes_from_the_alias():
+    from scripts import run_vm_scenarios as RUN
+
+    assert RUN.user_type_of("vm-teacher-02") == "teacher"
+    with pytest.raises(ValueError):
+        RUN.user_type_of("vm-unknown-01")
+
+
+@pytest.mark.asyncio
+async def test_runner_goes_through_the_real_login_path_and_sends_nothing(monkeypatch):
+    """เส้นทางจริง: สร้างแถว login_sessions ด้วยค่าของสถานการณ์ · ไม่เรียก alert · ล้างข้อมูลที่สร้าง."""
+    from app.database import SessionLocal
+    from app.models import LoginSession, User
+    from app.routers import passkey as PK
+    from app.services import alert_service
+    from scripts import run_vm_scenarios as RUN
+
+    sent = []
+    monkeypatch.setattr(
+        alert_service, "maybe_alert_ml_risk", lambda **k: sent.append(k)
+    )
+    monkeypatch.setattr(PK, "maybe_alert_ml_risk", lambda **k: sent.append(k))
+    scen = next(s for s in CATALOG if s.scenario_id == "VM-A07")
+    db = SessionLocal()
+    email = VS.test_email(scen.user_id)
+    try:
+        out = await RUN.run_event(db, scen, scen.events[0], 1)
+        row = db.query(LoginSession).filter(LoginSession.id == out["session_id"]).one()
+        assert row.login_method == RUN.LOGIN_METHOD
+        assert row.risk_breakdown is not None
+        assert out["scenario_id"] == "VM-A07"
+        assert out["l1_rule"] is not None
+        assert sent == []  # ตัวรันปิด alert เอง ไม่พึ่งการ patch ของเทส
+    finally:
+        uid = db.query(User.id).filter(User.email == email).scalar()
+        if uid is not None:
+            db.query(LoginSession).filter(LoginSession.user_id == uid).delete()
+            db.query(User).filter(User.id == uid).delete()
+            db.commit()
+        db.close()
