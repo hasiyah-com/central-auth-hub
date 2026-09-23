@@ -2437,8 +2437,8 @@ def _login_chooser_html(
 ) -> str:
     """หน้าเลือกวิธี login — Google (redirect) หรือ Passkey (WebAuthn JS).
 
-    Aesthetic: "Secure Vault" — dark glassmorphism, gradient mesh, Thai display
-    typography (Kanit + IBM Plex Sans Thai), mint-cyan accent, staggered reveal.
+    Aesthetic: Signal Room login — square console panel, compact Thai typography,
+    mint-cyan accent, and the same visual language as the Hub frontend login.
 
     Same-origin: เสิร์ฟจาก Hub → fetch /oauth/passkey/* ตรง ไม่ผ่าน proxy.
     inline style+script ใช้ CSP nonce (กัน XSS — middleware ตั้ง nonce-{nonce}).
@@ -2518,71 +2518,76 @@ def _login_chooser_html(
   html,body {{ margin:0; height:100%; }}
   body {{
     font-family:'IBM Plex Sans Thai',system-ui,sans-serif;
-    background:var(--bg-0); color:var(--ink);
+    background:
+      linear-gradient(115deg,rgba(52,232,196,.055),transparent 38%),
+      linear-gradient(245deg,rgba(82,120,255,.06),transparent 42%),
+      var(--bg-0);
+    color:var(--ink);
     min-height:100vh; display:grid; place-items:center; padding:32px 16px;
     overflow:hidden; position:relative;
   }}
-  /* gradient mesh + glow orbs */
+  /* subtle Signal Room grid */
   body::before {{
     content:''; position:fixed; inset:-20%; z-index:0;
     background:
-      radial-gradient(40% 50% at 18% 22%, rgba(52,232,196,.16), transparent 70%),
-      radial-gradient(45% 55% at 85% 18%, rgba(82,120,255,.16), transparent 70%),
-      radial-gradient(60% 60% at 50% 110%, rgba(120,80,220,.12), transparent 70%);
-    filter:blur(20px); animation:drift 18s ease-in-out infinite alternate;
+      linear-gradient(rgba(148,178,224,.018) 1px,transparent 1px),
+      linear-gradient(90deg,rgba(148,178,224,.018) 1px,transparent 1px);
+    background-size:44px 44px;
   }}
   /* fine grain overlay */
   body::after {{
     content:''; position:fixed; inset:0; z-index:0; pointer-events:none; opacity:.05;
     background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='120' height='120'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
   }}
-  @keyframes drift {{ from{{transform:translate3d(0,0,0) scale(1)}} to{{transform:translate3d(0,-3%,0) scale(1.06)}} }}
-
   .card {{
-    position:relative; z-index:1; width:100%; max-width:404px;
-    background:linear-gradient(180deg, rgba(20,28,48,.86), rgba(11,17,32,.92));
-    border:1px solid var(--line); border-radius:22px;
-    box-shadow:0 1px 0 rgba(255,255,255,.04) inset, 0 30px 80px -20px rgba(0,0,0,.7),
-               0 0 60px -30px rgba(52,232,196,.5);
-    backdrop-filter:blur(14px); overflow:hidden;
+    position:relative; z-index:1; width:100%; max-width:524px;
+    background:rgba(14,21,35,.96);
+    border:1px solid rgba(148,178,224,.2); border-radius:0;
+    box-shadow:0 28px 80px rgba(0,0,0,.38);
+    overflow:hidden;
     animation:rise .7s cubic-bezier(.2,.8,.2,1) both;
+  }}
+  .card::before {{
+    content:''; position:absolute; left:-1px; top:38px; width:2px; height:76px;
+    background:linear-gradient(var(--mint),rgba(52,232,196,.06));
+    box-shadow:0 0 14px rgba(52,232,196,.3);
   }}
   @keyframes rise {{ from{{opacity:0; transform:translateY(16px) scale(.985)}} to{{opacity:1; transform:none}} }}
 
-  .top {{ padding:30px 32px 6px; }}
+  .top {{ padding:42px 40px 8px; }}
   .badge {{
-    display:inline-flex; align-items:center; gap:7px; font-family:'IBM Plex Mono',monospace;
+    display:inline-flex; align-items:center; gap:8px; font-family:'IBM Plex Mono',monospace;
     font-size:10px; letter-spacing:.18em; text-transform:uppercase; color:var(--mint);
-    border:1px solid rgba(52,232,196,.3); border-radius:999px; padding:5px 11px;
-    background:rgba(52,232,196,.06);
+    padding:0; background:transparent;
   }}
   .dot {{ width:6px; height:6px; border-radius:50%; background:var(--mint);
           box-shadow:0 0 8px var(--mint); animation:pulse 2s infinite; }}
   @keyframes pulse {{ 0%,100%{{opacity:1}} 50%{{opacity:.35}} }}
   h1 {{
-    font-family:'Kanit',sans-serif; font-weight:600; font-size:27px; line-height:1.18;
-    margin:16px 0 4px; letter-spacing:-.01em;
+    font-family:'Kanit',sans-serif; font-weight:600; font-size:32px; line-height:1.18;
+    margin:18px 0 4px; letter-spacing:-.02em;
   }}
   h1 .accent {{ color:transparent; background:linear-gradient(92deg,var(--mint),#7ad6ff);
                 -webkit-background-clip:text; background-clip:text; }}
-  .sub {{ color:var(--muted); font-size:13.5px; margin:0; }}
+  .sub {{ color:var(--muted); font-size:13px; margin:0; }}
 
-  .body {{ padding:22px 32px 26px; }}
+  .body {{ padding:24px 40px 32px; }}
   .stagger {{ opacity:0; animation:fade .6s ease forwards; }}
   .s1{{animation-delay:.12s}} .s2{{animation-delay:.20s}} .s3{{animation-delay:.28s}} .s4{{animation-delay:.36s}}
   @keyframes fade {{ from{{opacity:0; transform:translateY(8px)}} to{{opacity:1; transform:none}} }}
 
   .btn {{
     display:flex; align-items:center; justify-content:center; gap:11px; width:100%;
-    padding:14px 16px; border-radius:13px; font-family:'Kanit',sans-serif; font-weight:500;
-    font-size:15.5px; text-decoration:none; border:1px solid transparent; cursor:pointer;
+    min-height:56px; padding:14px 18px; border-radius:0;
+    font-family:'Kanit',sans-serif; font-weight:500;
+    font-size:15px; text-decoration:none; border:1px solid transparent; cursor:pointer;
     transition:transform .15s ease, box-shadow .25s ease, background .2s ease; position:relative;
     overflow:hidden;
   }}
   .btn:active {{ transform:translateY(1px) scale(.995); }}
   .btn-pk {{
     color:#04221c; background:linear-gradient(100deg,var(--mint),#5ff0d6);
-    box-shadow:0 10px 30px -10px rgba(52,232,196,.6);
+    box-shadow:0 0 24px rgba(52,232,196,.12);
   }}
   .btn-pk:hover {{ transform:translateY(-2px); box-shadow:0 16px 40px -12px rgba(52,232,196,.7); }}
   .btn-pk::after {{ /* shine sweep */
@@ -2603,7 +2608,7 @@ def _login_chooser_html(
   label.fld {{ font-size:11px; color:var(--muted); letter-spacing:.04em;
                margin-bottom:-4px; font-family:'IBM Plex Mono',monospace; }}
   input[type=email] {{
-    width:100%; padding:13px 14px; border-radius:11px; border:1px solid var(--line);
+    width:100%; padding:13px 14px; border-radius:0; border:1px solid var(--line);
     background:rgba(7,11,20,.7); color:var(--ink); font-size:14.5px;
     font-family:'IBM Plex Sans Thai',sans-serif; transition:border .2s,box-shadow .2s;
   }}
@@ -2613,7 +2618,7 @@ def _login_chooser_html(
 
   .err {{ display:none; align-items:flex-start; gap:8px; font-size:12.5px; color:var(--danger);
           background:rgba(255,107,129,.08); border:1px solid rgba(255,107,129,.28);
-          padding:10px 12px; border-radius:10px; line-height:1.45; }}
+          padding:10px 12px; border-radius:0; line-height:1.45; }}
   .err.show {{ display:flex; animation:shake .35s; }}
   @keyframes shake {{ 0%,100%{{transform:translateX(0)}} 25%{{transform:translateX(-4px)}} 75%{{transform:translateX(4px)}} }}
   .hint {{ font-size:11.5px; color:var(--muted); }}
@@ -2627,13 +2632,20 @@ def _login_chooser_html(
               border-top-color:#04221c; border-radius:50%; animation:spin .7s linear infinite; }}
   @keyframes spin {{ to{{transform:rotate(360deg)}} }}
 
-  .foot {{ padding:14px 32px; border-top:1px solid var(--line); text-align:center;
+  .foot {{ padding:15px 40px; border-top:1px solid var(--line); text-align:center;
            font-family:'IBM Plex Mono',monospace; font-size:10px; letter-spacing:.08em;
            color:#56657f; }}
   .gicon {{ width:18px; height:18px; flex:none; }}
   .recover-link {{ display:block; text-align:center; margin-top:14px; font-size:12.5px;
                    color:var(--mint-2); text-decoration:none; }}
   .recover-link:hover {{ color:var(--mint); text-decoration:underline; }}
+  @media (max-width:560px) {{
+    body {{ padding:16px 12px; }}
+    .top {{ padding:30px 24px 8px; }}
+    .body {{ padding:22px 24px 26px; }}
+    .foot {{ padding:14px 24px; font-size:9px; }}
+    h1 {{ font-size:27px; }}
+  }}
 </style></head><body>
 <div class="card">
   <div class="top">
