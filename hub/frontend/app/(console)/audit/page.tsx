@@ -53,9 +53,6 @@ function resultLabel(tone: Tone): string {
     : "บันทึก";
 }
 
-/** เวลาเก็บเป็น UTC — แสดงเป็น Asia/Bangkok ตามกติกาโปรเจกต์
- *  FastAPI ส่ง naive datetime ("2026-05-29T11:14:26" ไม่มี Z) → ต้อง append Z
- *  ไม่งั้น new Date() ตีความเป็น local time แล้วเพี้ยน 7 ชม. (B54) */
 function toDate(iso: string | null): Date | null {
   if (!iso) return null;
   try {
