@@ -48,9 +48,9 @@ from app.services import totp_service
 
 router = APIRouter()
 
-AUTH_REQUEST_TTL = 600  
-AUTH_CODE_TTL = 60  
-ENROLL_TTL = 600  
+AUTH_REQUEST_TTL = 600  # OAuth request เก็บใน Redis 10 นาที
+AUTH_CODE_TTL = 60  # authorization code อายุ 60 วินาที
+ENROLL_TTL = 600  # passkey enrollment context (หลัง Google identify) 10 นาที
 
 
 # ============ 1. /oauth/authorize — จุดเริ่มต้น ============
@@ -73,6 +73,7 @@ async def authorize(
     if not subsystem:
         raise HTTPException(status_code=400, detail="client_id ไม่ถูกต้อง")
     if subsystem.status == "suspended":
+        # ระงับใช้งานชั่วคราว → 503 Service Unavailable + หน้า HTML
         log_action(
             db,
             actor_id=None,
@@ -96,6 +97,10 @@ async def authorize(
                 f"(status: {subsystem.status})"
             ),
         )
+
+    # 1b. Pre-flight health check — ถ้า subsystem ล่ม อย่าให้ user เสียเวลาผ่าน Google
+    #     แสดงหน้า maintenance HTML แทน redirect ไป Google
+    #     (ใช้ cache ของ background ping ที่อ่าน Redis — fast path, ไม่ ping จริง)
     health = get_health_status(str(subsystem.id))
     if health and health.get("status") == "down":
         log_action(
@@ -128,6 +133,11 @@ async def authorize(
         )
 
     # 3. เก็บ OAuth request ใน Redis โดยใช้ "state token ของ Hub" เป็น key
+    #    (state ที่ subsystem ส่งมาเก็บแยกเป็นข้อมูลภายใน)
+    #
+    #    การใช้ state token เป็น Redis key ทำให้:
+    #    - เปิดหลาย tab พร้อมกันได้ (ไม่ทับกันใน session)
+    #    - state ที่ Google ส่งกลับ = key ของ Redis ตรงๆ
     hub_state = secrets.token_urlsafe(24)
     redis_client.setex(
         f"authreq:{hub_state}",
@@ -136,15 +146,19 @@ async def authorize(
             {
                 "client_id": client_id,
                 "redirect_uri": redirect_uri,
-                "state": state,  
+                "state": state,  # state ของ subsystem (ส่งกลับตอน redirect)
                 "code_challenge": code_challenge,
                 "subsystem_id": str(subsystem.id),
-                "scope": subsystem.scope,  
+                "scope": subsystem.scope,  # ใช้ scope ที่ลงทะเบียนไว้
             }
         ),
     )
 
     # 4. แสดงหน้าเลือกวิธี login (A) — Google หรือ Passkey
+    #    แทนการ redirect ตรงไป Google (เดิม) — user เลือกเองได้
+    #    Google → GET /oauth/authorize/google?hub_state=... (ทำ Authlib redirect)
+    #    Passkey → JS WebAuthn → POST /oauth/passkey/{start,finish}
+    #    nonce → CSP อนุญาต inline style+script เฉพาะของหน้านี้ (กัน XSS)
     nonce = secrets.token_urlsafe(16)
     request.state.csp_nonce = nonce
     policy = get_auth_policy(db)
@@ -156,6 +170,9 @@ async def authorize(
             allow_google=policy["google"],
             allow_passkey=policy["passkey"],
         ),
+        # หน้านี้ผูกกับ hub_state ที่ใช้ได้ครั้งเดียว (ลบจาก Redis หลัง consume) —
+        # ถ้า browser/proxy cache ไว้แล้วเปิดซ้ำ (back button ฯลฯ) จะได้ state ตาย
+        # ที่ error "หมดอายุ" เสมอไม่ว่าจะรีเฟรชเร็วแค่ไหน
         headers={
             "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
             "Pragma": "no-cache",
@@ -382,12 +399,20 @@ async def oauth_callback(
             ip=client_ip,
             metadata={"field": "full_name", "old": old_name, "new": google_name},
         )
+
+    # *** เช็คสิทธิ์เข้าระบบย่อยนี้ก่อน — กันเสียเวลาตั้ง passkey ทั้งที่เข้าไม่ได้อยู่ดี ***
+    # (เดิมเช็ค passkey ก่อน access_policy → user ที่ไม่มีสิทธิ์ถูกพาไปตั้ง passkey
+    # เต็มขั้นตอนก่อน ถึงจะมาเจอ 403 ตอน finalize — สลับลำดับให้เช็คสิทธิ์ก่อนเสมอ)
     await _check_access_policy_or_raise(
         user=user, authreq=authreq, request=request, db=db, provider="google"
     )
 
     # ===== Credential setup interstitial (subsystem users รวมนักศึกษา) =====
+    # ยังไม่มี factor เลย (passkey หรือ TOTP) → เสนอตั้งค่าก่อน redirect กลับ subsystem
+    # (นักศึกษาเข้า Hub console ไม่ได้ — นี่คือทางเดียวที่จะตั้ง credential)
+    # เคารพ "ข้ามไปก่อน" (snooze 7 วัน) + "ไม่ต้องถามอีก" (ถาวร) — ไม่บล็อกการเข้าใช้งาน
     if mfa_policy.should_prompt_setup(user, db):
+        # persist google_sub binding + profile sync ที่ทำไว้ก่อนหน้า
         db.commit()
         redis_client.setex(
             f"enroll:{state}",
@@ -407,6 +432,9 @@ async def oauth_callback(
                 nonce=nonce,
             )
         )
+
+    # มี passkey แล้ว → login ตามปกติ (shared finalizer: access_list → RBA →
+    # authorization code → redirect). Passkey path เรียก helper ตัวเดียวกัน
     callback_url = await _finalize_subsystem_login(
         user=user,
         authreq=authreq,
@@ -505,6 +533,7 @@ async def _finalize_subsystem_login(
         user=user, authreq=authreq, request=request, db=db, provider=provider
     )
 
+    # *** เช็ค identity challenge — admin เคย Revoke Level 2 ไหม? ***
     if is_user_challenged(str(user.id)):
         log_action(
             db,
@@ -538,6 +567,7 @@ async def _finalize_subsystem_login(
         )
 
     # ===== Hybrid RBA 4-Layer Risk Scoring =====
+    # อ้างอิง: Freeman 2016, Wiefling 2022, F-RBA 2024, NIST SP 800-63B-4
     geo_country, geo_city = lookup_geo(client_ip)
     features = extract_session_features(
         db,
@@ -611,8 +641,14 @@ async def _finalize_subsystem_login(
     )
 
     # ─── Risk-Triggered Decision (Week 9-10) ─────────────────────────────
+    # Hard block ที่ finalizer (single source of truth) — ไม่พึ่ง aggregator
+    # >= risk_block_hard_threshold (0.85)  → BLOCK 403
+    # >= challenge (0.50) แต่ < 0.85       → MFA flow (re-auth / grace / force-enroll)
+    # < challenge                          → PASS ปกติ
+    # Shadow mode = log only (would_* ไม่ enforce). MFA/block เด้งเฉพาะ enforce mode.
     enforcing = not settings.ml_shadow_mode
     is_hard_block = enforcing and risk_score >= settings.risk_block_hard_threshold
+    # รวม risk-based MFA + Always-2FA (user pref / admin) เป็น gate เดียว (mfa_policy)
     is_mfa_required = mfa_policy.is_second_factor_required(
         user,
         actual_decision=actual_decision,
@@ -660,6 +696,8 @@ async def _finalize_subsystem_login(
     # ─── Risk-Triggered MFA flow (0.50 ≤ score < 0.85) ───────────────────
     grace_banner_remaining_days: int | None = None  # set ถ้า grace branch
     if is_mfa_required:
+        # มี factor ที่สอง (passkey หรือ TOTP) → risk-stepup (รับได้ทั้งคู่);
+        # ไม่มีเลย → grace / force-enroll passkey (ต้องตั้งอย่างน้อย 1)
         has_passkey = mfa_policy.has_second_factor(user, db)
 
         if has_passkey:
@@ -1969,188 +2007,902 @@ def _passkey_recover_html(nonce: str, return_to: str = "") -> str:
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Kanit:wght@500;600&family=IBM+Plex+Sans+Thai:wght@400;500&family=IBM+Plex+Mono:wght@400&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;700;800&family=IBM+Plex+Mono:wght@400&display=swap" rel="stylesheet">
 <style nonce="{nonce}">
-  :root {{ --bg-0:#070b14; --ink:#e8eef7; --muted:#8a99b5; --mint:#34e8c4;
-           --mint-2:#13b89a; --line:rgba(148,178,224,.14); --danger:#ff6b81; }}
-  * {{ box-sizing:border-box; }}
-  html,body {{ margin:0; width:100%; min-width:100%; height:100%; max-width:none; }}
-  body {{ font-family:'IBM Plex Sans Thai',system-ui,sans-serif; background:var(--bg-0);
-          color:var(--ink); min-height:100vh; display:grid; place-items:center;
-          padding:32px 16px; position:relative; overflow:hidden; }}
-  body::before {{ content:''; position:fixed; inset:-20%; z-index:0;
-    background:radial-gradient(40% 50% at 20% 20%, rgba(52,232,196,.14), transparent 70%),
-      radial-gradient(45% 55% at 85% 20%, rgba(82,120,255,.14), transparent 70%);
-    filter:blur(20px); }}
-  .card {{ position:relative; z-index:1; width:100%; max-width:404px;
-    background:linear-gradient(180deg, rgba(20,28,48,.86), rgba(11,17,32,.92));
-    border:1px solid var(--line); border-radius:22px; backdrop-filter:blur(14px);
-    box-shadow:0 30px 80px -20px rgba(0,0,0,.7); overflow:hidden; }}
-  .top {{ padding:28px 30px 4px; }}
-  h1 {{ font-family:'Kanit',sans-serif; font-weight:600; font-size:22px; margin:0 0 4px; }}
-  .sub {{ color:var(--muted); font-size:13px; margin:0; line-height:1.5; }}
-  .body {{ padding:18px 30px 24px; }}
-  .tabs {{ display:flex; gap:6px; background:rgba(7,11,20,.6); border-radius:11px;
-           padding:4px; margin-bottom:16px; }}
-  .tab {{ flex:1; padding:9px; border:none; border-radius:8px; background:transparent;
-          color:var(--muted); font-family:'IBM Plex Sans Thai',sans-serif; font-size:13px;
-          cursor:pointer; font-weight:500; }}
-  .tab.active {{ background:rgba(52,232,196,.14); color:var(--mint); }}
-  label.fld {{ font-size:11px; color:var(--muted); font-family:'IBM Plex Mono',monospace;
-               display:block; margin:0 0 6px; }}
-  input {{ width:100%; padding:12px 13px; border-radius:10px; border:1px solid var(--line);
-           background:rgba(7,11,20,.7); color:var(--ink); font-size:14px;
-           font-family:'IBM Plex Sans Thai',sans-serif; margin-bottom:12px; }}
-  input.mono {{ font-family:'IBM Plex Mono',monospace; letter-spacing:.1em; text-align:center; }}
-  input:focus {{ outline:none; border-color:var(--mint-2); box-shadow:0 0 0 3px rgba(52,232,196,.16); }}
-  .btn {{ width:100%; padding:13px; border-radius:12px; border:none; cursor:pointer;
-          font-family:'Kanit',sans-serif; font-weight:500; font-size:15px;
-          color:#04221c; background:linear-gradient(100deg,var(--mint),#5ff0d6); }}
-  .btn[disabled] {{ opacity:.5; cursor:not-allowed; }}
-  .msg {{ font-size:12.5px; padding:10px 12px; border-radius:10px; margin-bottom:12px;
-          line-height:1.45; display:none; }}
-  .msg.show {{ display:block; }}
-  .msg.err {{ color:var(--danger); background:rgba(255,107,129,.08); border:1px solid rgba(255,107,129,.28); }}
-  .msg.ok {{ color:var(--mint); background:rgba(52,232,196,.08); border:1px solid rgba(52,232,196,.3); }}
-  .back {{ display:block; text-align:center; margin-top:14px; font-size:12px;
-           color:var(--muted); text-decoration:none; }}
-  .back:hover {{ color:var(--ink); }}
-  .hide {{ display:none; }}
+.page {{
+  --navy: #0b1420;
+  --navy-2: #111e2c;
+  --ink: #132033;
+  --muted: #68788d;
+  --line: #d7e0e7;
+  --paper: #ffffff;
+  --canvas: #f1f5f7;
+  --teal: #18b99c;
+  --teal-dark: #087a68;
+  height: 100svh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--canvas);
+  color: var(--ink);
+}}
 
-  /* Result area — แยกจาก .msg เพราะ success card มี background/border ของตัวเอง */
-  #result {{ display:none; }}
-  #result.show {{ display:block; }}
+.topbar {{
+  min-height: 54px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 0 clamp(16px, 3vw, 40px);
+  border-bottom: 1px solid #263547;
+  background: var(--navy);
+  color: #fff;
+}}
 
-  /* Success card — กู้สำเร็จ */
-  .success-card {{
-    padding:22px 20px 22px; border-radius:16px; text-align:center;
-    background:radial-gradient(110% 130% at 50% 0%, rgba(52,232,196,.12), rgba(52,232,196,.02) 70%);
-    border:1px solid rgba(52,232,196,.28);
-    box-shadow:inset 0 1px 0 rgba(255,255,255,.04);
-    animation:successPop .42s cubic-bezier(.2,.7,.3,1.15) both;
-  }}
-  .success-icon {{
-    width:56px; height:56px; margin:0 auto 14px; border-radius:50%;
-    display:grid; place-items:center; position:relative;
-    background:radial-gradient(circle at 35% 30%, rgba(52,232,196,.35), rgba(52,232,196,.06));
-    border:1px solid rgba(52,232,196,.45);
-    box-shadow:0 0 28px rgba(52,232,196,.28), inset 0 0 12px rgba(52,232,196,.12);
-  }}
-  .success-icon::after {{
-    content:''; position:absolute; inset:-6px; border-radius:50%;
-    border:1px solid rgba(52,232,196,.25); animation:ringPulse 1.6s ease-out .15s 1;
-  }}
-  .success-icon svg {{
-    width:30px; height:30px; stroke:var(--mint); stroke-width:3; fill:none;
-    stroke-linecap:round; stroke-linejoin:round;
-    stroke-dasharray:28; stroke-dashoffset:28;
-    animation:checkDraw .55s .12s cubic-bezier(.4,1.4,.5,1) forwards;
-  }}
-  .success-title {{
-    font-family:'Kanit',sans-serif; font-weight:600; font-size:17px;
-    color:var(--mint); margin:0 0 6px; letter-spacing:-.01em;
-  }}
-  .success-msg {{
-    font-size:12.5px; color:#bfe8dc; line-height:1.6; margin:0 0 18px;
-    padding:0 4px;
-  }}
-  .btn-return {{
-    display:flex; align-items:center; justify-content:center; gap:9px;
-    width:100%; padding:12px 14px; border-radius:11px;
-    background:rgba(7,11,20,.55); border:1px solid rgba(52,232,196,.4);
-    color:var(--mint); font-family:'Kanit',sans-serif; font-weight:500;
-    font-size:13.5px; text-decoration:none; cursor:pointer;
-    transition:transform .18s ease, background .18s ease, border-color .18s ease, box-shadow .18s ease;
-  }}
-  .btn-return:hover {{
-    background:rgba(52,232,196,.14); border-color:var(--mint);
-    transform:translateY(-1px); box-shadow:0 8px 24px -10px rgba(52,232,196,.55);
-  }}
-  .btn-return-arrow {{ display:inline-block; transition:transform .22s ease; }}
-  .btn-return:hover .btn-return-arrow {{ transform:translateX(-3px); }}
-  .return-hint {{
-    font-family:'IBM Plex Mono',monospace; font-size:10px; color:var(--muted);
-    margin-top:10px; letter-spacing:.06em; text-transform:uppercase;
-    display:flex; align-items:center; justify-content:center; gap:6px;
-  }}
-  .return-hint .dot {{
-    width:5px; height:5px; border-radius:50%; background:var(--mint);
-    animation:dotPulse 1.3s ease-in-out infinite;
+.brand {{
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  color: inherit;
+  text-decoration: none;
+}}
+
+.brand > span {{
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  border: 1px solid #2ac7aa;
+  background: #0d2a2b;
+  color: #43dfc2;
+  font:500 1rem "IBM Plex Mono", monospace;
+}}
+
+.brand strong,
+.brand small {{
+  display: block;
+}}
+
+.brand strong {{
+  font:500 1rem "Sarabun", sans-serif;
+}}
+
+.brand small {{
+  margin-top: 2px;
+  color: #7f91a7;
+  font:500 .7rem "IBM Plex Mono", monospace;
+  letter-spacing: .15em;
+}}
+
+.secureStatus {{
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #9fb0c3;
+  font:500 .72rem "IBM Plex Mono", monospace;
+  letter-spacing: .08em;
+}}
+
+.secureStatus i {{
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #38d7b9;
+  box-shadow: 0 0 0 4px rgba(56, 215, 185, .12);
+}}
+
+.shell {{
+  width: min(1380px, calc(100% - 36px));
+  min-height: 0;
+  flex: 1;
+  display: grid;
+  grid-template-columns: minmax(300px, .72fr) minmax(560px, 1.6fr);
+  margin: 14px auto;
+  overflow: hidden;
+  border: 1px solid #cfd9e1;
+  background: var(--paper);
+  box-shadow: 0 18px 50px rgba(16, 31, 48, .08);
+}}
+
+.context {{
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  padding: clamp(20px, 2.4vw, 38px);
+  overflow: hidden;
+  border-top: 3px solid var(--teal);
+  background:
+    radial-gradient(circle at 90% 10%, rgba(26, 182, 157, .14), transparent 35%),
+    linear-gradient(160deg, var(--navy) 0%, #111d2b 70%, #0c2528 100%);
+  color: #f3f7fa;
+}}
+
+.eyebrow {{
+  display: block;
+  color: #6f849b;
+  font:500 .72rem/1.4 "IBM Plex Mono", monospace;
+  letter-spacing: .16em;
+}}
+
+.context h1 {{
+  max-width: 520px;
+  margin: 10px 0 8px;
+  font: 800 clamp(1.4rem, 1.9vw, 2.05rem)/1.22 "Sarabun", sans-serif;
+  letter-spacing: -.025em;
+}}
+
+.context > div:first-child > p {{
+  max-width: 510px;
+  margin: 0;
+  color: #9bacc0;
+  font-size: .82rem;
+  line-height: 1.6;
+}}
+
+.steps {{
+  list-style: none;
+  margin: auto 0;
+  padding: 20px 0;
+}}
+
+.steps li {{
+  position: relative;
+  min-height: 58px;
+  display: grid;
+  grid-template-columns: 38px 1fr;
+  align-items: start;
+  gap: 16px;
+  color: #65798f;
+}}
+
+.steps li:not(:last-child)::after {{
+  content: "";
+  position: absolute;
+  left: 15px;
+  top: 34px;
+  width: 1px;
+  height: 22px;
+  background: #2b3b4e;
+}}
+
+.steps li > span {{
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border: 1px solid #324356;
+  color: #7d90a6;
+  font:500 .72rem "IBM Plex Mono", monospace;
+}}
+
+.steps strong,
+.steps small {{
+  display: block;
+}}
+
+.steps strong {{
+  margin-top: 2px;
+  font-size: .84rem;
+}}
+
+.steps small {{
+  margin-top: 2px;
+  font-size: .72rem;
+}}
+
+.steps .stepActive {{
+  color: #f4f8fb;
+}}
+
+.steps .stepActive > span {{
+  border-color: var(--teal);
+  background: rgba(24, 185, 156, .13);
+  color: #42dfc2;
+}}
+
+.securityNote {{
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding-top: 14px;
+  border-top: 1px solid #29394b;
+}}
+
+.securityNote > span {{
+  width: 24px;
+  height: 24px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border: 1px solid #3f566c;
+  border-radius: 50%;
+  color: #83a0b9;
+  font:500 .75rem "IBM Plex Mono", monospace;
+}}
+
+.securityNote p {{
+  margin: 0;
+  color: #73879c;
+  font-size: .78rem;
+  line-height: 1.55;
+}}
+
+.securityNote strong {{
+  display: block;
+  margin-bottom: 2px;
+  color: #a8b7c6;
+  font-size: .82rem;
+}}
+
+.workspace {{
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  background: #fff;
+}}
+
+.workspaceHeader {{
+  min-height: 72px;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 14px clamp(20px, 2.4vw, 34px);
+  border-bottom: 1px solid var(--line);
+}}
+
+.workspaceHeader h2 {{
+  margin: 3px 0 0;
+  font: 800 clamp(1.1rem, 1.5vw, 1.45rem)/1.25 "Sarabun", sans-serif;
+}}
+
+.sessionId {{
+  flex: none;
+  padding: 8px 10px;
+  border: 1px solid #a8ded4;
+  background: #effaf7;
+  color: var(--teal-dark);
+  font:500 .68rem "IBM Plex Mono", monospace;
+  letter-spacing: .08em;
+}}
+
+.recoveryGrid {{
+  min-height: 0;
+  flex: 1;
+  display: grid;
+  grid-template-columns: minmax(200px, .66fr) minmax(340px, 1.4fr);
+  overflow: hidden;
+}}
+
+.methods {{
+  padding: 0;
+  overflow-y: auto;
+  border-right: 1px solid var(--line);
+  background: #f6f8fa;
+}}
+
+.method,
+.methodActive {{
+  position: relative;
+  width: 100%;
+  min-height: 56px;
+  display: grid;
+  grid-template-columns: 32px 1fr;
+  align-items: center;
+  gap: 11px;
+  padding: 9px 14px;
+  border: 0;
+  border-bottom: 1px solid #e4e9ee;
+  background: transparent;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}}
+
+.method:first-child,
+.methodActive:first-child {{
+  border-top: 1px solid #e4e9ee;
+}}
+
+.method:hover {{
+  background: #edf3f4;
+}}
+
+.methodActive {{
+  background: #fff;
+  box-shadow: inset 3px 0 var(--teal);
+}}
+
+.method > span,
+.methodActive > span,
+.methodHeading > span {{
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border: 1px solid #cbd6df;
+  background: #fff;
+  color: #627389;
+  font:500 .7rem "IBM Plex Mono", monospace;
+}}
+
+.methodActive > span,
+.methodHeading > span {{
+  border-color: #8cd7c9;
+  background: #eaf9f5;
+  color: var(--teal-dark);
+}}
+
+.method strong,
+.method small,
+.methodActive strong,
+.methodActive small {{
+  display: block;
+}}
+
+.method strong,
+.methodActive strong {{
+  font-size: .8rem;
+  line-height: 1.3;
+}}
+
+.method small,
+.methodActive small {{
+  margin-top: 2px;
+  color: #7c8b9d;
+  font-size: .66rem;
+  line-height: 1.4;
+}}
+
+.formPanel {{
+  width: 100%;
+  max-width: 560px;
+  align-self: center;
+  justify-self: center;
+  overflow-y: auto;
+  max-height: 100%;
+  padding: clamp(18px, 2.4vw, 34px);
+}}
+
+.methodHeading {{
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 18px;
+}}
+
+.methodHeading h3 {{
+  margin: 0;
+  font: 800 1.05rem "Sarabun", sans-serif;
+}}
+
+.methodHeading p {{
+  margin: 2px 0 0;
+  color: var(--muted);
+  font-size: .76rem;
+}}
+
+.guidance {{
+  margin-bottom: 14px;
+  padding: 9px 12px;
+  border-left: 3px solid #6a83a0;
+  background: #f1f5f8;
+  color: #4e6075;
+  font-size: .74rem;
+  line-height: 1.5;
+}}
+
+.field {{
+  display: block;
+  margin-bottom: 12px;
+}}
+
+.field > span {{
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 5px;
+  color: #405168;
+  font-size: .78rem;
+  font-weight:500;
+}}
+
+.field > span small {{
+  color: #8b98a8;
+  font-size: .75rem;
+  font-weight: 500;
+}}
+
+.field input,
+.field textarea {{
+  width: 100%;
+  min-height: 42px;
+  border: 1px solid #c8d3dc;
+  border-radius: 2px;
+  outline: 0;
+  padding: 9px 12px;
+  background: #fff;
+  color: #162438;
+  font-size: .88rem;
+  transition: border-color .15s ease, box-shadow .15s ease;
+}}
+
+.field textarea {{
+  min-height: 78px;
+  resize: vertical;
+  line-height: 1.55;
+}}
+
+.field input:focus,
+.field textarea:focus {{
+  border-color: var(--teal);
+  box-shadow: 0 0 0 3px rgba(24, 185, 156, .1);
+}}
+
+.field input:disabled,
+.field textarea:disabled {{
+  background: #f1f4f6;
+  color: #8794a3;
+}}
+
+.codeInput,
+.otpInput {{
+  font-family: "IBM Plex Mono", monospace;
+  letter-spacing: .12em;
+}}
+
+.otpInput {{
+  text-align: center;
+  font-size: 1.2rem !important;
+  letter-spacing: .35em;
+}}
+
+.primaryButton {{
+  width: 100%;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  border: 1px solid #07907a;
+  border-radius: 2px;
+  padding: 0 16px;
+  background: var(--teal);
+  color: #061c18;
+  font-size: .95rem;
+  font-weight:500;
+  cursor: pointer;
+  transition: background .15s ease, transform .15s ease;
+}}
+
+.primaryButton:hover:not(:disabled) {{
+  background: #38d0b4;
+  transform: translateY(-1px);
+}}
+
+.primaryButton:disabled {{
+  border-color: #d8dee4;
+  background: #e5e9ed;
+  color: #94a0ad;
+  cursor: not-allowed;
+}}
+
+.primaryButton > span {{
+  font: 500 1.2rem "IBM Plex Mono", monospace;
+}}
+
+.infoMessage,
+.errorMessage {{
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-top: 11px;
+  padding: 9px 12px;
+  border: 1px solid #b9d9e8;
+  background: #eff8fc;
+  color: #245b73;
+  font-size: .84rem;
+  line-height: 1.5;
+}}
+
+.errorMessage {{
+  border-color: #efb6c4;
+  background: #fff2f5;
+  color: #a2163a;
+}}
+
+.infoMessage > span,
+.errorMessage > span {{
+  width: 20px;
+  height: 20px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  border: 1px solid currentColor;
+  border-radius: 50%;
+  font:500 .7rem "IBM Plex Mono", monospace;
+}}
+
+.backLink {{
+  display: inline-block;
+  margin-top: 16px;
+  color: #68798e;
+  font-size: .84rem;
+  font-weight:500;
+  text-decoration: none;
+}}
+
+.backLink:hover {{
+  color: var(--teal-dark);
+}}
+
+.resultPanel {{
+  width: min(680px, calc(100% - 48px));
+  margin: auto;
+  padding: 36px;
+}}
+
+.codesPanel {{
+  width: 100%;
+}}
+
+.codesHeader > span {{
+  color: var(--teal-dark);
+  font:500 .72rem "IBM Plex Mono", monospace;
+  letter-spacing: .14em;
+}}
+
+.codesHeader h3 {{
+  margin: 7px 0 5px;
+  font: 800 1.55rem "Sarabun", sans-serif;
+}}
+
+.codesHeader p {{
+  margin: 0;
+  color: var(--muted);
+  font-size: .88rem;
+  line-height: 1.55;
+}}
+
+.codesGrid {{
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 24px 0 16px;
+}}
+
+.codesGrid code {{
+  min-height: 44px;
+  display: grid;
+  place-items: center;
+  border: 1px solid #cdd7df;
+  background: #f7f9fa;
+  color: #1b2b3f;
+  font:500 .9rem "IBM Plex Mono", monospace;
+  letter-spacing: .1em;
+}}
+
+.codesActions {{
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}}
+
+.codesActions button {{
+  min-height: 44px;
+  border: 1px solid #27384b;
+  background: #172436;
+  color: #fff;
+  font-size: .84rem;
+  font-weight:500;
+  cursor: pointer;
+}}
+
+.codesActions button:hover {{
+  background: #23344a;
+}}
+
+.codesActions .actionDone {{
+  border-color: #70c9b8;
+  background: #eaf9f5;
+  color: var(--teal-dark);
+}}
+
+.codesConfirm {{
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  margin: 18px 0 12px;
+  padding: 13px 14px;
+  border: 1px solid #b8ddd5;
+  background: #f0faf7;
+  color: #31475b;
+  font-size: .86rem;
+  cursor: pointer;
+}}
+
+.codesConfirm input {{
+  width: 17px;
+  height: 17px;
+  margin-top: 1px;
+  accent-color: var(--teal-dark);
+}}
+
+.codesConfirmDisabled {{
+  border-color: #dce2e7;
+  background: #f5f7f8;
+  color: #8b97a5;
+  cursor: not-allowed;
+}}
+
+.codesSubmit {{
+  width: 100%;
+  min-height: 50px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border: 0;
+  padding: 0 18px;
+  background: var(--teal);
+  color: #061c18;
+  font-weight:500;
+  cursor: pointer;
+}}
+
+.codesSubmit:disabled {{
+  background: #e3e8ec;
+  color: #929daa;
+  cursor: not-allowed;
+}}
+
+.codesHint {{
+  margin: 9px 0 0;
+  color: #8895a4;
+  text-align: center;
+  font-size: .75rem;
+}}
+
+.donePanel {{
+  width: min(520px, calc(100% - 48px));
+  margin: auto;
+  text-align: center;
+}}
+
+.donePanel h3 {{
+  margin: 7px 0 8px;
+  font: 800 1.6rem "Sarabun", sans-serif;
+}}
+
+.donePanel p {{
+  margin: 0 0 24px;
+  color: var(--muted);
+  font-size: .95rem;
+}}
+
+.donePanel button {{
+  width: 100%;
+  min-height: 50px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border: 0;
+  padding: 0 18px;
+  background: var(--navy);
+  color: #fff;
+  font-weight:500;
+  cursor: pointer;
+}}
+
+.footer {{
+  min-height: 34px;
+  flex: none;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 20px;
+  padding: 0 clamp(16px, 3vw, 40px);
+  border-top: 1px solid #d8e0e6;
+  color: #79889a;
+  font: 500 .68rem "IBM Plex Mono", monospace;
+  letter-spacing: .05em;
+}}
+
+.footer span:last-child {{
+  text-align: right;
+}}
+
+@media (max-width: 1080px) {{
+  .shell {{
+    grid-template-columns: 300px minmax(0, 1fr);
   }}
 
-  @keyframes successPop {{
-    0% {{ opacity:0; transform:translateY(10px) scale(.96); }}
-    100% {{ opacity:1; transform:translateY(0) scale(1); }}
+  .context {{
+    padding: 36px 30px;
   }}
-  @keyframes checkDraw {{ to {{ stroke-dashoffset:0; }} }}
-  @keyframes ringPulse {{
-    0% {{ opacity:.7; transform:scale(.7); }}
-    100% {{ opacity:0; transform:scale(1.3); }}
-  }}
-  @keyframes dotPulse {{
-    0%,100% {{ opacity:.4; transform:scale(.85); }}
-    50% {{ opacity:1; transform:scale(1.15); }}
-  }}
-  .foot {{ padding:13px 30px; border-top:1px solid var(--line); text-align:center;
-           font-family:'IBM Plex Mono',monospace; font-size:10px; color:#56657f; }}
 
-  /* Codes display — premium ack UX (เทียบ admin BackupCodesModal) */
-  .codes-head {{ display:flex; gap:11px; align-items:flex-start; padding:14px 14px 12px;
-                 border-radius:13px; background:linear-gradient(180deg,rgba(52,232,196,.08),rgba(52,232,196,.02));
-                 border:1px solid rgba(52,232,196,.22); margin-bottom:14px; }}
-  .codes-head-icon {{ font-size:22px; line-height:1; flex:none; }}
-  .codes-head-body {{ flex:1; min-width:0; }}
-  .codes-head-title {{ font-family:'Kanit',sans-serif; font-weight:600; font-size:14.5px;
-                       color:var(--mint); margin:0 0 2px; letter-spacing:-.01em; }}
-  .codes-head-sub {{ font-size:11.5px; color:var(--muted); line-height:1.5; }}
-  .warn-band {{ display:flex; gap:8px; align-items:flex-start; font-size:11.5px;
-                color:#f5b97a; background:rgba(245,185,122,.06);
-                border:1px solid rgba(245,185,122,.25); border-radius:10px;
-                padding:9px 11px; margin-bottom:12px; line-height:1.45; }}
-  .codes-grid {{ display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:7px;
-                 background:rgba(7,11,20,.5); border:1px solid var(--line);
-                 border-radius:13px; padding:11px; margin-bottom:14px; }}
-  .code-cell {{ display:flex; align-items:center; gap:7px; padding:7px 9px;
-                background:rgba(7,11,20,.85); border:1px solid var(--line);
-                border-radius:8px; }}
-  .code-num {{ font-family:'IBM Plex Mono',monospace; font-size:9.5px; color:#56657f;
-               letter-spacing:.04em; flex:none; }}
-  .code-val {{ font-family:'IBM Plex Mono',monospace; font-size:12.5px; color:#9ff5dc;
-               letter-spacing:.08em; font-weight:500; }}
-  .actions-row {{ display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:12px; }}
-  .act-btn {{ display:flex; align-items:center; justify-content:center; gap:7px;
-              padding:11px 12px; border-radius:11px; cursor:pointer;
-              font-family:'Kanit',sans-serif; font-weight:500; font-size:13.5px;
-              border:1px solid var(--line); background:rgba(255,255,255,.04);
-              color:var(--ink); transition:all .15s ease; }}
-  .act-btn:hover {{ background:rgba(255,255,255,.08); border-color:rgba(148,178,224,.3); }}
-  .act-btn.done {{ background:rgba(52,232,196,.12); border-color:rgba(52,232,196,.4);
-                   color:var(--mint); }}
-  .ack-box {{ display:flex; gap:10px; align-items:flex-start; padding:11px 12px;
-              background:rgba(255,255,255,.03); border:1px solid var(--line);
-              border-radius:10px; cursor:pointer; margin-bottom:12px;
-              transition:all .15s ease; }}
-  .ack-box:hover {{ background:rgba(255,255,255,.06); }}
-  .ack-box.armed {{ background:rgba(52,232,196,.05); border-color:rgba(52,232,196,.3); }}
-  .ack-box input {{ width:auto; margin:2px 0 0; flex:none; accent-color:var(--mint-2); }}
-  .ack-box-text {{ font-size:12px; color:#c4d0e4; line-height:1.5; }}
+  .context h1 {{
+    font-size: 2rem;
+  }}
+
+  .recoveryGrid {{
+    grid-template-columns: 1fr;
+  }}
+
+  .methods {{
+    display: grid;
+    grid-template-columns: repeat(5, minmax(118px, 1fr));
+    overflow-x: auto;
+    padding: 0;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }}
+
+  .method,
+  .methodActive {{
+    min-height: 92px;
+    display: block;
+    padding: 12px;
+    border-right: 1px solid #e4e9ee;
+    border-bottom: 0;
+  }}
+
+  .method > span,
+  .methodActive > span {{
+    width: 30px;
+    height: 30px;
+    margin-bottom: 8px;
+  }}
+
+  .method small,
+  .methodActive small {{
+    display: none;
+  }}
+
+  .methodActive {{
+    box-shadow: inset 0 -3px var(--teal);
+  }}
+}}
+
+@media (max-width: 780px) {{
+  .topbar {{
+    min-height: 64px;
+    padding: 0 18px;
+  }}
+
+  .secureStatus {{
+    font-size: 0;
+  }}
+
+  .shell {{
+    width: 100%;
+    min-height: 0;
+    display: block;
+    margin: 0;
+    border: 0;
+    box-shadow: none;
+  }}
+
+  .context {{
+    min-height: auto;
+    padding: 28px 22px;
+  }}
+
+  .context h1 {{
+    margin: 12px 0 8px;
+    font-size: 1.75rem;
+  }}
+
+  .context > div:first-child > p {{
+    font-size: .9rem;
+  }}
+
+  .steps,
+  .securityNote {{
+    display: none;
+  }}
+
+  .workspaceHeader {{
+    min-height: 92px;
+    padding: 20px 22px;
+  }}
+
+  .sessionId {{
+    display: none;
+  }}
+
+  .formPanel {{
+    padding: 30px 22px 40px;
+  }}
+
+  .footer {{
+    display: none;
+  }}
+}}
+
+@media (max-width: 520px) {{
+  .brand small {{
+    display: none;
+  }}
+
+  .workspaceHeader h2 {{
+    font-size: 1.45rem;
+  }}
+
+  .methods {{
+    grid-template-columns: repeat(5, minmax(96px, 1fr));
+  }}
+
+  .method,
+  .methodActive {{
+    min-height: 82px;
+    padding: 10px;
+  }}
+
+  .method strong,
+  .methodActive strong {{
+    font-size: .78rem;
+  }}
+
+  .methodHeading {{
+    margin-bottom: 24px;
+  }}
+
+  .resultPanel {{
+    width: 100%;
+    padding: 24px 20px;
+  }}
+}}
+
+.page strong,.page b,.page th,.page dt{{font-weight:500}}
+.page h1,.page h2,.page h3{{font-weight:700}}
+
+*{{box-sizing:border-box}}html,body{{margin:0;width:100%;min-height:100%;font-family:"Sarabun",sans-serif}}button,input{{font:inherit}}
+.page{{--mint:#087a68;--mint-2:#087a68;--danger:#a2163a}}
+.hide,#result{{display:none!important}}#result.show{{display:block!important}}
+#result{{grid-column:1/-1;width:min(620px,100%);margin:auto;padding:28px;overflow:auto;max-height:100%}}
+#form{{min-height:0;flex:1;display:flex;flex-direction:column}}.tabs{{min-width:0}}
+.tab.active{{background:#fff;box-shadow:inset 3px 0 var(--teal)}}.tab.active>span{{border-color:#8cd7c9;background:#eaf9f5;color:var(--teal-dark)}}
+.fld{{display:block;margin:12px 0 5px;color:#405168;font-size:.78rem}}
+input:not([type=checkbox]){{width:100%;min-height:42px;border:1px solid #c8d3dc;border-radius:2px;padding:9px 12px;background:#fff;color:#162438;font-size:.88rem}}
+input:focus-visible{{outline:2px solid var(--teal);outline-offset:2px}}
+.mono{{font-family:"IBM Plex Mono",monospace;letter-spacing:.12em}}
+.btn{{width:100%;min-height:44px;display:flex;justify-content:space-between;align-items:center;gap:18px;margin-top:12px;border:1px solid #07907a;border-radius:2px;padding:10px 16px;background:var(--teal);color:#061c18;cursor:pointer}}
+.btn::after{{content:"→"}}.btn:disabled{{background:#e5e9ed;border-color:#d8dee4;color:#94a0ad;cursor:not-allowed}}
+.back{{display:inline-block;margin-top:16px;color:#68798e;font-size:.84rem;text-decoration:none}}
+.msg{{display:none}}.msg.show{{display:block;padding:9px 12px;background:#fff2f5;color:#a2163a;border:1px solid #efb6c4}}
+.success-card{{text-align:center}}.success-icon svg{{width:36px;height:36px;fill:none;stroke:var(--teal-dark);stroke-width:2}}
+.success-title{{color:var(--teal-dark)}}.success-msg,.codes-head-sub{{color:var(--muted)}}
+.btn-return,.act-btn{{display:block;padding:12px;border:1px solid var(--line);background:#f1f5f7;color:var(--ink);text-decoration:none;cursor:pointer}}
+.codes-grid{{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin:18px 0}}.code-cell{{padding:12px;background:#f7f9fa;border:1px solid var(--line);font-family:"IBM Plex Mono",monospace}}.code-num{{color:var(--muted);margin-right:8px}}.actions-row{{display:grid;grid-template-columns:1fr 1fr;gap:8px}}
+.warn-band{{margin:12px 0;padding:10px;background:#fff8e7;color:#805a17}}.ack-box{{display:flex;gap:10px;margin:16px 0;color:var(--ink);font-size:.86rem}}
+@media(max-width:1080px){{.methods{{grid-template-columns:repeat(4,minmax(0,1fr))}}.recoveryGrid{{grid-template-rows:auto minmax(0,1fr)}}}}
+@media(max-width:780px){{.page{{height:auto;min-height:100svh;overflow:visible}}.shell{{overflow:visible}}.recoveryGrid{{overflow:visible}}.methods{{overflow:visible}}.formPanel{{max-height:none;overflow:visible}}}}
+@media(max-width:520px){{.methods{{grid-template-columns:repeat(2,minmax(0,1fr))}}}}
 </style></head><body>
-<div class="card">
-  <div class="top">
-    <h1>กู้บัญชี Passkey</h1>
-    <p class="sub">ทำอุปกรณ์หาย? ใช้ backup code หรือ email OTP เพื่อลบ Passkey เก่า แล้วตั้งค่าใหม่</p>
-  </div>
-  <div class="body">
-    <div id="result"></div>
-    <div id="form">
-      <div class="tabs">
-        <button class="tab active" id="tabBackup">Backup Code</button>
-        <button class="tab" id="tabOtp">กู้ OTP</button>
-        <button class="tab" id="tabRegen">ขอ codes ใหม่</button>
-        <button class="tab" id="tabTicket">ขอ Admin ช่วย</button>
-      </div>
+<main class="page">
+<header class="topbar"><a class="brand" href="/"><span>H</span><div><strong>Central Auth Hub</strong><small>IDENTITY CONTROL</small></div></a><div class="secureStatus"><i></i>SECURE RECOVERY SESSION</div></header>
+<div class="shell">
+<aside class="context">
+<div><span class="eyebrow">ACCOUNT RECOVERY</span><h1>กลับเข้าใช้งานบัญชี<br>อย่างปลอดภัย</h1><p>เลือกวิธียืนยันตัวตนที่คุณยังเข้าถึงได้ ระบบจะยกเลิก Passkey เดิมก่อนให้ตั้งค่าอุปกรณ์ใหม่</p></div>
+<ol class="steps"><li class="stepActive"><span>01</span><div><strong>เลือกวิธียืนยัน</strong><small>ใช้ข้อมูลที่คุณยังเข้าถึงได้</small></div></li><li><span>02</span><div><strong>ตรวจสอบตัวตน</strong><small>ยืนยันรหัสหรือส่งคำขอ</small></div></li><li><span>03</span><div><strong>กลับเข้าสู่ระบบ</strong><small>ตั้ง Passkey ใหม่หลัง Login</small></div></li></ol>
+<div class="securityNote"><span>i</span><p><strong>ไม่มีรหัสผ่านถูกจัดเก็บในหน้านี้</strong>รหัสยืนยันมีอายุจำกัดและใช้ได้เพียงครั้งเดียว</p></div>
+</aside>
+<section class="workspace">
+<header class="workspaceHeader"><div><span class="eyebrow">PASSKEY / RECOVERY</span><h2>กู้การเข้าถึงบัญชี</h2></div><span class="sessionId">SESSION · ACTIVE</span></header>
+<div id="result"></div>
+<div id="form">
+<div class="recoveryGrid">
+<nav class="methods tabs" aria-label="วิธีกู้บัญชี">
+<button type="button" class="method tab active" id="tabBackup"><span>BC</span><div><strong>Backup Code</strong><small>ใช้รหัสสำรองที่บันทึกไว้</small></div></button>
+<button type="button" class="method tab" id="tabOtp"><span>EM</span><div><strong>Email OTP</strong><small>รับรหัสยืนยันทางอีเมล</small></div></button>
+<button type="button" class="method tab" id="tabTicket"><span>AD</span><div><strong>ขอความช่วยเหลือ</strong><small>ส่งคำขอให้ผู้ดูแลตรวจสอบ</small></div></button>
+<button type="button" class="method tab" id="tabRegen"><span>RC</span><div><strong>สร้าง Codes ใหม่</strong><small>เปลี่ยนเฉพาะชุดรหัสสำรอง</small></div></button>
+</nav>
+<div class="formPanel">
+<div class="methodHeading"><span id="methodCode">BC</span><div><h3 id="methodTitle">Backup Code</h3><p id="methodDescription">ใช้รหัสสำรองที่บันทึกไว้</p></div></div>
       <div id="err" class="msg err"></div>
-      <label class="fld" for="email">อีเมล</label>
+      <label class="fld" for="email">อีเมลบัญชีมหาวิทยาลัย</label>
       <input type="email" id="email" placeholder="you@uni.ac.th">
 
       <div id="paneBackup">
@@ -2176,10 +2928,9 @@ def _passkey_recover_html(nonce: str, return_to: str = "") -> str:
         <button class="btn" id="btnTicket">ส่งคำขอให้ Admin</button>
       </div>
       <a class="back" id="backLink" href="javascript:history.back()">← กลับ</a>
-    </div>
-  </div>
-  <div class="foot">WebAuthn Recovery · Argon2id · HMAC OTP</div>
-</div>
+</div></div></div></section></div>
+<footer class="footer"><span>Central Auth Hub</span><span>TLS 1.3 · WEBAUTHN · OAUTH 2.0</span><span>Princess of Naradhiwas University</span></footer>
+</main>
 
 <script nonce="{nonce}">
 const RETURN_TO = {return_to_js};
@@ -2305,6 +3056,10 @@ function setTab(active, regen) {{
   $('paneOtp').classList.toggle('hide', active!=='tabOtp' && active!=='tabRegen');
   $('paneTicket').classList.toggle('hide', active!=='tabTicket');
   $('otpStep1').classList.remove('hide'); $('otpStep2').classList.add('hide');
+  const selected = $(active);
+  $('methodCode').textContent = selected.querySelector('span').textContent;
+  $('methodTitle').textContent = selected.querySelector('strong').textContent;
+  $('methodDescription').textContent = selected.querySelector('small').textContent;
   regenMode = regen; clearErr();
 }}
 $('tabBackup').addEventListener('click', () => setTab('tabBackup', false));
