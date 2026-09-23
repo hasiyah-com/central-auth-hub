@@ -36,7 +36,7 @@ def main() -> int:
     pub_path = keys_dir / f"{kid}_public.pem"
 
     if priv_path.exists() or pub_path.exists():
-        print(f"❌ Key {kid} มีอยู่แล้ว: {priv_path}", file=sys.stderr)
+        print(f"Key {kid} มีอยู่แล้ว: {priv_path}", file=sys.stderr)
         print("   ลบไฟล์เก่าก่อน หรือใช้ kid อื่น", file=sys.stderr)
         return 2
 
@@ -59,8 +59,8 @@ def main() -> int:
     priv_path.chmod(0o600)
     pub_path.chmod(0o644)
 
-    print(f"✅ Wrote {priv_path} (mode 0600)")
-    print(f"✅ Wrote {pub_path}  (mode 0644)")
+    print(f"Wrote {priv_path} (mode 0600)")
+    print(f"Wrote {pub_path}  (mode 0644)")
     print()
     print("── ขั้นถัดไป ─────────────────────────────────────")
     print("1. ใส่ใน .env เพื่อ verify-only (begin phase):")

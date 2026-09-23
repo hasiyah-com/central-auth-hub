@@ -46,7 +46,7 @@ def load_rows(fp):
 def main():
     mp = MODELS / "user_models.joblib"
     if not mp.exists():
-        print(f"❌ ไม่พบ {mp} — รัน pipe_train.py ก่อน")
+        print(f"ไม่พบ {mp} — รัน pipe_train.py ก่อน")
         return
     payload = load(mp)
     F = payload["features"]
@@ -104,7 +104,7 @@ def main():
 
     REPORT.parent.mkdir(parents=True, exist_ok=True)
     REPORT.write_text("\n".join(lines), encoding="utf-8")
-    print(f"\n✅ รายงาน → {REPORT}")
+    print(f"\nรายงาน → {REPORT}")
 
 
 if __name__ == "__main__":

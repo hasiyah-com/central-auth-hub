@@ -1,0 +1,25 @@
+--- a/experiments/rba_user_learning_curve/scripts/run_feature_contract_v2.py	2026-08-21 12:11:51.085120600 +0700
++++ b/experiments/rba_user_learning_curve/scripts/run_feature_contract_v2.py	2026-08-21 12:11:51.308409600 +0700
+@@ -253,6 +253,24 @@
+                 )
+             )
+             previous_device = device_id
++
++    # FIX: success_10m ต้องคำนวณจาก timeline จริง
++    #
++    # เดิม field นี้ไม่เคยถูกส่งเข้า Event() ของ normal เลย จึงค้างที่ default 0
++    # ทุกแถว ขณะที่ฝั่ง attack ตั้งเป็น 5 -> โมเดลไม่เคยเห็น normal ที่ค่า > 0
++    # พอเจอผู้ใช้จริงที่ล็อกอินซ้ำภายใน 10 นาที (เกิดบ่อยมาก) จึงตีเป็น attack
++    # ทำแบบเดียวกับ failed_1h / concurrent_sessions ที่ถูกส่งค่าให้ normal อยู่แล้ว
++    by_profile: dict[str, list[Event]] = defaultdict(list)
++    for row in rows:
++        by_profile[row.profile_id].append(row)
++    for events in by_profile.values():
++        events.sort(key=lambda x: x.timestamp)
++        for position, event in enumerate(events):
++            cutoff = event.timestamp - timedelta(minutes=10)
++            event.success_10m = sum(
++                1 for earlier in events[:position] if earlier.timestamp >= cutoff
++            )
++
+     return sorted(rows, key=lambda x: (x.timestamp, x.profile_id))

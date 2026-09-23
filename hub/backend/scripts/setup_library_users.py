@@ -5,7 +5,7 @@ Creates / updates:
 2. Subsystem "ระบบห้องสมุด" with status='active' (skips manual approval)
 3. access_list rows: librarian / member
 
-⚠️ อีเมลจริงไม่ hardcode ในไฟล์นี้ (นโยบาย PII — ห้ามขึ้น git)
+อีเมลจริงไม่ hardcode ในไฟล์นี้ (นโยบาย PII — ห้ามขึ้น git)
    ตั้งผ่าน environment variable ก่อนรัน:
      LIBRARY_LIBRARIAN_EMAIL=<อีเมลบรรณารักษ์>
      LIBRARY_MEMBER_EMAIL=<อีเมลนักศึกษา>
@@ -40,7 +40,7 @@ LIBRARIAN_EMAIL = os.getenv("LIBRARY_LIBRARIAN_EMAIL", "").strip()
 MEMBER_EMAIL = os.getenv("LIBRARY_MEMBER_EMAIL", "").strip()
 if not LIBRARIAN_EMAIL or not MEMBER_EMAIL:
     sys.exit(
-        "❌ ต้องตั้ง LIBRARY_LIBRARIAN_EMAIL และ LIBRARY_MEMBER_EMAIL ก่อนรัน\n"
+        "ต้องตั้ง LIBRARY_LIBRARIAN_EMAIL และ LIBRARY_MEMBER_EMAIL ก่อนรัน\n"
         "   (อีเมลจริงไม่เก็บในไฟล์นี้ตามนโยบาย PII)"
     )
 

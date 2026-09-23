@@ -130,17 +130,24 @@ def _camp_like_in_window(p, ident, rng, ep_index):
     return [{**r, "row_kind": "attack"} for r in rows]
 
 
-def build_seed(users_xlsx: Path, seed: int):
-    """สร้างข้อมูลครบ 1 seed ตามสเปค — คืน dict[alias] = {...}."""
+def build_seed(users_xlsx: Path, seed: int, spec=None, roster=None):
+    """สร้างข้อมูลครบ 1 seed ตามสเปค — คืน dict[alias] = {...}.
+
+    `spec` / `roster` ใส่เข้ามาได้เพื่อใช้ประชากรอื่นแทน 12 โปรไฟล์เดิม
+    (เช่น P48 จาก `population_p48.py`) · ค่า None = พฤติกรรมเดิมทุกประการ
+    จึงไม่กระทบผลการทดลองรอบก่อน ๆ ที่อ้างอิงชุด 12 คน
+    """
     import json
 
     BP.SEED = seed
     rng = BP.random.Random(seed)
-    roster = json.loads((BP.DATA / "roster_v2.json").read_text(encoding="utf-8"))
+    if roster is None:
+        roster = json.loads((BP.DATA / "roster_v2.json").read_text(encoding="utf-8"))
+    spec_list = BP.SPEC if spec is None else spec
     ids = BP.load_identities(users_xlsx)
 
     users = {}
-    for spec in BP.SPEC:
+    for spec in spec_list:
         p = dict(spec)
         p["email"] = roster.get(p["alias"], "")
         ident = ids[p["email"]]

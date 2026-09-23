@@ -129,7 +129,7 @@ SIGNALS: list[tuple] = [
         None,
     ),
     # ── scope ──
-    # ⚠️ scope_sensitivity เป็น "ค่าคงที่ต่อ subsystem" ไม่ใช่หลักฐานความผิดปกติ
+    # scope_sensitivity เป็น "ค่าคงที่ต่อ subsystem" ไม่ใช่หลักฐานความผิดปกติ
     #    ถ้าให้คะแนนเดี่ยว = ทุก login เข้า SUB_A ได้แต้มฟรี (43% ของ FP มาจากตัวนี้)
     #    -> เก็บไว้เป็นบริบทความรุนแรงเท่านั้น น้ำหนัก 0 (เหตุผลเดียวกับ multi_account_ip ใน NAT)
     # ── geo (คงไว้เพื่อ portability — ไม่ยิงเมื่อไม่มี geo) ──

@@ -45,7 +45,7 @@ case "$ACTION" in
 
     OLD_KEY=$(get_env SECRET_ENCRYPTION_KEY)
     if [ -z "$OLD_KEY" ]; then
-      echo "❌ SECRET_ENCRYPTION_KEY ว่าง — ต้องตั้งค่าก่อน (rotate จากไหน?)"
+      echo "SECRET_ENCRYPTION_KEY ว่าง — ต้องตั้งค่าก่อน (rotate จากไหน?)"
       exit 1
     fi
 
@@ -66,7 +66,7 @@ case "$ACTION" in
     docker compose up -d --force-recreate hub-backend
 
     echo
-    echo "✅ Phase 1 complete — new ciphertext = new key; old ciphertext ยัง decrypt ได้"
+    echo "Phase 1 complete — new ciphertext = new key; old ciphertext ยัง decrypt ได้"
     echo
     echo "── ขั้นต่อไป ────────────────────────────────────"
     echo "bash $0 migrate   # rotate ciphertext ที่มีอยู่ → primary"
@@ -86,7 +86,7 @@ case "$ACTION" in
     echo "==> Recreating hub-backend..."
     docker compose up -d --force-recreate hub-backend
     echo
-    echo "✅ Phase 3 complete — legacy key removed"
+    echo "Phase 3 complete — legacy key removed"
     ;;
 
   status)

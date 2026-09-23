@@ -22,6 +22,7 @@ const ADMIN_PATHS = [
   "/ml",
   "/audit",
   "/account",
+  "/reports",
 ];
 
 // Routes ที่ให้ teacher/staff/admin เข้าได้ (Developer Portal)

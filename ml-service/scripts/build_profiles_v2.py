@@ -31,7 +31,7 @@ from pathlib import Path
 DATA = Path(__file__).resolve().parents[1] / "data"
 DEFAULT_USERS_XLSX = Path.home() / "Downloads" / "users.xlsx"
 
-# ⚠️ PII: alias -> email จริง เก็บนอก git (ดู roster_v2.example.json สำหรับรูปแบบ)
+# PII: alias -> email จริง เก็บนอก git (ดู roster_v2.example.json สำหรับรูปแบบ)
 ROSTER = DATA / "roster_v2.json"
 
 SEED = 42
@@ -195,7 +195,7 @@ def render_device(key: str, rng: random.Random, drift: float) -> dict:
 
 
 # ── โปรไฟล์ 12 คน (ตรงกับ blueprint) ────────────────────────────────────────
-# 🔵 = ค่าที่วัดจาก login_sessions จริง
+# = ค่าที่วัดจาก login_sessions จริง
 SPEC: list[dict] = [
     dict(
         alias="U01",
@@ -515,16 +515,63 @@ def pick_hour(rng: random.Random, p: dict, burst: bool) -> float:
     )
 
 
+def weekend_weight(p: float, n_weekday: int, n_weekend: int) -> float:
+    """แปลง **สัดส่วนเป้าหมาย** ของ login วันหยุด -> น้ำหนักต่อวันหยุด (B71).
+
+    ต้องแปลงก่อนใช้ เพราะน้ำหนักกับสัดส่วนไม่ใช่สิ่งเดียวกัน — ถ้าใส่สัดส่วนลงไป
+    เป็นน้ำหนักตรง ๆ จะได้ `(n_we x p) / (n_wd + n_we x p)` ซึ่งต่ำกว่าเป้าหมายเสมอ
+    และมีเพดานที่สัดส่วนวันหยุดในปฏิทิน (8/30 = 0.267) แม้ตั้ง p = 1.0
+    ทำให้สร้างผู้ใช้ที่ทำงานวันหยุดเป็นหลักไม่ได้เลย
+
+        p x n_wd
+        ---------- = w_weekend      (วันธรรมดามีน้ำหนัก 1.0)
+        (1-p) x n_we
+
+    ตรวจ: 30 วัน (ธรรมดา 22 · หยุด 8) ต้องการ p = 0.30
+          w = (0.30 x 22) / (0.70 x 8) = 1.1786
+          สัดส่วนที่ได้ = (8 x 1.1786) / (22 + 8 x 1.1786) = 0.300
+    """
+    if not 0.0 <= p <= 1.0:
+        raise ValueError(f"weekend_rate ต้องอยู่ใน [0, 1] — ได้ {p}")
+    if p == 0.0:
+        return 0.0
+    if n_weekend == 0:
+        raise ValueError("ช่วงเวลานี้ไม่มีวันหยุด — สร้างสัดส่วนวันหยุดที่ต้องการไม่ได้")
+    if p == 1.0:
+        if n_weekday == 0:
+            return 1.0  # มีแต่วันหยุดอยู่แล้ว
+        return float("inf")  # ผู้เรียกต้องตีความเป็น "เฉพาะวันหยุด"
+    if n_weekday == 0:
+        raise ValueError(
+            f"ช่วงเวลานี้ไม่มีวันธรรมดา — สัดส่วนวันหยุดจะเป็น 1.0 เสมอ ตั้ง p = {p} ไม่ได้"
+        )
+    return (p * n_weekday) / ((1.0 - p) * n_weekend)
+
+
 def spread_over_days(rng: random.Random, total: int, weekend_rate: float) -> list[int]:
-    """แจก `total` login ลง 30 วัน โดยวันหยุดมีน้ำหนักตาม weekend_rate (คุมยอดรวมให้เป๊ะ)."""
-    w = []
-    for d in range(DAYS):
-        day = START + timedelta(days=d)
-        w.append(max(weekend_rate, 0.001) if day.weekday() >= 5 else 1.0)
+    """แจก `total` login ลง `DAYS` วัน โดย **สัดส่วน**ของวันหยุดเข้าใกล้ `weekend_rate`.
+
+    B71 — เดิมใส่ `weekend_rate` เป็นน้ำหนักตรง ๆ ทำให้สัดส่วนที่ได้จริงต่ำกว่า
+    ที่ประกาศ 0.27–0.37 เท่า · ตอนนี้แปลงเป็นน้ำหนักด้วย `weekend_weight()` ก่อน
+    """
+    days = [START + timedelta(days=d) for d in range(DAYS)]
+    is_we = [d.weekday() >= 5 for d in days]
+    n_we = sum(is_we)
+    n_wd = DAYS - n_we
+
+    w_we = weekend_weight(weekend_rate, n_wd, n_we)
+    if w_we == float("inf"):  # p = 1.0 -> เฉพาะวันหยุด
+        w = [1.0 if we else 0.0 for we in is_we]
+    else:
+        w = [w_we if we else 1.0 for we in is_we]
+
     total_w = sum(w)
+    if total_w <= 0:
+        raise ValueError("น้ำหนักรวมเป็นศูนย์ — แจกวันไม่ได้")
+    probs = [x / total_w for x in w]
     counts = [0] * DAYS
     for _ in range(total):
-        counts[rng.choices(range(DAYS), weights=[x / total_w for x in w], k=1)[0]] += 1
+        counts[rng.choices(range(DAYS), weights=probs, k=1)[0]] += 1
     return counts
 
 
@@ -1199,7 +1246,7 @@ def main() -> None:
     ap.add_argument("--seed", type=int, default=SEED)
     args = ap.parse_args()
     if not args.users.exists():
-        raise SystemExit(f"❌ ไม่พบ users.xlsx ที่ {args.users} — ระบุด้วย --users")
+        raise SystemExit(f"ไม่พบ users.xlsx ที่ {args.users} — ระบุด้วย --users")
 
     SEED = args.seed
     if args.rows > 0:
@@ -1211,7 +1258,7 @@ def main() -> None:
 
     if not ROSTER.exists():
         raise SystemExit(
-            f"❌ ไม่พบ {ROSTER}\n"
+            f"ไม่พบ {ROSTER}\n"
             "   ไฟล์นี้ map alias -> email จริง และถูก gitignore ไว้ (เป็น PII)\n"
             f"   คัดลอกจาก {ROSTER.with_name('roster_v2.example.json')} แล้วใส่อีเมลจริง"
         )
@@ -1222,7 +1269,7 @@ def main() -> None:
     ids = load_identities(args.users)
     missing = [p["email"] for p in SPEC if p["email"] not in ids]
     if missing:
-        raise SystemExit(f"❌ ไม่พบ email เหล่านี้ใน users.xlsx: {missing}")
+        raise SystemExit(f"ไม่พบ email เหล่านี้ใน users.xlsx: {missing}")
 
     DATA.mkdir(parents=True, exist_ok=True)
     rng = random.Random(SEED)
@@ -1273,9 +1320,9 @@ def main() -> None:
         json.dump(meta, f, ensure_ascii=False, indent=2)
 
     n_atk = sum(1 for r in attack_rows if r["row_kind"] == "attack")
-    print(f"✅ profiles_v2.json  — {len(profiles)} โปรไฟล์")
-    print(f"✅ logins_v2.csv     — {len(normal_rows)} แถว (staggered + nat_burst)")
-    print(f"✅ attacks_v2.csv    — {n_atk} attack + {len(attack_rows) - n_atk} context")
+    print(f"profiles_v2.json  — {len(profiles)} โปรไฟล์")
+    print(f"logins_v2.csv     — {len(normal_rows)} แถว (staggered + nat_burst)")
+    print(f"attacks_v2.csv    — {n_atk} attack + {len(attack_rows) - n_atk} context")
     print(
         f"   ช่วง {meta['window']['start']} .. {meta['window']['end']} · IP {IP} · ไม่มี geo"
     )

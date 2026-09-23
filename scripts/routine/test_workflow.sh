@@ -13,10 +13,10 @@ check() {
   if [ "$code" = "$expect" ] \
      || { [ "$expect" = "2xx" ] && echo "$code" | grep -qE "^2"; } \
      || { [ "$expect" = "2xx" ] && echo "$code" | grep -qE "^3"; }; then
-    printf "  ✅ %-25s (%s)\n" "$name" "$code"
+    printf "  %-25s (%s)\n" "$name" "$code"
     PASS=$((PASS + 1))
   else
-    printf "  ❌ %-25s (got %s, expected %s)\n" "$name" "$code" "$expect"
+    printf "  %-25s (got %s, expected %s)\n" "$name" "$code" "$expect"
     FAIL=$((FAIL + 1))
   fi
 }
@@ -35,9 +35,9 @@ check "ML /health"             "http://localhost:9000/health"                   
 
 echo ""
 if [ "$FAIL" -eq 0 ]; then
-  echo "  Result: $PASS/$((PASS + FAIL)) PASS — all systems go ✅"
+  echo "  Result: $PASS/$((PASS + FAIL)) PASS — all systems go"
 else
-  echo "  Result: $PASS PASS  $FAIL FAIL — fix failures before dev ❌"
+  echo "  Result: $PASS PASS  $FAIL FAIL — fix failures before dev"
 fi
 echo "=========================================="
 

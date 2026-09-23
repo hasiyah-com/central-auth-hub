@@ -38,7 +38,7 @@
         </div>
         <div style="font-family:var(--font-serif); font-style:italic; font-size:13px; color:var(--ink-3); margin-top:2px;">{{ user.email }}</div>
         <span class="badge badge-{{ user.user_type }}" style="margin-top:6px;">
-          {% if user.user_type != 'student' %}⚜ บรรณารักษ์{% else %}❦ สมาชิก{% endif %}
+          {% if user.user_type != 'student' %}บรรณารักษ์{% else %}สมาชิก{% endif %}
         </span>
       </div>
     </div>
@@ -83,7 +83,6 @@
     </dl>
 
     <div style="margin-top:16px; padding:12px 14px; background:var(--paper); border:1px solid var(--rule); font-family:var(--font-serif); font-size:12.5px; color:var(--ink-3); display:flex; gap:10px;">
-      <span style="color:var(--gold); flex-shrink:0;">ℹ</span>
       <span>ข้อมูลทั้งหมดมาจาก Central Auth Hub ตาม JWT scope ที่ระบบลงทะเบียนไว้ <strong style="color:var(--ink-2); font-weight:500;">(scope: {{ kv_pairs|length }} fields)</strong> — หากต้องการแก้ไข กรุณาติดต่อ admin มหาวิทยาลัย</span>
     </div>
   </div>
@@ -114,7 +113,7 @@
     <dl style="font-family:var(--font-serif); font-size:14px;">
       <div style="display:flex; justify-content:space-between; padding:10px 0; border-bottom:1px dashed var(--rule);">
         <dt style="color:var(--ink-3);">สถานะสมาชิก</dt>
-        <dd><span class="badge badge-returned">✓ {{ member.status }}</span></dd>
+        <dd><span class="badge badge-returned">{{ member.status }}</span></dd>
       </div>
       <div style="display:flex; justify-content:space-between; padding:10px 0; border-bottom:1px dashed var(--rule);">
         <dt style="color:var(--ink-3);">สมัครสมาชิกเมื่อ</dt>
@@ -127,14 +126,13 @@
     </dl>
     {% else %}
     <div class="empty-state" style="padding: 30px 14px;">
-      <div class="empty-state-icon">❦</div>
       <h3>ยังไม่มีข้อมูลสมาชิก</h3>
       <p>เริ่มยืมหนังสือเพื่อสร้างประวัติ</p>
     </div>
     {% endif %}
 
     {% if user.user_type == 'student' %}
-    <a href="/books" class="btn btn-primary w-full" style="margin-top: 14px;">✦ ไปค้นหาหนังสือ</a>
+    <a href="/books" class="btn btn-primary w-full" style="margin-top: 14px;">ไปค้นหาหนังสือ</a>
     {% endif %}
   </div>
 </div>
@@ -171,20 +169,20 @@
             {% if b.borrowed_at %}
             <div style="color:var(--ink-2);">ยืม: {{ b.borrowed_at.strftime('%d %b %Y') }}</div>
             <div style="font-weight:500; color: {% if is_overdue %}var(--danger){% else %}var(--ink){% endif %};">
-              ครบ: {{ b.due_at.strftime('%d %b %Y') }}{% if is_overdue %} ⚠{% endif %}
+              ครบ: {{ b.due_at.strftime('%d %b %Y') }}{% if is_overdue %}{% endif %}
             </div>
             {% if b.returned_at %}<div style="color:var(--leaf);">คืน: {{ b.returned_at.strftime('%d %b %Y') }}</div>{% endif %}
             {% else %}<span style="color:var(--ink-3);">—</span>{% endif %}
           </td>
           <td>
             {% if is_overdue %}
-              <span class="badge badge-overdue">⚠ เกินกำหนด</span>
+              <span class="badge badge-overdue">เกินกำหนด</span>
             {% else %}
               <span class="badge badge-{{ b.status }}">
-                {% if b.status == 'requested' %}⏳ รออนุมัติ
-                {% elif b.status == 'active' %}❦ กำลังยืม
-                {% elif b.status == 'returned' %}✓ คืนแล้ว
-                {% elif b.status == 'cancelled' %}✕ ยกเลิก
+                {% if b.status == 'requested' %}รออนุมัติ
+                {% elif b.status == 'active' %}กำลังยืม
+                {% elif b.status == 'returned' %}คืนแล้ว
+                {% elif b.status == 'cancelled' %}ยกเลิก
                 {% else %}{{ b.status }}{% endif %}
               </span>
             {% endif %}
@@ -203,7 +201,6 @@
   </div>
   {% else %}
   <div class="empty-state">
-    <div class="empty-state-icon">❦</div>
     <h3>ยังไม่เคยยืมหนังสือ</h3>
     <p>ไปที่ <a href="/books">คลังหนังสือ</a> เพื่อเริ่มยืม</p>
   </div>

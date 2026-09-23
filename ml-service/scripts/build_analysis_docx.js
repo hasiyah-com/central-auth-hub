@@ -176,4 +176,4 @@ const doc = new Document({
     children: k,
   }],
 });
-Packer.toBuffer(doc).then(buf => { fs.writeFileSync(OUT, buf); console.log("✅ wrote", OUT, "(", (buf.length / 1024).toFixed(0), "KB )"); });
+Packer.toBuffer(doc).then(buf => { fs.writeFileSync(OUT, buf); console.log("wrote", OUT, "(", (buf.length / 1024).toFixed(0), "KB )"); });

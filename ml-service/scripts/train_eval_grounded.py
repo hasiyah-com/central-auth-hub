@@ -71,7 +71,7 @@ def _bar(v: float, width: int = 24) -> str:
 
 def main() -> None:
     if not TRAIN.exists() or not TEST.exists():
-        print(f"❌ ไม่พบ {TRAIN} หรือ {TEST}")
+        print(f"ไม่พบ {TRAIN} หรือ {TEST}")
         print("   รัน scripts.generate_grounded_data (hub-backend) + copy มาก่อน")
         return
 
@@ -79,9 +79,9 @@ def main() -> None:
     X_test, y_test, models = _read(TEST, has_model_col=True)
 
     n_norm_tr = int((y_train == 0).sum())
-    print(f"📥 train: {len(X_train):,} (normal={n_norm_tr:,})")
+    print(f"train: {len(X_train):,} (normal={n_norm_tr:,})")
     print(
-        f"📥 test : {len(X_test):,} (normal={(y_test == 0).sum():,}, "
+        f"test : {len(X_test):,} (normal={(y_test == 0).sum():,}, "
         f"anomaly={(y_test == 1).sum():,})"
     )
 
@@ -147,13 +147,13 @@ def main() -> None:
     if len(recalls) >= 2:
         mono = all(recalls[i] >= recalls[i + 1] for i in range(len(recalls) - 1))
         print(
-            f"\n  {'✅' if mono else '⚠️'} recall "
+            f"\n  {'' if mono else ''} recall "
             f"{'ลดลงตามระดับผู้โจมตี (ตามที่คาด)' if mono else 'ไม่ลดตามลำดับ — ทบทวน'}"
         )
 
     joblib.dump(model, MODEL_OUT)
-    print(f"\n💾 model → {MODEL_OUT} (แยกจาก production iforest_v1.pkl)")
-    print("\n📌 หมายเหตุ: train/test เป็น persona-grounded synthetic")
+    print(f"\nmodel → {MODEL_OUT} (แยกจาก production iforest_v1.pkl)")
+    print("\nหมายเหตุ: train/test เป็น persona-grounded synthetic")
     print("   (normal อิงชั่วโมง/วันของผู้ใช้จริง 7 คน + ช่วงค่าอิงงานวิจัย;")
     print("    anomaly = attacker model 4 ระดับ) — ระบุใน methodology")
     print("=" * 70)

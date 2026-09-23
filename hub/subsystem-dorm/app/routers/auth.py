@@ -147,7 +147,7 @@ async def oauth_callback(
             status_code=400, detail="OAuth state หมดอายุ — เริ่ม login ใหม่"
         )
     if flow["state"] != state:
-        # ⚠️ state mismatch = สงสัย CSRF — log แยกเพื่อตรวจสอบ
+        # state mismatch = สงสัย CSRF — log แยกเพื่อตรวจสอบ
         _log_failed_login(
             db,
             request,

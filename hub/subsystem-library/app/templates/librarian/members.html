@@ -6,7 +6,7 @@
 <div class="flex items-start justify-between mb-6">
   <div>
     <div class="flex items-center gap-2 text-sm text-slate-500 mb-2">
-      <span class="badge badge-librarian">📖 Librarian</span>
+      <span class="badge badge-librarian">Librarian</span>
       <span>·</span>
       <span>จัดการห้องสมุด</span>
     </div>
@@ -101,11 +101,11 @@
           <td>
             {% if m.hub_access_revoked_at %}
             <span class="badge" style="background:#fee2e2; color:#991b1b; border:1px solid #fca5a5;" title="Hub revoke whitelist แล้ว — login ใหม่ไม่ได้">
-              ⛔ Hub-revoked
+              Hub-revoked
             </span>
             {% else %}
             <span class="badge badge-{% if m.status == 'active' %}returned{% else %}cancelled{% endif %}">
-              {% if m.status == "active" %}✅ active{% else %}{{ m.status }}{% endif %}
+              {% if m.status == "active" %}active{% else %}{{ m.status }}{% endif %}
             </span>
             {% endif %}
           </td>
@@ -121,7 +121,6 @@
 
   {% else %}
   <div class="empty-state">
-    <div class="empty-state-icon">👥</div>
     <h3>ยังไม่มีสมาชิกในระบบ</h3>
     <p class="text-sm">สมาชิกจะปรากฏที่นี่หลังจาก login ครั้งแรก</p>
   </div>

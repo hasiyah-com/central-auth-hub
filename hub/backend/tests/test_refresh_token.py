@@ -91,12 +91,32 @@ def test_revoke_by_id_prevents_further_rotation():
 # ─────────────────────────────────────────────────────────────
 
 
+TEST_UA = "pytest-refresh-token"
+
+
+@pytest.fixture(scope="module", autouse=True)
+def _purge_sessions_created_here():
+    """ลบ LoginSession ที่ไฟล์นี้สร้าง — ไม่ทิ้งแถวค้างให้รอบถัดไป."""
+    yield
+    from app.database import SessionLocal
+    from app.models import LoginSession as _LS
+
+    db = SessionLocal()
+    try:
+        db.query(_LS).filter(_LS.user_agent == TEST_UA).delete(
+            synchronize_session=False
+        )
+        db.commit()
+    finally:
+        db.close()
+
+
 def _login_session_for(db, user, jti: str, refresh_id: str):
     sess = LoginSession(
         user_id=user.id,
         subsystem_id=None,
         ip="127.0.0.1",
-        user_agent="pytest",
+        user_agent=TEST_UA,
         login_method="google",
         decision="allow",
         jti=jti,

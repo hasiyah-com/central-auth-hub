@@ -100,7 +100,7 @@ def fit(name, Xs, cont):
 
 def main():
     if not DATA.exists():
-        print(f"❌ ไม่พบ {DATA} — รัน build_real_only.py ก่อน")
+        print(f"ไม่พบ {DATA} — รัน build_real_only.py ก่อน")
         return
     X, y = load()
     cont = float(y.mean())
@@ -198,7 +198,7 @@ def main():
     plt.savefig(FIG / "shap_summary_beeswarm.png", dpi=130, bbox_inches="tight")
     plt.close()
 
-    print(f"\n✅ figures -> {FIG}")
+    print(f"\nfigures -> {FIG}")
 
 
 if __name__ == "__main__":

@@ -151,7 +151,7 @@ def main():
         ensure_ascii=False,
         indent=2,
     )
-    print(f"\n✅ เซฟโมเดลแล้ว -> {MODELS}")
+    print(f"\nเซฟโมเดลแล้ว -> {MODELS}")
     print(
         "   iforest_simulated.pkl + scaler_simulated.pkl + iforest_simulated_meta.json"
     )

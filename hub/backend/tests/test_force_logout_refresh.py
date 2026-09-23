@@ -13,10 +13,32 @@ call. Two guards close it:
 
 from __future__ import annotations
 
+import pytest
+
 from app.models import LoginSession
 from app.services import refresh_token_service as rts
 from app.services import stepup_cache
 from app.services.jwt_service import create_access_token
+
+
+TEST_UA = "pytest-force-logout"
+
+
+@pytest.fixture(scope="module", autouse=True)
+def _purge_sessions_created_here():
+    """ลบ LoginSession ที่ไฟล์นี้สร้าง — ไม่ทิ้งแถวค้างให้รอบถัดไป."""
+    yield
+    from app.database import SessionLocal
+    from app.models import LoginSession as _LS
+
+    db = SessionLocal()
+    try:
+        db.query(_LS).filter(_LS.user_agent == TEST_UA).delete(
+            synchronize_session=False
+        )
+        db.commit()
+    finally:
+        db.close()
 
 
 def _login_session(db, user, jti, refresh_id):
@@ -24,7 +46,7 @@ def _login_session(db, user, jti, refresh_id):
         user_id=user.id,
         subsystem_id=None,
         ip="127.0.0.1",
-        user_agent="pytest",
+        user_agent=TEST_UA,
         login_method="google",
         decision="allow",
         jti=jti,

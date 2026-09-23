@@ -85,7 +85,7 @@ def fit_score(name, Xtr, Xte, train_contam):
 
 def main():
     if not DATA.exists():
-        print(f"❌ ไม่พบ {DATA}")
+        print(f"ไม่พบ {DATA}")
         return
     X, y, uid = load()
     # users

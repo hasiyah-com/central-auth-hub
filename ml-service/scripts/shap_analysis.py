@@ -129,7 +129,7 @@ def print_ranking(exp, ranking, k):
 
 def main():
     if not DATA.exists():
-        print(f"❌ ไม่พบ {DATA} — รัน build_benchmark.py ก่อน")
+        print(f"ไม่พบ {DATA} — รัน build_benchmark.py ก่อน")
         return
     cols, y = load()
     print(f"dataset: {len(y):,} rows | attack={int(y.sum())} ({y.mean()*100:.2f}%)")
@@ -141,7 +141,7 @@ def main():
         results[exp] = ranking
         k = 20 if exp == "C" else 10
         print_ranking(exp, ranking, k)
-        print(f"   📊 chart: {fig}")
+        print(f"   chart: {fig}")
 
     # สรุปการเลื่อนอันดับ A->B->C ของ feature ใหม่
     print("\n=== อันดับของ feature ที่เพิ่มเข้ามา (rank ใน Experiment ที่มันโผล่) ===")

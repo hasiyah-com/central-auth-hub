@@ -100,9 +100,13 @@ async def _ok(uid: str, resid: list[float], tries: int = 4) -> dict:
     """
     for i in range(tries):
         out = await get_sequence_score(uid, resid)
-        if out["error"] is None:
+        # ตั้งแต่ ML Capacity Gate §15: cache miss ตอบ abstain_reason=model_warming ทันที
+        # (fit อยู่เบื้องหลัง) แทนการ timeout — ถือเป็นสภาพ "ยังไม่พร้อม" แบบเดียวกัน
+        warming = out.get("abstain_reason") == "model_warming"
+        if out["error"] is None and not warming:
             return out
-        assert out["error"] == "l3_timeout", f"ml-service ไม่พร้อม: {out['error']}"
+        if not warming:
+            assert out["error"] == "l3_timeout", f"ml-service ไม่พร้อม: {out['error']}"
         await asyncio.sleep(0.5 * (i + 1))
     raise AssertionError(f"ml-service ยัง warm ไม่เสร็จหลัง {tries} ครั้ง")
 
@@ -345,6 +349,7 @@ async def test_cold_capacity_many_distinct_users(seeded):
 
 
 # ══════════════ 5. Latency ══════════════
+@pytest.mark.performance
 @pytest.mark.asyncio
 async def test_latency_within_login_budget(seeded):
     """L3 ต้องไม่กินเวลาเกินงบของ login path.

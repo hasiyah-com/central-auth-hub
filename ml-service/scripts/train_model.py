@@ -64,13 +64,11 @@ def load_data() -> tuple[np.ndarray, np.ndarray]:
             X += Xr
             y += yr
             print(
-                f"🔁 feedback loop: merge real labeled {len(Xr)} แถว "
+                f"feedback loop: merge real labeled {len(Xr)} แถว "
                 f"(normal={yr.count(0)}, attack={yr.count(1)})"
             )
         else:
-            print(
-                f"⚠️ real_labeled.csv feature count ไม่ตรง — ข้าม (synthetic={len(X[0])})"
-            )
+            print(f"real_labeled.csv feature count ไม่ตรง — ข้าม (synthetic={len(X[0])})")
 
     return np.array(X), np.array(y)
 
@@ -124,7 +122,7 @@ def suggest_threshold(y_true: np.ndarray, scores: np.ndarray) -> None:
 
 
 def main():
-    print("📊 โหลด data ...")
+    print("โหลด data ...")
     X, y = load_data()
     print(f"   total:   {len(X)} samples")
     print(f"   normal:  {(y == 0).sum()}")
@@ -138,7 +136,7 @@ def main():
         stratify=y,
         random_state=RANDOM_STATE,
     )
-    print(f"\n🔀 Split (stratified) — test_size={TEST_SIZE}")
+    print(f"\nSplit (stratified) — test_size={TEST_SIZE}")
     print(
         f"   train: {len(X_train)}  (normal={(y_train == 0).sum()}, anomaly={(y_train == 1).sum()})"
     )
@@ -147,7 +145,7 @@ def main():
     )
 
     # Train Isolation Forest — unsupervised, ใช้ normal ของ train set เท่านั้น
-    print("\n🤖 Train Isolation Forest (บน train_normal เท่านั้น) ...")
+    print("\nTrain Isolation Forest (บน train_normal เท่านั้น) ...")
     X_train_normal = X_train[y_train == 0]
     model = IsolationForest(
         n_estimators=100,
@@ -173,8 +171,8 @@ def main():
 
     # บันทึก model
     joblib.dump(model, MODEL_PATH)
-    print(f"\n💾 บันทึก model: {MODEL_PATH}")
-    print("✅ Done — เรียก /v1/score ได้แล้ว")
+    print(f"\nบันทึก model: {MODEL_PATH}")
+    print("Done — เรียก /v1/score ได้แล้ว")
 
 
 if __name__ == "__main__":

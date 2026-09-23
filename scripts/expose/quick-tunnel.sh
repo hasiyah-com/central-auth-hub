@@ -29,13 +29,13 @@ case "$ACTION" in
     done
 
     if [ -z "$URL" ]; then
-      echo "❌ Tunnel URL not detected. ตรวจ logs:"
+      echo "Tunnel URL not detected. ตรวจ logs:"
       docker logs hub-tunnel --tail 20
       exit 1
     fi
 
     echo
-    echo "✅ Tunnel ready!"
+    echo "Tunnel ready!"
     echo
     echo "   Public URL: $URL"
     echo
@@ -62,13 +62,13 @@ case "$ACTION" in
     echo "==> Stopping tunnel..."
     docker compose -f docker-compose.yml -f docker-compose.tunnel.yml stop cloudflared
     docker compose -f docker-compose.yml -f docker-compose.tunnel.yml rm -f cloudflared
-    echo "✅ Tunnel stopped"
+    echo "Tunnel stopped"
     ;;
 
   url)
     URL=$(docker logs hub-tunnel 2>&1 | grep -oE 'https://[a-z0-9-]+\.trycloudflare\.com' | head -n1 || true)
     if [ -z "$URL" ]; then
-      echo "❌ Tunnel ไม่ได้รัน — ใช้ 'start' ก่อน"
+      echo "Tunnel ไม่ได้รัน — ใช้ 'start' ก่อน"
       exit 1
     fi
     echo "$URL"

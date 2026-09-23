@@ -37,7 +37,6 @@ _SEVERITY_COLOR = {
     "warning": "#f59e0b",  # amber
     "critical": "#dc2626",  # red
 }
-_SEVERITY_EMOJI = {"info": "ℹ️", "warning": "⚠️", "critical": "🚨"}
 
 
 def _meets_min_severity(severity: str) -> bool:
@@ -89,11 +88,10 @@ def _build_webhook_payload(
     - Discord: ใช้ "content" + "embeds[]"
     เรารวมทั้งสองชุดในก้อนเดียว — ฝั่งที่ไม่เข้าใจจะ ignore field ที่ไม่รู้จัก
     """
-    emoji = _SEVERITY_EMOJI[severity]
     color_hex = _SEVERITY_COLOR[severity]
     color_int = int(color_hex.lstrip("#"), 16)
 
-    text_summary = f"{emoji} *[{severity.upper()}]* `{kind}` — {title}"
+    text_summary = f"*[{severity.upper()}]* `{kind}` — {title}"
     fields = []
     if detail:
         for k, v in detail.items():
@@ -201,9 +199,8 @@ def _build_telegram_text(
     detail: dict[str, Any] | None,
 ) -> str:
     """สร้างข้อความ MarkdownV2 — โครงสร้าง header + fields + footer."""
-    emoji = _SEVERITY_EMOJI[severity]
     lines = [
-        f"{emoji} *\\[{severity.upper()}\\]* `{_escape_md_v2(kind)}`",
+        f"*\\[{severity.upper()}\\]* `{_escape_md_v2(kind)}`",
         f"*{_escape_md_v2(title)}*",
     ]
     if detail:
@@ -230,7 +227,7 @@ def _send_telegram(
     title: str,
     detail: dict[str, Any] | None,
 ) -> bool:
-    token = settings.alert_telegram_bot_token
+    token = settings.alert_telegram_bot_token.get_secret_value()
     chat_id = settings.alert_telegram_chat_id
     if not token or not chat_id:
         return False
@@ -253,9 +250,7 @@ def _send_telegram(
                     r.status_code,
                     r.text[:200],
                 )
-                plain = (
-                    f"{_SEVERITY_EMOJI[severity]} [{severity.upper()}] {kind}\n{title}"
-                )
+                plain = f"[{severity.upper()}] {kind}\n{title}"
                 if detail:
                     plain += "\n\n" + "\n".join(
                         f"  {k}: {v}" for k, v in detail.items()
@@ -313,7 +308,6 @@ def _send_email(
     if not to:
         return False
 
-    emoji = _SEVERITY_EMOJI[severity]
     color = _SEVERITY_COLOR[severity]
     detail_html = ""
     if detail:
@@ -329,7 +323,7 @@ def _send_email(
 <div style="max-width:560px;margin:auto;background:#fff;border-radius:12px;overflow:hidden;border:1px solid #e2e8f0;">
   <div style="padding:18px 24px;background:{color};color:#fff;">
     <div style="font-size:11px;letter-spacing:.15em;text-transform:uppercase;opacity:.85;">Central Auth Hub · {severity}</div>
-    <div style="font-size:18px;font-weight:700;margin-top:4px;">{emoji} {title}</div>
+    <div style="font-size:18px;font-weight:700;margin-top:4px;">{title}</div>
   </div>
   <div style="padding:18px 24px;">
     <div style="font-size:11px;color:#64748b;">Kind</div>
@@ -347,7 +341,7 @@ def _send_email(
 
     return _send_html_email(
         to=to,
-        subject=f"[Central Auth Hub] {emoji} {severity.upper()} — {title}",
+        subject=f"[Central Auth Hub] {severity.upper()} — {title}",
         html=html,
         text_fallback=text,
     )

@@ -23,8 +23,12 @@ from __future__ import annotations
 import json
 import logging
 import math
+import os
 import threading
 import time
+from concurrent.futures import Future, ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FutureTimeout
+from concurrent.futures import wait as _wait_futures
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -424,9 +428,146 @@ def get_model(redis, user_id: str, key: str, n_raw: int) -> tuple[L3Model | None
         if hit is not None:
             return hit[2], hit[3]
         history = load_history(redis, user_id)
+        _count_fit(user_id)
         model = fit_user_model(history, n_history=len(history))
         _MODEL_CACHE[user_id] = (time.time(), n_raw, model, len(history))
         return model, len(history)
+
+
+# ── fit นอกเส้นทาง request (ML Capacity Gate §15, 2026-09-22) ─────────────────
+# fit หนึ่งคน ~165 ms · หลัง restart / cache หมดอายุ แทบทุก login ต้อง fit → ถ้า fit ใน request
+# thread งาน fit เกินกำลังเครื่อง และแย่ง GIL กับ request ที่อุ่นแล้ว · จึงให้ thread เบื้องหลัง
+# ตัวเดียวต่อ process fit ทีละคน (CPU มีเพดาน) แล้ว request รอได้ไม่เกินงบ · ไม่ทันตอบ abstain
+# พร้อม abstain_reason = model_warming · งบต้องน้อยกว่าเพดาน L3 ของ hub (500 ms)
+# ค่าเริ่มต้น 50 (เดิม 150) — เลือกตามกฎที่เขียนก่อนวัด (§17–18): ที่ 150 cold burst ไม่ผ่าน
+# และงบรอได้คะแนนคืนแค่ 0.25–0.47% ของ cache miss (fit ~165 ms นานกว่างบ)
+FIT_WAIT_ENV = "L3_FIT_WAIT_MS"
+FIT_WAIT_DEFAULT_MS = 50.0
+FIT_WAIT_MAX_MS = 400.0
+
+_FIT_EXECUTOR: ThreadPoolExecutor | None = None
+_FIT_EXECUTOR_GUARD = threading.Lock()
+_PENDING: dict[str, Future] = {}
+_PENDING_GUARD = threading.Lock()
+
+
+def fit_wait_seconds() -> float:
+    raw = os.getenv(FIT_WAIT_ENV)
+    if raw is None or raw.strip() == "":
+        return FIT_WAIT_DEFAULT_MS / 1000
+    try:
+        value = float(raw)
+    except ValueError:
+        value = math.nan
+    if not (0.0 <= value <= FIT_WAIT_MAX_MS):  # nan ก็ไม่ผ่าน
+        raise ValueError(
+            f"{FIT_WAIT_ENV} ต้องเป็นตัวเลข 0–{FIT_WAIT_MAX_MS:g} (ได้ {raw!r})"
+        )
+    return value / 1000
+
+
+def _executor() -> ThreadPoolExecutor:
+    global _FIT_EXECUTOR
+    with _FIT_EXECUTOR_GUARD:
+        if _FIT_EXECUTOR is None:
+            _FIT_EXECUTOR = ThreadPoolExecutor(
+                max_workers=1, thread_name_prefix="l3-fit"
+            )
+        return _FIT_EXECUTOR
+
+
+def _submit_fit(redis, user_id: str, key: str, n_raw: int) -> Future:
+    """ส่ง fit ของคนนี้ให้ thread เบื้องหลัง — มีงานค้างอยู่แล้วใช้งานเดิม (ไม่ fit ซ้ำ)."""
+    with _PENDING_GUARD:
+        fut = _PENDING.get(user_id)
+        if fut is not None and not fut.done():
+            return fut
+        fut = _executor().submit(get_model, redis, user_id, key, n_raw)
+        _PENDING[user_id] = fut
+
+    def _forget(done: Future, uid: str = user_id) -> None:
+        # พังหรือเสร็จแล้วต้องไม่ค้าง — request ถัดไปส่งใหม่ได้ (โมเดลอยู่ใน cache แล้วถ้าสำเร็จ)
+        with _PENDING_GUARD:
+            if _PENDING.get(uid) is done:
+                del _PENDING[uid]
+
+    fut.add_done_callback(_forget)
+    return fut
+
+
+def wait_for_background_fits(timeout: float | None = None) -> bool:
+    """รอ fit ที่ค้างอยู่ให้เสร็จ — ใช้ในเทส/เครื่องมือวัด · คืน False ถ้าหมดเวลา."""
+    with _PENDING_GUARD:
+        futs = list(_PENDING.values())
+    if not futs:
+        return True
+    _, not_done = _wait_futures(futs, timeout=timeout)
+    return not not_done
+
+
+# ── ตัวนับสำหรับ ML Capacity Gate ──────────────────────────────────────────
+# cache และ lock อยู่ในหน่วยความจำของแต่ละ process → worker N ตัว = N ชุดแยกกัน
+# ตัวนับนี้ตอบว่า fit ซ้ำต่อคนกี่ครั้ง (fit storm) · คืนเฉพาะจำนวน ไม่คืน user id
+_FIT_COUNTS: dict[str, int] = {}
+_FIT_COUNTS_GUARD = threading.Lock()
+_WARMING = [0]  # คำตอบ model_warming ของ process นี้
+_WAIT_SCORED = [0]  # cache miss ที่ fit ทันงบแล้วได้คะแนน (§17)
+_L3_REQUESTS = [0]  # request ที่ /v1/l3-evaluate ของ process นี้ — ดูว่า worker ได้งานเท่ากันไหม
+
+
+def _count_fit(user_id: str) -> None:
+    with _FIT_COUNTS_GUARD:
+        _FIT_COUNTS[user_id] = _FIT_COUNTS.get(user_id, 0) + 1
+
+
+def count_l3_request() -> None:
+    with _FIT_COUNTS_GUARD:
+        _L3_REQUESTS[0] += 1
+
+
+def reset_capacity_stats() -> None:
+    with _FIT_COUNTS_GUARD:
+        _FIT_COUNTS.clear()
+        _L3_REQUESTS[0] = 0
+        _WARMING[0] = 0
+        _WAIT_SCORED[0] = 0
+
+
+def _rss_kb() -> int | None:
+    """หน่วยความจำที่ process ใช้จริง (VmRSS) — None บนระบบที่ไม่มี /proc."""
+    try:
+        with open("/proc/self/status", encoding="ascii") as f:
+            for line in f:
+                if line.startswith("VmRSS:"):
+                    return int(line.split()[1])
+    except OSError:
+        return None
+    return None
+
+
+def capacity_stats() -> dict:
+    import os
+
+    with _FIT_COUNTS_GUARD:
+        counts = list(_FIT_COUNTS.values())
+        l3_requests = _L3_REQUESTS[0]
+        warming = _WARMING[0]
+        wait_scored = _WAIT_SCORED[0]
+    return {
+        "pid": os.getpid(),
+        "fits_total": sum(counts),
+        "max_fits_per_user": max(counts, default=0),
+        "users_fitted": len(counts),
+        "cache_entries": len(_MODEL_CACHE),
+        "l3_requests": l3_requests,
+        "warming_responses": warming,
+        "fit_wait_scored": wait_scored,
+        "fits_pending": sum(1 for f in list(_PENDING.values()) if not f.done()),
+        "rss_kb": _rss_kb(),
+        # CPU ของทั้ง process (ทุก thread) + นาฬิกาเดียวกัน — ตัววัดคิด utilisation ต่อ worker (§27)
+        "cpu_s": time.process_time(),
+        "mono_s": time.monotonic(),
+    }
 
 
 def score(redis, user_id: str, residual: list[float], explain: bool = False) -> dict:
@@ -456,7 +597,22 @@ def score(redis, user_id: str, residual: list[float], explain: bool = False) -> 
             model, n_parsed = hit[2], hit[3]
             tail = _load_tail(redis, key) if model is not None else None
         else:
-            model, n_parsed = get_model(redis, user_id, key, n_raw)
+            # fit อยู่นอกเส้นทาง request: thread เบื้องหลังตัวเดียว + รอได้ไม่เกินงบ
+            fut = _submit_fit(redis, user_id, key, n_raw)
+            try:
+                model, n_parsed = fut.result(timeout=fit_wait_seconds())
+                with _FIT_COUNTS_GUARD:
+                    _WAIT_SCORED[0] += 1  # งบรอได้คะแนนคืน (fit ทันงบ)
+            except FutureTimeout:
+                with _FIT_COUNTS_GUARD:
+                    _WARMING[0] += 1
+                # abstain ที่บอกเหตุผล — ไม่ใช่ "ดูแล้วไม่เจอ" (บทเรียน B61)
+                return {
+                    **QUIET,
+                    "eligibility": "abstain",
+                    "abstain_reason": "model_warming",
+                    "n_history": n_raw,
+                }
             tail = None
         if model is None:
             return {

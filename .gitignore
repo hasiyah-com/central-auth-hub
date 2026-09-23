@@ -48,6 +48,10 @@ build/
 backups/
 *.sql
 *.sql.gz
+# ข้อยกเว้นเดียว: schema snapshot ของ CI — โครงสร้างอย่างเดียว ไม่มีข้อมูล
+# (tests/test_schema_snapshot.py บังคับว่าไม่มี COPY/INSERT และไม่มีอีเมล)
+!hub/backend/tests/support/schema/hub_schema.sql
+!hub/backend/alembic/baseline/baseline_609c11174142.sql
 
 # ============ Docker ============
 postgres_data/
@@ -167,3 +171,16 @@ hub/backend/tests/reports/*.docx
 scripts/pii/replacements.txt
 scripts/pii/mailmap.txt
 scripts/pii/*.docx
+
+# ไฟล์บีบอัด — อาจมี private key หรือ .env ซ่อนอยู่ (hub/backend.zip เคยมี key จริง 17 ก.ย. 2569)
+# pre-commit มี block-archives กันซ้ำอีกชั้น
+*.zip
+*.rar
+*.7z
+*.tar
+*.tgz
+*.tar.gz
+
+# ผลดิบของ ML Capacity Gate (scripts/test/ml_capacity_gate.sh)
+.capacity/
+.capacity-ab/

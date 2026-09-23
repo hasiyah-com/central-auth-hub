@@ -8,7 +8,7 @@
      ประเมินค่าต่ำเกินไป เช่น campaign 5 login ยิงแค่ 1 -> event recall 20% แต่จับ campaign ได้ 100%
   3. **CI ครบ** รวม paired-seed delta ระหว่าง config
 
-⚠️ W=5 เป็น config ที่เลือกจาก **development set** ก่อนเปิด final holdout
+W=5 เป็น config ที่เลือกจาก **development set** ก่อนเปิด final holdout
    ผล W=10 / MULTI บน holdout เป็น **exploratory analysis** เท่านั้น ไม่ใช้เลือกโมเดล
 
 Run: cd hub/backend && SHARED_NAT=true PYTHONPATH=. python ../../ml-service/scripts/exp_campaign_level.py
@@ -264,7 +264,7 @@ def _report(acc, seeds):
         "# Campaign-level metrics + W sweep (harness ที่แก้บั๊กแล้ว)\n",
         f"**วันที่:** 26 ส.ค. 2026 · seeds {seeds} (mean ± CI95) · size {SIZE} · p{Q * 100:g}\n",
         f"**ขนาด:** campaign instance {m0['n_inst']} · attack event {m0['n_atk']} · normal {m0['n_nor']}\n",
-        "\n> ⚠️ **W=5 เลือกจาก development set ก่อนเปิด final holdout** — ผล W=10/MULTI ที่นี่เป็น",
+        "\n> **W=5 เลือกจาก development set ก่อนเปิด final holdout** — ผล W=10/MULTI ที่นี่เป็น",
         "> **exploratory analysis** เพื่อปิดข้อสงสัยเท่านั้น **ไม่ถูกใช้เลือกโมเดล**",
         "> (ถ้าใช้ผล final เลือก config ชุดนี้จะไม่ใช่ holdout อีกต่อไป)\n",
         "\n## ผลทุก metric (mean ± CI95)\n",

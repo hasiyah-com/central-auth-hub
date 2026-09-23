@@ -21,7 +21,7 @@ ROC-AUC บน **test set ชุดเดียวกันตลอด** → �
    (`fit(X_train_normal)`) ตัวเลข 1,000–14,000 จึงหมายถึง **จำนวน normal ที่ใช้เทรน**
 
 ═══════════════════════════════════════════════════════════════════════════
-⚠️ ข้อจำกัดที่ต้องระบุในเล่ม
+ข้อจำกัดที่ต้องระบุในเล่ม
 ═══════════════════════════════════════════════════════════════════════════
 ข้อมูลที่ใช้เป็น **synthetic** (สร้างจาก generate_data.py) — learning curve นี้จึงตอบว่า
 "ต้องใช้กี่แถวเพื่อเรียนรู้ *การกระจายตัวแบบสังเคราะห์* ได้ครบ" ไม่ใช่ "แม่นยำกับ
@@ -80,9 +80,9 @@ PLATEAU_EPS = 0.01
 def _build_pool(force: bool = False) -> None:
     """สร้าง pool ขนาดใหญ่ (ครั้งเดียว) — ไม่แตะ sessions.csv ของ production."""
     if POOL_PATH.exists() and not force:
-        print(f"♻️  ใช้ pool เดิม: {POOL_PATH}")
+        print(f" ใช้ pool เดิม: {POOL_PATH}")
         return
-    print(f"🔨 สร้าง pool ใหม่: normal={POOL_NORMAL:,} anomaly={POOL_ANOMALY:,}")
+    print(f"สร้าง pool ใหม่: normal={POOL_NORMAL:,} anomaly={POOL_ANOMALY:,}")
     random.seed(BASE_SEED)
     rows = [normal_session() + [0] for _ in range(POOL_NORMAL)]
     rows += [anomaly_session() + [1] for _ in range(POOL_ANOMALY)]
@@ -91,7 +91,7 @@ def _build_pool(force: bool = False) -> None:
         w = csv.writer(f)
         w.writerow(FEATURE_NAMES + ["label"])
         w.writerows(rows)
-    print(f"   ✅ {POOL_PATH}  ({len(rows):,} rows)")
+    print(f"   {POOL_PATH}  ({len(rows):,} rows)")
 
 
 def _load_pool() -> tuple[np.ndarray, np.ndarray]:
@@ -159,11 +159,11 @@ def main() -> None:
 
     max_size = max(sizes)
     if len(pool_train_norm) < max_size:
-        print(f"❌ pool normal ไม่พอ (มี {len(pool_train_norm):,} ต้องการ {max_size:,})")
+        print(f"pool normal ไม่พอ (มี {len(pool_train_norm):,} ต้องการ {max_size:,})")
         print("   → เพิ่ม POOL_NORMAL แล้วรันด้วย --regen-pool")
         return
 
-    print(f"\n📊 Test set (คงที่ทุกขนาด): normal={TEST_NORMAL:,} anomaly={TEST_ANOMALY:,}")
+    print(f"\nTest set (คงที่ทุกขนาด): normal={TEST_NORMAL:,} anomaly={TEST_ANOMALY:,}")
     print(f"   Train pool (normal): {len(pool_train_norm):,}")
     print(f"   ขนาดที่ทดสอบ: {', '.join(f'{s:,}' for s in sizes)}")
     print(f"   รอบต่อขนาด: {args.repeats} (เฉลี่ย)\n")
@@ -242,10 +242,10 @@ def main() -> None:
             plateau_at = results[i - 1]["size"]
             break
     if plateau_at:
-        print(f"  ✅ ค่านิ่งตั้งแต่ n ≈ {plateau_at:,}")
+        print(f"  ค่านิ่งตั้งแต่ n ≈ {plateau_at:,}")
         print("     → เพิ่มข้อมูลเกินนี้ไม่ช่วยให้ดีขึ้นอย่างมีนัยสำคัญ")
     else:
-        print("  ⚠️ ยังไม่นิ่งในช่วงที่ทดสอบ — ควรลองขนาดใหญ่กว่านี้")
+        print("  ยังไม่นิ่งในช่วงที่ทดสอบ — ควรลองขนาดใหญ่กว่านี้")
 
     # ── บันทึก CSV ──
     with open(REPORT_PATH, "w", newline="", encoding="utf-8") as f:
@@ -265,8 +265,8 @@ def main() -> None:
                     f"{r['sd_auc']:.6f}",
                 ]
             )
-    print(f"\n💾 บันทึกผล → {REPORT_PATH}")
-    print("\n📌 หมายเหตุ: ข้อมูล synthetic — ตอบว่า 'กี่แถวพอสำหรับเรียนรู้การกระจายตัว'")
+    print(f"\nบันทึกผล → {REPORT_PATH}")
+    print("\nหมายเหตุ: ข้อมูล synthetic — ตอบว่า 'กี่แถวพอสำหรับเรียนรู้การกระจายตัว'")
     print("   ไม่ใช่ความแม่นยำบน traffic จริง (ดู evaluate_real_logins / attack_set)")
     print("=" * 78)
 

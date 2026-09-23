@@ -143,7 +143,7 @@ def main() -> int:
         f"status={r.status_code}",
     )
 
-    # ⭐ B45 — register/start โดยยังไม่ผ่าน OTP → 403 otp_required
+    # B45 — register/start โดยยังไม่ผ่าน OTP → 403 otp_required
     r = c.post("/auth/passkey/force-enroll/register/start", json={"challenge_id": ecid})
     body = (
         r.json()
@@ -155,7 +155,7 @@ def main() -> int:
         and str(body.get("detail", {}).get("code")) == "otp_required"
     )
     check(
-        "T3.4 ⭐ register/start ก่อน OTP → 403 otp_required (B45)",
+        "T3.4 register/start ก่อน OTP → 403 otp_required (B45)",
         otp_required,
         f"status={r.status_code}",
     )

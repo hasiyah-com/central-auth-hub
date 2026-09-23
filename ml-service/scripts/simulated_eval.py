@@ -249,7 +249,7 @@ def main():
     plt.savefig(FIG / "shap_summary_beeswarm.png", dpi=130, bbox_inches="tight")
     plt.close()
 
-    print(f"\n✅ figures -> {FIG}")
+    print(f"\nfigures -> {FIG}")
     print(f"   SHAP top-5: {[F[i] for i in order[:5]]}")
 
 
