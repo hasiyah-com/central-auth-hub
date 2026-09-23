@@ -7,10 +7,17 @@ CRUD (create/update/delete) เป็น critical action — ต้องผ่�
 """
 
 from typing import Optional
+import base64
+import binascii
+from io import BytesIO
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.responses import StreamingResponse
+from openpyxl import Workbook, load_workbook
+from openpyxl.styles import Font, PatternFill
+from openpyxl.worksheet.datavalidation import DataValidation
 from pydantic import BaseModel, ConfigDict, EmailStr, Field
-from sqlalchemy import or_
+from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from datetime import datetime
@@ -32,6 +39,88 @@ _VALID_STATUS = {"active", "suspended", "deleted", "graduated", "resigned"}
 # สถานะที่แปลว่า "ออกจากระบบถาวร" — เข้าสถานะเหล่านี้ = เพิกถอนสิทธิ์ทุก subsystem
 # ทันที (เหมือน delete เดิม); ออกจากสถานะเหล่านี้กลับไป active = restore สิทธิ์คืน
 _CASCADE_STATUSES = {"deleted", "graduated", "resigned"}
+_IMPORT_LIMIT = 500
+_IMPORT_BYTES = 1_000_000
+
+
+class StatusImportFile(BaseModel):
+    file_base64: str
+
+
+class StatusImportApply(StatusImportFile):
+    # Current values shown to the admin at preview time; fail if they changed.
+    expected_statuses: dict[str, str]
+
+
+def _read_status_file(encoded: str) -> list[tuple[int, str, str]]:
+    if len(encoded) > ((_IMPORT_BYTES + 2) // 3) * 4 + 8:
+        raise HTTPException(status_code=422, detail="ไฟล์ใหญ่เกิน 1 MB")
+    try:
+        raw = base64.b64decode(encoded, validate=True)
+    except (binascii.Error, ValueError):
+        raise HTTPException(status_code=422, detail="ไฟล์ Excel ไม่ถูกต้อง")
+    if len(raw) > _IMPORT_BYTES or not raw.startswith(b"PK"):
+        raise HTTPException(status_code=422, detail="รับเฉพาะ .xlsx ขนาดไม่เกิน 1 MB")
+    try:
+        book = load_workbook(BytesIO(raw), read_only=True, data_only=True)
+        try:
+            if "status_updates" not in book.sheetnames:
+                raise ValueError("ไม่พบชีต status_updates")
+            sheet = book["status_updates"]
+            if sheet.max_row is not None and sheet.max_row > _IMPORT_LIMIT + 1:
+                raise ValueError("ไฟล์มีข้อมูลเกิน 500 แถว")
+            iterator = sheet.iter_rows(min_row=1, max_col=2, max_row=_IMPORT_LIMIT + 2, values_only=True)
+            header = next(iterator, None)
+            if not header or tuple(str(v or "").strip().lower() for v in header) != ("email", "new_status"):
+                raise ValueError("หัวตารางต้องเป็น email, new_status")
+            rows = []
+            for line_no, (email, status) in enumerate(iterator, start=2):
+                if email is None and status is None:
+                    continue
+                if len(rows) >= _IMPORT_LIMIT:
+                    raise ValueError("ไฟล์มีข้อมูลเกิน 500 แถว")
+                rows.append((line_no, str(email or "").strip().lower(), str(status or "").strip().lower()))
+            if not rows:
+                raise ValueError("ยังไม่มีข้อมูลผู้ใช้ในไฟล์")
+            return rows
+        finally:
+            book.close()
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=422, detail=f"อ่านไฟล์ไม่ได้: {exc}") from exc
+
+
+def _validate_status_rows(rows, db: Session, admin: User, lock: bool = False):
+    emails = [email for _, email, _ in rows if email]
+    query = db.query(User).filter(func.lower(User.email).in_(emails))
+    if lock:
+        query = query.with_for_update()
+    users = {u.email.lower(): u for u in query.all()}
+    seen = set()
+    results = []
+    errors = []
+    for line_no, email, status in rows:
+        problem = None
+        if not email or "@" not in email:
+            problem = "อีเมลไม่ถูกต้อง"
+        elif email in seen:
+            problem = "อีเมลซ้ำในไฟล์"
+        elif status not in _VALID_STATUS:
+            problem = "สถานะไม่ถูกต้อง"
+        elif email not in users:
+            problem = "ไม่พบผู้ใช้ในระบบ"
+        elif users[email].id == admin.id and status != "active":
+            problem = "แอดมินเปลี่ยนบัญชีตัวเองเป็นสถานะนี้ไม่ได้"
+        seen.add(email)
+        if problem:
+            errors.append({"row": line_no, "email": email, "message": problem})
+        else:
+            user = users[email]
+            results.append({"row": line_no, "email": email, "name": user.full_name,
+                            "current_status": user.status, "new_status": status,
+                            "changed": user.status != status})
+    return users, results, errors
 
 
 def _cascade_revoke_access(
@@ -40,6 +129,7 @@ def _cascade_revoke_access(
     admin: User,
     request: Request,
     reason: str,
+    defer_webhooks: bool = False,
 ) -> tuple[list[dict], int, int, int]:
     """Revoke ทุก AccessList + kick session ทุก subsystem ที่ user มีสิทธิ์อยู่.
 
@@ -94,6 +184,10 @@ def _cascade_revoke_access(
                 "reason": reason,
             },
         )
+
+    if defer_webhooks:
+        # Bulk import commits every user and audit record together before any webhook.
+        return subsystems_kicked, total_sessions_closed, total_jti_revoked, 0
 
     db.commit()  # commit revoke + per-subsystem logs ก่อนยิง webhook
 
@@ -282,6 +376,173 @@ def count_users(
 
     rows = db.query(User.user_type, func.count(User.id)).group_by(User.user_type).all()
     return {ut: c for ut, c in rows}
+
+
+@router.get("/status-import/template")
+def status_import_template(admin: User = Depends(require_hub_admin)):
+    """Blank Excel template; only email and target status are writable data."""
+    book = Workbook()
+    sheet = book.active
+    sheet.title = "status_updates"
+    sheet.append(["email", "new_status"])
+    sheet.freeze_panes = "A2"
+    sheet.column_dimensions["A"].width = 38
+    sheet.column_dimensions["B"].width = 23
+    for cell in sheet[1]:
+        cell.font = Font(bold=True, color="FFFFFF")
+        cell.fill = PatternFill("solid", fgColor="18334A")
+    rule = DataValidation(type="list", formula1='"active,suspended,graduated,resigned,deleted"')
+    rule.error = "เลือกสถานะจากรายการ"
+    rule.showErrorMessage = True
+    sheet.add_data_validation(rule)
+    rule.add(f"B2:B{_IMPORT_LIMIT + 1}")
+    info = book.create_sheet("instructions")
+    for row in [
+        ["วิธีใช้", "กรอกเฉพาะชีต status_updates หนึ่งคนต่อหนึ่งแถว"],
+        ["email", "อีเมลของผู้ใช้ที่มีอยู่ในระบบ"],
+        ["new_status", "active / suspended / graduated / resigned / deleted"],
+        ["ข้อควรระวัง", "graduated, resigned, deleted เพิกถอนสิทธิ์ระบบย่อย"],
+        ["จำนวนสูงสุด", f"{_IMPORT_LIMIT} คนต่อไฟล์"],
+    ]:
+        info.append(row)
+    info.column_dimensions["A"].width = 22
+    info.column_dimensions["B"].width = 68
+    output = BytesIO()
+    book.save(output)
+    output.seek(0)
+    return StreamingResponse(
+        output,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": 'attachment; filename="user-status-template.xlsx"'},
+    )
+
+
+@router.post("/status-import/preview")
+def preview_status_import(
+    payload: StatusImportFile,
+    admin: User = Depends(require_hub_admin),
+    db: Session = Depends(get_db),
+):
+    rows = _read_status_file(payload.file_base64)
+    _, results, errors = _validate_status_rows(rows, db, admin)
+    return {"rows": results, "errors": errors,
+            "total": len(rows), "changed": sum(r["changed"] for r in results)}
+
+
+@router.post(
+    "/status-import/apply",
+    dependencies=[Depends(_stepup_gate("bulk_permission_change"))],
+)
+@limiter.limit(settings.rate_limit_admin_mutation)
+def apply_status_import(
+    payload: StatusImportApply,
+    request: Request,
+    admin: User = Depends(require_hub_admin),
+    db: Session = Depends(get_db),
+):
+    """Validate again under row locks, then commit all status changes together."""
+    rows = _read_status_file(payload.file_base64)
+    users, results, errors = _validate_status_rows(rows, db, admin, lock=True)
+    if errors:
+        raise HTTPException(status_code=422, detail={"code": "invalid_rows", "errors": errors})
+    expected = payload.expected_statuses
+    if set(expected) != {r["email"] for r in results} or any(
+        expected[r["email"]] != r["current_status"] for r in results
+    ):
+        raise HTTPException(status_code=409, detail="ข้อมูลผู้ใช้เปลี่ยนหลังตรวจไฟล์ กรุณาตรวจใหม่")
+
+    revoked = []
+    restored = []
+    changed = 0
+    try:
+        for item in results:
+            if not item["changed"]:
+                continue
+            user = users[item["email"]]
+            old_status = user.status
+            new_status = item["new_status"]
+            kicked = []
+            restored_subs = []
+            if new_status in _CASCADE_STATUSES and old_status not in _CASCADE_STATUSES:
+                kicked, closed, jti_revoked, _ = _cascade_revoke_access(
+                    db, user, admin, request, reason=f"user_{new_status}",
+                    defer_webhooks=True,
+                )
+                for sub_item in kicked:
+                    revoked.append((user, sub_item["subsystem_id"], new_status))
+            else:
+                closed = jti_revoked = 0
+            if new_status == "active" and old_status in _CASCADE_STATUSES:
+                kicked_ids = _find_kicked_subsystem_ids(db, str(user.id))
+                for access, sub in (
+                    db.query(AccessList, Subsystem)
+                    .join(Subsystem, Subsystem.id == AccessList.subsystem_id)
+                    .filter(AccessList.user_id == user.id,
+                            AccessList.subsystem_id.in_(kicked_ids),
+                            AccessList.revoked_at.is_not(None))
+                    .all()
+                ):
+                    access.revoked_at = None
+                    restored_subs.append({"subsystem_id": str(sub.id),
+                                          "subsystem_name": sub.name,
+                                          "role_in_sub": access.role_in_sub})
+                    restored.append((user, str(sub.id)))
+                    log_action(db, actor_id=admin.id,
+                               action="user_restored_after_reactivation",
+                               target_type="subsystem", target_id=sub.id,
+                               ip=get_client_ip(request),
+                               metadata={"restored_user_id": str(user.id),
+                                         "restored_user_email": user.email,
+                                         "restored_user_name": user.full_name,
+                                         "role_in_sub": access.role_in_sub})
+            user.status = new_status
+            log_action(db, actor_id=admin.id, action="update_user", target_type="user",
+                       target_id=user.id, ip=get_client_ip(request),
+                       metadata={"changed": ["status"], "before": {"status": old_status},
+                                 "after": {"status": new_status}, "source": "status_import",
+                                 "subsystems_kicked": kicked,
+                                 "subsystems_restored": restored_subs,
+                                 "cascade_exit": new_status in _CASCADE_STATUSES and old_status not in _CASCADE_STATUSES,
+                                 "reactivation": new_status == "active" and old_status in _CASCADE_STATUSES,
+                                 "total_sessions_closed": closed,
+                                 "total_jti_revoked": jti_revoked})
+            changed += 1
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+
+    # External effects run only after the transaction commits; failures are audited.
+    for action, entries in (("revoked", revoked), ("restored", restored)):
+        for user, sub_id, *extra in entries:
+            sub = db.query(Subsystem).filter(Subsystem.id == sub_id).first()
+            if not sub:
+                continue
+            ok = False
+            try:
+                if action == "revoked":
+                    ok = send_access_revoked(sub, {"hub_user_id": str(user.id),
+                                                   "revoked_by": str(admin.id),
+                                                   "reason": f"user_{extra[0]}"})
+                else:
+                    ok = send_access_restored(sub, {"hub_user_id": str(user.id),
+                                                    "restored_by": str(admin.id),
+                                                    "reason": "user_reactivated_at_hub"})
+            except Exception:
+                pass
+            log_action(db, actor_id=admin.id,
+                       action=f"access_{action}_webhook_sent",
+                       target_type="subsystem", target_id=sub.id,
+                       ip=get_client_ip(request),
+                       metadata={"user_id": str(user.id), "delivered": ok,
+                                 "source": "status_import"})
+    try:
+        db.commit()
+    except Exception:
+        # Status transaction has already committed; audit delivery is best effort.
+        db.rollback()
+    return {"total": len(results), "changed": changed,
+            "unchanged": len(results) - changed}
 
 
 @router.get("/{user_id}/credentials")
