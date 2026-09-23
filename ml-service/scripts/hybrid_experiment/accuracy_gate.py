@@ -265,3 +265,82 @@ def caught_fast(inp, t: float) -> bool:
     if inp.policy_denied or inp.policy_min_action in ("challenge", "block"):
         return True
     return inp.action_cap not in ("allow", "warn") and inp.final_score >= t
+
+
+# ── §7 L3 ablation (2026-09-23) — เขียนก่อนวัด ────────────────────────────────
+#
+# คำถาม: L3 มุมมองไหนมีสัญญาณจริง และมุมมองไหนดันคะแนนของเหตุการณ์ปกติขึ้นจนต้องยก threshold
+# แขน: B (L1+L2) · C (+point) · D (+sequence) · E (+ทั้งสอง) · G (conditional, params ที่ freeze แล้ว)
+# ทุกแขนตั้ง threshold บน calibration [401–405] ให้ FPR เท่ากัน แล้ววัดบน seed ใหม่ [601–605]
+ABLATION_SEEDS = (601, 602, 603, 604, 605)
+ABLATION_ARMS = ("B", "C", "D", "E", "G")
+
+# "มุมมองนี้มีสัญญาณพอใช้" = AUC (normal vs attack) ของหลักฐานมุมมองนั้นล้วน
+AUC_USABLE = 0.70
+AUC_CI_FLOOR = 0.60  # ขอบล่าง cluster CI (bootstrap ระดับผู้ใช้)
+
+
+def auc(normal: list, attack: list):
+    """P(คะแนนของ attack > คะแนนของ normal) + ครึ่งคะแนนเมื่อเท่ากัน · None เมื่อข้างใดว่าง."""
+    if not normal or not attack:
+        return None
+    ordered = sorted(normal)
+    total = 0.0
+    import bisect as _b
+
+    for a in attack:
+        lo = _b.bisect_left(ordered, a)
+        hi = _b.bisect_right(ordered, a)
+        total += lo + (hi - lo) / 2
+    return total / (len(normal) * len(attack))
+
+
+def view_usable(stat: dict | None) -> dict:
+    """มุมมองมีสัญญาณพอใช้ไหม — ต้องผ่านทั้งค่าจุดและขอบล่าง CI."""
+    if not stat or stat.get("auc") is None:
+        return {"usable": False, "reason": "ไม่มีข้อมูล"}
+    ok = stat["auc"] >= AUC_USABLE and stat.get("ci_low", 0.0) >= AUC_CI_FLOOR
+    return {
+        "usable": bool(ok),
+        "auc": stat["auc"],
+        "ci_low": stat.get("ci_low"),
+        "thresholds": {"auc": AUC_USABLE, "ci_low": AUC_CI_FLOOR},
+    }
+
+
+def ablation_conclusion(views: dict, arms: dict) -> dict:
+    """แปลผลเป็นข้อสรุปที่ประกาศไว้ก่อนวัด — ไม่ใช่การตีความหลังเห็นตัวเลข.
+
+    l3_helps        มีแขนใดชนะ baseline อย่างมีนัย (ขอบล่างของ paired delta > 0)
+    recalibrate     ไม่มีแขนชนะ · มีมุมมองที่ "มีสัญญาณ" · และมีแขนที่แพ้อย่างมีนัย
+                    -> สัญญาณมีแต่สเกลของหลักฐานผิด (ตัวเลือก ก)
+    monitoring_only ไม่มีมุมมองใดมีสัญญาณ และมีแขนที่แพ้อย่างมีนัย (ตัวเลือก ค)
+    inconclusive    นอกนั้น — ข้อมูลไม่พอชี้ทาง
+    """
+    usable = sorted(v for v, s in views.items() if view_usable(s)["usable"])
+    wins = sorted(
+        k
+        for k, a in arms.items()
+        if (a.get("paired_vs_B") or {}).get("ci_low") is not None
+        and a["paired_vs_B"]["ci_low"] > 0
+    )
+    losses = sorted(
+        k
+        for k, a in arms.items()
+        if (a.get("paired_vs_B") or {}).get("ci_high") is not None
+        and a["paired_vs_B"]["ci_high"] < 0
+    )
+    if wins:
+        conclusion = "l3_helps"
+    elif losses and usable:
+        conclusion = "recalibrate"
+    elif losses:
+        conclusion = "monitoring_only"
+    else:
+        conclusion = "inconclusive"
+    return {
+        "conclusion": conclusion,
+        "usable_views": usable,
+        "winning_arms": wins,
+        "losing_arms": losses,
+    }

@@ -402,3 +402,93 @@ def test_caught_fast_matches_the_production_resolver():
             assert AG.caught_fast(inp, t) == exact, (inp, t)
             n += 1
     assert n > 500
+
+
+# ══════════════ 10. L3 ablation (§7) — เกณฑ์เขียนก่อนวัด ══════════════
+
+
+def test_ablation_constants_are_preregistered():
+    assert AG.ABLATION_SEEDS == (601, 602, 603, 604, 605)
+    assert not set(AG.ABLATION_SEEDS) & (
+        set(AG.CALIBRATION_SEEDS) | set(AG.VALIDATION_SEEDS)
+    )
+    assert AG.ABLATION_ARMS == ("B", "C", "D", "E", "G")
+    assert AG.AUC_USABLE == 0.70
+    assert AG.AUC_CI_FLOOR == 0.60
+
+
+def test_auc_ranks_attacks_above_normals():
+    assert AG.auc([0.1, 0.2, 0.3], [0.4, 0.5]) == 1.0
+    assert AG.auc([0.4, 0.5], [0.1, 0.2, 0.3]) == 0.0
+    assert AG.auc([0.1, 0.2], [0.1, 0.2]) == 0.5
+    assert AG.auc([], [0.5]) is None
+
+
+def test_auc_handles_ties_as_half_credit():
+    assert AG.auc([0.5, 0.5], [0.5, 0.9]) == pytest.approx(0.75)
+
+
+def test_view_usable_needs_both_point_and_ci_floor():
+    assert AG.view_usable({"auc": 0.75, "ci_low": 0.65})["usable"] is True
+    assert AG.view_usable({"auc": 0.75, "ci_low": 0.55})["usable"] is False
+    assert AG.view_usable({"auc": 0.65, "ci_low": 0.62})["usable"] is False
+    assert AG.view_usable(None)["usable"] is False
+
+
+def _arm(delta, ci_hi):
+    return {"paired_vs_B": {"delta": delta, "ci_high": ci_hi}}
+
+
+def test_ablation_conclusion_points_at_calibration_when_signal_exists():
+    """มีสัญญาณ (AUC ผ่าน) แต่ยังแพ้ baseline ที่ FPR เท่ากัน -> ปัญหาอยู่ที่สเกล/calibration."""
+    out = AG.ablation_conclusion(
+        views={
+            "point": {"auc": 0.8, "ci_low": 0.7},
+            "sequence": {"auc": 0.5, "ci_low": 0.4},
+        },
+        arms={
+            "C": _arm(-0.05, -0.01),
+            "D": _arm(-0.09, -0.05),
+            "E": _arm(-0.12, -0.08),
+        },
+    )
+    assert out["conclusion"] == "recalibrate"
+    assert out["usable_views"] == ["point"]
+
+
+def test_ablation_conclusion_says_monitoring_only_without_signal():
+    out = AG.ablation_conclusion(
+        views={
+            "point": {"auc": 0.55, "ci_low": 0.4},
+            "sequence": {"auc": 0.5, "ci_low": 0.3},
+        },
+        arms={
+            "C": _arm(-0.05, -0.01),
+            "D": _arm(-0.09, -0.05),
+            "E": _arm(-0.12, -0.08),
+        },
+    )
+    assert out["conclusion"] == "monitoring_only"
+
+
+def test_ablation_conclusion_inconclusive_when_no_arm_clearly_loses():
+    out = AG.ablation_conclusion(
+        views={
+            "point": {"auc": 0.8, "ci_low": 0.7},
+            "sequence": {"auc": 0.5, "ci_low": 0.4},
+        },
+        arms={"C": _arm(-0.01, 0.03), "D": _arm(-0.02, 0.01), "E": _arm(-0.02, 0.02)},
+    )
+    assert out["conclusion"] == "inconclusive"
+
+
+def test_ablation_conclusion_reports_a_win_if_an_arm_beats_baseline():
+    out = AG.ablation_conclusion(
+        views={
+            "point": {"auc": 0.8, "ci_low": 0.7},
+            "sequence": {"auc": 0.8, "ci_low": 0.7},
+        },
+        arms={"C": {"paired_vs_B": {"delta": 0.05, "ci_low": 0.02, "ci_high": 0.08}}},
+    )
+    assert out["conclusion"] == "l3_helps"
+    assert out["winning_arms"] == ["C"]

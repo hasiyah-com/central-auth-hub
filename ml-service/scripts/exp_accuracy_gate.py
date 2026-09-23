@@ -52,6 +52,8 @@ OUT = X.ARTIFACTS / "accuracy_gate"
 CALIBRATION = OUT / "calibration.json"
 VALIDATION = OUT / "validation.json"
 LEDGER = OUT / "validation_ledger.json"
+ABLATION = OUT / "ablation.json"
+ABLATION_CAL = OUT / "ablation_calibration.json"
 # สำเนาที่ commit ก่อน validate — validate อ่านจากที่นี่เท่านั้น (พิสูจน์ได้ว่าตรึงก่อนเปิด)
 COMMITTED_CALIBRATION = (
     REPO / "hub" / "backend" / "tests" / "provenance" / "accuracy_calibration.json"
@@ -118,10 +120,23 @@ class Store:
         self.attacks = []  # (size, user, seed, family, ResolverInput)
         self.record_l3 = record_l3
         self.l3 = []  # (size, is_attack, abstained, evidence_score, zone) — validate เท่านั้น
+        self.views = []  # (user, is_attack, {view: calibrated}) — ablation เท่านั้น
 
-    def add(self, size, user, seed, is_attack, family, inp: ResolverInput, l3info):
+    def add(
+        self,
+        size,
+        user,
+        seed,
+        is_attack,
+        family,
+        inp: ResolverInput,
+        l3info,
+        views=None,
+    ):
         if self.record_l3:
             self.l3.append((size, is_attack, *l3info))
+        if views:
+            self.views.append((user, is_attack, views))
         if is_attack:
             self.attacks.append((size, user, seed, family, inp))
             return
@@ -245,7 +260,13 @@ def pooled_recall(rows, families) -> float:
 # ── การสร้างข้อมูลต่อ cell ─────────────────────────────────────────────────────
 
 
-def collect(seeds, variants: dict, users_xlsx, record_l3: bool = False) -> dict:
+def collect(
+    seeds,
+    variants: dict,
+    users_xlsx,
+    record_l3: bool = False,
+    record_views: bool = False,
+) -> dict:
     val, held, roster = _population()
     stores = {k: Store(record_l3=record_l3) for k in variants}
     ecdf_probe_thr = {"warn": 0.5, "challenge": 0.7, "block": 0.85}
@@ -283,6 +304,9 @@ def collect(seeds, variants: dict, users_xlsx, record_l3: bool = False) -> dict:
                         c.family,
                         inp,
                         (an.get("abstained", True), an.get("evidence_score"), zone),
+                        views=(an.get("detail") or {}).get("views")
+                        if record_views
+                        else None,
                     )
             print(
                 f"  seed {seed} size {size:>5}: {len(ctxs)} เหตุการณ์ "
@@ -648,6 +672,160 @@ def cmd_validate(args) -> int:
     return 0
 
 
+def _arm_variants(fz: dict, g: ConditionalParams) -> dict:
+    """แขนของ ablation — ใช้ config production ทุกตัว (B66)."""
+    gam, thr = fz["per_config_gamma"], fz["per_config_thresholds"]
+    out = {
+        "B": (CFG.CONFIGS["B"], gam["B"], thr["B"]["warn"]),
+        "C": (CFG.CONFIGS["C"], gam["C"], thr["C"]["warn"]),
+        "D": (CFG.CONFIGS["D"], gam["D"], thr["D"]["warn"]),
+        "E": (CFG.CONFIGS["E"], gam["E"], thr["E"]["warn"]),
+        "G": (CFG.with_params(CFG.CONFIGS["G"], g), gam["E"], thr["E"]["warn"]),
+    }
+    return {k: out[k] for k in AG.ABLATION_ARMS}
+
+
+def _view_auc(store: Store, view: str, n_boot: int = 500) -> dict | None:
+    """AUC ของหลักฐานมุมมองเดียวล้วน + CI จาก bootstrap ระดับผู้ใช้."""
+    by_user: dict = defaultdict(lambda: ([], []))
+    for user, is_attack, views in store.views:
+        v = (views or {}).get(view)
+        if v is None:
+            continue
+        by_user[user][1 if is_attack else 0].append(float(v))
+    if not by_user:
+        return None
+    normal = [x for u in by_user.values() for x in u[0]]
+    attack = [x for u in by_user.values() for x in u[1]]
+    point = AG.auc(normal, attack)
+    if point is None:
+        return None
+    users = list(by_user)
+    rng = random.Random(0)
+    dist = []
+    for _ in range(n_boot):
+        pick = [rng.choice(users) for _ in users]
+        n = [x for u in pick for x in by_user[u][0]]
+        a = [x for u in pick for x in by_user[u][1]]
+        val = AG.auc(n, a)
+        if val is not None:
+            dist.append(val)
+    dist.sort()
+    return {
+        "auc": round(point, 4),
+        "ci_low": round(dist[int(0.025 * len(dist))], 4) if dist else None,
+        "ci_high": round(dist[min(len(dist) - 1, int(0.975 * len(dist)))], 4)
+        if dist
+        else None,
+        "n_normal": len(normal),
+        "n_attack": len(attack),
+        "n_users": len(users),
+    }
+
+
+def cmd_ablation(args) -> int:
+    if not COMMITTED_CALIBRATION.exists():
+        print("ต้องมี calibration ที่ commit แล้ว (candidate G)")
+        return 1
+    cal = json.loads(COMMITTED_CALIBRATION.read_text(encoding="utf-8"))
+    g = ConditionalParams(**cal["candidates"]["G"]["params"])
+    fz = _frozen()
+    arms = _arm_variants(fz, g)
+
+    print(
+        f"ABLATION ขั้นที่ 1 — ตั้ง threshold ให้ FPR เท่ากันบน calibration {AG.CALIBRATION_SEEDS}"
+    )
+    cal_stores = collect(AG.CALIBRATION_SEEDS, arms, args.users)
+    rng = random.Random(20260923)
+    thresholds = {}
+    for key, (_c, _g, warn) in arms.items():
+        sel = choose_thresholds(cal_stores[key], warn)
+        parity_check(cal_stores[key], warn, sel["thresholds"]["challenge"], rng)
+        thresholds[key] = sel
+        print(
+            f"  {key}: t_c={sel['thresholds']['challenge']} t_b={sel['thresholds']['block']} "
+            f"reach={sel['reachable']}",
+            flush=True,
+        )
+    del cal_stores
+    OUT.mkdir(parents=True, exist_ok=True)
+    ABLATION_CAL.write_text(
+        json.dumps(
+            {
+                "stage": "ablation_calibration",
+                "seeds": list(AG.CALIBRATION_SEEDS),
+                "git_commit": _git("rev-parse", "HEAD"),
+                "arms": {k: v["thresholds"] for k, v in thresholds.items()},
+                "reachable": {k: v["reachable"] for k, v in thresholds.items()},
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+
+    print(f"\nABLATION ขั้นที่ 2 — วัดบน seed ใหม่ {AG.ABLATION_SEEDS}")
+    stores = collect(
+        AG.ABLATION_SEEDS, arms, args.users, record_l3=True, record_views=True
+    )
+    rows = {k: outcomes(stores[k], thresholds[k]["thresholds"]) for k in arms}
+    weak = set(AG.FAMILY_TARGETS)
+    report = {}
+    for key in arms:
+        st, thr = stores[key], thresholds[key]["thresholds"]
+        report[key] = {
+            "thresholds": thr,
+            "challenge_fpr_by_size": {
+                s: round(v, 5)
+                for s, v in sorted(challenge_fpr_by_size(st, thr["challenge"]).items())
+            },
+            "family_recall": family_recall(rows[key]),
+            "weak_recall_mean": sum(
+                family_recall(rows[key]).get(f, 0.0) for f in AG.FAMILY_TARGETS
+            )
+            / len(AG.FAMILY_TARGETS),
+            "severe_recall": pooled_recall(rows[key], AG.SEVERE_FAMILIES),
+            "campaign_recall": _campaign_block(rows[key]),
+            "paired_vs_B": _paired_delta(rows[key], rows["B"], weak),
+            "normal_score_quantiles": _normal_quantiles(st),
+        }
+    views = {v: _view_auc(stores["E"], v) for v in ("point", "sequence")}
+    out = {
+        "stage": "ablation",
+        "question": "L3 มุมมองไหนมีสัญญาณ และมุมมองไหนดันคะแนนของเหตุการณ์ปกติขึ้น",
+        "pre_registration": "hub/backend/tests/reports/accuracy_gate_2026-09-23.md §7",
+        "git_commit": _git("rev-parse", "HEAD"),
+        "seeds": list(AG.ABLATION_SEEDS),
+        "arms": report,
+        "views": views,
+        "conclusion": AG.ablation_conclusion(views, report),
+        "holdout_opened": False,
+    }
+    ABLATION.write_text(
+        json.dumps(out, ensure_ascii=False, indent=2, default=str), encoding="utf-8"
+    )
+    print(f"\nข้อสรุป: {out['conclusion']}")
+    print(f"เขียน {ABLATION}")
+    return 0
+
+
+def _normal_quantiles(store: Store) -> dict:
+    """ควอนไทล์ของคะแนนสุดท้ายบนเหตุการณ์ปกติ — ใช้ดูว่าหลักฐาน L3 ดันคะแนนขึ้นแค่ไหน."""
+    vals = sorted(
+        s
+        for users in store.normal_seed.values()
+        for seeds in users.values()
+        for c in seeds.values()
+        for s in c["scores"]
+    )
+    if not vals:
+        return {}
+    return {
+        f"q{int(p * 1000) / 10}": round(vals[min(len(vals) - 1, int(p * len(vals)))], 6)
+        for p in (0.5, 0.9, 0.99, 0.995, 0.999)
+    }
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -658,8 +836,14 @@ def main() -> int:
     va.add_argument(
         "--reopen", default=None, help="เหตุผลที่ต้องเปิด validation ซ้ำ (บันทึกใน ledger)"
     )
+    ab = sub.add_parser("ablation")
+    ab.add_argument("--users", type=Path, default=BP.DEFAULT_USERS_XLSX)
     args = ap.parse_args()
-    return cmd_calibrate(args) if args.cmd == "calibrate" else cmd_validate(args)
+    if args.cmd == "calibrate":
+        return cmd_calibrate(args)
+    if args.cmd == "ablation":
+        return cmd_ablation(args)
+    return cmd_validate(args)
 
 
 if __name__ == "__main__":
