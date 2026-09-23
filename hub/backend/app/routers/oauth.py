@@ -2012,7 +2012,7 @@ def _passkey_recover_html(nonce: str, return_to: str = "") -> str:
   :root {{ --bg-0:#070b14; --ink:#e8eef7; --muted:#8a99b5; --mint:#34e8c4;
            --mint-2:#13b89a; --line:rgba(148,178,224,.14); --danger:#ff6b81; }}
   * {{ box-sizing:border-box; }}
-  html,body {{ margin:0; height:100%; }}
+  html,body {{ margin:0; width:100%; min-width:100%; height:100%; max-width:none; }}
   body {{ font-family:'IBM Plex Sans Thai',system-ui,sans-serif; background:var(--bg-0);
           color:var(--ink); min-height:100vh; display:grid; place-items:center;
           padding:32px 16px; position:relative; overflow:hidden; }}
@@ -2640,15 +2640,15 @@ def _login_chooser_html(
   }}
 
   /* Full Signal Room shell — identical structure to the administrator login. */
-  body {{ display:block; padding:0; overflow:auto; }}
-  .login-page {{ min-height:100vh; position:relative; overflow:hidden; display:grid;
+  body {{ display:block; width:100vw; max-width:none; padding:0; overflow-x:hidden; overflow-y:auto; }}
+  .login-page {{ width:100vw; max-width:none; min-height:100vh; margin:0; position:relative; overflow:hidden; display:grid;
     grid-template-rows:72px 1fr 52px; }}
   .login-glow {{ position:absolute; border-radius:50%; pointer-events:none; filter:blur(2px); }}
   .glow-one {{ width:650px; height:650px; right:-210px; top:-310px;
     background:radial-gradient(circle,rgba(52,232,196,.13),rgba(52,232,196,.025) 42%,transparent 70%); }}
   .glow-two {{ width:550px; height:550px; left:-360px; bottom:-250px;
     background:radial-gradient(circle,rgba(14,165,233,.08),transparent 67%); }}
-  .login-topbar {{ height:72px; position:relative; z-index:3; display:flex; align-items:center;
+  .login-topbar {{ width:100%; max-width:none; height:72px; margin:0; position:relative; z-index:3; display:flex; align-items:center;
     justify-content:space-between; padding:0 clamp(24px,5vw,72px); border-bottom:1px solid rgba(148,178,224,.11); }}
   .login-topbar::after {{ content:''; position:absolute; left:clamp(24px,5vw,72px);
     right:clamp(24px,5vw,72px); bottom:-1px; height:1px;
@@ -2664,9 +2664,9 @@ def _login_chooser_html(
   .login-system-status {{ display:flex; align-items:center; gap:7px; color:#73849b;
     font:500 7px 'IBM Plex Mono'; letter-spacing:.6px; }}
   .login-system-status b {{ color:var(--mint); font-size:7px; }}
-  .login-stage {{ width:min(1160px,calc(100% - 48px)); margin:auto; position:relative; z-index:2;
+  .login-stage {{ width:min(1450px,calc(100vw - 96px)); max-width:none; margin:auto; position:relative; z-index:2;
     display:grid; grid-template-columns:minmax(0,1.05fr) minmax(390px,.72fr);
-    gap:clamp(55px,9vw,130px); align-items:center; padding:45px 0; }}
+    gap:clamp(64px,8vw,145px); align-items:center; padding:45px 0; }}
   .login-context {{ animation:rise .65s ease both; }}
   .context-kicker {{ display:flex; align-items:center; gap:8px; color:#7f92aa;
     font:500 8px 'IBM Plex Mono'; letter-spacing:1.2px; }}
