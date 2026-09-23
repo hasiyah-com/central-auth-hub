@@ -899,6 +899,54 @@ def _recal_variants(fz: dict, taus) -> dict:
     return out
 
 
+def paired_campaign_delta(rows_h, rows_b, n_boot=N_BOOT) -> dict:
+    """delta ของ **campaign recall** (หน่วย = แคมเปญ) แบบจับคู่ · bootstrap ระดับผู้ใช้.
+
+    §10.5: เกณฑ์ §9.4 เขียนว่า "campaign recall" ซึ่งนิยามไว้ที่หน่วยแคมเปญ (§5.1) แต่โค้ดรอบแรก
+    ส่ง `_paired_delta(..., {"campaign"})` ซึ่งเป็น recall **ระดับเหตุการณ์** ของตระกูลชื่อ campaign
+    """
+
+    def by_user(rows):
+        out: dict = defaultdict(dict)
+        for r in rows:
+            if not r.campaign:
+                continue
+            out[r.user][r.campaign] = out[r.user].get(r.campaign, False) or AG.caught(
+                r.decision
+            )
+        return out
+
+    ha, ba = by_user(rows_h), by_user(rows_b)
+    users = sorted(set(ha) & set(ba))
+    if not users:
+        return {"delta": None}
+    per_user = {
+        u: (
+            sum(ha[u].values()),
+            sum(ba[u][c] for c in ha[u] if c in ba[u]),
+            len(ha[u]),
+        )
+        for u in users
+    }
+    tot = [sum(per_user[u][i] for u in users) for i in range(3)]
+    point = (tot[0] - tot[1]) / tot[2] if tot[2] else 0.0
+    rng = random.Random(0)
+    dist = []
+    for _ in range(n_boot):
+        pick = [rng.choice(users) for _ in users]
+        a = sum(per_user[u][0] for u in pick)
+        b = sum(per_user[u][1] for u in pick)
+        n = sum(per_user[u][2] for u in pick)
+        dist.append((a - b) / n if n else 0.0)
+    dist.sort()
+    return {
+        "delta": point,
+        "ci_low": dist[int(0.025 * n_boot)],
+        "ci_high": dist[min(len(dist) - 1, int(0.975 * n_boot))],
+        "unit": "campaign",
+    }
+
+
 def _families_worse(rows_h, rows_b) -> list:
     """ตระกูลที่แย่ลงอย่างมีนัย (ขอบบนของ paired delta < 0)."""
     worse = []
@@ -1000,7 +1048,7 @@ def cmd_recal(args) -> int:
     parts = {
         "primary_weak_delta": report["H"]["paired_vs_B"],
         "severe_delta": _paired_delta(rows["H"], rows["B"], AG.SEVERE_FAMILIES),
-        "campaign_delta": _paired_delta(rows["H"], rows["B"], {"campaign"}),
+        "campaign_delta": paired_campaign_delta(rows["H"], rows["B"]),
         "fpr_verdicts": {
             lvl: report["H"]["fpr"][lvl]["verdict"] for lvl in ("challenge", "block")
         },

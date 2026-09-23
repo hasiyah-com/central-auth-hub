@@ -16,12 +16,25 @@ export type ShapContribution = {
 
 /** risk_breakdown JSON shape — base 4 numbers from Layer 4 aggregator,
  *  plus optional iforest_explanation embedded by oauth.py at login time. */
+/** ผลจำลองหนึ่งชุด — ไม่เคยมีผลต่อสิทธิ์จริง (risk_engine เขียนเป็นข้อมูลอย่างเดียว) */
+export type ShadowResult = {
+  final_risk: number;
+  decision: string;
+  zone?: string;
+  params?: Record<string, number>;
+};
+
 export type RiskBreakdown = {
   rule: number;
   behavior: number;
   iforest: number;
   iforest_raw: number;
   iforest_explanation?: ShapContribution[];
+  // ผลจำลองของชั้น L3 — การตัดสินจริงมาจาก Policy/L1/L2 เท่านั้น
+  baseline_shadow?: ShadowResult;
+  hybrid_shadow?: ShadowResult;
+  conditional_shadow?: ShadowResult;
+  hybrid_shadow_enabled?: boolean;
 };
 
 export type Anomaly = {

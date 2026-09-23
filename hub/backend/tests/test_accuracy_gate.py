@@ -588,3 +588,41 @@ def test_recalibration_fpr_inconclusive_is_not_a_pass():
         AG.recalibration_verdict(_recal(fpr="inconclusive"))["verdict"]
         == "inconclusive"
     )
+
+
+def test_campaign_paired_delta_uses_campaign_units_not_events():
+    """§10.5: เกณฑ์เขียนว่า 'campaign recall' (หน่วย = แคมเปญ) แต่โค้ดรอบแรกวัดระดับเหตุการณ์.
+
+    ตัวอย่าง: แคมเปญเดียว 2 เหตุการณ์ · H จับได้ 1 · B จับได้ 2
+      ระดับเหตุการณ์ = 0.5 − 1.0 = −0.5 · ระดับแคมเปญ = 1.0 − 1.0 = 0.0 (ทั้งคู่จับแคมเปญได้)
+    """
+    import exp_accuracy_gate as EXP
+
+    def ev(dec):
+        return AG.LabeledOutcome(
+            user="U1",
+            seed=611,
+            family="campaign",
+            decision=dec,
+            campaign="U1:campaign:611:50",
+        )
+
+    h = [ev("challenge"), ev("allow")]
+    b = [ev("challenge"), ev("challenge")]
+    assert EXP._paired_delta(h, b, {"campaign"})["delta"] == pytest.approx(-0.5)
+    assert EXP.paired_campaign_delta(h, b)["delta"] == pytest.approx(0.0)
+
+
+def test_campaign_paired_delta_detects_a_missed_campaign():
+    import exp_accuracy_gate as EXP
+
+    def ev(user, dec, camp):
+        return AG.LabeledOutcome(
+            user=user, seed=611, family="campaign", decision=dec, campaign=camp
+        )
+
+    h = [ev("U1", "allow", "c1"), ev("U2", "challenge", "c2")]
+    b = [ev("U1", "challenge", "c1"), ev("U2", "challenge", "c2")]
+    out = EXP.paired_campaign_delta(h, b)
+    assert out["delta"] == pytest.approx(-0.5)
+    assert out["ci_high"] <= 0
