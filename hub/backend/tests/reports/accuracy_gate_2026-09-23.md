@@ -539,6 +539,35 @@ tail transform ได้ผลตามกลไกที่ตั้งใจ: 
 | ผลการทดลองที่ตรึง | `accuracy_validation.json`, `accuracy_ablation.json`, `accuracy_ablation_views.json`, `accuracy_recalibration.json` (+ ledger) |
 | candidate H (tail transform) | **ไม่ผ่าน** — อยู่ในโค้ดเป็นฟังก์ชันที่ไม่มีเส้นทาง production เรียก |
 
+### 11.2.1 สถานะการตรวจ — แยกผลในเครื่องออกจาก GitHub CI
+
+**ผลในเครื่อง** (รันขั้นตอนตาม workflow บนเครื่องพัฒนา — ไม่ใช่ผลของ GitHub Actions)
+
+| ชุดตรวจ | ผล | โค้ดที่ทดสอบ |
+|---|---|---|
+| Functional Gate 3 รอบ (ชุดเต็ม) | 1601 passed · 0 failed · ไม่มี state รั่ว | **`46f2e04`** (รัน 02:09–02:18 ของ 23 ก.ย.) |
+| Performance Gate | 3 passed | `46f2e04` |
+| ml-service | 82 passed | `46f2e04` |
+| `simulate_backend_ci.sh` (ขั้นตอนตาม Backend CI: ฐานว่าง → upgrade head → alembic check → เทียบ schema → seed → pytest ชุดที่ CI รัน) | ทุกขั้นผ่าน · **1540 passed, 48 skipped** | **`daad1dc`** + สคริปต์ที่ commit เป็น `28d0da4` |
+| Frontend (`npm ci` → `tsc --noEmit` → `npm test`) | typecheck ผ่าน · **40 passed** | `daad1dc` |
+
+**ผลของ GitHub CI**
+
+| commit | Backend CI | Frontend CI |
+|---|---|---|
+| `46f2e04` | failed (2 เทสผูกกับสภาพแวดล้อม — แก้ที่ `424b288`) | success |
+| `424b288` · `da09f21` · `543cbfc` | success | success |
+| `425dd31` · `daad1dc` · `28d0da4` | **ยังไม่มีผล — run ไม่ถูกสร้าง** | **ยังไม่มีผล** |
+
+**เหตุที่ run ไม่ถูกสร้าง: ยังไม่ทราบ** · สิ่งที่ตรวจได้คือ Actions ของ repo `enabled: true` และ workflow
+ทั้งสองตัวสถานะ `active` · PR #7 ชี้ที่ commit ล่าสุดแล้วแต่ `gh pr checks` รายงานว่าไม่มี check ·
+ข้อสันนิษฐานเรื่องโควตานาที **ยังไม่มีหลักฐานยืนยัน** (ตรวจหน้า Billing ต้องใช้สิทธิ์ของเจ้าของบัญชี) —
+ต้องยืนยันจากหน้า Billing หรือข้อความจาก GitHub ก่อนจึงจะสรุปสาเหตุได้
+
+**ข้อควรระวังในการอ่าน:** ตัวเลข `1601 × 3 รอบ` เป็นผลของ `46f2e04` ไม่ใช่ของโค้ดล่าสุด ·
+commit หลังจากนั้นครอบคลุมด้วย `simulate_backend_ci.sh` (1540 passed — ชุดที่ CI รัน ซึ่ง ignore
+ไฟล์ที่ต้องใช้ ml-service/host ตามรายการใน workflow) และชุดตรวจ frontend ในเครื่อง
+
 ### 11.3 ตารางสรุปผลการทดลองทั้งหมดของรอบนี้
 
 | รอบ | ชุดข้อมูล | ผล |

@@ -26,9 +26,17 @@ psql_db() { local db="$1"; shift; (cd "$MAIN_ROOT" && docker compose exec -T pos
 ok() { printf '  ok    %s\n' "$1"; }
 bad() { printf '  FAIL  %s\n' "$1"; FAIL=1; }
 
-# รหัสผ่านของ dev stack ในเครื่อง (ค่าเดียวกับ docker-compose.yml / backend-ci.yml) — ตั้งทับได้
+# รหัสผ่านของฐานข้อมูล — อ่านจากคอนเทนเนอร์ที่รันอยู่ตอนรัน ไม่เขียนค่าไว้ในไฟล์นี้
+# (เหตุผล: ค่าที่ hardcode ไว้แล้วซ่อนจากตัวสแกนไม่ได้ทำให้ปลอดภัยขึ้น · ถ้าวันหนึ่ง stack ใช้รหัสผ่านจริง
+# สคริปต์นี้จะใช้ค่านั้นโดยไม่บันทึกลงไฟล์หรือ log) · ตั้งทับด้วย PGUSER_CI / PGPASS_CI ได้
 PGUSER_CI="${PGUSER_CI:-hub}"
-PGPASS_CI="${PGPASS_CI:-devpassword}"
+if [ -z "${PGPASS_CI:-}" ]; then
+  PGPASS_CI="$( (cd "$MAIN_ROOT" && docker compose exec -T postgres printenv POSTGRES_PASSWORD) | tr -d '\r\n' )"
+fi
+if [ -z "$PGPASS_CI" ]; then
+  echo "อ่านรหัสผ่านจากคอนเทนเนอร์ postgres ไม่ได้ — ตั้ง PGPASS_CI เองหรือ start stack ก่อน" >&2
+  exit 2
+fi
 db_url() { echo "postgresql+psycopg2://${PGUSER_CI}:${PGPASS_CI}@postgres:5432/$1"; }
 
 hub() {  # $1 = db, ที่เหลือ = คำสั่ง — env ชุดเดียวกับ CI (ไม่ใช้ .env ของเครื่อง)
