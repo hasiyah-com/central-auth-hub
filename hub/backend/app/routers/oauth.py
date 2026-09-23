@@ -1,20 +1,3 @@
-"""OAuth router — flow เต็มของการ login ผ่าน Subsystem.
-
-Flow:
-  1. Subsystem redirect ผู้ใช้มา  GET /oauth/authorize
-       (client_id, redirect_uri, state, code_challenge)
-  2. Hub ตรวจ client_id + redirect_uri -> เก็บ request ใน Redis -> ส่งไป Google
-  3. Google ส่งกลับ  GET /oauth/callback
-       Hub: หา user -> เช็ค access_list -> สร้าง authorization code -> redirect กลับ subsystem
-  4. Subsystem เรียก  POST /oauth/token  (server-to-server)
-       (code, client_id, client_secret, code_verifier)
-       Hub: verify secret + verify PKCE -> ออก JWT (มี audience + ข้อมูลตาม scope)
-
-ตัวช่วยทดสอบ (ใช้เฉพาะตอน dev):
-  GET /oauth/pkce-helper   -> สร้างคู่ code_verifier/code_challenge
-  GET /oauth/test-callback -> หน้าจำลอง redirect_uri ของ subsystem
-"""
-
 import html
 import json
 import secrets
@@ -2458,7 +2441,7 @@ def _login_chooser_html(
         """
     <button class="btn btn-pk stagger s1" id="pkToggle">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4"/></svg>
-      ดำเนินการด้วย Passkey
+      <span>ดำเนินการต่อด้วย Passkey</span><b aria-hidden="true">→</b>
     </button>
 
     <div class="pk-form stagger s2" id="pkForm" aria-hidden="true">
@@ -2477,7 +2460,7 @@ def _login_chooser_html(
         f"""
     <a class="btn btn-ghost stagger s4" href="/oauth/authorize/google?hub_state={hub_state}">
       <svg class="gicon" viewBox="0 0 24 24"><path d="M21.6 12.227c0-.709-.064-1.39-.182-2.045H12v3.868h5.382a4.6 4.6 0 0 1-1.996 3.018v2.51h3.232c1.891-1.742 2.982-4.305 2.982-7.35Z" fill="#4285F4"/><path d="M12 22c2.7 0 4.964-.895 6.618-2.423l-3.232-2.509c-.895.6-2.04.955-3.386.955-2.605 0-4.81-1.76-5.595-4.123H3.064v2.59A9.996 9.996 0 0 0 12 22Z" fill="#34A853"/><path d="M6.405 13.9a6.003 6.003 0 0 1 0-3.8V7.51H3.064a9.996 9.996 0 0 0 0 8.98l3.341-2.59Z" fill="#FBBC05"/><path d="M12 5.977c1.468 0 2.786.505 3.823 1.496l2.868-2.868C16.96 2.99 14.695 2 12 2A9.996 9.996 0 0 0 3.064 7.51l3.341 2.59C7.19 7.736 9.395 5.977 12 5.977Z" fill="#EA4335"/></svg>
-      ดำเนินการด้วย Google
+      <span>เข้าสู่ระบบด้วย Google Workspace</span><b aria-hidden="true">→</b>
     </a>
 """
         if allow_google
@@ -2541,10 +2524,10 @@ def _login_chooser_html(
   }}
   .card {{
     position:relative; z-index:1; width:100%; max-width:524px;
-    background:rgba(14,21,35,.96);
-    border:1px solid rgba(148,178,224,.2); border-radius:0;
-    box-shadow:0 28px 80px rgba(0,0,0,.38);
-    overflow:hidden;
+    background:linear-gradient(150deg,rgba(18,25,40,.94),rgba(12,17,28,.97));
+    border:1px solid rgba(148,178,224,.16); border-radius:0;
+    box-shadow:0 24px 80px rgba(0,0,0,.28),inset 0 1px rgba(255,255,255,.025);
+    backdrop-filter:blur(16px); overflow:hidden;
     animation:rise .7s cubic-bezier(.2,.8,.2,1) both;
   }}
   .card::before {{
@@ -2557,19 +2540,19 @@ def _login_chooser_html(
   .top {{ padding:42px 40px 8px; }}
   .badge {{
     display:inline-flex; align-items:center; gap:8px; font-family:'IBM Plex Mono',monospace;
-    font-size:10px; letter-spacing:.18em; text-transform:uppercase; color:var(--mint);
+    font-size:9px; letter-spacing:1.25px; text-transform:uppercase; color:var(--mint);
     padding:0; background:transparent;
   }}
   .dot {{ width:6px; height:6px; border-radius:50%; background:var(--mint);
           box-shadow:0 0 8px var(--mint); animation:pulse 2s infinite; }}
   @keyframes pulse {{ 0%,100%{{opacity:1}} 50%{{opacity:.35}} }}
   h1 {{
-    font-family:'Kanit',sans-serif; font-weight:600; font-size:32px; line-height:1.18;
-    margin:18px 0 4px; letter-spacing:-.02em;
+    font-family:'Kanit',sans-serif; font-weight:600; font-size:28px; line-height:1.18;
+    margin:18px 0 4px; letter-spacing:-.5px;
   }}
   h1 .accent {{ color:transparent; background:linear-gradient(92deg,var(--mint),#7ad6ff);
                 -webkit-background-clip:text; background-clip:text; }}
-  .sub {{ color:var(--muted); font-size:13px; margin:0; }}
+  .sub {{ color:#76879e; font-size:11px; margin:0; }}
 
   .body {{ padding:24px 40px 32px; }}
   .stagger {{ opacity:0; animation:fade .6s ease forwards; }}
@@ -2578,13 +2561,15 @@ def _login_chooser_html(
 
   .btn {{
     display:flex; align-items:center; justify-content:center; gap:11px; width:100%;
-    min-height:56px; padding:14px 18px; border-radius:0;
+    height:56px; padding:0 18px; border-radius:0;
     font-family:'Kanit',sans-serif; font-weight:500;
-    font-size:15px; text-decoration:none; border:1px solid transparent; cursor:pointer;
+    font-size:12px; text-decoration:none; border:1px solid transparent; cursor:pointer;
     transition:transform .15s ease, box-shadow .25s ease, background .2s ease; position:relative;
     overflow:hidden;
   }}
   .btn:active {{ transform:translateY(1px) scale(.995); }}
+  .btn span {{ flex:1; text-align:left; }}
+  .btn b {{ font-weight:500; }}
   .btn-pk {{
     color:#04221c; background:linear-gradient(100deg,var(--mint),#5ff0d6);
     box-shadow:0 0 24px rgba(52,232,196,.12);
@@ -2597,7 +2582,8 @@ def _login_chooser_html(
   }}
   .btn-pk:hover::after {{ left:130%; }}
   .btn-ghost {{
-    color:var(--ink); background:rgba(255,255,255,.04); border-color:var(--line);
+    color:#c0ccdc; background:#111827; border-color:rgba(148,178,224,.16);
+    font-size:11px;
   }}
   .btn-ghost:hover {{ background:rgba(255,255,255,.08); border-color:rgba(148,178,224,.3); }}
   .btn[disabled] {{ opacity:.5; cursor:not-allowed; transform:none; box-shadow:none; }}
@@ -2624,7 +2610,7 @@ def _login_chooser_html(
   .hint {{ font-size:11.5px; color:var(--muted); }}
 
   .divider {{ display:flex; align-items:center; gap:12px; margin:18px 0;
-              color:var(--muted); font-size:11px; font-family:'IBM Plex Mono',monospace; }}
+              color:#526176; font-size:9px; font-family:'IBM Plex Mono',monospace; }}
   .divider::before, .divider::after {{ content:''; flex:1; height:1px;
               background:linear-gradient(90deg,transparent,var(--line),transparent); }}
 
@@ -2633,10 +2619,10 @@ def _login_chooser_html(
   @keyframes spin {{ to{{transform:rotate(360deg)}} }}
 
   .foot {{ padding:15px 40px; border-top:1px solid var(--line); text-align:center;
-           font-family:'IBM Plex Mono',monospace; font-size:10px; letter-spacing:.08em;
+           font-family:'IBM Plex Mono',monospace; font-size:8px; letter-spacing:.08em;
            color:#56657f; }}
   .gicon {{ width:18px; height:18px; flex:none; }}
-  .recover-link {{ display:block; text-align:center; margin-top:14px; font-size:12.5px;
+  .recover-link {{ display:block; text-align:center; margin-top:14px; font-size:9px;
                    color:var(--mint-2); text-decoration:none; }}
   .recover-link:hover {{ color:var(--mint); text-decoration:underline; }}
   @media (max-width:560px) {{
@@ -2649,7 +2635,7 @@ def _login_chooser_html(
 </style></head><body>
 <div class="card">
   <div class="top">
-    <span class="badge"><span class="dot"></span>CENTRAL AUTH HUB</span>
+    <span class="badge">SUBSYSTEM AUTHENTICATION</span>
     <h1>เข้าสู่ <span class="accent">{safe_name}</span></h1>
     <p class="sub">เลือกวิธียืนยันตัวตนเพื่อดำเนินการต่อ</p>
   </div>
