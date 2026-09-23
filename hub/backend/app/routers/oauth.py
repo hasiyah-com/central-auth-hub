@@ -1548,24 +1548,24 @@ def _passkey_enroll_html(
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@500;600;700&family=IBM+Plex+Sans+Thai:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style nonce="{nonce}">
-  :root {{ --bg:#070b14; --ink:#e8eef7; --muted:#8a99b5; --mint:#34e8c4; --mint-2:#13b89a;
-           --line:rgba(148,178,224,.16); --danger:#ff6b81; --amber:#f5b97a; }}
+  :root {{ --bg:#0a0e17; --ink:#0a0e17; --muted:#68778c; --mint:#0d8b75; --mint-2:#13b89a;
+           --line:#dfe5ed; --danger:#b42342; --amber:#8a5b13; }}
   * {{ box-sizing:border-box; }}
   html,body {{ margin:0; }}
-  body {{ font-family:'IBM Plex Sans Thai',system-ui,sans-serif; background:var(--bg);
-    color:var(--ink); min-height:100vh; display:grid; place-items:center; padding:28px 16px; }}
-  .card {{ width:100%; max-width:440px; background:linear-gradient(180deg,#141c30,#0b1120);
-    border:1px solid var(--line); border-radius:20px; overflow:hidden;
+  body {{ font-family:'IBM Plex Sans Thai',system-ui,sans-serif; background:linear-gradient(135deg,#0a0e17,#182131,#075043);
+    color:var(--ink); min-height:100vh; display:grid; place-items:center; padding:40px 16px; }}
+  .card {{ width:100%; max-width:768px; background:#fff;
+    border:1px solid var(--line); border-radius:24px; overflow:hidden;
     box-shadow:0 28px 70px -24px rgba(0,0,0,.75); }}
-  .top {{ padding:26px 28px 0; text-align:center; }}
-  .emblem {{ width:54px; height:54px; margin:0 auto 12px; border-radius:16px;
+  .top {{ padding:32px 40px 0; text-align:left; }}
+   .emblem {{ width:44px; height:44px; margin:0; flex:none; border-radius:12px;
     background:rgba(52,232,196,.12); border:1px solid rgba(52,232,196,.32);
     display:grid; place-items:center; font-size:25px; }}
-  h1 {{ font-family:'Kanit',sans-serif; font-weight:600; font-size:21px; margin:0 0 6px; }}
+  h1 {{ font-family:'Kanit',sans-serif; font-weight:600; font-size:24px; margin:0 0 6px; }}
   .sub {{ color:var(--muted); font-size:13.5px; line-height:1.6; margin:0; }}
   .who {{ font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--mint);
     margin-top:10px; word-break:break-all; }}
-  .body {{ padding:22px 28px 24px; }}
+  .body {{ padding:24px 40px 36px; }}
 
   /* ── ขั้นที่ 1: การ์ดเลือกวิธี ── */
   .opt {{ width:100%; display:flex; align-items:center; gap:14px; text-align:left;
@@ -1622,13 +1622,13 @@ def _passkey_enroll_html(
   .back:hover {{ color:var(--ink); }}
   .fld {{ display:block; font-size:12px; color:var(--muted); margin-bottom:7px; }}
   input[type=text] {{ width:100%; padding:12px 14px; border-radius:12px; margin-bottom:14px;
-    background:rgba(7,11,20,.65); border:1px solid var(--line); color:var(--ink);
+    background:#fff; border:1px solid var(--line); color:var(--ink);
     font-family:inherit; font-size:14.5px; }}
   input[type=text]:focus {{ outline:none; border-color:var(--mint-2); }}
   .btn {{ display:flex; align-items:center; justify-content:center; gap:9px; width:100%;
     padding:14px 16px; border-radius:13px; font-family:'Kanit',sans-serif; font-weight:500;
     font-size:15px; border:1px solid transparent; cursor:pointer; text-decoration:none; }}
-  .btn-go {{ color:#04221c; background:linear-gradient(100deg,var(--mint),#5ff0d6); }}
+  .btn-go {{ color:#04221c; background:linear-gradient(100deg,#34e8c4,#5ff0d6); }}
   .btn-go:hover {{ filter:brightness(1.05); }}
   .btn-go[disabled] {{ opacity:.5; cursor:not-allowed; }}
 
@@ -1653,36 +1653,56 @@ def _passkey_enroll_html(
   .spinner {{ width:15px; height:15px; border:2px solid rgba(4,34,28,.35);
     border-top-color:#04221c; border-radius:50%; animation:spin .7s linear infinite; }}
   @keyframes spin {{ to{{transform:rotate(360deg)}} }}
-  .foot {{ padding:12px 28px; border-top:1px solid var(--line); text-align:center;
+  .foot {{ background:#f7f8fa; padding:16px 40px; border-top:1px solid var(--line); text-align:center;
     font-family:'IBM Plex Mono',monospace; font-size:9.5px; color:#56657f; letter-spacing:.05em; }}
 
   /* ── modal backup codes ── */
   .modal {{ display:none; position:fixed; inset:0; z-index:5; background:rgba(3,6,12,.82);
     backdrop-filter:blur(6px); place-items:center; padding:24px 16px; }}
   .modal.show {{ display:grid; }}
-  .modal-card {{ width:100%; max-width:430px; background:linear-gradient(180deg,#141c30,#0b1120);
+  .modal-card {{ width:100%; max-width:520px; background:#fff;
     border:1px solid var(--line); border-radius:18px; overflow:hidden; max-height:92vh; overflow-y:auto; }}
   .modal-h {{ padding:22px 26px 0; }}
   .modal-h h2 {{ font-family:'Kanit',sans-serif; font-size:18px; margin:0 0 4px; }}
   .modal-b {{ padding:14px 26px 22px; }}
   .codes {{ display:grid; grid-template-columns:1fr 1fr; gap:8px; margin:6px 0 14px; }}
   .code {{ font-family:'IBM Plex Mono',monospace; font-size:13.5px; letter-spacing:.05em;
-    background:rgba(7,11,20,.8); border:1px solid var(--line); border-radius:9px;
-    padding:9px 10px; color:#cfe; text-align:center; }}
+    background:#f7f8fa; border:1px solid var(--line); border-radius:9px;
+    padding:9px 10px; color:#0a0e17; text-align:center; }}
   .warn {{ font-size:12px; color:var(--amber); background:rgba(245,185,122,.08);
     border:1px solid rgba(245,185,122,.25); border-radius:10px; padding:10px 12px; margin-bottom:12px; }}
   .row {{ display:flex; gap:8px; margin-bottom:12px; }}
   .row .btn {{ font-size:13px; padding:10px; }}
   .btn-mini {{ background:rgba(255,255,255,.05); border-color:var(--line); color:var(--ink); }}
   .btn-mini.done {{ background:rgba(52,232,196,.14); border-color:rgba(52,232,196,.4); color:var(--mint); }}
-  .ack {{ display:flex; gap:9px; align-items:flex-start; font-size:12.5px; color:#c4d0e4;
+  .ack {{ display:flex; gap:9px; align-items:flex-start; font-size:12.5px; color:#4a586b;
     padding:8px 0; cursor:pointer; }}
   .ack input {{ width:auto; margin:2px 0 0; }}
+
+  .accent-bar {{ height:6px; background:linear-gradient(90deg,#34d399,#34e8c4,#0d8b75); }}
+  .heading-row {{ display:flex; align-items:center; gap:12px; margin-bottom:12px; }}
+  .overline {{ color:#13b89a; font-size:11px; font-weight:600; letter-spacing:.18em; text-transform:uppercase; }}
+  .options-grid {{ display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }}
+  .options-grid .opt {{ display:flex; flex-direction:column; align-items:flex-start; margin:0; background:white; border-radius:16px; padding:20px; }}
+  .options-grid .opt .arrow {{ margin:0; font-size:12px; margin-top:auto; padding-top:12px; }}
+  .options-grid .opt .t {{ flex-wrap:wrap; }}
+  .opt:hover {{ box-shadow:0 8px 24px rgba(13,139,117,.12); }}
+  .who {{ font-size:12px; }}
+  .st-row {{ flex-wrap:wrap; gap:8px; }}
+  .step input:focus-visible,.opt:focus-visible,.btn:focus-visible,.skips a:focus-visible {{ outline:3px solid rgba(19,184,154,.45); outline-offset:3px; }}
+  .code {{ overflow-wrap:anywhere; }}
+  @media(max-width:640px) {{
+    .top {{ padding:28px 24px 0; }} .body {{ padding:24px; }} .foot {{ padding:16px 24px; }}
+    .options-grid {{ grid-template-columns:1fr; }} h1 {{ font-size:21px; }}
+    .skips {{ flex-wrap:wrap; }} .modal-h {{ padding:20px 18px 0; }} .modal-b {{ padding:14px 18px 22px; }}
+  }}
 </style></head><body>
 <div class="card">
+  <div class="accent-bar"></div>
   <div class="top">
-    <div class="emblem">🛡️</div>
-    <h1>เพิ่มการยืนยันตัวตน</h1>
+    <div class="heading-row"><div class="emblem" aria-hidden="true">🛡️</div>
+      <div><div class="overline">Central Auth Hub</div><h1>เพิ่มความปลอดภัยให้บัญชี</h1></div>
+    </div>
     <p class="sub">ป้องกันบัญชีของคุณเมื่อเข้าใช้ {safe_name}<br>ตั้งครั้งเดียว ใช้ได้ตลอด</p>
     <div class="who">{safe_email}</div>
   </div>
@@ -1709,6 +1729,7 @@ def _passkey_enroll_html(
 
     <!-- ── ขั้นที่ 1: เลือกวิธี ── -->
     <div class="step" id="stepChoose">
+      <div class="options-grid">
       <button class="opt" id="pickPasskey">
         <span class="ic">🔑</span>
         <span>
@@ -1725,6 +1746,7 @@ def _passkey_enroll_html(
         </span>
         <span class="arrow">›</span>
       </button>
+      </div>
       <div class="note" id="unsupported">
         ⚠️ เบราว์เซอร์นี้ไม่รองรับ Passkey — แนะนำให้ใช้ <b>แอป Authenticator</b>
       </div>
