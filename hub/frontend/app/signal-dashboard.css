@@ -51,6 +51,24 @@
 @media(max-width:900px){.login-stage{grid-template-columns:1fr;gap:36px;width:min(580px,calc(100% - 38px));padding:45px 0 60px}.login-context{text-align:center}.context-kicker{justify-content:center}.login-context>p{margin-inline:auto}.trust-rail{text-align:left}.login-page{overflow:auto}.login-footer{min-height:52px}.login-context h1{font-size:46px}}
 @media(max-width:560px){.login-page{grid-template-rows:62px 1fr auto}.login-topbar{height:62px;padding:0 18px}.login-system-status span{display:none}.login-stage{width:calc(100% - 24px);padding:30px 0 38px;gap:29px}.login-context h1{font-size:34px;letter-spacing:-1.5px}.login-context>p{font-size:10px}.trust-rail{gap:10px;margin-top:28px}.trust-point small{white-space:normal}.trust-point b{font-size:8px}.login-panel{padding:25px 19px}.policy-stamp{margin:20px -19px -25px}.login-footer{padding:13px 18px;flex-wrap:wrap;gap:5px 12px}.login-footer span:last-child{width:100%;margin-left:0}.login-help{flex-wrap:wrap}.glow-one{right:-400px}.login-panel-head h2{font-size:21px}}
 
+/* Login panel typography: increase one readable step */
+.login-overline{font-size:9px}
+.login-panel-head h2{font-size:28px}
+.login-panel-head p{font-size:11px}
+.login-field>span{font-size:11px}
+.field-control input{font-size:12px}
+.field-control>span{font-size:9px}
+.login-error,.login-ready{font-size:10px}
+.passkey-button{font-size:12px}
+.discoverable-button{font-size:10px}
+.login-divider{font-size:9px}
+.google-button{font-size:11px}
+.login-help a{font-size:9px}
+.policy-stamp{font-size:9px}
+.policy-stamp code{font-size:8px}
+
+@media(max-width:560px){.login-panel-head h2{font-size:24px}}
+
 /* Dashboard density — aligned with the real Central Auth Hub console */
 @media(min-width:761px){
   .shell{grid-template-columns:240px minmax(0,1fr)}
