@@ -10,6 +10,7 @@ import { clientFetch } from "@/lib/api";
 import "../../signal-room.css";
 import "../../signal-console.css";
 import { UserFormModal, type UserRow } from "./_components/UserFormModal";
+import { StatusImportModal } from "./_components/StatusImportModal";
 
 type User = {
   id: string;
@@ -49,6 +50,7 @@ export default function UsersPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [formModal, setFormModal] = useState<{ mode: "create" | "edit"; user?: UserRow } | null>(null);
+  const [importOpen, setImportOpen] = useState(false);
   // จำนวนผู้ใช้แยกตามประเภท — ใช้กับ KPI 4 ใบด้านบน (ข้อมูลจริง ไม่ใช่ค่าสมมติ)
   const [counts, setCounts] = useState<Record<string, number> | null>(null);
   useEffect(() => {
@@ -153,12 +155,18 @@ export default function UsersPage() {
           </span>
           <h1>Users</h1>
         </div>
-        <button
-          onClick={() => setFormModal({ mode: "create" })}
-          className="cx-add-button"
-        >
-          + เพิ่มผู้ใช้งาน
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <button type="button" onClick={() => setImportOpen(true)}
+            className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50">
+            Import / Export
+          </button>
+          <button
+            onClick={() => setFormModal({ mode: "create" })}
+            className="cx-add-button"
+          >
+            + เพิ่มผู้ใช้งาน
+          </button>
+        </div>
       </section>
 
       <main className="cx-document">
@@ -264,6 +272,9 @@ export default function UsersPage() {
             load();
           }}
         />
+      )}
+      {importOpen && (
+        <StatusImportModal onClose={() => setImportOpen(false)} onSaved={load} />
       )}
     </div>
   );
