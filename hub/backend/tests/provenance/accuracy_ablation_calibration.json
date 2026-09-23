@@ -1,0 +1,45 @@
+{
+  "stage": "ablation_calibration",
+  "seeds": [
+    401,
+    402,
+    403,
+    404,
+    405
+  ],
+  "git_commit": "e19438ecf5831539e4d6cb7409bcd52b13d490dd",
+  "arms": {
+    "B": {
+      "warn": 0.98,
+      "challenge": 0.9984,
+      "block": 0.9996
+    },
+    "C": {
+      "warn": 0.988667,
+      "challenge": 0.99993,
+      "block": 0.99996
+    },
+    "D": {
+      "warn": 0.9895,
+      "challenge": 0.99995,
+      "block": 0.99995
+    },
+    "E": {
+      "warn": 0.994804,
+      "challenge": 0.99998,
+      "block": 0.99998
+    },
+    "G": {
+      "warn": 0.994804,
+      "challenge": 0.99998,
+      "block": 0.999995
+    }
+  },
+  "reachable": {
+    "B": true,
+    "C": true,
+    "D": true,
+    "E": true,
+    "G": true
+  }
+}
