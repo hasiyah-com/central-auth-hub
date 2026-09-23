@@ -296,6 +296,16 @@ def collect(
                     inp = ResolverInput.from_dict(d.breakdown["resolver"])
                     an = (d.breakdown.get("evidence") or {}).get("anomaly") or {}
                     zone = (d.breakdown.get("conditional") or {}).get("zone")
+                    views = None
+                    if record_views:
+                        # ต้องสร้างหลักฐานจากตัวจริง — `to_contract()` ไม่มี detail
+                        # (สาเหตุที่รอบแรกเก็บคะแนนรายมุมมองไม่ได้และเงียบ)
+                        views = dict(
+                            CFG._anomaly_evidence(c.l3, cfg.views, ecdf).detail.get(
+                                "views"
+                            )
+                            or {}
+                        )
                     st.add(
                         size,
                         c.user,
@@ -304,9 +314,7 @@ def collect(
                         c.family,
                         inp,
                         (an.get("abstained", True), an.get("evidence_score"), zone),
-                        views=(an.get("detail") or {}).get("views")
-                        if record_views
-                        else None,
+                        views=views,
                     )
             print(
                 f"  seed {seed} size {size:>5}: {len(ctxs)} เหตุการณ์ "
@@ -315,6 +323,9 @@ def collect(
             )
     for st in stores.values():
         st.finalize()
+    if record_views and not any(st.views for st in stores.values()):
+        # fail-closed: เก็บไม่ได้ต้องหยุด ไม่งั้นข้อสรุปกลายเป็นผลของ "ไม่มีข้อมูล" (B61)
+        raise AssertionError("เปิด record_views แล้วแต่ไม่ได้คะแนนรายมุมมองเลย — ตัววัดพัง")
     return stores
 
 
@@ -826,6 +837,33 @@ def _normal_quantiles(store: Store) -> dict:
     }
 
 
+def cmd_views(args) -> int:
+    """วัด AUC ของหลักฐานรายมุมมองบน seed ชุดใหม่ (ไม่ใช้ threshold · ไม่แตะผลของแขนใน ablation.json)."""
+    cal = json.loads(COMMITTED_CALIBRATION.read_text(encoding="utf-8"))
+    g = ConditionalParams(**cal["candidates"]["G"]["params"])
+    only_e = {"E": _arm_variants(_frozen(), g)["E"]}
+    print(f"VIEW AUC — seeds {AG.ABLATION_VIEW_SEEDS} · แขน E (มีทั้งสองมุมมอง)")
+    stores = collect(AG.ABLATION_VIEW_SEEDS, only_e, args.users, record_views=True)
+    views = {v: _view_auc(stores["E"], v) for v in ("point", "sequence")}
+    prev = json.loads(ABLATION.read_text(encoding="utf-8"))
+    out = {
+        "stage": "ablation_views",
+        "seeds": list(AG.ABLATION_VIEW_SEEDS),
+        "git_commit": _git("rev-parse", "HEAD"),
+        "views": views,
+        "usable": {v: AG.view_usable(s) for v, s in views.items()},
+        "conclusion": AG.ablation_conclusion(views, prev["arms"]),
+        "arms_from": {"file": ABLATION.name, "seeds": prev["seeds"]},
+        "holdout_opened": False,
+    }
+    (OUT / "ablation_views.json").write_text(
+        json.dumps(out, ensure_ascii=False, indent=2, default=str), encoding="utf-8"
+    )
+    print("\nAUC: " + json.dumps(views, ensure_ascii=False))
+    print(f"ข้อสรุป: {out['conclusion']}")
+    return 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -838,11 +876,15 @@ def main() -> int:
     )
     ab = sub.add_parser("ablation")
     ab.add_argument("--users", type=Path, default=BP.DEFAULT_USERS_XLSX)
+    vw = sub.add_parser("views")
+    vw.add_argument("--users", type=Path, default=BP.DEFAULT_USERS_XLSX)
     args = ap.parse_args()
     if args.cmd == "calibrate":
         return cmd_calibrate(args)
     if args.cmd == "ablation":
         return cmd_ablation(args)
+    if args.cmd == "views":
+        return cmd_views(args)
     return cmd_validate(args)
 
 

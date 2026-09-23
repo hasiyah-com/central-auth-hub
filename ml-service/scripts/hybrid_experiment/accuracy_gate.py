@@ -274,6 +274,10 @@ def caught_fast(inp, t: float) -> bool:
 # ทุกแขนตั้ง threshold บน calibration [401–405] ให้ FPR เท่ากัน แล้ววัดบน seed ใหม่ [601–605]
 ABLATION_SEEDS = (601, 602, 603, 604, 605)
 ABLATION_ARMS = ("B", "C", "D", "E", "G")
+# amendment 2 (2026-09-23): รอบแรกเก็บคะแนนรายมุมมองไม่ได้ (Evidence.to_contract ไม่มี detail)
+# -> AUC ไม่เคยถูกคำนวณ และข้อสรุปกลายเป็นผลของ "ไม่มีข้อมูล" · วัดใหม่บน seed ชุดใหม่
+# แทนการวัดซ้ำบนชุดที่เห็นผลแขนไปแล้ว
+ABLATION_VIEW_SEEDS = (606, 607, 608, 609, 610)
 
 # "มุมมองนี้มีสัญญาณพอใช้" = AUC (normal vs attack) ของหลักฐานมุมมองนั้นล้วน
 AUC_USABLE = 0.70

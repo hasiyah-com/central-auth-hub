@@ -492,3 +492,11 @@ def test_ablation_conclusion_reports_a_win_if_an_arm_beats_baseline():
     )
     assert out["conclusion"] == "l3_helps"
     assert out["winning_arms"] == ["C"]
+
+
+def test_view_seeds_are_separate_and_preregistered():
+    """amendment 2: ตัววัด AUC ของมุมมองพังเงียบในรอบแรก (เก็บ views ไม่ได้) → วัดใหม่บน seed ชุดใหม่
+    ไม่วัดซ้ำบนชุดที่เห็นผลแขนไปแล้ว."""
+    assert AG.ABLATION_VIEW_SEEDS == (606, 607, 608, 609, 610)
+    used = set(AG.CALIBRATION_SEEDS) | set(AG.VALIDATION_SEEDS) | set(AG.ABLATION_SEEDS)
+    assert not used & set(AG.ABLATION_VIEW_SEEDS)
