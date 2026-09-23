@@ -957,8 +957,22 @@ def _families_worse(rows_h, rows_b) -> list:
     return sorted(worse)
 
 
-def cmd_recal(args) -> int:
-    fz = _frozen()
+def _campaign_raw(rows) -> list:
+    """ผลดิบระดับแคมเปญ (ผู้ใช้ × แคมเปญ × จับได้ไหม) — เก็บไว้ให้แก้การวิเคราะห์ภายหลังได้โดยไม่ต้องวัดใหม่.
+
+    B81 ข้อสอง: รอบแรกเก็บแต่ค่าสรุป → พอพบว่า guard ใช้หน่วยผิด ก็คำนวณ CI ที่หน่วยถูกต้องจากไฟล์เดิมไม่ได้
+    """
+    seen: dict = {}
+    for r in rows:
+        if not r.campaign:
+            continue
+        key = (r.user, r.campaign)
+        seen[key] = seen.get(key, False) or AG.caught(r.decision)
+    return [[u, c, bool(v)] for (u, c), v in sorted(seen.items())]
+
+
+def _recal_phase1(args, fz):
+    """เลือก tau + threshold บน calibration — ข้ามได้เมื่อใช้ค่าที่ตรึงไว้."""
     print(
         f"RECALIBRATION ขั้นที่ 1 — เลือก tau + threshold บน calibration {AG.CALIBRATION_SEEDS}"
     )
@@ -1011,6 +1025,29 @@ def cmd_recal(args) -> int:
         encoding="utf-8",
     )
     print(f"\n  tau ที่เลือก = {tau}")
+    return picked, best, tau
+
+
+def cmd_recal(args) -> int:
+    fz = _frozen()
+    cal_variants = _recal_variants(fz, AG.TAU_GRID)
+    if args.reuse_calibration:
+        if not RECAL_CAL.exists():
+            print(f"ไม่มี {RECAL_CAL} — ต้องรันแบบปกติก่อน")
+            return 1
+        prev = json.loads(RECAL_CAL.read_text(encoding="utf-8"))
+        tau = float(prev["selected_tau"])
+        best = f"H{tau}"
+        picked = {
+            k: {"thresholds": v, "weak_recall_mean": prev["weak_recall_mean"].get(k)}
+            for k, v in prev["thresholds"].items()
+        }
+        print(
+            f"RECALIBRATION — ใช้ tau/threshold ที่ตรึงไว้ (tau={tau}) ไม่เลือกค่าใหม่ "
+            "· แก้การวิเคราะห์ตาม B81 เท่านั้น"
+        )
+    else:
+        picked, best, tau = _recal_phase1(args, fz)
 
     print(f"RECALIBRATION ขั้นที่ 2 — วัดบน seed ใหม่ {AG.RECAL_SEEDS}")
     arms = {
@@ -1044,9 +1081,13 @@ def cmd_recal(args) -> int:
             "severe_recall": pooled_recall(rows[k], AG.SEVERE_FAMILIES),
             "campaign_recall": _campaign_block(rows[k]),
             "paired_vs_B": _paired_delta(rows[k], rows["B"], weak),
+            # ผลดิบระดับแคมเปญ — แก้การวิเคราะห์ภายหลังได้โดยไม่ต้องวัดใหม่ (B81)
+            "campaign_raw": _campaign_raw(rows[k]),
         }
     parts = {
         "primary_weak_delta": report["H"]["paired_vs_B"],
+        # หน่วยเหตุการณ์ของตระกูล campaign — เก็บไว้เทียบกับของเดิมที่ guard เคยใช้ผิดหน่วย (B81)
+        "campaign_delta_event_unit": _paired_delta(rows["H"], rows["B"], {"campaign"}),
         "severe_delta": _paired_delta(rows["H"], rows["B"], AG.SEVERE_FAMILIES),
         "campaign_delta": paired_campaign_delta(rows["H"], rows["B"]),
         "fpr_verdicts": {
@@ -1102,6 +1143,11 @@ def main() -> int:
     vw.add_argument("--users", type=Path, default=BP.DEFAULT_USERS_XLSX)
     rc = sub.add_parser("recal")
     rc.add_argument("--users", type=Path, default=BP.DEFAULT_USERS_XLSX)
+    rc.add_argument(
+        "--reuse-calibration",
+        action="store_true",
+        help="ใช้ tau/threshold ที่ตรึงไว้ (แก้การวิเคราะห์ ไม่เลือกค่าใหม่ — B81)",
+    )
     args = ap.parse_args()
     if args.cmd == "calibrate":
         return cmd_calibrate(args)

@@ -372,15 +372,13 @@ function ShadowPanel({
   bd: RiskBreakdown | null;
   actual: string | null;
 }) {
-  const rows = (
-    [
-      ["Baseline (L1+L2)", bd?.baseline_shadow],
-      ["Hybrid (นับ L3)", bd?.hybrid_shadow],
-      ["Conditional (candidate)", bd?.conditional_shadow],
-    ] as Array<[string, ShadowResult | undefined]>
-  ).filter(([, v]) => v != null);
-
-  if (rows.length === 0) return null;
+  // แสดงครบทุกแถวเสมอ — ค่าที่ไม่มีต้องอ่านว่า "ไม่มีข้อมูล" ไม่ใช่ 0.000
+  // (0 แปลว่า "ประเมินแล้วได้ศูนย์" ซึ่งคนละเรื่องกับ "ไม่ได้ประเมิน" — บทเรียน B51/B61)
+  const rows = [
+    ["Baseline (L1+L2)", bd?.baseline_shadow],
+    ["Hybrid (นับ L3)", bd?.hybrid_shadow],
+    ["Conditional (candidate)", bd?.conditional_shadow],
+  ] as Array<[string, ShadowResult | undefined]>;
 
   return (
     <div className="mt-4 rounded border border-dashed border-ink-300 p-2">
@@ -397,11 +395,15 @@ function ShadowPanel({
         {rows.map(([label, v]) => (
           <div key={label} className="flex items-center justify-between text-[11px]">
             <span className="text-ink-500">{label}</span>
-            <span className="tabular-nums text-ink-600">
-              {v!.final_risk.toFixed(3)}
-              <span className="ml-2 text-ink-400">{v!.decision}</span>
-              {v!.zone && <span className="ml-2 text-ink-300">({v!.zone})</span>}
-            </span>
+            {v == null ? (
+              <span className="text-ink-300">ไม่มีข้อมูล</span>
+            ) : (
+              <span className="tabular-nums text-ink-600">
+                {v.final_risk.toFixed(3)}
+                <span className="ml-2 text-ink-400">{v.decision}</span>
+                {v.zone && <span className="ml-2 text-ink-300">({v.zone})</span>}
+              </span>
+            )}
           </div>
         ))}
         <div className="flex items-center justify-between border-t border-ink-200 pt-1 text-[11px]">
