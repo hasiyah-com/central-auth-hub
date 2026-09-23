@@ -370,7 +370,7 @@
   outline: 0;
   background: transparent;
   color: var(--ink);
-  font: 500 12.5px inherit;
+  font: 500 11.5px inherit;
 }
 
 .searchBox input::placeholder {
@@ -381,13 +381,13 @@
   min-width: 132px;
   height: 36px;
   padding-right: 28px;
-  font: 600 12.5px inherit;
+  font: 600 11.5px inherit;
 }
 
 .refreshButton {
   height: 36px;
   padding: 0 14px;
-  font: 600 12.5px inherit;
+  font: 600 11.5px inherit;
   cursor: pointer;
 }
 
