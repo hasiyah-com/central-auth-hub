@@ -1,15 +1,15 @@
 {
-  "frozen_at": "2026-09-22T19:03:27+00:00",
-  "git_commit": "c2d59f236a81c4a69d427b8b878e575fb14a9a4c",
+  "frozen_at": "2026-09-23T05:21:13+00:00",
+  "git_commit": "da09f21099abc568395229ff8a2a715511a2d1d2",
   "git_branch": "feature/hybrid-accuracy-validation",
-  "reason": "risk_engine คำนวณ conditional_shadow ในเส้นทาง policy denied ด้วย (zone=policy_denied) — เดิมหายทั้งแถวจึงแยกไม่ออกว่า 'ไม่มีผล' หรือ 'ไม่ได้วัด' (เจอตอนสาธิต VM-A06) · ผลจำลองเท่านั้น ไม่เปลี่ยนการตัดสินจริง · เทส test_conditional_shadow_exists_even_when_policy_denies",
+  "reason": "เพิ่ม calibration.tail_transform (candidate H ของ Accuracy Gate §9) — ฟังก์ชันบริสุทธิ์ที่ยังไม่มีเส้นทาง production ใดเรียก ใช้เฉพาะ harness ของการทดลองเพื่อให้ไม่มีสำเนา logic (B66) · ไม่เปลี่ยนการตัดสินจริง ผล baseline hybrid หรือ conditional · เทส test_tail_transform_* ใน tests/test_accuracy_gate.py",
   "scope": "เฉพาะตรรกะการให้คะแนนและการตัดสิน (app/security/*) — generator และ harness ของการทดลอง **ไม่** ถูก freeze เพราะต้องแก้เพื่อเพิ่มโปรไฟล์ผู้ใช้",
   "unfreeze_when": "เหมือนเดิม: ตัดสินเกณฑ์/น้ำหนักจากข้อมูล production replay หรือ Shadow Pilot",
   "hash_method": "sha256 ของไฟล์หลัง normalize CRLF -> LF",
   "files": {
     "app/security/evidence.py": "89d0317acafd622f61b7298f6e0adf41e223e33e09bd1c23e730e6d7bcf14e33",
     "app/security/policy_gate.py": "f8b982e43c7667d4d424e3a0683df795333eb026938285ee186f045a5269f0bb",
-    "app/security/calibration.py": "26a89a9542432f1321331fcb7565b5a9c0a8ba660322775137bccc25c3a069b6",
+    "app/security/calibration.py": "8c77c4189cbb4b8524823bc2afef2ab12902b727108abd03d690424ea3e555bb",
     "app/security/rule_engine.py": "d775ba9908624842c134f31fd62af16255062fe4eb3de83375d8e085fdb72873",
     "app/security/behavior_profiling.py": "f8659bf7fb7771c51d0c574a14baaca2bd8d7716d9e8b74d13dd0b7732f7d855",
     "app/security/risk_evidence.py": "afda6b7407067fcf5a983d7cbdf35fd4fd611693880632c0d5c67d00ca5719a9",
@@ -120,6 +120,20 @@
         "app/security/risk_engine.py": {
           "old": "a5a9633b48f7a374d5eceba0de2483c4cb1b9f93f42f68a5ce391e2eb5c2b4b9",
           "new": "d4d79d4ba6bb53482b2565b1bb8b16c2e4239424aa4690bf33ed05760ea42250"
+        }
+      }
+    },
+    {
+      "frozen_at": "2026-09-23T05:21:13+00:00",
+      "git_commit": "da09f21099abc568395229ff8a2a715511a2d1d2",
+      "reason": "เพิ่ม calibration.tail_transform (candidate H ของ Accuracy Gate §9) — ฟังก์ชันบริสุทธิ์ที่ยังไม่มีเส้นทาง production ใดเรียก ใช้เฉพาะ harness ของการทดลองเพื่อให้ไม่มีสำเนา logic (B66) · ไม่เปลี่ยนการตัดสินจริง ผล baseline hybrid หรือ conditional · เทส test_tail_transform_* ใน tests/test_accuracy_gate.py",
+      "files_changed": [
+        "app/security/calibration.py"
+      ],
+      "hash_changes": {
+        "app/security/calibration.py": {
+          "old": "26a89a9542432f1321331fcb7565b5a9c0a8ba660322775137bccc25c3a069b6",
+          "new": "8c77c4189cbb4b8524823bc2afef2ab12902b727108abd03d690424ea3e555bb"
         }
       }
     }

@@ -38,6 +38,7 @@ import build_profiles_v2 as BP  # noqa: E402
 import exp_hybrid_gate as X  # noqa: E402
 import gen_v3 as G3  # noqa: E402
 import population_p48_t2 as P48T2  # noqa: E402
+from app.security.calibration import tail_transform  # noqa: E402
 from app.security.risk_fusion import (  # noqa: E402
     ConditionalParams,
     ResolverInput,
@@ -54,6 +55,8 @@ VALIDATION = OUT / "validation.json"
 LEDGER = OUT / "validation_ledger.json"
 ABLATION = OUT / "ablation.json"
 ABLATION_CAL = OUT / "ablation_calibration.json"
+RECAL = OUT / "recalibration.json"
+RECAL_CAL = OUT / "recalibration_calibration.json"
 # สำเนาที่ commit ก่อน validate — validate อ่านจากที่นี่เท่านั้น (พิสูจน์ได้ว่าตรึงก่อนเปิด)
 COMMITTED_CALIBRATION = (
     REPO / "hub" / "backend" / "tests" / "provenance" / "accuracy_calibration.json"
@@ -280,7 +283,10 @@ def collect(
             splits = DS.build(users_xlsx, seed, size, raw=raw)
             pm, sm, ecdf = X.fit_all(splits, size, raw)
             ctxs = X.compute_layer_outputs(splits, pm, sm, "tune")
-            for key, (cfg, gamma, _w) in variants.items():
+            for key, spec in variants.items():
+                cfg, gamma = spec[0], spec[1]
+                wrap = spec[3] if len(spec) > 3 else None
+                cal_fn = wrap(ecdf) if wrap else ecdf
                 st = stores[key]
                 for c in ctxs:
                     d = CFG.evaluate(
@@ -289,7 +295,7 @@ def collect(
                         c.rule,
                         c.behavior,
                         c.l3,
-                        calibrate_fn=ecdf,
+                        calibrate_fn=cal_fn,
                         gamma=gamma,
                         thresholds=ecdf_probe_thr,
                     )
@@ -301,7 +307,7 @@ def collect(
                         # ต้องสร้างหลักฐานจากตัวจริง — `to_contract()` ไม่มี detail
                         # (สาเหตุที่รอบแรกเก็บคะแนนรายมุมมองไม่ได้และเงียบ)
                         views = dict(
-                            CFG._anomaly_evidence(c.l3, cfg.views, ecdf).detail.get(
+                            CFG._anomaly_evidence(c.l3, cfg.views, cal_fn).detail.get(
                                 "views"
                             )
                             or {}
@@ -864,6 +870,174 @@ def cmd_views(args) -> int:
     return 0
 
 
+def _tail_wrapper(tau: float):
+    """calibrate_fn ของแขน H — percentile เดิมทุกชั้น ยกเว้น point ที่ผ่าน tail transform ของ production."""
+
+    def make(ecdf):
+        def cal(layer: str, raw: float) -> float:
+            value = ecdf(layer, raw)
+            return tail_transform(value, tau) if layer == "anomaly_point" else value
+
+        return cal
+
+    return make
+
+
+def _recal_variants(fz: dict, taus) -> dict:
+    gam, thr = fz["per_config_gamma"], fz["per_config_thresholds"]
+    out = {
+        "B": (CFG.CONFIGS["B"], gam["B"], thr["B"]["warn"]),
+        "C": (CFG.CONFIGS["C"], gam["C"], thr["C"]["warn"]),
+    }
+    for tau in taus:
+        out[f"H{tau}"] = (
+            CFG.CONFIGS["C"],  # point อย่างเดียว — sequence ไม่เข้า fusion รอบนี้
+            gam["C"],
+            thr["C"]["warn"],
+            _tail_wrapper(tau),
+        )
+    return out
+
+
+def _families_worse(rows_h, rows_b) -> list:
+    """ตระกูลที่แย่ลงอย่างมีนัย (ขอบบนของ paired delta < 0)."""
+    worse = []
+    for fam in AG.FAMILY_TARGETS:
+        d = _paired_delta(rows_h, rows_b, {fam})
+        if d.get("ci_high") is not None and d["ci_high"] < 0:
+            worse.append(fam)
+    return sorted(worse)
+
+
+def cmd_recal(args) -> int:
+    fz = _frozen()
+    print(
+        f"RECALIBRATION ขั้นที่ 1 — เลือก tau + threshold บน calibration {AG.CALIBRATION_SEEDS}"
+    )
+    cal_variants = _recal_variants(fz, AG.TAU_GRID)
+    cal_stores = collect(AG.CALIBRATION_SEEDS, cal_variants, args.users)
+    rng = random.Random(20260923)
+    picked = {}
+    for key, spec in cal_variants.items():
+        warn = spec[2]
+        sel = choose_thresholds(cal_stores[key], warn)
+        parity_check(cal_stores[key], warn, sel["thresholds"]["challenge"], rng)
+        rows = outcomes(cal_stores[key], sel["thresholds"])
+        fam = family_recall(rows)
+        weak = sum(fam.get(f, 0.0) for f in AG.FAMILY_TARGETS) / len(AG.FAMILY_TARGETS)
+        picked[key] = {
+            **sel,
+            "weak_recall_mean": weak,
+            "severe_recall": pooled_recall(rows, AG.SEVERE_FAMILIES),
+        }
+        print(
+            f"  {key}: t_c={sel['thresholds']['challenge']} reach={sel['reachable']} "
+            f"weak={weak:.3f}",
+            flush=True,
+        )
+    del cal_stores
+    # เลือก tau ตามกฎที่ประกาศไว้: weak recall สูงสุด · เสมอ -> tau สูงกว่า (L3 มีอิทธิพลน้อยกว่า)
+    h_keys = [k for k in picked if k.startswith("H")]
+    best = max(
+        h_keys,
+        key=lambda k: (round(picked[k]["weak_recall_mean"], 6), float(k[1:])),
+    )
+    tau = float(best[1:])
+    OUT.mkdir(parents=True, exist_ok=True)
+    RECAL_CAL.write_text(
+        json.dumps(
+            {
+                "stage": "recalibration_calibration",
+                "seeds": list(AG.CALIBRATION_SEEDS),
+                "git_commit": _git("rev-parse", "HEAD"),
+                "tau_grid": list(AG.TAU_GRID),
+                "selected_tau": tau,
+                "thresholds": {k: v["thresholds"] for k, v in picked.items()},
+                "weak_recall_mean": {
+                    k: v["weak_recall_mean"] for k, v in picked.items()
+                },
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    print(f"\n  tau ที่เลือก = {tau}")
+
+    print(f"RECALIBRATION ขั้นที่ 2 — วัดบน seed ใหม่ {AG.RECAL_SEEDS}")
+    arms = {
+        "B": cal_variants["B"],
+        "C": cal_variants["C"],
+        "H": cal_variants[best],
+    }
+    thr = {k: picked[{"B": "B", "C": "C", "H": best}[k]]["thresholds"] for k in arms}
+    stores = collect(AG.RECAL_SEEDS, arms, args.users, record_l3=True)
+    rows = {k: outcomes(stores[k], thr[k]) for k in arms}
+    weak = set(AG.FAMILY_TARGETS)
+    report = {}
+    for k in arms:
+        st = stores[k]
+        report[k] = {
+            "thresholds": thr[k],
+            "fpr": {
+                lvl: _fpr_verdict(st, thr[k], lvl) for lvl in ("challenge", "block")
+            },
+            "challenge_fpr_by_size": {
+                s: round(v, 5)
+                for s, v in sorted(
+                    challenge_fpr_by_size(st, thr[k]["challenge"]).items()
+                )
+            },
+            "family_recall": family_recall(rows[k]),
+            "weak_recall_mean": sum(
+                family_recall(rows[k]).get(f, 0.0) for f in AG.FAMILY_TARGETS
+            )
+            / len(AG.FAMILY_TARGETS),
+            "severe_recall": pooled_recall(rows[k], AG.SEVERE_FAMILIES),
+            "campaign_recall": _campaign_block(rows[k]),
+            "paired_vs_B": _paired_delta(rows[k], rows["B"], weak),
+        }
+    parts = {
+        "primary_weak_delta": report["H"]["paired_vs_B"],
+        "severe_delta": _paired_delta(rows["H"], rows["B"], AG.SEVERE_FAMILIES),
+        "campaign_delta": _paired_delta(rows["H"], rows["B"], {"campaign"}),
+        "fpr_verdicts": {
+            lvl: report["H"]["fpr"][lvl]["verdict"] for lvl in ("challenge", "block")
+        },
+        "severe_recall": report["H"]["severe_recall"],
+        "families_worse": _families_worse(rows["H"], rows["B"]),
+    }
+    verdict = AG.recalibration_verdict(parts)
+    # ความซ้ำซ้อนกับ L1/L2 — ในบรรดาที่ H จับได้ มีกี่ส่วนที่ B จับได้อยู่แล้ว
+    h_caught = [AG.caught(r.decision) for r in rows["H"]]
+    b_caught = [AG.caught(r.decision) for r in rows["B"]]
+    both = sum(1 for a, b in zip(h_caught, b_caught) if a and b)
+    out = {
+        "stage": "recalibration",
+        "pre_registration": "hub/backend/tests/reports/accuracy_gate_2026-09-23.md §9",
+        "git_commit": _git("rev-parse", "HEAD"),
+        "seeds": list(AG.RECAL_SEEDS),
+        "selected_tau": tau,
+        "arms": report,
+        "parts": parts,
+        "verdict": verdict,
+        "overlap_with_baseline": {
+            "h_caught": sum(h_caught),
+            "b_caught": sum(b_caught),
+            "caught_by_both": both,
+            "h_only": sum(1 for a, b in zip(h_caught, b_caught) if a and not b),
+            "b_only": sum(1 for a, b in zip(h_caught, b_caught) if b and not a),
+        },
+        "holdout_opened": False,
+    }
+    RECAL.write_text(
+        json.dumps(out, ensure_ascii=False, indent=2, default=str), encoding="utf-8"
+    )
+    print(f"\nคำตัดสิน H: {verdict}")
+    print(f"เขียน {RECAL}")
+    return 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -878,6 +1052,8 @@ def main() -> int:
     ab.add_argument("--users", type=Path, default=BP.DEFAULT_USERS_XLSX)
     vw = sub.add_parser("views")
     vw.add_argument("--users", type=Path, default=BP.DEFAULT_USERS_XLSX)
+    rc = sub.add_parser("recal")
+    rc.add_argument("--users", type=Path, default=BP.DEFAULT_USERS_XLSX)
     args = ap.parse_args()
     if args.cmd == "calibrate":
         return cmd_calibrate(args)
@@ -885,6 +1061,8 @@ def main() -> int:
         return cmd_ablation(args)
     if args.cmd == "views":
         return cmd_views(args)
+    if args.cmd == "recal":
+        return cmd_recal(args)
     return cmd_validate(args)
 
 

@@ -500,3 +500,91 @@ def test_view_seeds_are_separate_and_preregistered():
     assert AG.ABLATION_VIEW_SEEDS == (606, 607, 608, 609, 610)
     used = set(AG.CALIBRATION_SEEDS) | set(AG.VALIDATION_SEEDS) | set(AG.ABLATION_SEEDS)
     assert not used & set(AG.ABLATION_VIEW_SEEDS)
+
+
+# ══════════════ 11. recalibration ของ point view (§9) — เขียนก่อนวัด ══════════════
+
+
+def test_recalibration_constants_are_preregistered():
+    assert AG.RECAL_SEEDS == (611, 612, 613, 614, 615)
+    used = (
+        set(AG.CALIBRATION_SEEDS)
+        | set(AG.VALIDATION_SEEDS)
+        | set(AG.ABLATION_SEEDS)
+        | set(AG.ABLATION_VIEW_SEEDS)
+        | set(range(101, 116))
+    )
+    assert not used & set(AG.RECAL_SEEDS)
+    assert AG.TAU_GRID == (0.90, 0.95, 0.99, 0.995)
+    assert AG.RECAL_ARMS == ("B", "C", "H")
+
+
+def test_tail_transform_zeroes_ordinary_normals_and_keeps_the_extreme():
+    from app.security.calibration import tail_transform
+
+    assert tail_transform(0.5, 0.99) == 0.0
+    assert tail_transform(0.99, 0.99) == 0.0
+    assert tail_transform(0.995, 0.99) == pytest.approx(0.5)
+    assert tail_transform(1.0, 0.99) == 1.0
+    assert tail_transform(0.96, 0.95) == pytest.approx(0.2)
+
+
+def test_tail_transform_refuses_an_invalid_tau():
+    from app.security.calibration import tail_transform
+
+    for bad in (0.0, 1.0, -0.1, 1.5):
+        with pytest.raises(ValueError):
+            tail_transform(0.5, bad)
+
+
+def test_tail_transform_is_monotone():
+    from app.security.calibration import tail_transform
+
+    vals = [tail_transform(p / 100, 0.9) for p in range(0, 101)]
+    assert vals == sorted(vals)
+    assert vals[0] == 0.0 and vals[-1] == 1.0
+
+
+def _recal(
+    primary=(0.02, 0.05),
+    severe_hi=0.01,
+    camp_hi=0.01,
+    fpr="passed",
+    severe_point=1.0,
+    worse=(),
+):
+    return {
+        "primary_weak_delta": {"ci_low": primary[0], "ci_high": primary[1]},
+        "severe_delta": {"ci_high": severe_hi},
+        "campaign_delta": {"ci_high": camp_hi},
+        "fpr_verdicts": {"challenge": fpr, "block": "passed"},
+        "severe_recall": severe_point,
+        "families_worse": list(worse),
+    }
+
+
+def test_recalibration_passes_only_with_a_positive_lower_bound():
+    assert AG.recalibration_verdict(_recal())["verdict"] == "passed"
+    assert (
+        AG.recalibration_verdict(_recal(primary=(-0.01, 0.05)))["verdict"]
+        == "inconclusive"
+    )
+    assert (
+        AG.recalibration_verdict(_recal(primary=(-0.09, -0.02)))["verdict"] == "failed"
+    )
+
+
+def test_recalibration_fails_when_a_guard_breaks():
+    assert AG.recalibration_verdict(_recal(fpr="failed"))["verdict"] == "failed"
+    assert AG.recalibration_verdict(_recal(severe_hi=-0.01))["verdict"] == "failed"
+    assert AG.recalibration_verdict(_recal(camp_hi=-0.02))["verdict"] == "failed"
+    assert AG.recalibration_verdict(_recal(severe_point=0.95))["verdict"] == "failed"
+    v = AG.recalibration_verdict(_recal(worse=("new_passkey",)))
+    assert v["verdict"] == "failed" and "family_worse" in v["failed"]
+
+
+def test_recalibration_fpr_inconclusive_is_not_a_pass():
+    assert (
+        AG.recalibration_verdict(_recal(fpr="inconclusive"))["verdict"]
+        == "inconclusive"
+    )

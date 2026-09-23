@@ -250,3 +250,20 @@ def reload_for_tests() -> None:
     """บังคับโหลดใหม่ — ใช้ในเทสที่เขียนไฟล์ calibration ชั่วคราว."""
     global _TABLE
     _TABLE = _Table()
+
+
+def tail_transform(percentile: float, tau: float) -> float:
+    """หลักฐานเฉพาะหางขวาของ login ปกติ — 0 จนกว่าจะเกิน `tau` แล้วยืดเป็น 0..1.
+
+    ที่มา (Accuracy Gate §9, 2026-09-23): percentile evidence ให้ค่าสูงกับ login ปกติโดยโครงสร้าง —
+    ปกติ 10% ได้หลักฐาน >= 0.9 เสมอ · เมื่อรวมด้วย max + corroboration การเพิ่มชั้นที่สามจึงดันคะแนน
+    ของ login ปกติขึ้นทั้งแถบ ทำให้ threshold ที่คุม FPR เท่าเดิมต้องสูงขึ้น และการจับที่มาจากคะแนนหายไป
+    (วัดได้ใน §8: ทุกแขนที่มี L3 แพ้ baseline ที่ FPR เท่ากัน)
+
+    การแปลงนี้ทำให้ L3 "ออกเสียง" เฉพาะเมื่อคะแนนสุดโต่งเทียบกับ login ปกติเท่านั้น
+    **ยังไม่ใช่ค่าเริ่มต้นของระบบ** — เป็น candidate ที่ต้องผ่านการวัดก่อน
+    """
+    if not 0.0 < tau < 1.0:
+        raise ValueError(f"tau ต้องอยู่ใน (0, 1) (ได้ {tau})")
+    p = min(max(float(percentile), 0.0), 1.0)
+    return 0.0 if p <= tau else (p - tau) / (1.0 - tau)

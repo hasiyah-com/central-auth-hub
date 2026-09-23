@@ -348,3 +348,56 @@ def ablation_conclusion(views: dict, arms: dict) -> dict:
         "winning_arms": wins,
         "losing_arms": losses,
     }
+
+
+# ── §9 recalibration ของ point view (2026-09-23) — เขียนก่อนวัด ────────────────
+#
+# candidate H = B + point ที่แปลงด้วย tail transform (`calibration.tail_transform`)
+# sequence ไม่เข้า fusion ในรอบนี้ (คงไว้เป็นช่องเฝ้าระวัง)
+RECAL_SEEDS = (611, 612, 613, 614, 615)
+RECAL_ARMS = ("B", "C", "H")  # baseline · point แบบเดิม (percentile) · point แบบ tail
+TAU_GRID = (0.90, 0.95, 0.99, 0.995)
+SEVERE_RECALL_FLOOR = 0.99  # H ต้องไม่ทำให้การจับการโจมตีชัดเจนหลุด
+
+
+def recalibration_verdict(parts: dict) -> dict:
+    """ตัดสิน candidate H จากประโยชน์สุทธิ — ประกาศก่อนวัด.
+
+    ผ่านเมื่อครบทุกข้อ:
+      1. paired delta ของ recall ตระกูลที่อ่อน (H − B) ขอบล่าง CI > 0
+      2. FPR ทั้ง challenge และ block ได้ `passed` (ขอบบน CI อยู่ในงบเดิม 1% / 0.20%)
+      3. severe recall >= 0.99 และไม่แย่ลงอย่างมีนัย (ขอบบนของ delta >= 0)
+      4. campaign recall ไม่แย่ลงอย่างมีนัย
+      5. ไม่มีตระกูลใดแย่ลงอย่างมีนัย
+    `failed` เมื่อ guard ข้อใดพัง หรือ primary แย่ลงอย่างมีนัย · นอกนั้น `inconclusive`
+    """
+    failed, inconclusive = [], []
+    primary = parts["primary_weak_delta"]
+    if parts["fpr_verdicts"].get("challenge") == "failed":
+        failed.append("fpr_challenge")
+    elif parts["fpr_verdicts"].get("challenge") != "passed":
+        inconclusive.append("fpr_challenge")
+    if parts["fpr_verdicts"].get("block") == "failed":
+        failed.append("fpr_block")
+    elif parts["fpr_verdicts"].get("block") != "passed":
+        inconclusive.append("fpr_block")
+    if parts["severe_delta"]["ci_high"] < 0:
+        failed.append("severe_worse")
+    if parts["severe_recall"] < SEVERE_RECALL_FLOOR:
+        failed.append("severe_floor")
+    if parts["campaign_delta"]["ci_high"] < 0:
+        failed.append("campaign_worse")
+    if parts["families_worse"]:
+        failed.append("family_worse")
+    if primary["ci_high"] < 0:
+        failed.append("weak_recall_worse")
+    elif primary["ci_low"] <= 0:
+        inconclusive.append("weak_recall")
+    verdict = "failed" if failed else ("inconclusive" if inconclusive else "passed")
+    return {
+        "verdict": verdict,
+        "deployable": verdict == "passed",
+        "failed": failed,
+        "inconclusive": inconclusive,
+        "families_worse": list(parts["families_worse"]),
+    }
