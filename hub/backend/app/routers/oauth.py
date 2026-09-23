@@ -48,9 +48,9 @@ from app.services import totp_service
 
 router = APIRouter()
 
-AUTH_REQUEST_TTL = 600  # OAuth request เก็บใน Redis 10 นาที
-AUTH_CODE_TTL = 60  # authorization code อายุ 60 วินาที
-ENROLL_TTL = 600  # passkey enrollment context (หลัง Google identify) 10 นาที
+AUTH_REQUEST_TTL = 600  
+AUTH_CODE_TTL = 60  
+ENROLL_TTL = 600  
 
 
 # ============ 1. /oauth/authorize — จุดเริ่มต้น ============
@@ -73,7 +73,6 @@ async def authorize(
     if not subsystem:
         raise HTTPException(status_code=400, detail="client_id ไม่ถูกต้อง")
     if subsystem.status == "suspended":
-        # ระงับใช้งานชั่วคราว → 503 Service Unavailable + หน้า HTML
         log_action(
             db,
             actor_id=None,
@@ -97,10 +96,6 @@ async def authorize(
                 f"(status: {subsystem.status})"
             ),
         )
-
-    # 1b. Pre-flight health check — ถ้า subsystem ล่ม อย่าให้ user เสียเวลาผ่าน Google
-    #     แสดงหน้า maintenance HTML แทน redirect ไป Google
-    #     (ใช้ cache ของ background ping ที่อ่าน Redis — fast path, ไม่ ping จริง)
     health = get_health_status(str(subsystem.id))
     if health and health.get("status") == "down":
         log_action(
@@ -133,11 +128,6 @@ async def authorize(
         )
 
     # 3. เก็บ OAuth request ใน Redis โดยใช้ "state token ของ Hub" เป็น key
-    #    (state ที่ subsystem ส่งมาเก็บแยกเป็นข้อมูลภายใน)
-    #
-    #    การใช้ state token เป็น Redis key ทำให้:
-    #    - เปิดหลาย tab พร้อมกันได้ (ไม่ทับกันใน session)
-    #    - state ที่ Google ส่งกลับ = key ของ Redis ตรงๆ
     hub_state = secrets.token_urlsafe(24)
     redis_client.setex(
         f"authreq:{hub_state}",
@@ -146,19 +136,15 @@ async def authorize(
             {
                 "client_id": client_id,
                 "redirect_uri": redirect_uri,
-                "state": state,  # state ของ subsystem (ส่งกลับตอน redirect)
+                "state": state,  
                 "code_challenge": code_challenge,
                 "subsystem_id": str(subsystem.id),
-                "scope": subsystem.scope,  # ใช้ scope ที่ลงทะเบียนไว้
+                "scope": subsystem.scope,  
             }
         ),
     )
 
     # 4. แสดงหน้าเลือกวิธี login (A) — Google หรือ Passkey
-    #    แทนการ redirect ตรงไป Google (เดิม) — user เลือกเองได้
-    #    Google → GET /oauth/authorize/google?hub_state=... (ทำ Authlib redirect)
-    #    Passkey → JS WebAuthn → POST /oauth/passkey/{start,finish}
-    #    nonce → CSP อนุญาต inline style+script เฉพาะของหน้านี้ (กัน XSS)
     nonce = secrets.token_urlsafe(16)
     request.state.csp_nonce = nonce
     policy = get_auth_policy(db)
@@ -170,9 +156,6 @@ async def authorize(
             allow_google=policy["google"],
             allow_passkey=policy["passkey"],
         ),
-        # หน้านี้ผูกกับ hub_state ที่ใช้ได้ครั้งเดียว (ลบจาก Redis หลัง consume) —
-        # ถ้า browser/proxy cache ไว้แล้วเปิดซ้ำ (back button ฯลฯ) จะได้ state ตาย
-        # ที่ error "หมดอายุ" เสมอไม่ว่าจะรีเฟรชเร็วแค่ไหน
         headers={
             "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
             "Pragma": "no-cache",
@@ -399,20 +382,12 @@ async def oauth_callback(
             ip=client_ip,
             metadata={"field": "full_name", "old": old_name, "new": google_name},
         )
-
-    # *** เช็คสิทธิ์เข้าระบบย่อยนี้ก่อน — กันเสียเวลาตั้ง passkey ทั้งที่เข้าไม่ได้อยู่ดี ***
-    # (เดิมเช็ค passkey ก่อน access_policy → user ที่ไม่มีสิทธิ์ถูกพาไปตั้ง passkey
-    # เต็มขั้นตอนก่อน ถึงจะมาเจอ 403 ตอน finalize — สลับลำดับให้เช็คสิทธิ์ก่อนเสมอ)
     await _check_access_policy_or_raise(
         user=user, authreq=authreq, request=request, db=db, provider="google"
     )
 
     # ===== Credential setup interstitial (subsystem users รวมนักศึกษา) =====
-    # ยังไม่มี factor เลย (passkey หรือ TOTP) → เสนอตั้งค่าก่อน redirect กลับ subsystem
-    # (นักศึกษาเข้า Hub console ไม่ได้ — นี่คือทางเดียวที่จะตั้ง credential)
-    # เคารพ "ข้ามไปก่อน" (snooze 7 วัน) + "ไม่ต้องถามอีก" (ถาวร) — ไม่บล็อกการเข้าใช้งาน
     if mfa_policy.should_prompt_setup(user, db):
-        # persist google_sub binding + profile sync ที่ทำไว้ก่อนหน้า
         db.commit()
         redis_client.setex(
             f"enroll:{state}",
@@ -432,9 +407,6 @@ async def oauth_callback(
                 nonce=nonce,
             )
         )
-
-    # มี passkey แล้ว → login ตามปกติ (shared finalizer: access_list → RBA →
-    # authorization code → redirect). Passkey path เรียก helper ตัวเดียวกัน
     callback_url = await _finalize_subsystem_login(
         user=user,
         authreq=authreq,
@@ -533,7 +505,6 @@ async def _finalize_subsystem_login(
         user=user, authreq=authreq, request=request, db=db, provider=provider
     )
 
-    # *** เช็ค identity challenge — admin เคย Revoke Level 2 ไหม? ***
     if is_user_challenged(str(user.id)):
         log_action(
             db,
@@ -567,7 +538,6 @@ async def _finalize_subsystem_login(
         )
 
     # ===== Hybrid RBA 4-Layer Risk Scoring =====
-    # อ้างอิง: Freeman 2016, Wiefling 2022, F-RBA 2024, NIST SP 800-63B-4
     geo_country, geo_city = lookup_geo(client_ip)
     features = extract_session_features(
         db,
@@ -641,14 +611,8 @@ async def _finalize_subsystem_login(
     )
 
     # ─── Risk-Triggered Decision (Week 9-10) ─────────────────────────────
-    # Hard block ที่ finalizer (single source of truth) — ไม่พึ่ง aggregator
-    # >= risk_block_hard_threshold (0.85)  → BLOCK 403
-    # >= challenge (0.50) แต่ < 0.85       → MFA flow (re-auth / grace / force-enroll)
-    # < challenge                          → PASS ปกติ
-    # Shadow mode = log only (would_* ไม่ enforce). MFA/block เด้งเฉพาะ enforce mode.
     enforcing = not settings.ml_shadow_mode
     is_hard_block = enforcing and risk_score >= settings.risk_block_hard_threshold
-    # รวม risk-based MFA + Always-2FA (user pref / admin) เป็น gate เดียว (mfa_policy)
     is_mfa_required = mfa_policy.is_second_factor_required(
         user,
         actual_decision=actual_decision,
@@ -696,8 +660,6 @@ async def _finalize_subsystem_login(
     # ─── Risk-Triggered MFA flow (0.50 ≤ score < 0.85) ───────────────────
     grace_banner_remaining_days: int | None = None  # set ถ้า grace branch
     if is_mfa_required:
-        # มี factor ที่สอง (passkey หรือ TOTP) → risk-stepup (รับได้ทั้งคู่);
-        # ไม่มีเลย → grace / force-enroll passkey (ต้องตั้งอย่างน้อย 1)
         has_passkey = mfa_policy.has_second_factor(user, db)
 
         if has_passkey:
@@ -2664,9 +2626,9 @@ def _login_chooser_html(
   .login-system-status {{ display:flex; align-items:center; gap:7px; color:#73849b;
     font:500 7px 'IBM Plex Mono'; letter-spacing:.6px; }}
   .login-system-status b {{ color:var(--mint); font-size:7px; }}
-  .login-stage {{ width:min(1450px,calc(100vw - 96px)); max-width:none; margin:auto; position:relative; z-index:2;
-    display:grid; grid-template-columns:minmax(0,1fr) 524px;
-    gap:clamp(64px,8vw,145px); align-items:center; padding:45px 0; }}
+  .login-stage {{ width:min(1160px,calc(100% - 48px)); margin:auto; position:relative; z-index:2;
+    display:grid; grid-template-columns:minmax(0,1.05fr) minmax(390px,.72fr);
+    gap:clamp(55px,9vw,130px); align-items:center; padding:45px 0; }}
   .login-context {{ animation:rise .65s ease both; }}
   .context-kicker {{ display:flex; align-items:center; gap:8px; color:#7f92aa;
     font:500 8px 'IBM Plex Mono'; letter-spacing:1.2px; }}
@@ -2690,7 +2652,7 @@ def _login_chooser_html(
   .trust-point svg {{ width:18px; height:18px; fill:none; stroke:currentColor; stroke-width:1.7; }}
   .trust-point b,.trust-point small {{ display:block; }}
   .trust-point b {{ font-size:9px; }} .trust-point small {{ font-size:7px; color:#697a92; margin-top:2px; white-space:nowrap; }}
-  .card {{ width:524px; max-width:100%; justify-self:end; padding:32px; animation-delay:.12s; }}
+  .card {{ max-width:none; padding:32px; animation-delay:.12s; }}
   .card::before {{ top:31px; height:62px; }}
   .panel-scanline {{ position:absolute; left:0; right:0; top:0; height:1px;
     background:linear-gradient(90deg,transparent,var(--mint),transparent); opacity:.35; }}
@@ -2714,7 +2676,6 @@ def _login_chooser_html(
       width:min(580px,calc(100% - 38px)); padding:45px 0 60px; }}
     .login-context {{ text-align:center; }} .context-kicker {{ justify-content:center; }}
     .login-context h1 {{ font-size:46px; }} .trust-rail {{ text-align:left; }}
-    .card {{ width:524px; justify-self:center; }}
   }}
   @media (max-width:560px) {{
     .login-page {{ grid-template-rows:62px 1fr auto; }} .login-topbar {{ height:62px; padding:0 18px; }}
