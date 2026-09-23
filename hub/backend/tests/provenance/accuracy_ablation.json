@@ -1,0 +1,311 @@
+{
+  "stage": "ablation",
+  "question": "L3 มุมมองไหนมีสัญญาณ และมุมมองไหนดันคะแนนของเหตุการณ์ปกติขึ้น",
+  "pre_registration": "hub/backend/tests/reports/accuracy_gate_2026-09-23.md §7",
+  "git_commit": "e19438ecf5831539e4d6cb7409bcd52b13d490dd",
+  "seeds": [
+    601,
+    602,
+    603,
+    604,
+    605
+  ],
+  "arms": {
+    "B": {
+      "thresholds": {
+        "warn": 0.98,
+        "challenge": 0.9984,
+        "block": 0.9996
+      },
+      "challenge_fpr_by_size": {
+        "50": 0.00506,
+        "100": 0.00506,
+        "500": 0.00471,
+        "1000": 0.0047,
+        "5000": 0.00447
+      },
+      "family_recall": {
+        "campaign": 0.29225,
+        "combined_ato": 1.0,
+        "concurrent_sessions": 1.0,
+        "failed_spike": 1.0,
+        "login_velocity": 0.225,
+        "new_device": 1.0,
+        "new_os": 1.0,
+        "new_passkey": 0.07125,
+        "new_ua_family": 1.0,
+        "off_hours": 0.80125,
+        "permission_change": 1.0,
+        "subsystem_lateral": 0.77125,
+        "subtle_lowandslow": 0.81625,
+        "subtle_mild_offhour": 0.645625,
+        "subtle_quiet_lateral": 0.58125,
+        "subtle_rare_device": 0.0488,
+        "subtle_slow_burst": 0.089375
+      },
+      "weak_recall_mean": 0.2179875,
+      "severe_recall": 1.0,
+      "campaign_recall": {
+        "verdict": "failed",
+        "deployable": false,
+        "target": 0.8,
+        "point": 0.718063,
+        "ci_low": 0.684535,
+        "ci_high": 0.75306,
+        "n_units": 13425
+      },
+      "paired_vs_B": {
+        "delta": 0.0,
+        "ci_low": 0.0,
+        "ci_high": 0.0
+      },
+      "normal_score_quantiles": {
+        "q50.0": 0.0,
+        "q90.0": 0.888687,
+        "q99.0": 0.988,
+        "q99.5": 0.995437,
+        "q99.9": 0.998883
+      }
+    },
+    "C": {
+      "thresholds": {
+        "warn": 0.988667,
+        "challenge": 0.99993,
+        "block": 0.99996
+      },
+      "challenge_fpr_by_size": {
+        "50": 0.00514,
+        "100": 0.00511,
+        "500": 0.00469,
+        "1000": 0.00487,
+        "5000": 0.0047
+      },
+      "family_recall": {
+        "campaign": 0.197875,
+        "combined_ato": 1.0,
+        "concurrent_sessions": 1.0,
+        "failed_spike": 1.0,
+        "login_velocity": 0.063125,
+        "new_device": 1.0,
+        "new_os": 1.0,
+        "new_passkey": 0.015625,
+        "new_ua_family": 1.0,
+        "off_hours": 0.3125,
+        "permission_change": 1.0,
+        "subsystem_lateral": 0.3075,
+        "subtle_lowandslow": 0.085,
+        "subtle_mild_offhour": 0.095,
+        "subtle_quiet_lateral": 0.239375,
+        "subtle_rare_device": 0.0176,
+        "subtle_slow_burst": 0.02125
+      },
+      "weak_recall_mean": 0.09247499999999999,
+      "severe_recall": 1.0,
+      "campaign_recall": {
+        "verdict": "failed",
+        "deployable": false,
+        "target": 0.8,
+        "point": 0.5346,
+        "ci_low": 0.5054,
+        "ci_high": 0.569346,
+        "n_units": 13425
+      },
+      "paired_vs_B": {
+        "delta": -0.11488817891373802,
+        "ci_low": -0.14096774193548386,
+        "ci_high": -0.08974683544303798
+      },
+      "normal_score_quantiles": {
+        "q50.0": 0.658062,
+        "q90.0": 0.976579,
+        "q99.0": 0.99909,
+        "q99.5": 0.999602,
+        "q99.9": 0.999948
+      }
+    },
+    "D": {
+      "thresholds": {
+        "warn": 0.9895,
+        "challenge": 0.99995,
+        "block": 0.99995
+      },
+      "challenge_fpr_by_size": {
+        "50": 0.0036,
+        "100": 0.0041,
+        "500": 0.00453,
+        "1000": 0.00501,
+        "5000": 0.00483
+      },
+      "family_recall": {
+        "campaign": 0.188875,
+        "combined_ato": 1.0,
+        "concurrent_sessions": 1.0,
+        "failed_spike": 1.0,
+        "login_velocity": 0.036875,
+        "new_device": 1.0,
+        "new_os": 1.0,
+        "new_passkey": 0.0225,
+        "new_ua_family": 1.0,
+        "off_hours": 0.28375,
+        "permission_change": 1.0,
+        "subsystem_lateral": 0.15875,
+        "subtle_lowandslow": 0.090625,
+        "subtle_mild_offhour": 0.095,
+        "subtle_quiet_lateral": 0.153125,
+        "subtle_rare_device": 0.0208,
+        "subtle_slow_burst": 0.030625
+      },
+      "weak_recall_mean": 0.07546666666666667,
+      "severe_recall": 1.0,
+      "campaign_recall": {
+        "verdict": "failed",
+        "deployable": false,
+        "target": 0.8,
+        "point": 0.512104,
+        "ci_low": 0.48298,
+        "ci_high": 0.547664,
+        "n_units": 13425
+      },
+      "paired_vs_B": {
+        "delta": -0.129073482428115,
+        "ci_low": -0.1621794871794872,
+        "ci_high": -0.09588607594936709
+      },
+      "normal_score_quantiles": {
+        "q50.0": 0.636062,
+        "q90.0": 0.967762,
+        "q99.0": 0.998549,
+        "q99.5": 0.999449,
+        "q99.9": 0.999938
+      }
+    },
+    "E": {
+      "thresholds": {
+        "warn": 0.994804,
+        "challenge": 0.99998,
+        "block": 0.99998
+      },
+      "challenge_fpr_by_size": {
+        "50": 0.00404,
+        "100": 0.00424,
+        "500": 0.00444,
+        "1000": 0.00468,
+        "5000": 0.00487
+      },
+      "family_recall": {
+        "campaign": 0.1895,
+        "combined_ato": 1.0,
+        "concurrent_sessions": 1.0,
+        "failed_spike": 1.0,
+        "login_velocity": 0.03,
+        "new_device": 1.0,
+        "new_os": 1.0,
+        "new_passkey": 0.009375,
+        "new_ua_family": 1.0,
+        "off_hours": 0.12,
+        "permission_change": 1.0,
+        "subsystem_lateral": 0.145,
+        "subtle_lowandslow": 0.06,
+        "subtle_mild_offhour": 0.0575,
+        "subtle_quiet_lateral": 0.144375,
+        "subtle_rare_device": 0.0136,
+        "subtle_slow_burst": 0.0175
+      },
+      "weak_recall_mean": 0.06739166666666667,
+      "severe_recall": 1.0,
+      "campaign_recall": {
+        "verdict": "failed",
+        "deployable": false,
+        "target": 0.8,
+        "point": 0.485885,
+        "ci_low": 0.461049,
+        "ci_high": 0.516692,
+        "n_units": 13425
+      },
+      "paired_vs_B": {
+        "delta": -0.13361022364217254,
+        "ci_low": -0.16719745222929935,
+        "ci_high": -0.10095541401273886
+      },
+      "normal_score_quantiles": {
+        "q50.0": 0.78025,
+        "q90.0": 0.984925,
+        "q99.0": 0.999434,
+        "q99.5": 0.999767,
+        "q99.9": 0.999977
+      }
+    },
+    "G": {
+      "thresholds": {
+        "warn": 0.994804,
+        "challenge": 0.99998,
+        "block": 0.999995
+      },
+      "challenge_fpr_by_size": {
+        "50": 0.00434,
+        "100": 0.00434,
+        "500": 0.00459,
+        "1000": 0.00477,
+        "5000": 0.00498
+      },
+      "family_recall": {
+        "campaign": 0.220625,
+        "combined_ato": 1.0,
+        "concurrent_sessions": 1.0,
+        "failed_spike": 1.0,
+        "login_velocity": 0.076875,
+        "new_device": 1.0,
+        "new_os": 1.0,
+        "new_passkey": 0.0575,
+        "new_ua_family": 1.0,
+        "off_hours": 0.685,
+        "permission_change": 1.0,
+        "subsystem_lateral": 0.66,
+        "subtle_lowandslow": 0.28,
+        "subtle_mild_offhour": 0.2675,
+        "subtle_quiet_lateral": 0.488125,
+        "subtle_rare_device": 0.0288,
+        "subtle_slow_burst": 0.05875
+      },
+      "weak_recall_mean": 0.1551125,
+      "severe_recall": 1.0,
+      "campaign_recall": {
+        "verdict": "failed",
+        "deployable": false,
+        "target": 0.8,
+        "point": 0.627635,
+        "ci_low": 0.594731,
+        "ci_high": 0.665224,
+        "n_units": 13425
+      },
+      "paired_vs_B": {
+        "delta": -0.06741214057507987,
+        "ci_low": -0.09365079365079365,
+        "ci_high": -0.042523659305993694
+      },
+      "normal_score_quantiles": {
+        "q50.0": 0.948107,
+        "q90.0": 0.997163,
+        "q99.0": 0.999908,
+        "q99.5": 0.999965,
+        "q99.9": 0.999998
+      }
+    }
+  },
+  "views": {
+    "point": null,
+    "sequence": null
+  },
+  "conclusion": {
+    "conclusion": "monitoring_only",
+    "usable_views": [],
+    "winning_arms": [],
+    "losing_arms": [
+      "C",
+      "D",
+      "E",
+      "G"
+    ]
+  },
+  "holdout_opened": false
+}

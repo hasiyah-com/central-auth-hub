@@ -1,0 +1,349 @@
+# ชุดสถานการณ์ทดสอบใน VM แบบมี label — Hybrid RBA 4 Layers (ระยะที่ 3, 2026-09-23)
+#
+# ตรวจด้วย hub/backend/tests/test_vm_scenarios.py · โหลดด้วย scripts/vm_scenarios.py
+# บัญชีทดสอบ vm-*@example.test เท่านั้น · ทดสอบเฉพาะระบบในเครื่อง ห้ามส่ง traffic ออกนอก
+#
+# features = ค่าที่เปลี่ยนทับบนเวกเตอร์ปกติของผู้ใช้ทดสอบ (ชื่อตาม rule_engine.FEAT)
+# expected_minimum_action / expected_maximum_action = ความคาดหวังของฝ่ายความปลอดภัย
+#   ไม่ใช่ผลของระบบ — ถ้าระบบไม่ถึง ถือเป็นข้อค้นพบที่ต้องรายงาน
+# label มาจากการสร้าง (labeled by construction) ไม่ใช่การโจมตีจริง
+
+scenarios:
+  # ── กลุ่มปกติ ──────────────────────────────────────────────────────────────
+  - scenario_id: VM-N01
+    label: normal
+    severity: none
+    attack_family: none
+    user_id: vm-student-01
+    subsystem_id: sub-dorm
+    start_time: 2026-09-23T02:00:00Z
+    end_time: 2026-09-23T02:05:00Z
+    expected_minimum_action: allow
+    expected_maximum_action: allow
+    expected_reason: อุปกรณ์ ตำแหน่ง และเวลาเดิม
+    seed: 9001
+    description: อุปกรณ์เดิม ตำแหน่งเดิม เวลาเดิม
+    events:
+      - at: 2026-09-23T02:00:00Z
+        features: {}
+
+  - scenario_id: VM-N02
+    label: normal
+    severity: none
+    attack_family: none
+    user_id: vm-student-01
+    subsystem_id: sub-dorm
+    start_time: 2026-09-23T04:00:00Z
+    end_time: 2026-09-23T04:05:00Z
+    expected_minimum_action: allow
+    expected_maximum_action: warn
+    expected_reason: เวลาเลื่อนเล็กน้อยจากปกติ
+    seed: 9002
+    description: อุปกรณ์เดิม แต่เวลาเปลี่ยนเล็กน้อย (~1.5 ชม.)
+    events:
+      - at: 2026-09-23T04:00:00Z
+        features: {hours_from_typical_login_time: 1.5}
+
+  - scenario_id: VM-N03
+    label: normal
+    severity: none
+    attack_family: none
+    user_id: vm-teacher-01
+    subsystem_id: sub-library
+    start_time: 2026-09-23T03:00:00Z
+    end_time: 2026-09-23T03:05:00Z
+    expected_minimum_action: allow
+    expected_maximum_action: allow
+    expected_reason: ระบบย่อยที่ผู้ใช้เคยเข้า
+    seed: 9003
+    description: เข้าระบบย่อยที่ใช้ประจำ
+    events:
+      - at: 2026-09-23T03:00:00Z
+        features: {}
+
+  - scenario_id: VM-N04
+    label: normal
+    severity: none
+    attack_family: none
+    user_id: vm-teacher-01
+    subsystem_id: sub-library
+    start_time: 2026-09-23T05:00:00Z
+    end_time: 2026-09-23T05:05:00Z
+    expected_minimum_action: allow
+    expected_maximum_action: warn
+    expected_reason: กลับมาใช้หลังหายไป ~20 วัน
+    seed: 9004
+    description: Login หลังไม่ได้ใช้งานช่วงหนึ่ง
+    events:
+      - at: 2026-09-23T05:00:00Z
+        features: {log_minutes_since_last_login: 10.27, login_count_24h: 1}
+
+  - scenario_id: VM-N05
+    label: normal
+    severity: none
+    attack_family: none
+    user_id: vm-staff-01
+    subsystem_id: sub-dorm
+    start_time: 2026-09-23T06:00:00Z
+    end_time: 2026-09-23T06:05:00Z
+    expected_minimum_action: allow
+    expected_maximum_action: warn
+    expected_reason: เปลี่ยนเบราว์เซอร์บนเครื่องเดิม
+    seed: 9005
+    description: เปลี่ยนเบราว์เซอร์ตามปกติ (UA family ใหม่ อุปกรณ์เดิม)
+    events:
+      - at: 2026-09-23T06:00:00Z
+        features: {is_new_user_agent_family: 1}
+
+  # ── กลุ่มโจมตีชัดเจน ──────────────────────────────────────────────────────────
+  - scenario_id: VM-A06
+    label: attack
+    severity: high
+    attack_family: credential_stuffing
+    user_id: vm-student-02
+    subsystem_id: sub-dorm
+    start_time: 2026-09-23T07:00:00Z
+    end_time: 2026-09-23T07:10:00Z
+    expected_minimum_action: challenge
+    expected_reason: failed login จำนวนมากจากอุปกรณ์ใหม่
+    seed: 9006
+    description: Credential stuffing จำลอง
+    events:
+      - at: 2026-09-23T07:10:00Z
+        features: {failed_logins_24h: 25, is_new_device: 1, is_new_user_agent_family: 1}
+
+  - scenario_id: VM-A07
+    label: attack
+    severity: high
+    attack_family: failed_spike
+    user_id: vm-student-02
+    subsystem_id: sub-dorm
+    start_time: 2026-09-23T08:00:00Z
+    end_time: 2026-09-23T08:05:00Z
+    expected_minimum_action: challenge
+    expected_reason: failed login พุ่งผิดปกติ
+    seed: 9007
+    description: Failed-login spike
+    events:
+      - at: 2026-09-23T08:05:00Z
+        features: {failed_logins_24h: 8}
+
+  - scenario_id: VM-A08
+    label: attack
+    severity: critical
+    attack_family: combined_ato
+    user_id: vm-student-03
+    subsystem_id: sub-dorm
+    start_time: 2026-09-23T09:00:00Z
+    end_time: 2026-09-23T09:05:00Z
+    expected_minimum_action: challenge
+    expected_reason: หลายสัญญาณพร้อมกัน (ประเทศใหม่ อุปกรณ์ใหม่ failed login passkey ใหม่)
+    seed: 9008
+    description: Account takeover หลายสัญญาณ
+    events:
+      - at: 2026-09-23T09:05:00Z
+        features:
+          is_thailand: 0
+          is_new_country: 1
+          is_new_device: 1
+          is_new_user_agent_family: 1
+          failed_logins_24h: 5
+          new_passkey_recently_added: 1
+          passkey_age_days: 0
+
+  - scenario_id: VM-A09
+    label: attack
+    severity: high
+    attack_family: impossible_travel
+    user_id: vm-teacher-02
+    subsystem_id: sub-library
+    start_time: 2026-09-23T10:00:00Z
+    end_time: 2026-09-23T10:05:00Z
+    expected_minimum_action: challenge
+    expected_reason: เดินทางข้ามประเทศเร็วเกินเป็นไปได้
+    seed: 9009
+    description: Impossible travel
+    events:
+      - at: 2026-09-23T10:05:00Z
+        features: {impossible_travel_score: 0.95, is_new_country: 1, is_thailand: 0, country_change_count_30d: 2}
+
+  - scenario_id: VM-A10
+    label: attack
+    severity: high
+    attack_family: concurrent_sessions
+    user_id: vm-teacher-02
+    subsystem_id: sub-library
+    start_time: 2026-09-23T11:00:00Z
+    end_time: 2026-09-23T11:05:00Z
+    expected_minimum_action: challenge
+    expected_reason: session ค้างพร้อมกันหลายที่
+    seed: 9010
+    description: Concurrent sessions
+    events:
+      - at: 2026-09-23T11:05:00Z
+        features: {concurrent_session_count: 4}
+
+  - scenario_id: VM-A11
+    label: attack
+    severity: high
+    attack_family: permission_change
+    user_id: vm-staff-02
+    subsystem_id: sub-dorm
+    start_time: 2026-09-23T12:00:00Z
+    end_time: 2026-09-23T12:05:00Z
+    expected_minimum_action: challenge
+    expected_reason: สิทธิ์เพิ่งถูกเปลี่ยนก่อน login
+    seed: 9011
+    description: Permission change
+    events:
+      - at: 2026-09-23T12:05:00Z
+        features: {ever_changed_permission: 1, permission_change_age: 0.05}
+
+  - scenario_id: VM-A12
+    label: attack
+    severity: high
+    attack_family: new_device
+    user_id: vm-staff-02
+    subsystem_id: sub-dorm
+    start_time: 2026-09-23T13:00:00Z
+    end_time: 2026-09-23T13:05:00Z
+    expected_minimum_action: challenge
+    expected_reason: อุปกรณ์ใหม่และประเทศใหม่พร้อมกัน
+    seed: 9012
+    description: อุปกรณ์และตำแหน่งใหม่พร้อมกัน
+    events:
+      - at: 2026-09-23T13:05:00Z
+        features: {is_new_device: 1, is_new_country: 1, is_thailand: 0}
+
+  # ── กลุ่มละเอียด ────────────────────────────────────────────────────────────
+  - scenario_id: VM-S13
+    label: attack
+    severity: medium
+    attack_family: login_velocity
+    user_id: vm-student-04
+    subsystem_id: sub-dorm
+    start_time: 2026-09-23T14:00:00Z
+    end_time: 2026-09-23T14:30:00Z
+    expected_minimum_action: warn
+    expected_reason: login ถี่ผิดจากนิสัย
+    seed: 9013
+    description: Login velocity
+    events:
+      - at: 2026-09-23T14:30:00Z
+        features: {log_minutes_since_last_login: 0.69, login_count_24h: 12}
+
+  - scenario_id: VM-S14
+    label: attack
+    severity: medium
+    attack_family: subtle_quiet_lateral
+    user_id: vm-student-04
+    subsystem_id: sub-grade
+    start_time: 2026-09-23T15:00:00Z
+    end_time: 2026-09-23T15:05:00Z
+    expected_minimum_action: warn
+    expected_reason: เข้าระบบย่อยที่อ่อนไหวซึ่งไม่เคยใช้ อย่างเงียบ
+    seed: 9014
+    description: Quiet lateral movement
+    events:
+      - at: 2026-09-23T15:05:00Z
+        features: {active_subsystem_count: 3, scope_sensitivity_score: 0.8}
+
+  - scenario_id: VM-S15
+    label: attack
+    severity: medium
+    attack_family: subsystem_lateral
+    user_id: vm-teacher-03
+    subsystem_id: sub-grade
+    start_time: 2026-09-23T16:00:00Z
+    end_time: 2026-09-23T16:05:00Z
+    expected_minimum_action: warn
+    expected_reason: เข้าหลายระบบย่อยพร้อมกันผิดปกติ
+    seed: 9015
+    description: Subsystem lateral movement
+    events:
+      - at: 2026-09-23T16:05:00Z
+        features: {active_subsystem_count: 6, scope_sensitivity_score: 0.6}
+
+  - scenario_id: VM-S16
+    label: attack
+    severity: medium
+    attack_family: subtle_slow_burst
+    user_id: vm-teacher-03
+    subsystem_id: sub-library
+    start_time: 2026-09-23T17:00:00Z
+    end_time: 2026-09-23T18:00:00Z
+    expected_minimum_action: warn
+    expected_reason: login และ failed login สูงขึ้นทีละน้อย
+    seed: 9016
+    description: Slow burst
+    events:
+      - at: 2026-09-23T18:00:00Z
+        features: {login_count_24h: 7, failed_logins_24h: 2}
+
+  - scenario_id: VM-S17
+    label: attack
+    severity: medium
+    attack_family: subtle_rare_device
+    user_id: vm-staff-03
+    subsystem_id: sub-dorm
+    start_time: 2026-09-23T19:00:00Z
+    end_time: 2026-09-23T19:05:00Z
+    expected_minimum_action: warn
+    expected_reason: อุปกรณ์ที่ผู้ใช้แทบไม่เคยใช้
+    seed: 9017
+    description: Rare device (UA family เดิม อุปกรณ์ใหม่)
+    events:
+      - at: 2026-09-23T19:05:00Z
+        features: {is_new_device: 1}
+
+  - scenario_id: VM-S18
+    label: attack
+    severity: medium
+    attack_family: new_passkey
+    user_id: vm-staff-03
+    subsystem_id: sub-dorm
+    start_time: 2026-09-23T20:00:00Z
+    end_time: 2026-09-23T20:05:00Z
+    expected_minimum_action: challenge
+    expected_reason: เพิ่งลงทะเบียน passkey ใหม่ก่อน login (persistence)
+    seed: 9018
+    description: New passkey
+    events:
+      - at: 2026-09-23T20:05:00Z
+        features: {new_passkey_recently_added: 1, passkey_count: 2, passkey_age_days: 0}
+
+  - scenario_id: VM-S19
+    label: attack
+    severity: low
+    attack_family: subtle_mild_offhour
+    user_id: vm-student-05
+    subsystem_id: sub-dorm
+    start_time: 2026-09-23T20:00:00Z
+    end_time: 2026-09-23T20:05:00Z
+    expected_minimum_action: warn
+    expected_reason: นอกเวลาปกติเล็กน้อย
+    seed: 9019
+    description: Off-hours แบบเล็กน้อย (ตี 3 เวลาไทย)
+    events:
+      - at: 2026-09-23T20:05:00Z
+        features: {hour_of_day: 3, hours_from_typical_login_time: 5}
+
+  - scenario_id: VM-S20
+    label: attack
+    severity: high
+    attack_family: campaign
+    user_id: vm-student-05
+    subsystem_id: sub-grade
+    start_time: 2026-09-23T01:00:00Z
+    end_time: 2026-09-26T01:00:00Z
+    expected_minimum_action: challenge
+    expected_reason: สัญญาณเล็กหลายครั้งต่อเนื่องหลายวัน (แคมเปญ)
+    seed: 9020
+    description: Campaign หลายช่วงเวลา — จับได้ถ้ามีเหตุการณ์ใดถึง challenge
+    events:
+      - at: 2026-09-23T01:00:00Z
+        features: {hours_from_typical_login_time: 3, is_new_device: 1}
+      - at: 2026-09-24T13:00:00Z
+        features: {active_subsystem_count: 3, scope_sensitivity_score: 0.8, failed_logins_24h: 2}
+      - at: 2026-09-26T01:00:00Z
+        features: {log_minutes_since_last_login: 1.1, login_count_24h: 6, is_new_device: 1}

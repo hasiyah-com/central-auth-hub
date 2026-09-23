@@ -31,7 +31,7 @@ fi
 
 if [ -n "$PRECOMMIT_CMD" ]; then
   if $PRECOMMIT_CMD run --all-files 2>&1; then
-    echo "  All checks passed ✅"
+    echo "  All checks passed"
   else
     echo ""
     echo "  Fix the errors above, then commit."

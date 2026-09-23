@@ -23,9 +23,9 @@
       <div class="slot relative" style="height:180px; border-radius:0; border:none; border-bottom:2px solid #0A0A0A;">
         ROOM · {{ room.room_number }} · {{ room.building }}-{{ room.floor }}
         <span class="absolute top-4 right-4 badge badge-{{ room.status }}" style="font-size:12px; padding:5px 12px;">
-          {% if room.status == "available" %}✅ ว่าง
-          {% elif room.status == "full" %}🔴 เต็ม
-          {% else %}🔧 ซ่อมบำรุง{% endif %}
+          {% if room.status == "available" %}ว่าง
+          {% elif room.status == "full" %}เต็ม
+          {% else %}ซ่อมบำรุง{% endif %}
         </span>
       </div>
 
@@ -40,7 +40,7 @@
             </p>
           </div>
           <div class="w-14 h-14 flex items-center justify-center text-3xl flex-shrink-0"
-               style="background:#FFD43B; border:2px solid #0A0A0A; border-radius:6px; box-shadow:3px 3px 0 #0A0A0A;">🛏️</div>
+               style="background:#FFD43B; border:2px solid #0A0A0A; border-radius:6px; box-shadow:3px 3px 0 #0A0A0A;"></div>
         </div>
 
         <!-- Stats Grid -->
@@ -83,7 +83,7 @@
     <div class="card p-6">
       <div class="flex items-center justify-between mb-4">
         <h2 class="display flex items-center gap-2" style="font-size:20px;">
-          <span style="color:#2454FF;">👥</span> ผู้พักในห้องนี้
+          ผู้พักในห้องนี้
         </h2>
         <span class="chip mono">{{ occupants|length }} คน</span>
       </div>
@@ -113,7 +113,6 @@
 
       {% if user.user_type == "staff" %}
       <div class="alert alert-warning">
-        <span class="alert-icon">👔</span>
         <div>
           คุณคือ <strong>staff</strong> — ใช้หน้า
           <a href="/staff/reservations" class="underline font-extrabold" style="color:#2454FF;">คำขอจอง</a>
@@ -123,7 +122,6 @@
 
       {% elif active_reservation %}
       <div class="alert alert-info mb-4">
-        <span class="alert-icon">📋</span>
         <div>
           <strong class="block mb-1">คุณมี Reservation อยู่แล้ว</strong>
           สถานะ: <span class="badge badge-{{ active_reservation.status }}">{{ active_reservation.status }}</span>
@@ -136,7 +134,6 @@
 
       {% elif room.status != "available" or occupancy >= room.capacity %}
       <div class="alert alert-danger">
-        <span class="alert-icon">🔒</span>
         <div>
           <strong class="block mb-1">ห้องนี้ไม่พร้อมจอง</strong>
           <span style="color:#2F2F2F;">
@@ -153,7 +150,6 @@
       {% else %}
       <!-- Reservation Form -->
       <div class="alert alert-success mb-4">
-        <span class="alert-icon">✅</span>
         <div>ห้องนี้ว่าง — สามารถส่งคำขอจองได้</div>
       </div>
 

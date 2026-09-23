@@ -21,6 +21,7 @@ SHAP convention (สำคัญ — มี sign flip):
 
 import logging
 import math
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -36,6 +37,7 @@ MODEL_PATH = Path("/app/models/iforest_v1.pkl")
 _model = None
 _explainer: Any = None  # shap.TreeExplainer | None — typed Any to avoid import cost when SHAP unavailable
 _explainer_status: str = "uninitialized"  # "ready" | "unavailable" | "uninitialized"
+_EXPLAINER_LOCK = threading.Lock()  # สร้าง explainer ครั้งเดียวต่อ process
 
 
 def load_model():
@@ -64,28 +66,42 @@ def _load_explainer():
     """
     global _explainer, _explainer_status
 
+    # ทางเดินปกติ: สร้างแล้ว (หรือรู้แล้วว่าใช้ไม่ได้) — ไม่แตะล็อก
     if _explainer_status != "uninitialized":
         return _explainer
 
-    try:
-        import shap
+    # ล็อก + เช็คซ้ำ: request ที่มาพร้อมกันตอน process ยังเย็นเคยสร้างซ้ำทุกตัว
+    # (~0.9 วินาทีต่อตัว → 20 request พร้อมกันใช้ 15 วินาที) — แบบเดียวกับ B63
+    with _EXPLAINER_LOCK:
+        if _explainer_status != "uninitialized":
+            return _explainer
+        try:
+            import shap
 
-        model = load_model()
-        _explainer = shap.TreeExplainer(
-            model,
-            feature_perturbation="tree_path_dependent",
-        )
-        _explainer_status = "ready"
-        log.info("SHAP TreeExplainer ready (IsolationForest)")
-    except Exception as e:
-        _explainer = None
-        _explainer_status = "unavailable"
-        log.warning(
-            "SHAP TreeExplainer unavailable — falling back to heuristic. " "Reason: %s",
-            e,
-        )
+            model = load_model()
+            explainer = shap.TreeExplainer(
+                model,
+                feature_perturbation="tree_path_dependent",
+            )
+            _explainer = explainer
+            _explainer_status = "ready"
+            log.info("SHAP TreeExplainer ready (IsolationForest)")
+        except Exception as e:
+            _explainer = None
+            _explainer_status = "unavailable"
+            log.warning(
+                "SHAP TreeExplainer unavailable — falling back to heuristic. "
+                "Reason: %s",
+                e,
+            )
 
     return _explainer
+
+
+def warm_explainer() -> str:
+    """สร้าง explainer ตอน startup — request แรกจะได้ไม่ต้องจ่ายต้นทุน ~0.9 วินาที."""
+    _load_explainer()
+    return _explainer_status
 
 
 def explainer_status() -> str:
@@ -131,11 +147,19 @@ def predict_with_explanation(
 
     ถ้า explainer unavailable → คืน explanation=[] (fail-safe, Hub ทำงานต่อได้)
     """
-    score = predict_score(features)
+    return predict_score(features), explain_features(features, top_k=top_k)
+
+
+def explain_features(features: list[float], top_k: int = 5) -> list[dict]:
+    """SHAP อย่างเดียว (ไม่คำนวณคะแนน) — ให้ point view เลือกคำนวณเฉพาะ login ที่คะแนนสูง.
+
+    รูปแบบผลลัพธ์เหมือน explanation ของ `predict_with_explanation` · explainer ใช้ไม่ได้
+    หรือคำนวณพัง → [] (fail-safe)
+    """
     explainer = _load_explainer()
 
     if explainer is None:
-        return score, []
+        return []
 
     try:
         X = np.array([features], dtype=float)
@@ -165,10 +189,10 @@ def predict_with_explanation(
             }
             for i, val in indexed
         ]
-        return score, explanation
+        return explanation
     except Exception as e:
         # Fail-safe — log warning + คืน [] (Hub ทำงานต่อได้แม้ explain พัง)
         log.warning(
             "SHAP explain failed for one sample — returning empty. Reason: %s", e
         )
-        return score, []
+        return []

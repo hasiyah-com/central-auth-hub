@@ -31,8 +31,8 @@ SUBSYSTEM_BUCKETS = 3  # HUB / SUB_A / SUB_B
 MIN_HISTORY_FOR_RARITY = 20
 HOUR_RARITY_THRESHOLD = 0.95  # ชั่วโมงที่แทบไม่เคยเข้า (แยกจาก peak ~0.80-0.90 ได้)
 HOUR_RARITY_WEIGHT = 0.30
-RARE_SUBSYSTEM_SCORE = 0.15  # เคยใช้แต่นานๆ ที (soft warn) — ไม่บังคับ challenge
-NEW_SUBSYSTEM_SCORE = 0.30  # ไม่เคยใช้เลย → +score และ policy floor = challenge
+RARE_SUBSYSTEM_SCORE = 0.15  # เคยใช้แต่นานๆ ที (soft warn)
+NEW_SUBSYSTEM_SCORE = 0.30  # ไม่เคยใช้เลย
 
 # ── Tier 2 — cadence z-score (velocity รายคน) + signature_rarity (device graded) ──
 # soft signal ทั้งคู่ (warn-level, ไม่มี floor) = defense-in-depth เสริม rule
@@ -81,11 +81,20 @@ def _robust_center_scale(
 
 @dataclass
 class BehaviorResult:
+    """หลักฐานล้วน — **ไม่มีฟิลด์ที่ตัดสินสิทธิ์** (B70).
+
+    เดิมมี `min_action` ที่ถูกตั้งเป็น "challenge" เมื่อเจอ subsystem ที่ไม่เคยใช้
+    พร้อมคอมเมนต์ว่าเป็น policy floor · แต่ชั้นรวมผล (L4) ที่ production ใช้จริง
+    ไม่เคยอ่านฟิลด์นี้เลย — มีเพียง `PolicyOutcome.min_action` จาก Policy Gate
+    ที่มีผล · วัดยืนยันบนข้อมูลจริง
+    (U01 seed46 size50) ได้ `{None: 81}` จาก 81 เหตุการณ์ที่ถูก challenge
+
+    ตัดทิ้งแทนการต่อสาย เพราะการทำให้มันทำงานจริงจะบังคับ challenge ทุกครั้งที่
+    เข้าระบบใหม่ (ของ U01 = 10.6% ของ login) โดยไม่เคยผ่าน validation
+    """
+
     score: float
     reasons: list[str] = field(default_factory=list)
-    min_action: str | None = (
-        None  # policy floor จาก behavior (subsystem ที่ไม่เคยใช้, Tier 1)
-    )
 
 
 def get_user_profile(db: Session, user_id: str) -> dict | None:
@@ -190,7 +199,6 @@ def evaluate_behavior(
 
     score = 0.0
     reasons: list[str] = []
-    min_action: str | None = None
 
     # ── Temporal: hours from typical login time ──
     hours_diff = features[FEAT["hours_from_typical_login_time"]]
@@ -233,23 +241,25 @@ def evaluate_behavior(
                 f"hour_rarity={hr:.2f} (hour {h} ไม่เคยเข้า, +{HOUR_RARITY_WEIGHT:.2f})"
             )
 
-    # ── Tier 1: subsystem novelty (เข้าระบบที่ไม่เคยใช้ = deterministic → challenge floor) ──
+    # ── Tier 1: subsystem novelty (เข้าระบบที่ไม่เคยใช้) ──
+    # หมายเหตุ (B70): เดิมบล็อกนี้ตั้ง `min_action = "challenge"` พร้อมคอมเมนต์ว่าเป็น
+    # policy floor · ฟิลด์นั้นไม่เคยถูกอ่านบนเส้นทางจริงของ production จึงถูกตัดทิ้ง
+    # ชั้นนี้ส่งผลผ่าน "คะแนน" อย่างเดียว ให้ L4 เป็นผู้ตัดสินเพียงจุดเดียว
     sub_counts = profile.get("subsystem_counts")
     if subsystem_id and sub_counts is not None and total >= MIN_HISTORY_FOR_RARITY:
         seen = profile.get("seen_subsystems") or set(sub_counts)
         if subsystem_id not in seen:
-            # ไม่เคยใช้ระบบนี้เลย → เหตุการณ์แน่นอน ไม่ใช่แค่คะแนน → policy floor
             score += NEW_SUBSYSTEM_SCORE
-            min_action = "challenge"
             reasons.append(
-                f"new_subsystem={subsystem_id} (ไม่เคยใช้, +{NEW_SUBSYSTEM_SCORE:.2f} floor=challenge)"
+                f"new_subsystem={subsystem_id} (ไม่เคยใช้, +{NEW_SUBSYSTEM_SCORE:.2f})"
             )
         else:
             sr = _rarity(sub_counts.get(subsystem_id, 0), total, SUBSYSTEM_BUCKETS)
             if sr >= HOUR_RARITY_THRESHOLD:  # เคยใช้แต่นานๆ ที → soft warn เท่านั้น
                 score += RARE_SUBSYSTEM_SCORE
                 reasons.append(
-                    f"subsystem_rarity={sr:.2f} ({subsystem_id} ใช้นานๆ ที, +{RARE_SUBSYSTEM_SCORE:.2f})"
+                    f"subsystem_rarity={sr:.2f} ({subsystem_id} ใช้นานๆ ที, "
+                    f"+{RARE_SUBSYSTEM_SCORE:.2f})"
                 )
 
     # ── Tier 2: cadence z-score (velocity รายคน — personalized) ──
@@ -294,4 +304,4 @@ def evaluate_behavior(
                 f"(+{SCOPE_ESCALATION_SCORE:.2f})"
             )
 
-    return BehaviorResult(score=min(score, 1.0), reasons=reasons, min_action=min_action)
+    return BehaviorResult(score=min(score, 1.0), reasons=reasons)

@@ -32,7 +32,7 @@ TRAIN_GLOBAL = True  # เทรน global model ไว้เทียบด้�
 
 def main():
     if not SRC.exists():
-        print(f"❌ ไม่พบ {SRC} — รัน pipe_features.py ก่อน")
+        print(f"ไม่พบ {SRC} — รัน pipe_features.py ก่อน")
         return
     by_user = defaultdict(list)
     for r in csv.DictReader(open(SRC, encoding="utf-8")):
@@ -84,7 +84,7 @@ def main():
 
     dump(payload, MODELS / "user_models.joblib")
     print(
-        f"\n✅ เทรนโมเดลรายคน {len(user_models)} ตัว"
+        f"\nเทรนโมเดลรายคน {len(user_models)} ตัว"
         + (" + global 1 ตัว" if TRAIN_GLOBAL else "")
     )
     print(f"   → {MODELS / 'user_models.joblib'}")

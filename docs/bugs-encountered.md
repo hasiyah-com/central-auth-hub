@@ -419,6 +419,113 @@
 
 ---
 
+**B68. การ optimize ความเร็วของ `final` เผลอเปิด holdout ซ้ำหลายครั้ง — ทำลาย single-open**
+- อาการ: Round 2 มี commit ชุด perf 3 ตัว ("final ช้าเกิน") ช่วง ~1.5 ชม. ก่อน freeze สุดท้าย → บ่งชี้ว่า `final` ถูกรันบน holdout `[101-105]` **มากกว่าหนึ่งครั้ง**ระหว่างจูนความเร็วของ bootstrap ทั้งที่ระบบออกแบบให้เปิด holdout ครั้งเดียว
+- สาเหตุ: guard เดิม (`final_result.json exists` + `--i-know-this-is-a-rerun`) อ่อนเกินไป — ลบ `final_result.json` หรือรันบนโค้ดที่ยัง dirty ก็เปิดซ้ำได้เงียบๆ · การ optimize ที่วัดเวลาของ `final` เอง จำเป็นต้องรัน `final` ซ้ำ → เปิด holdout ซ้ำโดยไม่ได้ตั้งใจให้เป็นการทดลอง
+- **ทำไมยังไม่ทำให้ผลผิด (รอบนี้):** ค่า gate เป็น **deterministic** ของ threshold ที่ freeze + scoring path · `git diff <freeze-arg>..<final-freeze> -- app/security/` = **ว่าง** (decision logic ไม่เปลี่ยน perf แตะแค่ bootstrap/CI) · candidate ถูก freeze ก่อนรัน final ครั้งแรก ไม่มีการปรับ threshold ตามผล holdout · ผล fail-closed (candidate ไม่ผ่าน → ไม่ deploy)
+- **ทำไมยังอันตราย:** การเปิดซ้ำเปิดช่องให้ปรับโค้ด/threshold "ตามที่เห็นบน holdout" ได้โดยไม่รู้ตัว · holdout ที่เปิดแล้วใช้เป็น clean final ที่บริสุทธิ์อีกไม่ได้
+- **กฎ:** (1) การวัด/optimize ความเร็วต้องทำบน **validation หรือข้อมูลสังเคราะห์** ห้ามรัน `final` บน holdout จริงเพื่อจับเวลา (2) `cmd_final` มี **holdout ledger** (`holdout_ledger.json`) บันทึกถาวรว่า seed ชุดใดถูกเปิดแล้ว → ปฏิเสธการเปิดซ้ำเว้นแต่ `--reopen-spent-holdout` อย่างตั้งใจ (ห้ามลบ entry) (3) holdout ที่ใช้แล้วต้องขึ้นบัญชี spent · รอบถัดไปใช้ seed ชุดใหม่เสมอ
+- **Verify:** `_load_holdout_ledger`/`_record_holdout_open` ใน `exp_hybrid_gate.py` · ledger seed `[101-105]` เป็น spent แล้ว · รายละเอียด `tests/reports/hybrid_risk_round2_2026-09-04.md` §5
+
+---
+
+**B69. สรุป "การแก้ไม่ได้ผล" จากการเทียบสองรอบที่เปลี่ยนทั้งวิธีแก้และข้อมูลพร้อมกัน**
+- อาการ: Round 2c รายงานว่า "threshold tuning หมดทางกับ cold-start challenge" โดยเทียบ challenge FPR@size50 = 1.23% (Round 2b, threshold 0.9898) กับ 1.18% (Round 2c, threshold 0.995) แล้วสรุปว่ายก threshold แล้วแทบไม่ขยับ
+- สาเหตุ: **สอง holdout เป็นคนละประชากร** (seeds [106-110] vs [111-115]) การเทียบจึงเปลี่ยน **ทั้ง threshold และข้อมูล** พร้อมกัน → แยกไม่ออกว่าส่วนไหนมาจากอะไร · เป็นตระกูลเดียวกับ B67 (อนุมานสาเหตุจากสองจุดที่ต่างกันหลายอย่าง)
+- **หลักฐานที่หักล้าง:** วัดองค์ประกอบของ challenged normal บน validation ชุดเดียว พบว่า **68–78% มาจาก score** (threshold ควบคุมได้) และ policy floor คงที่ 38 เหตุการณ์ทุกขนาด (0.126%) → threshold **ไม่ได้หมดทาง** · ข้อสรุปที่ถูกคือ validation 5 seeds ประเมิน population variance ต่ำเกินไป
+- **ข้อผิดพลาดพ่วง:** ระบุ root cause เป็น `login_velocity rule ไม่ personalize` ทั้งที่ `rule.min_action` **ถูก drop** ใน `fuse()` (ใช้เฉพาะ `policy.min_action`) → เป็นแค่ +0.25 คะแนน ไม่ใช่ floor · และตัวเลข "83%" คือความถี่ใน `reasons` list ไม่ใช่การพิสูจน์เชิงสาเหตุ (reason หลายตัวปรากฏพร้อมกันได้)
+- **กฎ:** (1) จะสรุปว่า "วิธีแก้ X ไม่ได้ผล" ต้องเทียบ **บนข้อมูลชุดเดียวกัน** (เปลี่ยนเฉพาะ X) หรือระบุชัดว่าสรุปไม่ได้ (2) ก่อนอ้าง root cause ต้องตรวจ **เส้นทางจริงของค่านั้นในโค้ด** ว่ามีผลอย่างไร ไม่ใช่ดูแค่ชื่อ/ความถี่ใน log (3) ความถี่ใน `reasons` ≠ การมีส่วนตัดสิน — ต้องวัด counterfactual หรือแยกองค์ประกอบ
+- **Verify:** `tests/reports/hybrid_risk_round2c_2026-09-04.md` §2, §3, §8 (บันทึกการแก้)
+
+---
+
+**B70. ฟิลด์ที่ประกาศว่าเป็น "policy floor" แต่ไม่มีผลจริง — และไม่มีเทสจับมาหลายเดือน**
+- อาการ: `BehaviorResult.min_action` ถูกตั้งเป็น `"challenge"` เมื่อผู้ใช้เข้า subsystem ที่ไม่เคยใช้ พร้อมคอมเมนต์ในโค้ดว่า "เหตุการณ์แน่นอน ไม่ใช่แค่คะแนน → policy floor" · ผู้อ่านโค้ด (รวมถึงผมเองตอนวิเคราะห์ Round 2c) เชื่อว่ามีการบังคับ step-up จริง
+- สาเหตุ: ชั้นรวมผลที่ production ใช้จริงอ่านเฉพาะ `PolicyOutcome.min_action` จาก Policy Gate (ซึ่งมาจาก `SCORE_RULES_SPEC` ที่ `kind == "policy_floor"`) · `behavior.min_action` ถูกอ่านโดย `risk_aggregator.aggregate()` เท่านั้น ซึ่ง **ไม่มี caller ใน production** (`risk_engine` ใช้ `fuse`) — เหลือแค่เทสและ harness เก่า
+- **หลักฐาน:** วัดบนข้อมูลจริง (U01 · seed 46 · size 50) — ใน 81 เหตุการณ์ปกติที่ถูก challenge ได้ `policy min_action distribution: {None: 81}` · floor ไม่เคยถูกใช้เลยสักครั้ง
+- **ทำไมไม่ "ต่อสายให้ทำงาน":** ถ้าทำให้มีผลจริงจะบังคับ challenge ทุกครั้งที่เข้าระบบใหม่ — ของ U01 คือ 10.6% ของ login ทั้งหมด · การเปลี่ยน dead field ให้เป็น enforcement โดยไม่ผ่าน validation อันตรายกว่าการลบ
+- **ปัญหาพ่วงที่พบตอนตรวจ:** เทสที่ยืนยันพฤติกรรม L2 หลายไฟล์ (`test_behavior_rarity`, `test_rule_engine_v2_signals`, `test_tier2_catches_evasive`, `test_scope_conformance`) วัดผ่าน `aggregate()` ซึ่งไม่ใช่เส้นทางที่ production ใช้ → เทส "ผ่าน" ได้ทั้งที่พฤติกรรมจริงต่างออกไป (อาการเดียวกับ B66)
+- **กฎ:** (1) ฟิลด์ที่สื่อว่า "บังคับ" ต้องมีเทสพิสูจน์ว่ามีผล **บนเส้นทางที่ production เรียกจริง** ไม่ใช่แค่ผ่าน aggregator ที่ไม่มีใครเรียก (2) ชั้นหลักฐาน (L1/L2/L3) ต้องไม่มีฟิลด์ในแกน access decision เลย — มีเมื่อไรจะมีคนเชื่อว่ามันทำงาน (3) ก่อนลบฟิลด์ ต้องค้น consumer ทั้ง repo + ตรวจว่าไม่ถูกเปิดเผยใน API/schema (ตรวจแล้ว: ไม่มี)
+- **Verify:** `tests/test_l2_evidence_only.py` (L2 ไม่มีฟิลด์ในแกน access + Policy Gate `min_action` ของจริงยังอยู่ครบ)
+
+**B71. พารามิเตอร์ที่ประกาศเป็น "สัดส่วน" แต่โค้ดใช้เป็น "น้ำหนัก" — ประชากรจำลองสร้างพฤติกรรมที่ต้องการไม่ได้เลย**
+- อาการ: `weekend_rate` ถูกประกาศใน pre-registration ว่าเป็นสัดส่วนของ login ที่เกิดวันหยุด (สูงสุด 0.40) แต่ค่าที่ generate ออกมาจริงมีเพดานเพียง 0.1266 · ผู้ใช้จริงที่วัดได้มีสัดส่วน 0.381 ซึ่งประชากรจำลอง **สร้างไม่ได้ที่ค่าพารามิเตอร์ใด ๆ**
+- สาเหตุ: `build_profiles_v2.spread_over_days()` ใส่ค่านี้เป็นน้ำหนักต่อวันเทียบวันธรรมดาที่มีน้ำหนัก 1.0 → สัดส่วนที่ได้เป็น `(n_we x rate) / (n_wd + n_we x rate)` ซึ่งต่ำกว่าค่าที่ประกาศเสมอ (0.27–0.37 เท่า) และมีเพดานที่สัดส่วนวันหยุดในปฏิทิน (8/30 = 0.267) แม้ตั้ง rate = 1.0
+- **กฎ:** (1) พารามิเตอร์ที่ประกาศเป็นสัดส่วนต้องมีเทสยืนยันว่า **ค่าที่สังเกตได้จริง** ตรงกับที่ประกาศ ไม่ใช่ตรวจแค่ว่าโค้ดอ่านค่าไปใช้ (2) การแปลงสัดส่วนเป้าหมายเป็นน้ำหนักต้องคำนึงถึงจำนวนหน่วยแต่ละชนิด: `w = (p x n_a) / ((1-p) x n_b)` (3) ประชากรจำลองต้องมีเทสว่าครอบคลุมพฤติกรรมที่วัดได้จากของจริง ไม่ใช่แค่ครอบคลุมช่วงที่ตัวเองประกาศ
+- **Verify:** `tests/test_generator_weekend_rate.py` · `tests/reports/generator_weekend_rate_bug_2026-09-09.md`
+
+**B72. ตัวสร้างข้อมูลได้ประชากรผิดชุดเงียบ ๆ เพราะฟังก์ชันกลางเรียก generator โดยไม่ส่ง spec**
+- อาการ: รอบแรกของการสร้างตาราง calibration ได้ 6,000 เหตุการณ์/seed ทั้งที่ P48-T2 (32 โปรไฟล์) ต้องได้ราว 16,000 — ตัวเลขทั้งชุดเป็นของประชากร 12 โปรไฟล์เดิม
+- สาเหตุ: `DS.build()` เรียก `G3.build_seed(users, seed)` เองถ้าไม่ได้รับ `raw` ซึ่งตกไปใช้ `BP.SPEC` (12 คน) · ตัวสร้างสร้างประชากร P48-T2 ไว้แล้วแต่ไม่ได้ส่งต่อ โมเดลจึง fit จากชุดหนึ่งแต่ split มาจากอีกชุด
+- **กฎ:** สร้างประชากรครั้งเดียวแล้วส่ง `raw` ต่อเสมอ · assert ว่าไม่มี alias ของ holdout หลุดเข้ามา · ตรวจจำนวนเหตุการณ์ต่อ seed เทียบกับจำนวนโปรไฟล์ที่คาดไว้
+- **Verify:** `ml-service/scripts/build_calibration.py:_collect` · `tests/reports/calibration_v1_2026-09-16.md` §4
+
+**B73. ตัวตรวจเทียบด้วย `>` แต่ production เทียบด้วย `>=` — เกณฑ์ยิงเกินงบโดยตัวตรวจมองไม่เห็น**
+- อาการ: เกณฑ์ที่หาด้วย nearest-rank ทำให้ warn ยิง 2.85% จากงบ 2%, challenge 0.625% จากงบ 0.5% แต่ `tailcal.benign_exceedance` รายงานว่าไม่มีหางเลื่อน
+- สาเหตุ: คะแนนรวม L1+L2 มีค่าซ้ำเป็นกลุ่มใหญ่ (27 ค่าไม่ซ้ำ) nearest-rank ตกกลางกลุ่ม · `_action_for` ใช้ `>=` จึงกวาดทั้งกลุ่ม ส่วนตัวตรวจใช้ `>` จึงไม่นับกลุ่มนั้น
+- **กฎ:** เกณฑ์ต้องเลือกจาก `P(score >= t) <= งบ` ด้วยนิยามเดียวกับ production · รายงานอัตรายิงด้วยนิยามของ production คู่กับตัวตรวจอื่นเสมอ
+- **Verify:** `tests/test_calibration_build.py::test_thresholds_respect_budget_when_threshold_lands_on_ties`
+
+**B74. ตาราง calibration ถูกเปิดใช้เพียงเพราะมีไฟล์วางอยู่ — จะเปลี่ยนการตัดสินจริงทั้งระบบ**
+- อาการ: `calibration.py` โหลด `calibration_v1.json` ที่อยู่ข้าง ๆ อัตโนมัติ ถ้าวางไฟล์ขณะที่เกณฑ์ยังเป็น 0.50/0.70/0.85 หลักฐานทุกชั้นจะกลายเป็นเปอร์เซ็นไทล์ (กฎเดียวยิงได้ราว 0.99) และการตัดสินจริงเกือบทุกครั้งกลายเป็น block
+- สาเหตุ: การเปิดใช้ขึ้นกับการมีไฟล์ ไม่ใช่การประกาศ และไม่มีอะไรตรวจว่าเกณฑ์ใน env มาจากตารางเดียวกัน
+- **กฎ:** โหลดเฉพาะ `CALIBRATION_PATH` ที่ตั้งไว้ · ตอน start ต้องตรง sha256, version, gamma และเกณฑ์ทั้งสามระดับ ไม่งั้นไม่ start
+- **Verify:** `tests/test_calibration_integrity.py`
+
+**B75. สคริปต์ re-freeze เขียนทับเหตุผลของการ freeze ครั้งก่อนที่ยังไม่ได้ commit**
+- อาการ: re-freeze ครั้งที่สองทำให้เหตุผลของครั้งแรก (`risk_engine.py`) หายไปจากทุกที่ เพราะยังไม่เคยถูก commit
+- สาเหตุ: `update_scoring_freeze.py` สร้างบันทึกใหม่ทั้งไฟล์
+- **กฎ:** บันทึกหลักฐานต้องต่อท้ายเสมอ (`history` + `files_changed`) ไม่เขียนทับ
+- **Verify:** `tests/scoring_freeze.json` มี `history` ครบทุกครั้ง
+
+**B76. เทสที่ตั้งใจตรวจ race ผูกกับความเร็วของเครื่อง — ล้มหลัง Docker restart ทั้งที่ไม่มี race**
+- อาการ: `test_concurrent_requests_agree` สำเร็จ 9/20 (ต้อง >= 18) ทั้งที่ผ่านมาทุกรอบ
+- สาเหตุ: `/v1/l3-evaluate` เป็น endpoint sync ที่ถือ GIL และ ml-service รัน worker เดียว ยิง 20 ตัวพร้อมกัน p50 ราว 400–630 ms ขณะที่ timeout ของ login คือ 500 ms
+- **ปัญหาพ่วง:** `httpx.AsyncClient(timeout=0.5)` เป็นเพดาน **ต่อช่วง** ไม่ใช่เวลารวม วัดได้ request ที่ใช้ 626 ms แล้วยังสำเร็จ
+- **กฎ:** เทส functional ห้ามขึ้นกับความเร็ว — ขยาย timeout ในเทสและแยกเงื่อนไขเวลาไป marker `performance` · อย่าเรียก timeout ของ httpx ว่าเพดานรวม
+- **Verify:** `tests/test_gate_markers.py` · `tests/reports/step12_verification_2026-09-17.md` §4
+
+**B77. นาฬิกาถอยหลังไม่ถึงวินาทีทำให้ token ที่เพิ่งออกถูกปฏิเสธเป็น 401 — ชุดเทสล้มสุ่มคนละตัวทุกรอบ**
+- อาการ: Functional Gate ล้ม 1–2 ตัวต่อรอบ ด้วย 401 ในเทสที่ไม่เกี่ยวกัน (`test_scope21_list_users_requires_admin`, `test_e2e_register_bad_scope_rejected`, `test_view_is_audited` ที่ไปล้มตอนนับ audit แทน) รันไฟล์เดี่ยวผ่าน 3/3
+- หลักฐาน (`TEST_DIAG=1`): `ImmatureSignatureError: The token is not yet valid (iat)` โดย `age_s = -0.848` · `clock_steps.jsonl` นับนาฬิกาถอยหลังราว 0.97 วินาทีได้ 16 ครั้งในรอบเดียว (และกระโดดไปข้างหน้าราว 3.7 วินาทีเป็นระยะ) — Docker Desktop/WSL ปรับเวลาตามเครื่องหลัก
+- สาเหตุ: `verify_token` ตรวจ `iat`/`nbf`/`exp` แบบไม่เผื่อเลย · token ที่ออกก่อนนาฬิกาถอยแล้วตรวจหลังถอยจะดูเหมือนออกในอนาคต · เกิดได้ใน production เช่นกัน (NTP step, hub หลายเครื่องนาฬิกาไม่ตรงกัน)
+- **กฎ:** การตรวจเวลาของ JWT ต้องมี leeway ที่ตั้งค่าได้และมีเพดาน (`jwt_clock_skew_seconds` ค่าเริ่ม 5 ช่วง 0–60 ค่าผิด = ไม่ start) · leeway ใช้กับ `iat`/`nbf`/`exp` เท่านั้น ลายเซ็น/iss/aud/revocation เข้มเท่าเดิม · เทสที่ตรวจผลข้างเคียง (audit, DB) ต้องตรวจ HTTP status ก่อน ไม่งั้นอาการ 401 จะไปโผล่เป็น assertion อื่นที่ชี้ผิดที่
+- **ภาคต่อ — ต้นเหตุที่แท้จริง (2026-09-21):** หลังเพิ่ม leeway แล้ว gate บน worktree สะอาดยังล้ม 3 ตัวด้วย `iat` เดิม · วัดในคอนเทนเนอร์ 60 วินาทีได้ `[-8.824, 9.75, -8.889, 9.765]` และเร็วกว่าเครื่องหลัก 7–9 วินาที · `wsl --shutdown` ไม่หาย (VM ใหม่ uptime 42 วินาที ยังได้ `[-10.001, 10.004, ...]`) · `w32tm /stripchart` พบ **นาฬิกาของ Windows ช้ากว่าเวลาจริง 9.77 วินาที** → Hyper-V ดึง VM ตาม Windows ขณะที่ NTP ดึงกลับตามเวลาจริง แย่งกันทุก 15–30 วินาที · หลัง Sync now คลาดเหลือ -0.04 วินาที, ใน 90 วินาทีกระโดดครั้งเดียว -0.07 วินาที, gate เต็ม 1378 passed โดยนาฬิกาถอยมากสุด 19 ms และไม่มี `ImmatureSignatureError`
+- **กฎเพิ่ม:** leeway รับการขยับปกติได้ แต่**ห้ามขยาย leeway ให้ครอบนาฬิกาที่คลาดทั้งก้อน** — แก้ที่ต้นทาง · `run_tests.sh` ตรวจนาฬิกา 10 วินาทีก่อนเริ่ม (กระโดด > 1 วินาที หรือต่างจากเครื่องหลัก > 3 วินาที = ไม่เริ่ม พร้อมวิธีแก้)
+- **Verify:** `tests/test_jwt_clock_skew.py` · `tests/test_clock_guard.py`
+
+**B78. error ที่พิมพ์ `repr(settings)` พา secret ทุกตัวออกมาใน output ของเทส**
+- อาการ: ระหว่าง RED ของ B77 เทสเรียก `monkeypatch.setattr(settings, "jwt_clock_skew_seconds", 0)` ก่อนฟิลด์จะมีอยู่ → `AttributeError` ที่ข้อความมี `repr(settings)` ทั้งก้อน รวม Google client secret, SMTP app password, LINE secret, webhook key และ Telegram bot token
+- สาเหตุ: ทุกฟิลด์ใน `Settings` เป็น `str` ธรรมดา · traceback, log หรือ error ใดที่แสดง settings ให้ผลเดียวกัน · `database_url`/`redis_url` มีรหัสผ่านอยู่ใน URL
+- **กฎ:** secret ใน `Settings` ต้องเป็น `SecretStr` และเรียก `.get_secret_value()` ตรงจุดที่ใช้เท่านั้น · URL ที่ต้องส่งให้ไลบรารีเป็น str ให้ปิดรหัสผ่าน/path ใน repr และ dump · ฟิลด์ใหม่ที่ชื่อคล้าย secret ต้องจัดประเภท (เทสบังคับ) · ถ้าค่าเคยหลุดออกนอกเครื่อง ให้ถือว่ารั่วและ rotate
+- **Verify:** `tests/test_settings_secrets.py` (รวมการจำลองเหตุการณ์จริง `test_the_original_incident_attribute_error_is_clean`)
+
+**B79. SHAP explainer ของ point view สร้างซ้ำทุก request ที่มาพร้อมกันตอน process เย็น — แบบเดียวกับ B63 แต่คนละจุด**
+- อาการ: ML Capacity Gate — 20 request พร้อมกันบน ml-service ที่เพิ่ง start ใช้ 15.2 วินาที (worker 1 ตัว) ทุกตัวเกินเพดาน L3 500 ms · request แรกของ process 1,115 ms เทียบกับครั้งถัดไป 20 ms
+- สาเหตุ: `model._load_explainer()` เช็ค status แล้วค่อย import `shap` + สร้าง TreeExplainer (~0.9 วินาที) โดยไม่มีล็อก → request ที่มาพร้อมกันผ่านการเช็คทุกตัวแล้วสร้างซ้ำ (เทสจำลองได้ 20 ครั้งจาก 20 thread) · B63 ใส่ล็อกให้ fit รายคนแล้ว แต่ explainer ของ point view ตกหล่น
+- **กฎ:** lazy-init ของงานหนักที่ใช้ร่วมกันทั้ง process ต้องมีล็อกแบบ double-check (ทางเดินปกติหลังสร้างเสร็จไม่แตะล็อก) และถ้าทำได้ให้สร้างตั้งแต่ startup · ตอนพังต้องจำสถานะ `unavailable` ไม่ลองใหม่ทุก request
+- ผลหลังแก้: request แรก 22 ms · cold burst 15.2 → 4.8 วินาที (worker 1), 3.7 → 1.6 วินาที (worker 4) · ที่เหลือเกิน 500 ms มาจาก fit หลายคนพร้อมกันแย่ง GIL (ยังไม่แก้)
+- **Verify:** `ml-service/tests/test_explainer_init.py` · `hub/backend/tests/reports/ml_capacity_gate_2026-09-21.md` §9
+
+**B80. migration chain เริ่มจากฐานว่างไม่ได้ และ schema ของ dev ต่างจากที่ migration สร้าง — ซ่อนอยู่เพราะไม่มีใครสร้างฐานจากศูนย์**
+- อาการ: `alembic upgrade head` บนฐานว่างล้มที่ `DROP INDEX ix_mfa_challenges_created_at` · CI ต้องโหลด snapshot ของ head แทน ·
+  พอทำให้เริ่มจากศูนย์ได้แล้วเทียบทีละรายการ พบ (1) `login_sessions.is_attack_ip/is_account_takeover` มี `DEFAULT false`
+  ใน hub_db แต่ migration ไม่มี (2) `subsystems.allowed_roles` default ต่างกัน (`::text[]` / `::character varying[]`)
+  (3) `alembic check` ล้ม: model ประกาศ `user_totp_credentials.user_id` เป็น unique index แต่ migration สร้าง UNIQUE constraint
+- สาเหตุ: baseline `609c11174142` เป็น autogenerate **diff** จากฐานที่แอปสร้างตารางเองก่อนใช้ Alembic ไม่ใช่ baseline จริง ·
+  autogenerate ไม่เทียบ server default → default ที่เพิ่มนอกระบบใน dev ไม่เคยเข้า migration · ไม่มีเส้นทางใดตรวจว่า
+  migration chain กับฐานจริงตรงกัน (CI โหลด snapshot แล้ว `stamp head` ซึ่งไม่ได้พิสูจน์อะไร)
+- **กฎ:** (1) baseline ต้องสร้างจากฐานว่างได้ — ใช้ snapshot คงที่ของ schema **ณ revision นั้น** (ของ `609c` สร้างจาก models ที่
+  `da0003b`) ห้ามใช้ models ปัจจุบันหรือ snapshot ของ head · ฐานที่มีตารางบางส่วนต้องหยุดแบบ fail-closed
+  (2) CI ต้องสร้างฐานเทสด้วย `alembic upgrade head` จากฐานว่าง แล้วเทียบกับ snapshot ของ head **ทีละรายการ** จาก catalog
+  (3) การเทียบกับข้อความของ pg_dump ต้องให้สองฝั่งผ่าน dump -> โหลดกลับเหมือนกัน — CHECK ความหมายเดียวกันถูก deparse
+  ต่างกันหลังโหลดกลับ (เจอจริงกับ `expert_reviews`)
+- แก้: baseline แยก empty / legacy / partial · migration `a7b8c9d0e1f2` ตั้ง default ให้ทุกฐานเหมือนกัน · model TOTP ตรงกับฐาน
+- **Verify:** `scripts/test/verify_migrations.sh` (ฐานว่าง / สภาพเดิม / กลางทาง / ค้างครึ่งหนึ่ง) ·
+  `tests/test_baseline_migration.py` · `tests/test_schema_drift_alignment.py` · Backend CI ขั้น "Migrate empty database to head"
+
+---
+
 ## วิธีเพิ่ม bug ใหม่
 
 1. เพิ่มที่ section ที่เหมาะสม (สร้าง section ใหม่ถ้าจำเป็น)

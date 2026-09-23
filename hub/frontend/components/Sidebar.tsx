@@ -61,6 +61,7 @@ const ADMIN_COMMAND: NavItem[] = [
   { href: "/users", label: "Users", keywords: "ผู้ใช้งาน ผู้ใช้ รายชื่อ", glyph: "ID", icon: "users" },
   { href: "/subsystems", label: "Subsystems", keywords: "ระบบย่อย", glyph: "SS", icon: "network" },
   { href: "/pending-requests", label: "Approvals", keywords: "คำขอ อนุมัติ", glyph: "RQ", icon: "inbox" },
+  { href: "/reports/monthly", label: "Monthly Report", keywords: "รายงาน รายเดือน ผู้บริหาร", glyph: "MR", icon: "file" },
 ];
 
 const ADMIN_SECURITY: NavItem[] = [

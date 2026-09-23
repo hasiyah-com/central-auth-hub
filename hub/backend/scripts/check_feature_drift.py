@@ -62,7 +62,7 @@ def main() -> int:
             .all()
         )
         if not rows:
-            print("⚠️  ไม่มี login_sessions — ข้าม drift check")
+            print(" ไม่มี login_sessions — ข้าม drift check")
             return 0
 
         # extract feature vector ต่อ session จริง
@@ -84,7 +84,7 @@ def main() -> int:
 
         names = [n for n, _ in sorted(FEAT.items(), key=lambda kv: kv[1])]
         n = len(vectors)
-        print(f"📊 Feature drift check — {n} sessions จริง vs synthetic training\n")
+        print(f"Feature drift check — {n} sessions จริง vs synthetic training\n")
         print(f"{'feature':32} {'real min':>10} {'real max':>10} {'train':>14}  flag")
         print("-" * 78)
 
@@ -94,7 +94,7 @@ def main() -> int:
             rmin, rmax = min(col), max(col)
             tmin, tmax = TRAIN_EXPECTED.get(name, (float("-inf"), float("inf")))
             out = rmin < tmin or rmax > tmax
-            flag = "⚠️ DRIFT" if out else "ok"
+            flag = "DRIFT" if out else "ok"
             if out:
                 drift_found.append(name)
             print(
@@ -104,10 +104,10 @@ def main() -> int:
 
         print("-" * 78)
         if drift_found:
-            print(f"\n❌ พบ drift {len(drift_found)} feature: {', '.join(drift_found)}")
+            print(f"\nพบ drift {len(drift_found)} feature: {', '.join(drift_found)}")
             print("   → ค่าจริงหลุดช่วง training → แก้ generate_data ให้ครอบ (B49)")
             return 1
-        print("\n✅ ไม่มี drift — ค่าจริงอยู่ในช่วงที่โมเดลเห็นตอน train")
+        print("\nไม่มี drift — ค่าจริงอยู่ในช่วงที่โมเดลเห็นตอน train")
         return 0
     finally:
         db.close()

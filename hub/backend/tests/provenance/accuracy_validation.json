@@ -1,0 +1,843 @@
+{
+  "stage": "validation",
+  "gated_candidate": "G",
+  "verdict": {
+    "verdict": "failed",
+    "deployable": false,
+    "failed": [
+      "campaign_recall",
+      "family_new_passkey",
+      "family_subtle_rare_device",
+      "family_subtle_slow_burst",
+      "family_campaign",
+      "family_login_velocity",
+      "family_subtle_quiet_lateral"
+    ],
+    "inconclusive": [],
+    "regressed_families": [],
+    "items": {
+      "fpr_challenge": "passed",
+      "fpr_block": "passed",
+      "severe_recall": "passed",
+      "campaign_recall": "failed",
+      "family_new_passkey": "failed",
+      "family_subtle_rare_device": "failed",
+      "family_subtle_slow_burst": "failed",
+      "family_campaign": "failed",
+      "family_login_velocity": "failed",
+      "family_subtle_quiet_lateral": "failed"
+    }
+  },
+  "git_commit": "fb4cca0186d3882a79166150db111ee018cb2b89",
+  "calibration_sha256": "9386b816b4632987eb028b1a1ee5c81cfb97d837e57a919d27e54f8c63fd2c76",
+  "seeds": [
+    501,
+    502,
+    503,
+    504,
+    505
+  ],
+  "candidates": {
+    "B": {
+      "thresholds": {
+        "warn": 0.98,
+        "challenge": 0.9984,
+        "block": 0.9996
+      },
+      "fpr": {
+        "challenge": {
+          "verdict": "passed",
+          "per_size": {
+            "50": {
+              "verdict": "passed",
+              "deployable": true,
+              "budget": 0.01,
+              "point": 0.0048875,
+              "ci_low": 0.0032,
+              "ci_high": 0.0069625
+            },
+            "100": {
+              "verdict": "passed",
+              "deployable": true,
+              "budget": 0.01,
+              "point": 0.005,
+              "ci_low": 0.0033375,
+              "ci_high": 0.00715
+            },
+            "500": {
+              "verdict": "passed",
+              "deployable": true,
+              "budget": 0.01,
+              "point": 0.0046875,
+              "ci_low": 0.0029875,
+              "ci_high": 0.0067875
+            },
+            "1000": {
+              "verdict": "passed",
+              "deployable": true,
+              "budget": 0.01,
+              "point": 0.0046625,
+              "ci_low": 0.00295,
+              "ci_high": 0.006775
+            },
+            "5000": {
+              "verdict": "passed",
+              "deployable": true,
+              "budget": 0.01,
+              "point": 0.00445,
+              "ci_low": 0.00275,
+              "ci_high": 0.006575
+            }
+          }
+        },
+        "block": {
+          "verdict": "passed",
+          "per_size": {
+            "50": {
+              "verdict": "passed",
+              "deployable": true,
+              "budget": 0.002,
+              "point": 0.000575,
+              "ci_low": 0.000175,
+              "ci_high": 0.0010875
+            },
+            "100": {
+              "verdict": "passed",
+              "deployable": true,
+              "budget": 0.002,
+              "point": 0.0006125,
+              "ci_low": 0.0001875,
+              "ci_high": 0.0011875
+            },
+            "500": {
+              "verdict": "passed",
+              "deployable": true,
+              "budget": 0.002,
+              "point": 0.0006125,
+              "ci_low": 0.0002125,
+              "ci_high": 0.0011625
+            },
+            "1000": {
+              "verdict": "passed",
+              "deployable": true,
+              "budget": 0.002,
+              "point": 0.0005875,
+              "ci_low": 0.0002,
+              "ci_high": 0.001125
+            },
+            "5000": {
+              "verdict": "passed",
+              "deployable": true,
+              "budget": 0.002,
+              "point": 0.0004875,
+              "ci_low": 0.000125,
+              "ci_high": 0.0010125
+            }
+          }
+        }
+      },
+      "severe_recall": {
+        "verdict": "passed",
+        "deployable": true,
+        "target": 0.9,
+        "point": 1.0,
+        "ci_low": 1.0,
+        "ci_high": 1.0,
+        "n_users": 32
+      },
+      "campaign_recall": {
+        "verdict": "failed",
+        "deployable": false,
+        "target": 0.8,
+        "point": 0.732588,
+        "ci_low": 0.698542,
+        "ci_high": 0.768523,
+        "n_units": 13425
+      },
+      "families": {
+        "new_passkey": {
+          "verdict": "failed",
+          "deployable": false,
+          "target": 0.6,
+          "point": 0.0825,
+          "ci_low": 0.028125,
+          "ci_high": 0.155625,
+          "n_users": 32
+        },
+        "subtle_rare_device": {
+          "verdict": "failed",
+          "deployable": false,
+          "target": 0.6,
+          "point": 0.0608,
+          "ci_low": 0.016,
+          "ci_high": 0.1216,
+          "n_users": 25
+        },
+        "subtle_slow_burst": {
+          "verdict": "failed",
+          "deployable": false,
+          "target": 0.6,
+          "point": 0.135,
+          "ci_low": 0.0625,
+          "ci_high": 0.228125,
+          "n_users": 32
+        },
+        "campaign": {
+          "verdict": "failed",
+          "deployable": false,
+          "target": 0.8,
+          "point": 0.310875,
+          "ci_low": 0.23125,
+          "ci_high": 0.399,
+          "n_users": 32
+        },
+        "login_velocity": {
+          "verdict": "failed",
+          "deployable": false,
+          "target": 0.7,
+          "point": 0.283125,
+          "ci_low": 0.1925,
+          "ci_high": 0.374375,
+          "n_users": 32
+        },
+        "subtle_quiet_lateral": {
+          "verdict": "failed",
+          "deployable": false,
+          "target": 0.75,
+          "point": 0.60875,
+          "ci_low": 0.485,
+          "ci_high": 0.721875,
+          "n_users": 32
+        }
+      },
+      "family_recall_point": {
+        "campaign": 0.310875,
+        "combined_ato": 1.0,
+        "concurrent_sessions": 1.0,
+        "failed_spike": 1.0,
+        "login_velocity": 0.283125,
+        "new_device": 1.0,
+        "new_os": 1.0,
+        "new_passkey": 0.0825,
+        "new_ua_family": 1.0,
+        "off_hours": 0.8575,
+        "permission_change": 1.0,
+        "subsystem_lateral": 0.76,
+        "subtle_lowandslow": 0.8,
+        "subtle_mild_offhour": 0.646875,
+        "subtle_quiet_lateral": 0.60875,
+        "subtle_rare_device": 0.0608,
+        "subtle_slow_burst": 0.135
+      },
+      "precision": {
+        "challenge": 0.9094514525993884,
+        "block": 0.9830956930765838
+      },
+      "l3": {
+        "50": {
+          "abstain_rate": 1.0,
+          "l3_fire_rate_on_normal": 0.0,
+          "normal_zone_share": {}
+        },
+        "100": {
+          "abstain_rate": 1.0,
+          "l3_fire_rate_on_normal": 0.0,
+          "normal_zone_share": {}
+        },
+        "500": {
+          "abstain_rate": 1.0,
+          "l3_fire_rate_on_normal": 0.0,
+          "normal_zone_share": {}
+        },
+        "1000": {
+          "abstain_rate": 1.0,
+          "l3_fire_rate_on_normal": 0.0,
+          "normal_zone_share": {}
+        },
+        "5000": {
+          "abstain_rate": 1.0,
+          "l3_fire_rate_on_normal": 0.0,
+          "normal_zone_share": {}
+        }
+      },
+      "verdict": {
+        "verdict": "failed",
+        "deployable": false,
+        "failed": [
+          "campaign_recall",
+          "family_new_passkey",
+          "family_subtle_rare_device",
+          "family_subtle_slow_burst",
+          "family_campaign",
+          "family_login_velocity",
+          "family_subtle_quiet_lateral"
+        ],
+        "inconclusive": [],
+        "regressed_families": [],
+        "items": {
+          "fpr_challenge": "passed",
+          "fpr_block": "passed",
+          "severe_recall": "passed",
+          "campaign_recall": "failed",
+          "family_new_passkey": "failed",
+          "family_subtle_rare_device": "failed",
+          "family_subtle_slow_burst": "failed",
+          "family_campaign": "failed",
+          "family_login_velocity": "failed",
+          "family_subtle_quiet_lateral": "failed"
+        }
+      }
+    },
+    "E": {
+      "thresholds": {
+        "warn": 0.994804,
+        "challenge": 0.99998,
+        "block": 0.99998
+      },
+      "fpr": {
+        "challenge": {
+          "verdict": "passed",
+          "per_size": {
+            "50": {
+              "verdict": "passed",
+              "deployable": true,
+              "budget": 0.01,
+              "point": 0.00415,
+              "ci_low": 0.0024875,
+              "ci_high": 0.0063125
+            },
+            "100": {
+              "verdict": "passed",
+              "deployable": true,
+              "budget": 0.01,
+              "point": 0.004525,
+              "ci_low": 0.0027875,
+              "ci_high": 0.0066875
+            },
+            "500": {
+              "verdict": "passed",
+              "deployable": true,
+              "budget": 0.01,
+              "point": 0.004625,
+              "ci_low": 0.0029,
+              "ci_high": 0.0067625
+            },
+            "1000": {
+              "verdict": "passed",
+              "deployable": true,
+              "budget": 0.01,
+              "point": 0.0044625,
+              "ci_low": 0.0027625,
+              "ci_high": 0.0065875
+            },
+            "5000": {
+              "verdict": "passed",
+              "deployable": true,
+              "budget": 0.01,
+              "point": 0.0044125,
+              "ci_low": 0.002625,
+              "ci_high": 0.0066875
+            }
+          }
+        },
+        "block": {
+          "verdict": "passed",
+          "per_size": {
+            "50": {
+              "verdict": "passed",
+              "deployable": true,
+              "budget": 0.002,
+              "point": 0.000475,
+              "ci_low": 0.0002,
+              "ci_high": 0.00085
+            },
+            "100": {
+              "verdict": "passed",
+              "deployable": true,
+              "budget": 0.002,
+              "point": 0.0004375,
+              "ci_low": 0.000175,
+              "ci_high": 0.0007875
+            },
+            "500": {
+              "verdict": "passed",
+              "deployable": true,
+              "budget": 0.002,
+              "point": 0.000625,
+              "ci_low": 0.0002625,
+              "ci_high": 0.0011
+            },
+            "1000": {
+              "verdict": "passed",
+              "deployable": true,
+              "budget": 0.002,
+              "point": 0.0006625,
+              "ci_low": 0.000275,
+              "ci_high": 0.0011875
+            },
+            "5000": {
+              "verdict": "passed",
+              "deployable": true,
+              "budget": 0.002,
+              "point": 0.00065,
+              "ci_low": 0.0002375,
+              "ci_high": 0.001225
+            }
+          }
+        }
+      },
+      "severe_recall": {
+        "verdict": "passed",
+        "deployable": true,
+        "target": 0.9,
+        "point": 1.0,
+        "ci_low": 1.0,
+        "ci_high": 1.0,
+        "n_users": 32
+      },
+      "campaign_recall": {
+        "verdict": "failed",
+        "deployable": false,
+        "target": 0.8,
+        "point": 0.499665,
+        "ci_low": 0.473978,
+        "ci_high": 0.531439,
+        "n_units": 13425
+      },
+      "families": {
+        "new_passkey": {
+          "verdict": "failed",
+          "deployable": false,
+          "target": 0.6,
+          "point": 0.023125,
+          "ci_low": 0.006875,
+          "ci_high": 0.04625,
+          "n_users": 32
+        },
+        "subtle_rare_device": {
+          "verdict": "failed",
+          "deployable": false,
+          "target": 0.6,
+          "point": 0.0296,
+          "ci_low": 0.0,
+          "ci_high": 0.0768,
+          "n_users": 25
+        },
+        "subtle_slow_burst": {
+          "verdict": "failed",
+          "deployable": false,
+          "target": 0.6,
+          "point": 0.0375,
+          "ci_low": 0.01,
+          "ci_high": 0.076875,
+          "n_users": 32
+        },
+        "campaign": {
+          "verdict": "failed",
+          "deployable": false,
+          "target": 0.8,
+          "point": 0.197375,
+          "ci_low": 0.12925,
+          "ci_high": 0.27175,
+          "n_users": 32
+        },
+        "login_velocity": {
+          "verdict": "failed",
+          "deployable": false,
+          "target": 0.7,
+          "point": 0.05125,
+          "ci_low": 0.02,
+          "ci_high": 0.09125,
+          "n_users": 32
+        },
+        "subtle_quiet_lateral": {
+          "verdict": "failed",
+          "deployable": false,
+          "target": 0.75,
+          "point": 0.17,
+          "ci_low": 0.08375,
+          "ci_high": 0.274375,
+          "n_users": 32
+        }
+      },
+      "family_recall_point": {
+        "campaign": 0.197375,
+        "combined_ato": 1.0,
+        "concurrent_sessions": 1.0,
+        "failed_spike": 1.0,
+        "login_velocity": 0.05125,
+        "new_device": 1.0,
+        "new_os": 1.0,
+        "new_passkey": 0.023125,
+        "new_ua_family": 1.0,
+        "off_hours": 0.14375,
+        "permission_change": 1.0,
+        "subsystem_lateral": 0.20875,
+        "subtle_lowandslow": 0.06875,
+        "subtle_mild_offhour": 0.04625,
+        "subtle_quiet_lateral": 0.17,
+        "subtle_rare_device": 0.0296,
+        "subtle_slow_burst": 0.0375
+      },
+      "precision": {
+        "challenge": 0.8803130481716368,
+        "block": 0.977913397268236
+      },
+      "l3": {
+        "50": {
+          "abstain_rate": 0.0,
+          "l3_fire_rate_on_normal": 6.25e-05,
+          "normal_zone_share": {}
+        },
+        "100": {
+          "abstain_rate": 0.0,
+          "l3_fire_rate_on_normal": 0.000125,
+          "normal_zone_share": {}
+        },
+        "500": {
+          "abstain_rate": 0.0,
+          "l3_fire_rate_on_normal": 6.25e-05,
+          "normal_zone_share": {}
+        },
+        "1000": {
+          "abstain_rate": 0.0,
+          "l3_fire_rate_on_normal": 7.5e-05,
+          "normal_zone_share": {}
+        },
+        "5000": {
+          "abstain_rate": 0.0,
+          "l3_fire_rate_on_normal": 0.0001,
+          "normal_zone_share": {}
+        }
+      },
+      "verdict": {
+        "verdict": "failed",
+        "deployable": false,
+        "failed": [
+          "campaign_recall",
+          "family_new_passkey",
+          "family_subtle_rare_device",
+          "family_subtle_slow_burst",
+          "family_campaign",
+          "family_login_velocity",
+          "family_subtle_quiet_lateral"
+        ],
+        "inconclusive": [],
+        "regressed_families": [],
+        "items": {
+          "fpr_challenge": "passed",
+          "fpr_block": "passed",
+          "severe_recall": "passed",
+          "campaign_recall": "failed",
+          "family_new_passkey": "failed",
+          "family_subtle_rare_device": "failed",
+          "family_subtle_slow_burst": "failed",
+          "family_campaign": "failed",
+          "family_login_velocity": "failed",
+          "family_subtle_quiet_lateral": "failed"
+        }
+      }
+    },
+    "G": {
+      "thresholds": {
+        "warn": 0.994804,
+        "challenge": 0.99998,
+        "block": 0.999995
+      },
+      "fpr": {
+        "challenge": {
+          "verdict": "passed",
+          "per_size": {
+            "50": {
+              "verdict": "passed",
+              "deployable": true,
+              "budget": 0.01,
+              "point": 0.00445,
+              "ci_low": 0.0027875,
+              "ci_high": 0.006575
+            },
+            "100": {
+              "verdict": "passed",
+              "deployable": true,
+              "budget": 0.01,
+              "point": 0.0048,
+              "ci_low": 0.0030375,
+              "ci_high": 0.0069625
+            },
+            "500": {
+              "verdict": "passed",
+              "deployable": true,
+              "budget": 0.01,
+              "point": 0.0048125,
+              "ci_low": 0.0031,
+              "ci_high": 0.0069625
+            },
+            "1000": {
+              "verdict": "passed",
+              "deployable": true,
+              "budget": 0.01,
+              "point": 0.00455,
+              "ci_low": 0.0028375,
+              "ci_high": 0.0066875
+            },
+            "5000": {
+              "verdict": "passed",
+              "deployable": true,
+              "budget": 0.01,
+              "point": 0.0045625,
+              "ci_low": 0.002775,
+              "ci_high": 0.0068625
+            }
+          }
+        },
+        "block": {
+          "verdict": "passed",
+          "per_size": {
+            "50": {
+              "verdict": "passed",
+              "deployable": true,
+              "budget": 0.002,
+              "point": 0.0005125,
+              "ci_low": 0.00025,
+              "ci_high": 0.00085
+            },
+            "100": {
+              "verdict": "passed",
+              "deployable": true,
+              "budget": 0.002,
+              "point": 0.0007,
+              "ci_low": 0.0003375,
+              "ci_high": 0.0012
+            },
+            "500": {
+              "verdict": "passed",
+              "deployable": true,
+              "budget": 0.002,
+              "point": 0.0005875,
+              "ci_low": 0.000275,
+              "ci_high": 0.000975
+            },
+            "1000": {
+              "verdict": "passed",
+              "deployable": true,
+              "budget": 0.002,
+              "point": 0.0006,
+              "ci_low": 0.000275,
+              "ci_high": 0.0010125
+            },
+            "5000": {
+              "verdict": "passed",
+              "deployable": true,
+              "budget": 0.002,
+              "point": 0.0005625,
+              "ci_low": 0.0002375,
+              "ci_high": 0.0009875
+            }
+          }
+        }
+      },
+      "severe_recall": {
+        "verdict": "passed",
+        "deployable": true,
+        "target": 0.9,
+        "point": 1.0,
+        "ci_low": 1.0,
+        "ci_high": 1.0,
+        "n_users": 32
+      },
+      "campaign_recall": {
+        "verdict": "failed",
+        "deployable": false,
+        "target": 0.8,
+        "point": 0.641564,
+        "ci_low": 0.610279,
+        "ci_high": 0.678806,
+        "n_units": 13425
+      },
+      "families": {
+        "new_passkey": {
+          "verdict": "failed",
+          "deployable": false,
+          "target": 0.6,
+          "point": 0.060625,
+          "ci_low": 0.0225,
+          "ci_high": 0.113125,
+          "n_users": 32
+        },
+        "subtle_rare_device": {
+          "verdict": "failed",
+          "deployable": false,
+          "target": 0.6,
+          "point": 0.0536,
+          "ci_low": 0.008,
+          "ci_high": 0.1144,
+          "n_users": 25
+        },
+        "subtle_slow_burst": {
+          "verdict": "failed",
+          "deployable": false,
+          "target": 0.6,
+          "point": 0.075,
+          "ci_low": 0.024375,
+          "ci_high": 0.143125,
+          "n_users": 32
+        },
+        "campaign": {
+          "verdict": "failed",
+          "deployable": false,
+          "target": 0.8,
+          "point": 0.237625,
+          "ci_low": 0.158125,
+          "ci_high": 0.32575,
+          "n_users": 32
+        },
+        "login_velocity": {
+          "verdict": "failed",
+          "deployable": false,
+          "target": 0.7,
+          "point": 0.083125,
+          "ci_low": 0.04,
+          "ci_high": 0.14125,
+          "n_users": 32
+        },
+        "subtle_quiet_lateral": {
+          "verdict": "failed",
+          "deployable": false,
+          "target": 0.75,
+          "point": 0.52875,
+          "ci_low": 0.4025,
+          "ci_high": 0.651875,
+          "n_users": 32
+        }
+      },
+      "family_recall_point": {
+        "campaign": 0.237625,
+        "combined_ato": 1.0,
+        "concurrent_sessions": 1.0,
+        "failed_spike": 1.0,
+        "login_velocity": 0.083125,
+        "new_device": 1.0,
+        "new_os": 1.0,
+        "new_passkey": 0.060625,
+        "new_ua_family": 1.0,
+        "off_hours": 0.735625,
+        "permission_change": 1.0,
+        "subsystem_lateral": 0.66375,
+        "subtle_lowandslow": 0.323125,
+        "subtle_mild_offhour": 0.2625,
+        "subtle_quiet_lateral": 0.52875,
+        "subtle_rare_device": 0.0536,
+        "subtle_slow_burst": 0.075
+      },
+      "precision": {
+        "challenge": 0.8973592426507224,
+        "block": 0.979708904109589
+      },
+      "l3": {
+        "50": {
+          "abstain_rate": 0.0,
+          "l3_fire_rate_on_normal": 6.25e-05,
+          "normal_zone_share": {
+            "low": 0.6755625,
+            "high": 0.2419,
+            "ambiguous": 0.0825375
+          }
+        },
+        "100": {
+          "abstain_rate": 0.0,
+          "l3_fire_rate_on_normal": 0.000125,
+          "normal_zone_share": {
+            "low": 0.6931375,
+            "high": 0.273825,
+            "ambiguous": 0.0330375
+          }
+        },
+        "500": {
+          "abstain_rate": 0.0,
+          "l3_fire_rate_on_normal": 6.25e-05,
+          "normal_zone_share": {
+            "low": 0.718475,
+            "high": 0.281525
+          }
+        },
+        "1000": {
+          "abstain_rate": 0.0,
+          "l3_fire_rate_on_normal": 7.5e-05,
+          "normal_zone_share": {
+            "low": 0.7226375,
+            "high": 0.2773625
+          }
+        },
+        "5000": {
+          "abstain_rate": 0.0,
+          "l3_fire_rate_on_normal": 0.0001,
+          "normal_zone_share": {
+            "low": 0.7267,
+            "high": 0.2733
+          }
+        }
+      },
+      "verdict": {
+        "verdict": "failed",
+        "deployable": false,
+        "failed": [
+          "campaign_recall",
+          "family_new_passkey",
+          "family_subtle_rare_device",
+          "family_subtle_slow_burst",
+          "family_campaign",
+          "family_login_velocity",
+          "family_subtle_quiet_lateral"
+        ],
+        "inconclusive": [],
+        "regressed_families": [],
+        "items": {
+          "fpr_challenge": "passed",
+          "fpr_block": "passed",
+          "severe_recall": "passed",
+          "campaign_recall": "failed",
+          "family_new_passkey": "failed",
+          "family_subtle_rare_device": "failed",
+          "family_subtle_slow_burst": "failed",
+          "family_campaign": "failed",
+          "family_login_velocity": "failed",
+          "family_subtle_quiet_lateral": "failed"
+        }
+      }
+    }
+  },
+  "paired": {
+    "G_minus_B": {
+      "severe": {
+        "delta": 0.0,
+        "ci_low": 0.0,
+        "ci_high": 0.0
+      },
+      "weak_families": {
+        "delta": -0.07501597444089457,
+        "ci_low": -0.09546325878594249,
+        "ci_high": -0.05421221864951768
+      }
+    },
+    "G_minus_E": {
+      "severe": {
+        "delta": 0.0,
+        "ci_low": 0.0,
+        "ci_high": 0.0
+      },
+      "weak_families": {
+        "delta": 0.07009584664536742,
+        "ci_low": 0.05356913183279743,
+        "ci_high": 0.08789968652037618
+      }
+    }
+  },
+  "l3_value_vs_B": {
+    "attack_events_changed": 3316,
+    "attack_newly_caught_by_g": 246,
+    "attack_lost_by_g": 3070,
+    "net_attack_caught": -2824,
+    "sum_over_sizes_challenge_fpr_g_minus_b": -0.0005124999999999991
+  },
+  "holdout_opened": false
+}

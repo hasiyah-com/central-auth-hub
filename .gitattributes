@@ -1,0 +1,3 @@
+# ไฟล์หลักฐานที่ตรวจด้วย sha256 — ห้ามแปลงปลายบรรทัดตอน checkout
+# (core.autocrlf=true จะแปลงเป็น CRLF แล้ว hash ไม่ตรง validate_startup ไม่ยอม start)
+hub/backend/app/security/artifacts/** -text

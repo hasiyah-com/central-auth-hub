@@ -17,7 +17,7 @@ from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
-from sqlalchemy import and_, case, func, not_, or_
+from sqlalchemy import String, and_, case, cast, func, not_, or_
 from sqlalchemy.orm import Session, aliased
 
 from app.config import settings
@@ -1648,7 +1648,7 @@ def list_notifications(
     override_items = [
         {
             "id": str(req.id),
-            "title": f"🛡️ Admin Override · {req.request_type.replace('_', ' ').title()} · {sub_name}",
+            "title": f"Admin Override · {req.request_type.replace('_', ' ').title()} · {sub_name}",
             "subtitle": f"by {req_email or 'unknown'}",
             "created_at": req.reviewed_at.isoformat() if req.reviewed_at else None,
             "severity": "info",
@@ -1687,7 +1687,7 @@ def list_notifications(
         {
             "id": str(req.id),
             "title": (
-                f"{'✅' if req.status == 'approved' else '❌'} "
+                f"{'' if req.status == 'approved' else ''} "
                 f"{req.status.title()} · "
                 f"{req.request_type.replace('_', ' ').title()} · {sub_name}"
             ),
@@ -1784,12 +1784,12 @@ def list_notifications(
     )
     for row in api_summary_rows:
         meta = row.metadata_json or {}
-        label = meta.get("label") or "📋 รายงาน API"
+        label = meta.get("label") or "รายงาน API"
         total_alerts = meta.get("total", 0)
         unresolved = meta.get("unresolved", 0)
         by_sev = meta.get("by_severity") or {}
         if total_alerts == 0:
-            subtitle = "✓ ไม่มี API alert ใน 24h"
+            subtitle = "ไม่มี API alert ใน 24h"
             sev = "info"
         else:
             sev_parts = []
@@ -1897,7 +1897,7 @@ def list_notifications(
             sev = "info"
         # text สรุป — รวม Hub + subsystems
         if unhealthy == 0 and unknown == 0:
-            subtitle = f"✓ ทุกระบบปกติ ({online}/{total_subs} online · รวม Hub)"
+            subtitle = f"ทุกระบบปกติ ({online}/{total_subs} online · รวม Hub)"
         else:
             parts = []
             if online:
@@ -1961,42 +1961,42 @@ def list_notifications(
         "categories": {
             "approval_requests": {
                 "label": "คำขอจาก Developer (รอ review)",
-                "icon": "📋",
+                "icon": "",
                 "count": pending_total,
                 "items": pending_items,
                 "link": "/pending-requests",
             },
             "admin_overrides": {
                 "label": "Admin Override (24h ล่าสุด)",
-                "icon": "🛡️",
+                "icon": "",
                 "count": override_total,
                 "items": override_items,
                 "link": "/pending-requests",
             },
             "decided_requests": {
                 "label": "ประวัติ approve/reject คำขอ (24h ล่าสุด)",
-                "icon": "📜",
+                "icon": "",
                 "count": decided_total,
                 "items": decided_items,
                 "link": "/pending-requests",
             },
             "ml_anomaly": {
                 "label": "ML Anomaly Login",
-                "icon": "🧠",
+                "icon": "",
                 "count": ml_total,
                 "items": ml_items,
                 "link": "/ml",
             },
             "api_alerts": {
                 "label": "API Security Alerts",
-                "icon": "🛡️",
+                "icon": "",
                 "count": api_total,
                 "items": api_items,
                 "link": "/api-alerts",
             },
             "subsystem_health": {
                 "label": "Subsystem health / รายงาน",
-                "icon": "🟢",
+                "icon": "",
                 "count": health_total,
                 "items": health_items,
                 "link": "/subsystems",
@@ -2032,7 +2032,7 @@ async def emit_health_summary_now(
 
     now_bkk = datetime.now(BKK_TZ)
     slot = f"manual-{now_bkk.strftime('%H%M%S')}"
-    label = "🧪 รายงาน (manual)"
+    label = "รายงาน (manual)"
     date_str = now_bkk.strftime("%Y-%m-%d")
 
     await _emit_summary(db, subsystems, list(results), slot, label, date_str)
@@ -2969,6 +2969,9 @@ def access_activity(
             func.date_trunc("hour", LoginSession.created_at).label("h"),
             func.count(LoginSession.id),
             func.sum(case((LoginSession.decision.in_(_BLOCKED_DECISIONS), 1), else_=0)),
+            func.sum(
+                case((LoginSession.decision.in_(_CHALLENGED_DECISIONS), 1), else_=0)
+            ),
         )
         .group_by("h")
         .order_by("h")
@@ -2979,8 +2982,9 @@ def access_activity(
             "hour": h.isoformat() if h else None,
             "count": int(c or 0),
             "blocked": int(b or 0),
+            "challenged": int(ch or 0),
         }
-        for h, c, b in hour_rows
+        for h, c, b, ch in hour_rows
     ]
 
     return {
@@ -3001,4 +3005,319 @@ def access_activity(
         },
         "channels": channels,
         "hourly": hourly,
+    }
+
+
+# ─────────────────────────────────────────────────────────────
+# Dashboard insights — ตัวเลขเปรียบเทียบ + การกระจายความเสี่ยง + สัญญาณ
+# ทุกค่ามาจาก DB จริง; ไม่มีข้อมูล → None / 0 / [] (ห้ามเดา)
+# ─────────────────────────────────────────────────────────────
+
+# แปล key ใน risk_reasons เป็นข้อความไทยสำหรับ SECURITY SIGNALS
+_SIGNAL_LABELS = {
+    "is_new_device": "อุปกรณ์ใหม่",
+    "is_new_user_agent_family": "เบราว์เซอร์ใหม่",
+    "is_new_country": "ประเทศใหม่",
+    "country_change": "เปลี่ยนประเทศฉับพลัน",
+    "failed_logins": "ล็อกอินล้มเหลวถี่",
+    "hours_diff": "เข้าใช้ผิดเวลาปกติ",
+    "hour_rarity": "ชั่วโมงที่ไม่ค่อยใช้",
+    "impossible_travel": "การเดินทางเป็นไปไม่ได้",
+    "multi_account": "IP เดียวหลายบัญชี",
+    "attack_ip": "IP อยู่ใน blacklist",
+    "cross_subsystem": "ความเสี่ยงข้ามระบบย่อย",
+    "concurrent_sessions": "เซสชันซ้อนผิดปกติ",
+    "velocity": "ความถี่การล็อกอินผิดปกติ",
+}
+
+
+def _reason_key(reason: str) -> str:
+    """ดึง key จาก risk_reasons เช่น 'is_new_device (+0.30)' → 'is_new_device'.
+
+    รูปแบบที่เจอจริงมีทั้ง 'key (+0.30)' และ 'key=value (+0.30)'
+    """
+    head = str(reason).split("(")[0].strip()
+    return head.split("=")[0].strip()
+
+
+# ─────────────────────────────────────────────────────────────
+# Global search — ช่องค้นหา ⌘K บน console
+# ค้น ผู้ใช้ / ระบบย่อย / IP จากข้อมูลจริง (admin เท่านั้น)
+# ─────────────────────────────────────────────────────────────
+
+_SEARCH_MIN_LEN = 2
+
+
+def _escape_like(term: str) -> str:
+    """escape wildcard ของ SQL LIKE.
+
+    ถ้าไม่ escape ผู้ใช้พิมพ์ '%' ตัวเดียวจะกวาดทุกแถวออกมาได้
+    (ข้อมูลรั่วแม้จะผ่าน RBAC แล้วก็ตาม) — ต้อง escape backslash, % และ _
+    """
+    return term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+@router.get("/search")
+def global_search(
+    q: str = Query("", description="คำค้น — ผู้ใช้ / ระบบย่อย / IP"),
+    limit: int = Query(5, ge=1, le=25, description="จำนวนผลลัพธ์ต่อกลุ่ม"),
+    db: Session = Depends(get_db),
+    _admin: User = Depends(require_hub_admin),
+):
+    """ค้นหาข้ามหมวดสำหรับช่องค้นหาบน console.
+
+    คืน 3 กลุ่ม: users / subsystems / ips — ทุกอย่างมาจาก DB จริง
+
+    - คำค้นสั้นกว่า 2 ตัวอักษร คืนผลว่างเสมอ (กันลากทั้งตารางออกมา)
+    - wildcard ของ SQL ถูก escape → '%' เป็นตัวอักษรธรรมดา
+    - ค้นแบบ case-insensitive (ilike)
+    """
+    term = (q or "").strip()
+    empty = {"query": term, "users": [], "subsystems": [], "ips": []}
+    if len(term) < _SEARCH_MIN_LEN:
+        return empty
+
+    like = f"%{_escape_like(term)}%"
+
+    # ── ผู้ใช้ — อีเมล / ชื่อ / รหัสประจำตัว ──
+    users = (
+        db.query(User)
+        .filter(
+            or_(
+                User.email.ilike(like, escape="\\"),
+                User.full_name.ilike(like, escape="\\"),
+                User.identifier.ilike(like, escape="\\"),
+            )
+        )
+        .order_by(User.email)
+        .limit(limit)
+        .all()
+    )
+
+    # ── ระบบย่อย — ชื่อ / client_id ──
+    subs = (
+        db.query(Subsystem)
+        .filter(
+            or_(
+                Subsystem.name.ilike(like, escape="\\"),
+                Subsystem.client_id.ilike(like, escape="\\"),
+            )
+        )
+        .order_by(Subsystem.name)
+        .limit(limit)
+        .all()
+    )
+
+    # ── IP — จาก login_sessions (cast INET → text เพื่อ match บางส่วน) ──
+    ip_rows = (
+        db.query(
+            cast(LoginSession.ip, String).label("ip"),
+            func.count(LoginSession.id).label("n"),
+            func.max(LoginSession.created_at).label("last_seen"),
+        )
+        .filter(
+            LoginSession.ip.isnot(None),
+            cast(LoginSession.ip, String).ilike(like, escape="\\"),
+        )
+        .group_by(cast(LoginSession.ip, String))
+        .order_by(func.count(LoginSession.id).desc())
+        .limit(limit)
+        .all()
+    )
+
+    return {
+        "query": term,
+        "users": [
+            {
+                "id": str(u.id),
+                "email": u.email,
+                "full_name": u.full_name,
+                "user_type": u.user_type,
+                "identifier": u.identifier,
+                "status": u.status,
+            }
+            for u in users
+        ],
+        "subsystems": [
+            {
+                "id": str(s.id),
+                "name": s.name,
+                "client_id": s.client_id,
+                "status": s.status,
+            }
+            for s in subs
+        ],
+        "ips": [
+            {
+                "ip": row.ip,
+                "sessions": int(row.n or 0),
+                "last_seen": row.last_seen.isoformat() if row.last_seen else None,
+            }
+            for row in ip_rows
+        ],
+    }
+
+
+@router.get("/dashboard/insights")
+def dashboard_insights(
+    hours: int = Query(24, ge=1, le=8760),
+    db: Session = Depends(get_db),
+    _admin: User = Depends(require_hub_admin),
+):
+    """ตัวเลขเสริมของหน้า dashboard ที่ /overview กับ /activity ยังไม่มี.
+
+    - users.new_30d      — ผู้ใช้ที่สมัครใน 30 วันล่าสุด
+    - logins today/yesterday + change_pct  — เทียบปริมาณกับเมื่อวาน
+    - risk avg today/yesterday + delta     — เทียบคะแนนเฉลี่ยกับเมื่อวาน
+    - risk.distribution  — 4 ถังตาม THRESHOLDS จริงของ risk_aggregator
+    - signals            — จัดกลุ่มจาก LoginSession.risk_reasons ที่บันทึกไว้จริง
+    - attack_ip          — สัดส่วน session ที่มาจาก IP ใน blacklist
+
+    ค่าที่คำนวณไม่ได้ (ไม่มี baseline) คืน None เสมอ — ไม่ปัดเป็น 0
+    """
+    from app.security.risk_aggregator import THRESHOLDS
+
+    now = datetime.utcnow()
+    since = now - timedelta(hours=hours)
+    day_ago = now - timedelta(days=1)
+    two_days_ago = now - timedelta(days=2)
+
+    # ── users ──
+    users_total = db.query(func.count(User.id)).scalar() or 0
+    users_new_30d = (
+        db.query(func.count(User.id))
+        .filter(User.created_at >= now - timedelta(days=30))
+        .scalar()
+        or 0
+    )
+
+    # ── logins วันนี้ vs เมื่อวาน (หน้าต่าง 24 ชม. เลื่อน) ──
+    logins_today = (
+        db.query(func.count(LoginSession.id))
+        .filter(LoginSession.created_at >= day_ago)
+        .scalar()
+        or 0
+    )
+    logins_yday = (
+        db.query(func.count(LoginSession.id))
+        .filter(
+            LoginSession.created_at >= two_days_ago,
+            LoginSession.created_at < day_ago,
+        )
+        .scalar()
+        or 0
+    )
+    change_pct = (
+        round((logins_today - logins_yday) / logins_yday * 100, 1)
+        if logins_yday
+        else None
+    )
+
+    # ── risk เฉลี่ย วันนี้ vs เมื่อวาน ──
+    def _avg(start, end=None):
+        q = db.query(func.avg(LoginSession.risk_score)).filter(
+            LoginSession.created_at >= start,
+            LoginSession.risk_score.isnot(None),
+        )
+        if end is not None:
+            q = q.filter(LoginSession.created_at < end)
+        v = q.scalar()
+        return round(float(v), 3) if v is not None else None
+
+    avg_today = _avg(day_ago)
+    avg_yday = _avg(two_days_ago, day_ago)
+    risk_delta = (
+        round(avg_today - avg_yday, 3)
+        if avg_today is not None and avg_yday is not None
+        else None
+    )
+
+    # ── การกระจายคะแนน (ใช้เกณฑ์จริงจาก risk_aggregator) ──
+    warn_t = float(THRESHOLDS["warn"])
+    chal_t = float(THRESHOLDS["challenge"])
+    block_t = float(THRESHOLDS["block"])
+
+    scored_q = db.query(LoginSession.risk_score).filter(
+        LoginSession.created_at >= since, LoginSession.risk_score.isnot(None)
+    )
+
+    def _count_between(lo, hi=None):
+        q = db.query(func.count(LoginSession.id)).filter(
+            LoginSession.created_at >= since,
+            LoginSession.risk_score.isnot(None),
+            LoginSession.risk_score >= lo,
+        )
+        if hi is not None:
+            q = q.filter(LoginSession.risk_score < hi)
+        return int(q.scalar() or 0)
+
+    distribution = {
+        "low": _count_between(0, warn_t),
+        "medium": _count_between(warn_t, chal_t),
+        "high": _count_between(chal_t, block_t),
+        "critical": _count_between(block_t),
+    }
+    distribution["scored_total"] = scored_q.count()
+
+    # ── security signals — นับจาก risk_reasons ที่บันทึกไว้จริง ──
+    reason_rows = (
+        db.query(LoginSession.risk_reasons)
+        .filter(
+            LoginSession.created_at >= since,
+            LoginSession.risk_reasons.isnot(None),
+        )
+        .all()
+    )
+    tally: dict[str, int] = {}
+    for (reasons,) in reason_rows:
+        if not isinstance(reasons, list):
+            continue
+        for r in reasons:
+            key = _reason_key(r)
+            if key:
+                tally[key] = tally.get(key, 0) + 1
+    signals = [
+        {"key": k, "label": _SIGNAL_LABELS.get(k, k), "count": v}
+        for k, v in sorted(tally.items(), key=lambda kv: -kv[1])
+    ]
+
+    # ── attack IP ──
+    window_total = (
+        db.query(func.count(LoginSession.id))
+        .filter(LoginSession.created_at >= since)
+        .scalar()
+        or 0
+    )
+    attack_sessions = (
+        db.query(func.count(LoginSession.id))
+        .filter(
+            LoginSession.created_at >= since,
+            LoginSession.is_attack_ip.is_(True),
+        )
+        .scalar()
+        or 0
+    )
+
+    return {
+        "window_hours": hours,
+        "users": {"total": int(users_total), "new_30d": int(users_new_30d)},
+        "logins": {
+            "today": int(logins_today),
+            "yesterday": int(logins_yday),
+            "change_pct": change_pct,
+        },
+        "risk": {
+            "avg_today": avg_today,
+            "avg_yesterday": avg_yday,
+            "delta": risk_delta,
+            "thresholds": {"warn": warn_t, "challenge": chal_t, "block": block_t},
+            "distribution": distribution,
+        },
+        "signals": signals,
+        "attack_ip": {
+            "sessions": int(attack_sessions),
+            "pct": (
+                round(attack_sessions / window_total * 100, 1) if window_total else None
+            ),
+        },
     }

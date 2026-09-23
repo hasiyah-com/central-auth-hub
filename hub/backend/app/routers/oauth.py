@@ -56,6 +56,7 @@ from app.services.hooks import (
 from app.services.jwt_service import create_subsystem_token, revoke_jti
 from app.services.pkce import generate_pkce_pair, verify_pkce
 from app.security.risk_engine import evaluate_login_risk
+from app.services.shadow_record import SOURCE_OAUTH, shadow_columns
 from app.services.secret_service import verify_secret
 from app.services import webauthn_service
 from app.services import passkey_recovery
@@ -654,6 +655,7 @@ async def _finalize_subsystem_login(
             decision=actual_decision,
             is_attack_ip=is_blacklisted(db, client_ip),
             login_method=provider,
+            **shadow_columns(risk, source=SOURCE_OAUTH),
         )
     )
 
@@ -1126,7 +1128,6 @@ def _credential_setup_done_html(
     safe_email = (
         user_email.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
     )
-    icon = "✅" if has_factor else "ℹ️"
     title = "ตั้งค่าเรียบร้อย" if has_factor else "ยังไม่ได้ตั้งค่า"
     msg = (
         "บัญชีของคุณมีการยืนยันตัวตนแล้ว — ใช้เข้าระบบและกู้บัญชีได้"
@@ -1140,15 +1141,13 @@ def _credential_setup_done_html(
   body {{ font-family:system-ui,-apple-system,"Segoe UI",sans-serif; background:#070b14;
     color:#e8eef7; min-height:100vh; margin:0; display:grid; place-items:center; padding:32px 16px; }}
   .card {{ width:100%; max-width:420px; background:linear-gradient(180deg,#141c30,#0b1120);
-    border:1px solid rgba(148,178,224,.14); border-radius:20px; padding:34px 30px; text-align:center; }}
-  .ic {{ font-size:44px; margin-bottom:10px; }}
+    border:1px solid rgba(148,178,224,.14); border-radius:0; padding:34px 30px; text-align:center; }}
   h1 {{ font-size:21px; margin:0 0 8px; font-weight:600; }}
   p {{ color:#8a99b5; font-size:14px; line-height:1.65; margin:0 0 6px; }}
   .who {{ font-family:ui-monospace,monospace; font-size:11px; color:#34e8c4; margin-top:14px;
     word-break:break-all; }}
 </style></head><body>
   <div class="card">
-    <div class="ic">{icon}</div>
     <h1>{title}</h1>
     <p>{msg}</p>
     <p>ปิดหน้านี้แล้วกลับไปเข้าใช้งานระบบได้เลย</p>
@@ -1550,10 +1549,10 @@ def _passkey_enroll_html(
     )
     has_factor = has_passkey or has_totp
     first_step = "stepManage" if has_factor else "stepChoose"
-    pk_state = "✓ ตั้งค่าแล้ว" if has_passkey else "ยังไม่ได้ตั้ง"
-    totp_state = "✓ ตั้งค่าแล้ว" if has_totp else "ยังไม่ได้ตั้ง"
+    pk_state = "ตั้งค่าแล้ว" if has_passkey else "ยังไม่ได้ตั้ง"
+    totp_state = "ตั้งค่าแล้ว" if has_totp else "ยังไม่ได้ตั้ง"
     always_row = (
-        '<div class="done-row">✓ เปิด "ขอยืนยันทุกครั้งที่ล็อกอิน" อยู่แล้ว</div>'
+        '<div class="done-row">เปิด "ขอยืนยันทุกครั้งที่ล็อกอิน" อยู่แล้ว</div>'
         if mfa_always
         else """<button class="btn btn-go" id="enableAlways">
         เปิด "ขอยืนยันทุกครั้งที่ล็อกอิน"</button>"""
@@ -1563,72 +1562,130 @@ def _passkey_enroll_html(
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Kanit:wght@500;600;700&family=IBM+Plex+Sans+Thai:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style nonce="{nonce}">
-  :root {{ --bg:#070b14; --ink:#e8eef7; --muted:#8a99b5; --mint:#34e8c4; --mint-2:#13b89a;
-           --line:rgba(148,178,224,.16); --danger:#ff6b81; --amber:#f5b97a; }}
+  :root {{ --bg:#070b14; --ink:#132033; --muted:#68788d; --mint:#34e8c4; --mint-2:#13b89a;
+           --navy:#0b1420; --paper:#fff; --canvas:#f1f5f7; --line:#d7e0e7;
+           --line-d:rgba(148,178,224,.16); --danger:#e11d48; --amber:#b57b09; }}
   * {{ box-sizing:border-box; }}
   html,body {{ margin:0; }}
-  body {{ font-family:'IBM Plex Sans Thai',system-ui,sans-serif; background:var(--bg);
-    color:var(--ink); min-height:100vh; display:grid; place-items:center; padding:28px 16px; }}
-  .card {{ width:100%; max-width:440px; background:linear-gradient(180deg,#141c30,#0b1120);
-    border:1px solid var(--line); border-radius:20px; overflow:hidden;
-    box-shadow:0 28px 70px -24px rgba(0,0,0,.75); }}
-  .top {{ padding:26px 28px 0; text-align:center; }}
-  .emblem {{ width:54px; height:54px; margin:0 auto 12px; border-radius:16px;
-    background:rgba(52,232,196,.12); border:1px solid rgba(52,232,196,.32);
-    display:grid; place-items:center; font-size:25px; }}
-  h1 {{ font-family:'Kanit',sans-serif; font-weight:600; font-size:21px; margin:0 0 6px; }}
-  .sub {{ color:var(--muted); font-size:13.5px; line-height:1.6; margin:0; }}
+  body {{ font-family:'Sarabun',system-ui,sans-serif; background:var(--canvas);
+    color:var(--ink); height:100svh; display:flex; flex-direction:column; overflow:hidden; }}
+
+  /* แถบบนสุด — ชุดเดียวกับหน้า recovery */
+  .topbar {{ min-height:54px; flex:none; display:flex; align-items:center;
+    justify-content:space-between; gap:24px; padding:0 clamp(16px,3vw,40px);
+    border-bottom:1px solid #263547; background:var(--navy); color:#fff; }}
+  .brand {{ display:inline-flex; align-items:center; gap:12px; color:inherit; text-decoration:none; }}
+  .brand > span {{ width:32px; height:32px; display:grid; place-items:center;
+    border:1px solid #2ac7aa; background:#0d2a2b; color:#43dfc2;
+    font:700 .95rem 'IBM Plex Mono',monospace; }}
+  .brand b, .brand small {{ display:block; }}
+  .brand b {{ font:700 .95rem 'Sarabun',sans-serif; }}
+  .brand small {{ margin-top:2px; color:#7f91a7; font:600 .66rem 'IBM Plex Mono',monospace;
+    letter-spacing:.15em; }}
+  .secure {{ display:flex; align-items:center; gap:8px; color:#9fb0c3;
+    font:600 .68rem 'IBM Plex Mono',monospace; letter-spacing:.08em; }}
+  .secure i {{ width:8px; height:8px; border-radius:50%; background:#38d7b9;
+    box-shadow:0 0 0 4px rgba(56,215,185,.12); }}
+
+  /* โครง 2 คอลัมน์ */
+  .shell {{ width:min(1380px,calc(100% - 36px)); min-height:0; flex:1; display:grid;
+    grid-template-columns:minmax(300px,.72fr) minmax(560px,1.6fr); margin:14px auto;
+    overflow:hidden; border:1px solid #cfd9e1; background:var(--paper);
+    box-shadow:0 18px 50px rgba(16,31,48,.08); }}
+  .context {{ min-width:0; display:flex; flex-direction:column; overflow:hidden;
+    padding:clamp(20px,2.4vw,38px); border-top:3px solid var(--mint-2);
+    background:radial-gradient(circle at 90% 10%,rgba(26,182,157,.14),transparent 35%),
+      linear-gradient(160deg,var(--navy) 0%,#111d2b 70%,#0c2528 100%); color:#f3f7fa; }}
+  .eyebrow {{ display:block; color:#6f849b;
+    font:600 .68rem/1.4 'IBM Plex Mono',monospace; letter-spacing:.16em; }}
+  .context h1 {{ max-width:520px; margin:10px 0 8px;
+    font:800 clamp(1.4rem,1.9vw,2.05rem)/1.22 'Sarabun',sans-serif; letter-spacing:-.025em; }}
+  .context > div:first-child > p {{ max-width:510px; margin:0; color:#9bacc0;
+    font-size:.82rem; line-height:1.6; }}
+  .steps {{ list-style:none; margin:auto 0; padding:20px 0; }}
+  .steps li {{ position:relative; min-height:58px; display:grid;
+    grid-template-columns:38px 1fr; align-items:start; gap:16px; color:#65798f; }}
+  .steps li:not(:last-child)::after {{ content:''; position:absolute; left:15px; top:34px;
+    width:1px; height:22px; background:#2b3b4e; }}
+  .steps li > span {{ width:30px; height:30px; display:grid; place-items:center;
+    border:1px solid #324356; color:#7d90a6; font:600 .68rem 'IBM Plex Mono',monospace; }}
+  .steps b, .steps small {{ display:block; }}
+  .steps b {{ margin-top:2px; font-size:.84rem; font-weight:600; }}
+  .steps small {{ margin-top:2px; font-size:.72rem; }}
+  .steps .on {{ color:#f4f8fb; }}
+  .steps .on > span {{ border-color:var(--mint-2); background:rgba(24,185,156,.13); color:#42dfc2; }}
+  .snote {{ display:flex; align-items:flex-start; gap:10px; padding-top:14px;
+    border-top:1px solid #29394b; }}
+  .snote > span {{ width:24px; height:24px; flex:none; display:grid; place-items:center;
+    border:1px solid #3f566c; border-radius:50%; color:#83a0b9;
+    font:600 .72rem 'IBM Plex Mono',monospace; }}
+  .snote p {{ margin:0; color:#73879c; font-size:.74rem; line-height:1.55; }}
+  .snote b {{ display:block; margin-bottom:2px; color:#a8b7c6; font-size:.78rem; }}
+
+  .workspace {{ min-width:0; display:flex; flex-direction:column; background:#fff; }}
+  .wshead {{ min-height:72px; flex:none; display:flex; align-items:center;
+    justify-content:space-between; gap:24px; padding:14px clamp(20px,2.4vw,34px);
+    border-bottom:1px solid var(--line); }}
+  .wshead h2 {{ margin:3px 0 0; font:800 clamp(1.1rem,1.5vw,1.45rem)/1.25 'Sarabun',sans-serif; }}
+  .sesschip {{ flex:none; padding:8px 10px; border:1px solid #a8ded4; background:#effaf7;
+    color:#087a68; font:600 .64rem 'IBM Plex Mono',monospace; letter-spacing:.08em; }}
+  .who {{ font-family:'IBM Plex Mono',monospace; font-size:12px; color:var(--mint-2);
+    margin-top:7px; word-break:break-all; }}
+
+  .top {{ padding:18px 28px 0; text-align:center; }}
+  h1 {{ font-family:'Sarabun',sans-serif; font-weight:600; font-size:21px; margin:0 0 3px; }}
+  .sub {{ color:var(--muted); font-size:13.5px; line-height:1.45; margin:0; }}
   .who {{ font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--mint);
-    margin-top:10px; word-break:break-all; }}
-  .body {{ padding:22px 28px 24px; }}
+    margin-top:7px; word-break:break-all; }}
+  .body {{ padding:15px 28px 17px; }}
 
   /* ── ขั้นที่ 1: การ์ดเลือกวิธี ── */
   .opt {{ width:100%; display:flex; align-items:center; gap:14px; text-align:left;
-    padding:15px 16px; margin-bottom:11px; border-radius:14px; cursor:pointer;
+    padding:15px 16px; margin-bottom:11px; border-radius:0; cursor:pointer;
     background:rgba(148,178,224,.05); border:1px solid var(--line); color:var(--ink);
     font-family:inherit; transition:border-color .15s, background .15s, transform .15s; }}
-  .opt:hover {{ border-color:var(--mint-2); background:rgba(52,232,196,.07); transform:translateY(-1px); }}
+  .opt:hover {{ border-color:var(--mint-2); background:#f0faf7; transform:translateY(-1px); }}
   .opt .ic {{ font-size:26px; flex:none; width:34px; text-align:center; }}
-  .opt .t {{ font-family:'Kanit',sans-serif; font-weight:500; font-size:15.5px;
+  .opt .t {{ font-family:'Sarabun',sans-serif; font-weight:500; font-size:15.5px;
     display:flex; align-items:center; gap:7px; margin-bottom:2px; }}
   .opt .d {{ font-size:12.5px; color:var(--muted); line-height:1.5; }}
   .opt .arrow {{ margin-left:auto; color:var(--muted); font-size:18px; flex:none; }}
   .tag {{ font-family:'IBM Plex Mono',monospace; font-size:9.5px; letter-spacing:.04em;
-    padding:2px 7px; border-radius:999px; background:rgba(52,232,196,.16);
+    padding:2px 7px; border-radius:0; background:#eaf9f5;
     color:var(--mint); border:1px solid rgba(52,232,196,.3); }}
 
   /* ── ขั้น "จัดการ" (มี factor อยู่แล้ว) ── */
-  .status {{ border:1px solid var(--line); border-radius:13px; overflow:hidden; margin-bottom:14px; }}
+  .status {{ border:1px solid var(--line); border-radius:0; overflow:hidden; margin-bottom:10px; }}
   .st-row {{ display:flex; justify-content:space-between; align-items:center;
-    padding:12px 14px; font-size:13.5px; }}
+    padding:9px 14px; font-size:13.5px; }}
   .st-row + .st-row {{ border-top:1px solid var(--line); }}
   .st-row b {{ font-family:'IBM Plex Mono',monospace; font-size:11.5px; color:var(--mint); font-weight:500; }}
-  .done-row {{ padding:13px 14px; border-radius:12px; margin-bottom:12px; font-size:13px;
+  .done-row {{ padding:10px 14px; border-radius:0; margin-bottom:9px; font-size:13px;
     background:rgba(52,232,196,.1); border:1px solid rgba(52,232,196,.3); color:var(--mint); }}
-  .opt-sm {{ margin-top:12px; padding:12px 14px; }}
+  .opt-sm {{ margin-top:9px; margin-bottom:0; padding:10px 14px; }}
   .opt-sm .ic {{ font-size:20px; }}
   .opt-sm .t {{ font-size:14px; }}
 
   /* ── ติ๊กเปิด Always-2FA (ทางเดียวที่นักศึกษาตั้งได้ — เข้า /account ไม่ได้) ── */
   .always {{ display:flex; gap:11px; align-items:flex-start; margin-top:14px;
-    padding:13px 14px; border-radius:12px; cursor:pointer;
+    padding:13px 14px; border-radius:0; cursor:pointer;
     background:rgba(148,178,224,.05); border:1px solid var(--line); }}
-  .always:hover {{ border-color:rgba(148,178,224,.32); }}
+  .always:hover {{ border-color:#b9c4d0; }}
   .always input {{ width:17px; height:17px; margin:1px 0 0; accent-color:var(--mint-2);
     flex:none; cursor:pointer; }}
-  .always b {{ display:block; font-family:'Kanit',sans-serif; font-weight:500;
+  .always b {{ display:block; font-family:'Sarabun',sans-serif; font-weight:500;
     font-size:13.5px; margin-bottom:2px; }}
   .always .d {{ display:block; font-size:12px; color:var(--muted); line-height:1.5; }}
 
   /* ── ปุ่มรอง (ข้าม / ไม่ถามอีก) ── */
-  .skips {{ display:flex; gap:10px; margin-top:14px; padding-top:16px;
+  .skips {{ display:flex; gap:10px; margin-top:10px; padding-top:10px;
     border-top:1px solid var(--line); }}
-  .skips a {{ flex:1; text-align:center; padding:11px 8px; border-radius:11px;
+  .skips a {{ flex:1; text-align:center; padding:9px 8px; border-radius:0;
     font-size:13px; text-decoration:none; color:var(--muted);
     border:1px solid var(--line); transition:color .15s, border-color .15s; }}
-  .skips a:hover {{ color:var(--ink); border-color:rgba(148,178,224,.35); }}
+  .skips a:hover {{ color:var(--ink); border-color:#b9c4d0; }}
 
   /* ── ขั้นที่ 2: แผงตั้งค่า ── */
   .step {{ display:none; }}
@@ -1638,19 +1695,19 @@ def _passkey_enroll_html(
     padding:0; margin-bottom:16px; }}
   .back:hover {{ color:var(--ink); }}
   .fld {{ display:block; font-size:12px; color:var(--muted); margin-bottom:7px; }}
-  input[type=text] {{ width:100%; padding:12px 14px; border-radius:12px; margin-bottom:14px;
+  input[type=text] {{ width:100%; padding:12px 14px; border-radius:0; margin-bottom:14px;
     background:rgba(7,11,20,.65); border:1px solid var(--line); color:var(--ink);
     font-family:inherit; font-size:14.5px; }}
   input[type=text]:focus {{ outline:none; border-color:var(--mint-2); }}
   .btn {{ display:flex; align-items:center; justify-content:center; gap:9px; width:100%;
-    padding:14px 16px; border-radius:13px; font-family:'Kanit',sans-serif; font-weight:500;
+    padding:14px 16px; border-radius:0; font-family:'Sarabun',sans-serif; font-weight:500;
     font-size:15px; border:1px solid transparent; cursor:pointer; text-decoration:none; }}
   .btn-go {{ color:#04221c; background:linear-gradient(100deg,var(--mint),#5ff0d6); }}
   .btn-go:hover {{ filter:brightness(1.05); }}
   .btn-go[disabled] {{ opacity:.5; cursor:not-allowed; }}
 
   /* ── QR ── */
-  .qr {{ background:#fff; border-radius:14px; padding:11px; margin:4px auto 12px;
+  .qr {{ background:#fff; border-radius:0; padding:11px; margin:4px auto 12px;
     width:186px; height:186px; }}
   .qr svg {{ display:block; width:100%; height:100%; }}
   .hint {{ font-size:12.5px; color:var(--muted); text-align:center; line-height:1.6; margin:0 0 6px; }}
@@ -1661,56 +1718,93 @@ def _passkey_enroll_html(
 
   .err {{ display:none; font-size:12.5px; color:var(--danger); margin-bottom:14px;
     background:rgba(255,107,129,.08); border:1px solid rgba(255,107,129,.28);
-    padding:10px 12px; border-radius:10px; line-height:1.5; }}
+    padding:10px 12px; border-radius:0; line-height:1.5; }}
   .err.show {{ display:block; }}
   .note {{ display:none; font-size:12.5px; color:var(--amber); margin-bottom:14px;
     background:rgba(245,185,122,.08); border:1px solid rgba(245,185,122,.26);
-    padding:10px 12px; border-radius:10px; line-height:1.55; }}
+    padding:10px 12px; border-radius:0; line-height:1.55; }}
   .note.show {{ display:block; }}
   .spinner {{ width:15px; height:15px; border:2px solid rgba(4,34,28,.35);
     border-top-color:#04221c; border-radius:50%; animation:spin .7s linear infinite; }}
   @keyframes spin {{ to{{transform:rotate(360deg)}} }}
-  .foot {{ padding:12px 28px; border-top:1px solid var(--line); text-align:center;
-    font-family:'IBM Plex Mono',monospace; font-size:9.5px; color:#56657f; letter-spacing:.05em; }}
+  .body {{ flex:1; min-height:0; overflow-y:auto; padding:15px clamp(20px,2.4vw,34px) 17px; }}
+  .footer {{ min-height:34px; flex:none; display:grid; grid-template-columns:1fr auto 1fr;
+    align-items:center; gap:20px; padding:0 clamp(16px,3vw,40px); border-top:1px solid #d8e0e6;
+    color:#79889a; font:500 .64rem 'IBM Plex Mono',monospace; letter-spacing:.05em; }}
+  .footer span:last-child {{ text-align:right; }}
+
+  @media (max-width:1080px) {{
+    .shell {{ grid-template-columns:280px minmax(0,1fr); }}
+    .context {{ padding:24px 22px; }}
+  }}
+
+  @media (max-width:780px) {{
+    .shell {{ width:100%; display:block; margin:0; border:0; box-shadow:none; overflow-y:auto; }}
+    .context {{ padding:22px 20px; }}
+    .steps, .snote {{ display:none; }}
+    .footer {{ display:none; }}
+    body {{ overflow:auto; height:auto; min-height:100svh; }}
+  }}
 
   /* ── modal backup codes ── */
   .modal {{ display:none; position:fixed; inset:0; z-index:5; background:rgba(3,6,12,.82);
     backdrop-filter:blur(6px); place-items:center; padding:24px 16px; }}
   .modal.show {{ display:grid; }}
   .modal-card {{ width:100%; max-width:430px; background:linear-gradient(180deg,#141c30,#0b1120);
-    border:1px solid var(--line); border-radius:18px; overflow:hidden; max-height:92vh; overflow-y:auto; }}
+    border:1px solid var(--line); border-radius:0; overflow:hidden; max-height:92vh; overflow-y:auto; }}
   .modal-h {{ padding:22px 26px 0; }}
-  .modal-h h2 {{ font-family:'Kanit',sans-serif; font-size:18px; margin:0 0 4px; }}
+  .modal-h h2 {{ font-family:'Sarabun',sans-serif; font-size:18px; margin:0 0 4px; }}
   .modal-b {{ padding:14px 26px 22px; }}
   .codes {{ display:grid; grid-template-columns:1fr 1fr; gap:8px; margin:6px 0 14px; }}
   .code {{ font-family:'IBM Plex Mono',monospace; font-size:13.5px; letter-spacing:.05em;
-    background:rgba(7,11,20,.8); border:1px solid var(--line); border-radius:9px;
-    padding:9px 10px; color:#cfe; text-align:center; }}
+    background:#f7f9fa; border:1px solid var(--line); border-radius:0;
+    padding:9px 10px; color:#1b2b3f; text-align:center; }}
   .warn {{ font-size:12px; color:var(--amber); background:rgba(245,185,122,.08);
-    border:1px solid rgba(245,185,122,.25); border-radius:10px; padding:10px 12px; margin-bottom:12px; }}
+    border:1px solid rgba(245,185,122,.25); border-radius:0; padding:10px 12px; margin-bottom:12px; }}
   .row {{ display:flex; gap:8px; margin-bottom:12px; }}
   .row .btn {{ font-size:13px; padding:10px; }}
-  .btn-mini {{ background:rgba(255,255,255,.05); border-color:var(--line); color:var(--ink); }}
-  .btn-mini.done {{ background:rgba(52,232,196,.14); border-color:rgba(52,232,196,.4); color:var(--mint); }}
-  .ack {{ display:flex; gap:9px; align-items:flex-start; font-size:12.5px; color:#c4d0e4;
+  .btn-mini {{ background:#f6f8fa; border-color:var(--line); color:var(--ink); }}
+  .btn-mini.done {{ background:#eaf9f5; border-color:rgba(52,232,196,.4); color:var(--mint); }}
+  .ack {{ display:flex; gap:9px; align-items:flex-start; font-size:12.5px; color:#31475b;
     padding:8px 0; cursor:pointer; }}
   .ack input {{ width:auto; margin:2px 0 0; }}
 </style></head><body>
-<div class="card">
-  <div class="top">
-    <div class="emblem">🛡️</div>
-    <h1>เพิ่มการยืนยันตัวตน</h1>
-    <p class="sub">ป้องกันบัญชีของคุณเมื่อเข้าใช้ {safe_name}<br>ตั้งครั้งเดียว ใช้ได้ตลอด</p>
-    <div class="who">{safe_email}</div>
-  </div>
+<header class="topbar">
+  <a class="brand" href="/" aria-label="Central Auth Hub">
+    <span>H</span><div><b>Central Auth Hub</b><small>IDENTITY CONTROL</small></div>
+  </a>
+  <div class="secure"><i></i> SECURE ENROLLMENT SESSION</div>
+</header>
+
+<div class="shell">
+  <aside class="context">
+    <div>
+      <span class="eyebrow">ACCOUNT PROTECTION</span>
+      <h1>เพิ่มการยืนยันตัวตน<br>ให้บัญชีของคุณ</h1>
+      <p>ป้องกันบัญชีเมื่อเข้าใช้ {safe_name} — ตั้งครั้งเดียว ใช้ได้ตลอด</p>
+    </div>
+    <ol class="steps">
+      <li class="on"><span>01</span><div><b>เลือกวิธียืนยัน</b><small>Passkey หรือแอป Authenticator</small></div></li>
+      <li><span>02</span><div><b>ตั้งค่าอุปกรณ์</b><small>ยืนยันด้วยเครื่องนี้หรือสแกน QR</small></div></li>
+      <li><span>03</span><div><b>เก็บ Backup codes</b><small>ใช้กู้บัญชีเมื่อ Passkey หาย</small></div></li>
+    </ol>
+    <div class="snote"><span>i</span><p><b>ไม่มีรหัสผ่านถูกจัดเก็บในหน้านี้</b>Passkey ผูกกับอุปกรณ์ของคุณ ระบบเก็บเฉพาะกุญแจสาธารณะ</p></div>
+  </aside>
+
+  <section class="workspace">
+    <header class="wshead">
+      <div><span class="eyebrow">PASSKEY / ENROLLMENT</span><h2>เพิ่มการยืนยันตัวตน</h2>
+        <div class="who">{safe_email}</div></div>
+      <span class="sesschip">SESSION · ACTIVE</span>
+    </header>
   <div class="body">
     <div class="err" id="err"></div>
 
     <!-- ── ขั้น "จัดการ" (เมื่อมี factor อยู่แล้ว — ไม่บังคับเพิ่มซ้ำ) ── -->
     <div class="step" id="stepManage">
       <div class="status">
-        <div class="st-row"><span>🔑 Passkey</span><b>{pk_state}</b></div>
-        <div class="st-row"><span>📱 Authenticator</span><b>{totp_state}</b></div>
+        <div class="st-row"><span>Passkey</span><b>{pk_state}</b></div>
+        <div class="st-row"><span>Authenticator</span><b>{totp_state}</b></div>
       </div>
       {always_row}
       <button class="opt opt-sm" id="addMore">
@@ -1727,7 +1821,6 @@ def _passkey_enroll_html(
     <!-- ── ขั้นที่ 1: เลือกวิธี ── -->
     <div class="step" id="stepChoose">
       <button class="opt" id="pickPasskey">
-        <span class="ic">🔑</span>
         <span>
           <span class="t">Passkey <span class="tag">แนะนำ</span></span>
           <span class="d">ลายนิ้วมือ / ใบหน้า / PIN ของเครื่องนี้ — ปลอดภัยที่สุด</span>
@@ -1735,7 +1828,6 @@ def _passkey_enroll_html(
         <span class="arrow">›</span>
       </button>
       <button class="opt" id="pickTotp">
-        <span class="ic">📱</span>
         <span>
           <span class="t">แอป Authenticator</span>
           <span class="d">รหัส 6 หลักจากแอป — ใช้ได้ทุกอุปกรณ์ แม้เครื่องไม่รองรับ Passkey</span>
@@ -1743,7 +1835,7 @@ def _passkey_enroll_html(
         <span class="arrow">›</span>
       </button>
       <div class="note" id="unsupported">
-        ⚠️ เบราว์เซอร์นี้ไม่รองรับ Passkey — แนะนำให้ใช้ <b>แอป Authenticator</b>
+        เบราว์เซอร์นี้ไม่รองรับ Passkey — แนะนำให้ใช้ <b>แอป Authenticator</b>
       </div>
       <label class="always" for="alwaysChk">
         <input type="checkbox" id="alwaysChk">
@@ -1763,7 +1855,7 @@ def _passkey_enroll_html(
       <button class="back" data-back>‹ เลือกวิธีอื่น</button>
       <label class="fld" for="dev">ตั้งชื่ออุปกรณ์นี้</label>
       <input type="text" id="dev" value="อุปกรณ์ของฉัน" maxlength="100">
-      <button class="btn btn-go" id="setup">🔑 ตั้งค่า Passkey</button>
+      <button class="btn btn-go" id="setup">ตั้งค่า Passkey</button>
     </div>
 
     <!-- ── ขั้นที่ 2b: Authenticator ── -->
@@ -1778,14 +1870,16 @@ def _passkey_enroll_html(
       <button class="btn btn-go" id="totpVerify">ยืนยันรหัส</button>
     </div>
   </div>
-  <div class="foot">WebAuthn · FIDO2 · TOTP RFC 6238</div>
+  </div>
+  </section>
 </div>
+<footer class="footer"><span>Central Auth Hub</span><span>WebAuthn · FIDO2 · TOTP RFC 6238</span><span>Princess of Naradhiwas University</span></footer>
 
 <!-- popup ถาม Always-2FA หลังตั้งค่าเสร็จ (เฉพาะตอนไม่ได้ติ๊กไว้ก่อน) -->
 <div class="modal" id="alwaysModal">
   <div class="modal-card">
     <div class="modal-h">
-      <h2>🛡️ ตั้งค่าเรียบร้อย</h2>
+      <h2>ตั้งค่าเรียบร้อย</h2>
       <p class="sub">ต้องการให้ระบบ<b>ขอยืนยันตัวตนทุกครั้ง</b>ที่ล็อกอินไหม?</p>
     </div>
     <div class="modal-b">
@@ -1802,14 +1896,14 @@ def _passkey_enroll_html(
 
 <div class="modal" id="bcModal">
   <div class="modal-card">
-    <div class="modal-h"><h2>🔑 Backup Codes</h2>
+    <div class="modal-h"><h2>Backup Codes</h2>
       <p class="sub">บันทึกไว้กู้บัญชีถ้าทำอุปกรณ์หาย — แสดงครั้งเดียว</p></div>
     <div class="modal-b">
-      <div class="warn">⚠️ แต่ละ code ใช้ได้ครั้งเดียว เก็บในที่ปลอดภัย</div>
+      <div class="warn">แต่ละ code ใช้ได้ครั้งเดียว เก็บในที่ปลอดภัย</div>
       <div class="codes" id="codes"></div>
       <div class="row">
-        <button class="btn btn-mini" id="copyBtn">📋 คัดลอก</button>
-        <button class="btn btn-mini" id="dlBtn">💾 ดาวน์โหลด</button>
+        <button class="btn btn-mini" id="copyBtn">คัดลอก</button>
+        <button class="btn btn-mini" id="dlBtn">ดาวน์โหลด</button>
       </div>
       <label class="ack"><input type="checkbox" id="ackChk"><span>ฉันบันทึก backup codes ไว้แล้ว</span></label>
       <button class="btn btn-go" id="bcContinue" disabled>เข้าสู่ระบบต่อ</button>
@@ -1859,7 +1953,7 @@ if (enableAlways) {{
       if(!r.ok) {{ const e = await r.json().catch(()=>({{}})); const d = e.detail;
         throw new Error(typeof d==='string' ? d : (d&&d.message ? d.message : 'บันทึกไม่สำเร็จ')); }}
       enableAlways.outerHTML =
-        '<div class="done-row">✓ เปิด "ขอยืนยันทุกครั้งที่ล็อกอิน" แล้ว</div>';
+        '<div class="done-row">เปิด "ขอยืนยันทุกครั้งที่ล็อกอิน" แล้ว</div>';
     }} catch(err) {{ showErr(err.message || 'บันทึกไม่สำเร็จ');
       enableAlways.disabled = false;
       enableAlways.textContent = 'เปิด "ขอยืนยันทุกครั้งที่ล็อกอิน"'; }}
@@ -1952,7 +2046,7 @@ setup.addEventListener('click', async () => {{
     if(data.backup_codes && data.backup_codes.length) showBackupCodes(data.backup_codes);
     else afterEnroll();
   }} catch(err) {{ showErr(err.message || 'ตั้งค่าไม่สำเร็จ');
-    setup.disabled = false; setup.textContent = '🔑 ตั้งค่า Passkey'; }}
+    setup.disabled = false; setup.textContent = 'ตั้งค่า Passkey'; }}
 }});
 
 // ── ยืนยันรหัส TOTP ──
@@ -1989,12 +2083,12 @@ function showBackupCodes(codes) {{
   function refresh() {{ cont.disabled = !(saved && chk.checked); }}
   copyBtn.addEventListener('click', async () => {{
     try {{ await navigator.clipboard.writeText(txt); }} catch(e) {{}}
-    copyBtn.classList.add('done'); copyBtn.textContent = '✓ คัดลอกแล้ว'; saved = true; refresh(); }});
+    copyBtn.classList.add('done'); copyBtn.textContent = 'คัดลอกแล้ว'; saved = true; refresh(); }});
   dlBtn.addEventListener('click', () => {{
     const b = new Blob(['Central Auth Hub — Backup Codes\\n\\n' + txt + '\\n'], {{type:'text/plain'}});
     const u = URL.createObjectURL(b); const a = document.createElement('a');
     a.href = u; a.download = 'passkey-backup-codes.txt'; a.click(); URL.revokeObjectURL(u);
-    dlBtn.classList.add('done'); dlBtn.textContent = '✓ ดาวน์โหลดแล้ว'; saved = true; refresh(); }});
+    dlBtn.classList.add('done'); dlBtn.textContent = 'ดาวน์โหลดแล้ว'; saved = true; refresh(); }});
   chk.addEventListener('change', refresh);
   cont.addEventListener('click', () => {{
     document.getElementById('bcModal').classList.remove('show');
@@ -2024,13 +2118,13 @@ def _passkey_recover_html(nonce: str, return_to: str = "") -> str:
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Kanit:wght@500;600&family=IBM+Plex+Sans+Thai:wght@400;500&family=IBM+Plex+Mono:wght@400&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400&display=swap" rel="stylesheet">
 <style nonce="{nonce}">
   :root {{ --bg-0:#070b14; --ink:#e8eef7; --muted:#8a99b5; --mint:#34e8c4;
            --mint-2:#13b89a; --line:rgba(148,178,224,.14); --danger:#ff6b81; }}
   * {{ box-sizing:border-box; }}
   html,body {{ margin:0; height:100%; }}
-  body {{ font-family:'IBM Plex Sans Thai',system-ui,sans-serif; background:var(--bg-0);
+  body {{ font-family:'Sarabun',system-ui,sans-serif; background:var(--bg-0);
           color:var(--ink); min-height:100vh; display:grid; place-items:center;
           padding:32px 16px; position:relative; overflow:hidden; }}
   body::before {{ content:''; position:fixed; inset:-20%; z-index:0;
@@ -2039,30 +2133,30 @@ def _passkey_recover_html(nonce: str, return_to: str = "") -> str:
     filter:blur(20px); }}
   .card {{ position:relative; z-index:1; width:100%; max-width:404px;
     background:linear-gradient(180deg, rgba(20,28,48,.86), rgba(11,17,32,.92));
-    border:1px solid var(--line); border-radius:22px; backdrop-filter:blur(14px);
+    border:1px solid var(--line); border-radius:0; backdrop-filter:blur(14px);
     box-shadow:0 30px 80px -20px rgba(0,0,0,.7); overflow:hidden; }}
   .top {{ padding:28px 30px 4px; }}
-  h1 {{ font-family:'Kanit',sans-serif; font-weight:600; font-size:22px; margin:0 0 4px; }}
+  h1 {{ font-family:'Sarabun',sans-serif; font-weight:600; font-size:22px; margin:0 0 4px; }}
   .sub {{ color:var(--muted); font-size:13px; margin:0; line-height:1.5; }}
   .body {{ padding:18px 30px 24px; }}
-  .tabs {{ display:flex; gap:6px; background:rgba(7,11,20,.6); border-radius:11px;
+  .tabs {{ display:flex; gap:6px; background:rgba(7,11,20,.6); border-radius:0;
            padding:4px; margin-bottom:16px; }}
-  .tab {{ flex:1; padding:9px; border:none; border-radius:8px; background:transparent;
-          color:var(--muted); font-family:'IBM Plex Sans Thai',sans-serif; font-size:13px;
+  .tab {{ flex:1; padding:9px; border:none; border-radius:0; background:transparent;
+          color:var(--muted); font-family:'Sarabun',sans-serif; font-size:13px;
           cursor:pointer; font-weight:500; }}
   .tab.active {{ background:rgba(52,232,196,.14); color:var(--mint); }}
   label.fld {{ font-size:11px; color:var(--muted); font-family:'IBM Plex Mono',monospace;
                display:block; margin:0 0 6px; }}
-  input {{ width:100%; padding:12px 13px; border-radius:10px; border:1px solid var(--line);
+  input {{ width:100%; padding:12px 13px; border-radius:0; border:1px solid var(--line);
            background:rgba(7,11,20,.7); color:var(--ink); font-size:14px;
-           font-family:'IBM Plex Sans Thai',sans-serif; margin-bottom:12px; }}
+           font-family:'Sarabun',sans-serif; margin-bottom:12px; }}
   input.mono {{ font-family:'IBM Plex Mono',monospace; letter-spacing:.1em; text-align:center; }}
   input:focus {{ outline:none; border-color:var(--mint-2); box-shadow:0 0 0 3px rgba(52,232,196,.16); }}
-  .btn {{ width:100%; padding:13px; border-radius:12px; border:none; cursor:pointer;
-          font-family:'Kanit',sans-serif; font-weight:500; font-size:15px;
+  .btn {{ width:100%; padding:13px; border-radius:0; border:none; cursor:pointer;
+          font-family:'Sarabun',sans-serif; font-weight:500; font-size:15px;
           color:#04221c; background:linear-gradient(100deg,var(--mint),#5ff0d6); }}
   .btn[disabled] {{ opacity:.5; cursor:not-allowed; }}
-  .msg {{ font-size:12.5px; padding:10px 12px; border-radius:10px; margin-bottom:12px;
+  .msg {{ font-size:12.5px; padding:10px 12px; border-radius:0; margin-bottom:12px;
           line-height:1.45; display:none; }}
   .msg.show {{ display:block; }}
   .msg.err {{ color:var(--danger); background:rgba(255,107,129,.08); border:1px solid rgba(255,107,129,.28); }}
@@ -2078,21 +2172,21 @@ def _passkey_recover_html(nonce: str, return_to: str = "") -> str:
 
   /* Success card — กู้สำเร็จ */
   .success-card {{
-    padding:22px 20px 22px; border-radius:16px; text-align:center;
+    padding:22px 20px 22px; border-radius:0; text-align:center;
     background:radial-gradient(110% 130% at 50% 0%, rgba(52,232,196,.12), rgba(52,232,196,.02) 70%);
     border:1px solid rgba(52,232,196,.28);
     box-shadow:inset 0 1px 0 rgba(255,255,255,.04);
     animation:successPop .42s cubic-bezier(.2,.7,.3,1.15) both;
   }}
   .success-icon {{
-    width:56px; height:56px; margin:0 auto 14px; border-radius:50%;
+    width:56px; height:56px; margin:0 auto 14px; border-radius:0;
     display:grid; place-items:center; position:relative;
     background:radial-gradient(circle at 35% 30%, rgba(52,232,196,.35), rgba(52,232,196,.06));
     border:1px solid rgba(52,232,196,.45);
     box-shadow:0 0 28px rgba(52,232,196,.28), inset 0 0 12px rgba(52,232,196,.12);
   }}
   .success-icon::after {{
-    content:''; position:absolute; inset:-6px; border-radius:50%;
+    content:''; position:absolute; inset:-6px; border-radius:0;
     border:1px solid rgba(52,232,196,.25); animation:ringPulse 1.6s ease-out .15s 1;
   }}
   .success-icon svg {{
@@ -2102,7 +2196,7 @@ def _passkey_recover_html(nonce: str, return_to: str = "") -> str:
     animation:checkDraw .55s .12s cubic-bezier(.4,1.4,.5,1) forwards;
   }}
   .success-title {{
-    font-family:'Kanit',sans-serif; font-weight:600; font-size:17px;
+    font-family:'Sarabun',sans-serif; font-weight:600; font-size:17px;
     color:var(--mint); margin:0 0 6px; letter-spacing:-.01em;
   }}
   .success-msg {{
@@ -2111,9 +2205,9 @@ def _passkey_recover_html(nonce: str, return_to: str = "") -> str:
   }}
   .btn-return {{
     display:flex; align-items:center; justify-content:center; gap:9px;
-    width:100%; padding:12px 14px; border-radius:11px;
+    width:100%; padding:12px 14px; border-radius:0;
     background:rgba(7,11,20,.55); border:1px solid rgba(52,232,196,.4);
-    color:var(--mint); font-family:'Kanit',sans-serif; font-weight:500;
+    color:var(--mint); font-family:'Sarabun',sans-serif; font-weight:500;
     font-size:13.5px; text-decoration:none; cursor:pointer;
     transition:transform .18s ease, background .18s ease, border-color .18s ease, box-shadow .18s ease;
   }}
@@ -2151,31 +2245,30 @@ def _passkey_recover_html(nonce: str, return_to: str = "") -> str:
 
   /* Codes display — premium ack UX (เทียบ admin BackupCodesModal) */
   .codes-head {{ display:flex; gap:11px; align-items:flex-start; padding:14px 14px 12px;
-                 border-radius:13px; background:linear-gradient(180deg,rgba(52,232,196,.08),rgba(52,232,196,.02));
+                 border-radius:0; background:linear-gradient(180deg,rgba(52,232,196,.08),rgba(52,232,196,.02));
                  border:1px solid rgba(52,232,196,.22); margin-bottom:14px; }}
-  .codes-head-icon {{ font-size:22px; line-height:1; flex:none; }}
   .codes-head-body {{ flex:1; min-width:0; }}
-  .codes-head-title {{ font-family:'Kanit',sans-serif; font-weight:600; font-size:14.5px;
+  .codes-head-title {{ font-family:'Sarabun',sans-serif; font-weight:600; font-size:14.5px;
                        color:var(--mint); margin:0 0 2px; letter-spacing:-.01em; }}
   .codes-head-sub {{ font-size:11.5px; color:var(--muted); line-height:1.5; }}
   .warn-band {{ display:flex; gap:8px; align-items:flex-start; font-size:11.5px;
                 color:#f5b97a; background:rgba(245,185,122,.06);
-                border:1px solid rgba(245,185,122,.25); border-radius:10px;
+                border:1px solid rgba(245,185,122,.25); border-radius:0;
                 padding:9px 11px; margin-bottom:12px; line-height:1.45; }}
   .codes-grid {{ display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:7px;
                  background:rgba(7,11,20,.5); border:1px solid var(--line);
-                 border-radius:13px; padding:11px; margin-bottom:14px; }}
+                 border-radius:0; padding:11px; margin-bottom:14px; }}
   .code-cell {{ display:flex; align-items:center; gap:7px; padding:7px 9px;
                 background:rgba(7,11,20,.85); border:1px solid var(--line);
-                border-radius:8px; }}
+                border-radius:0; }}
   .code-num {{ font-family:'IBM Plex Mono',monospace; font-size:9.5px; color:#56657f;
                letter-spacing:.04em; flex:none; }}
   .code-val {{ font-family:'IBM Plex Mono',monospace; font-size:12.5px; color:#9ff5dc;
                letter-spacing:.08em; font-weight:500; }}
   .actions-row {{ display:grid; grid-template-columns:1fr 1fr; gap:8px; margin-bottom:12px; }}
   .act-btn {{ display:flex; align-items:center; justify-content:center; gap:7px;
-              padding:11px 12px; border-radius:11px; cursor:pointer;
-              font-family:'Kanit',sans-serif; font-weight:500; font-size:13.5px;
+              padding:11px 12px; border-radius:0; cursor:pointer;
+              font-family:'Sarabun',sans-serif; font-weight:500; font-size:13.5px;
               border:1px solid var(--line); background:rgba(255,255,255,.04);
               color:var(--ink); transition:all .15s ease; }}
   .act-btn:hover {{ background:rgba(255,255,255,.08); border-color:rgba(148,178,224,.3); }}
@@ -2183,7 +2276,7 @@ def _passkey_recover_html(nonce: str, return_to: str = "") -> str:
                    color:var(--mint); }}
   .ack-box {{ display:flex; gap:10px; align-items:flex-start; padding:11px 12px;
               background:rgba(255,255,255,.03); border:1px solid var(--line);
-              border-radius:10px; cursor:pointer; margin-bottom:12px;
+              border-radius:0; cursor:pointer; margin-bottom:12px;
               transition:all .15s ease; }}
   .ack-box:hover {{ background:rgba(255,255,255,.06); }}
   .ack-box.armed {{ background:rgba(52,232,196,.05); border-color:rgba(52,232,196,.3); }}
@@ -2282,13 +2375,12 @@ function done(m, codes) {{
   // Premium ack UX — เหมือน admin BackupCodesModal
   let html =
     '<div class="codes-head">' +
-      '<div class="codes-head-icon">🔑</div>' +
       '<div class="codes-head-body">' +
         '<div class="codes-head-title">Backup Codes ของคุณ</div>' +
         '<div class="codes-head-sub">' + m + '</div>' +
       '</div>' +
     '</div>' +
-    '<div class="warn-band">⚠️ ใช้กรณีฉุกเฉินเท่านั้น: ถ้า Passkey หาย ใช้ codes เหล่านี้กู้บัญชีได้. แต่ละ code ใช้ได้ครั้งเดียว.</div>' +
+    '<div class="warn-band">ใช้กรณีฉุกเฉินเท่านั้น: ถ้า Passkey หาย ใช้ codes เหล่านี้กู้บัญชีได้. แต่ละ code ใช้ได้ครั้งเดียว.</div>' +
     '<div class="codes-grid">' +
       codes.map((c,i) =>
         '<div class="code-cell">' +
@@ -2298,8 +2390,8 @@ function done(m, codes) {{
       ).join('') +
     '</div>' +
     '<div class="actions-row">' +
-      '<button class="act-btn" id="cpBtn">📋 คัดลอก</button>' +
-      '<button class="act-btn" id="dlBtn">💾 ดาวน์โหลด</button>' +
+      '<button class="act-btn" id="cpBtn">คัดลอก</button>' +
+      '<button class="act-btn" id="dlBtn">ดาวน์โหลด</button>' +
     '</div>' +
     '<label class="ack-box" id="ackBox">' +
       '<input type="checkbox" id="ackChk">' +
@@ -2322,7 +2414,7 @@ function done(m, codes) {{
   }}
   cpBtn.addEventListener('click', async () => {{
     try {{ await navigator.clipboard.writeText(txt); }} catch(x) {{}}
-    cpBtn.innerHTML = '✓ คัดลอกแล้ว';
+    cpBtn.innerHTML = 'คัดลอกแล้ว';
     cpBtn.classList.add('done');
     saved = true; refresh();
   }});
@@ -2335,16 +2427,15 @@ function done(m, codes) {{
     const u = URL.createObjectURL(b); const a = document.createElement('a');
     a.href = u; a.download = 'passkey-backup-codes.txt'; a.click();
     URL.revokeObjectURL(u);
-    dlBtn.innerHTML = '✓ ดาวน์โหลดแล้ว';
+    dlBtn.innerHTML = 'ดาวน์โหลดแล้ว';
     dlBtn.classList.add('done');
     saved = true; refresh();
   }});
   chk.addEventListener('change', refresh);
   ok.addEventListener('click', () => {{
     resultEl.innerHTML =
-      '<div style="padding:18px;border-radius:13px;background:rgba(52,232,196,.08);border:1px solid rgba(52,232,196,.3);text-align:center">' +
-        '<div style="font-size:28px;margin-bottom:6px">✓</div>' +
-        '<div style="font-family:\\'Kanit\\',sans-serif;font-weight:500;color:var(--mint);font-size:15px;margin-bottom:4px">เก็บ backup codes เรียบร้อย</div>' +
+      '<div style="padding:18px;border-radius:0;background:rgba(52,232,196,.08);border:1px solid rgba(52,232,196,.3);text-align:center">' +
+        '<div style="font-family:\\'Sarabun\\',sans-serif;font-weight:500;color:var(--mint);font-size:15px;margin-bottom:4px">เก็บ backup codes เรียบร้อย</div>' +
         '<div style="font-size:12px;color:var(--muted);line-height:1.5">กลับไป login ที่ระบบของคุณได้เลย</div>' +
       '</div>' +
       buildReturnButton();
@@ -2438,7 +2529,7 @@ def _login_chooser_html(
     """หน้าเลือกวิธี login — Google (redirect) หรือ Passkey (WebAuthn JS).
 
     Aesthetic: "Secure Vault" — dark glassmorphism, gradient mesh, Thai display
-    typography (Kanit + IBM Plex Sans Thai), mint-cyan accent, staggered reveal.
+    typography (Sarabun + IBM Plex Mono), mint-cyan accent, staggered reveal.
 
     Same-origin: เสิร์ฟจาก Hub → fetch /oauth/passkey/* ตรง ไม่ผ่าน proxy.
     inline style+script ใช้ CSP nonce (กัน XSS — middleware ตั้ง nonce-{nonce}).
@@ -2500,14 +2591,14 @@ def _login_chooser_html(
     # (นักศึกษาเข้า Hub console ไม่ได้ → ถ้าเคยกด "ข้าม/ไม่ถามอีก" ต้องมีทางกลับมาตั้ง)
     recover_block += (
         '<a class="recover-link" href="/auth/credentials/setup">'
-        "🛡️ ตั้งค่า Passkey / Authenticator ของบัญชี</a>"
+        "ตั้งค่า Passkey / Authenticator ของบัญชี</a>"
     )
     return f"""<!DOCTYPE html><html lang="th"><head><meta charset="UTF-8">
 <title>เข้าสู่ระบบ · {safe_name}</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Kanit:wght@500;600;700&family=IBM+Plex+Sans+Thai:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style nonce="{nonce}">
   :root {{
     --bg-0:#070b14; --bg-1:#0d1424; --ink:#e8eef7; --muted:#8a99b5;
@@ -2517,7 +2608,7 @@ def _login_chooser_html(
   * {{ box-sizing:border-box; }}
   html,body {{ margin:0; height:100%; }}
   body {{
-    font-family:'IBM Plex Sans Thai',system-ui,sans-serif;
+    font-family:'Sarabun',system-ui,sans-serif;
     background:var(--bg-0); color:var(--ink);
     min-height:100vh; display:grid; place-items:center; padding:32px 16px;
     overflow:hidden; position:relative;
@@ -2541,7 +2632,7 @@ def _login_chooser_html(
   .card {{
     position:relative; z-index:1; width:100%; max-width:404px;
     background:linear-gradient(180deg, rgba(20,28,48,.86), rgba(11,17,32,.92));
-    border:1px solid var(--line); border-radius:22px;
+    border:1px solid var(--line); border-radius:0;
     box-shadow:0 1px 0 rgba(255,255,255,.04) inset, 0 30px 80px -20px rgba(0,0,0,.7),
                0 0 60px -30px rgba(52,232,196,.5);
     backdrop-filter:blur(14px); overflow:hidden;
@@ -2553,14 +2644,14 @@ def _login_chooser_html(
   .badge {{
     display:inline-flex; align-items:center; gap:7px; font-family:'IBM Plex Mono',monospace;
     font-size:10px; letter-spacing:.18em; text-transform:uppercase; color:var(--mint);
-    border:1px solid rgba(52,232,196,.3); border-radius:999px; padding:5px 11px;
+    border:1px solid rgba(52,232,196,.3); border-radius:0; padding:5px 11px;
     background:rgba(52,232,196,.06);
   }}
   .dot {{ width:6px; height:6px; border-radius:50%; background:var(--mint);
           box-shadow:0 0 8px var(--mint); animation:pulse 2s infinite; }}
   @keyframes pulse {{ 0%,100%{{opacity:1}} 50%{{opacity:.35}} }}
   h1 {{
-    font-family:'Kanit',sans-serif; font-weight:600; font-size:27px; line-height:1.18;
+    font-family:'Sarabun',sans-serif; font-weight:600; font-size:27px; line-height:1.18;
     margin:16px 0 4px; letter-spacing:-.01em;
   }}
   h1 .accent {{ color:transparent; background:linear-gradient(92deg,var(--mint),#7ad6ff);
@@ -2574,7 +2665,7 @@ def _login_chooser_html(
 
   .btn {{
     display:flex; align-items:center; justify-content:center; gap:11px; width:100%;
-    padding:14px 16px; border-radius:13px; font-family:'Kanit',sans-serif; font-weight:500;
+    padding:14px 16px; border-radius:0; font-family:'Sarabun',sans-serif; font-weight:500;
     font-size:15.5px; text-decoration:none; border:1px solid transparent; cursor:pointer;
     transition:transform .15s ease, box-shadow .25s ease, background .2s ease; position:relative;
     overflow:hidden;
@@ -2603,9 +2694,9 @@ def _login_chooser_html(
   label.fld {{ font-size:11px; color:var(--muted); letter-spacing:.04em;
                margin-bottom:-4px; font-family:'IBM Plex Mono',monospace; }}
   input[type=email] {{
-    width:100%; padding:13px 14px; border-radius:11px; border:1px solid var(--line);
+    width:100%; padding:13px 14px; border-radius:0; border:1px solid var(--line);
     background:rgba(7,11,20,.7); color:var(--ink); font-size:14.5px;
-    font-family:'IBM Plex Sans Thai',sans-serif; transition:border .2s,box-shadow .2s;
+    font-family:'Sarabun',sans-serif; transition:border .2s,box-shadow .2s;
   }}
   input[type=email]::placeholder {{ color:#52617e; }}
   input[type=email]:focus {{ outline:none; border-color:var(--mint-2);
@@ -2613,7 +2704,7 @@ def _login_chooser_html(
 
   .err {{ display:none; align-items:flex-start; gap:8px; font-size:12.5px; color:var(--danger);
           background:rgba(255,107,129,.08); border:1px solid rgba(255,107,129,.28);
-          padding:10px 12px; border-radius:10px; line-height:1.45; }}
+          padding:10px 12px; border-radius:0; line-height:1.45; }}
   .err.show {{ display:flex; animation:shake .35s; }}
   @keyframes shake {{ 0%,100%{{transform:translateX(0)}} 25%{{transform:translateX(-4px)}} 75%{{transform:translateX(4px)}} }}
   .hint {{ font-size:11.5px; color:var(--muted); }}
@@ -2683,7 +2774,7 @@ toggle.addEventListener('click', () => {{
   form.setAttribute('aria-hidden','false');
   if (!pkSupported()) {{
     submit.disabled = true;
-    hintEl.textContent = '⚠️ เบราว์เซอร์นี้ไม่รองรับ Passkey — กรุณาใช้ Google';
+    hintEl.textContent = 'เบราว์เซอร์นี้ไม่รองรับ Passkey — กรุณาใช้ Google';
     hintEl.style.color = '#f5b97a';
   }} else {{ emailEl.focus(); }}
 }});
@@ -2779,48 +2870,45 @@ def _maintenance_html(subsystem_name: str, health: dict) -> str:
 <title>{safe_name} · ปิดปรับปรุงชั่วคราว</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
   * {{ box-sizing: border-box; }}
   body {{ font-family: 'Sarabun', system-ui, -apple-system, 'Segoe UI', sans-serif;
           background: linear-gradient(160deg,#0f172a,#1e293b 55%,#312e81);
           margin: 0; min-height: 100vh; display: grid; place-items: center;
           padding: 40px 16px; color: #0f172a; }}
-  .card {{ max-width: 500px; width: 100%; background: #fff; border-radius: 20px;
+  .card {{ max-width: 500px; width: 100%; background: #fff; border-radius:0;
            overflow: hidden; box-shadow: 0 24px 60px rgba(2,6,23,0.45); }}
   .brandbar {{ display: flex; align-items: center; gap: 11px; padding: 16px 28px;
                border-bottom: 1px solid #eef2ff; }}
-  .mark {{ width: 34px; height: 34px; border-radius: 10px;
+  .mark {{ width: 34px; height: 34px; border-radius:0;
            background: linear-gradient(135deg,#6366f1,#312e81); color: #fff;
            display: grid; place-items: center; font-weight: 800; font-size: 16px; }}
   .brandname {{ font-weight: 800; font-size: 13px; color: #0f172a; line-height: 1.1; }}
   .brandsub {{ font-size: 9.5px; letter-spacing: .18em; color: #94a3b8;
                font-weight: 700; text-transform: uppercase; margin-top: 2px; }}
   .hero {{ padding: 30px 32px 8px; text-align: center; }}
-  .hicon {{ width: 64px; height: 64px; border-radius: 18px; margin: 0 auto 16px;
-            display: grid; place-items: center; font-size: 30px;
-            background: #fffbeb; border: 1px solid #fde68a; }}
   .eyebrow {{ font-size: 11px; letter-spacing: .14em; text-transform: uppercase;
               font-weight: 700; color: #b45309; }}
   h1 {{ font-size: 22px; font-weight: 800; margin: 8px 0 0; color: #0f172a; }}
   .pill {{ display: inline-flex; align-items: center; gap: 6px; font-size: 12px;
-           font-weight: 700; border-radius: 999px; padding: 4px 13px; margin-top: 12px;
+           font-weight: 700; border-radius:0; padding: 4px 13px; margin-top: 12px;
            background: #fffbeb; color: #b45309; border: 1px solid #fde68a; }}
   .body {{ padding: 20px 32px 8px; }}
   .body p {{ font-size: 14.5px; line-height: 1.65; color: #475569; margin: 8px 0;
              text-align: center; }}
-  .reason {{ background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px;
+  .reason {{ background: #f8fafc; border: 1px solid #e2e8f0; border-radius:0;
              padding: 14px 16px; margin: 18px 0 0; }}
   .reason .rlabel {{ font-size: 10.5px; font-weight: 700; letter-spacing: .05em;
                      text-transform: uppercase; color: #94a3b8; }}
-  .reason .rtext {{ font-size: 12.5px; font-family: 'JetBrains Mono', monospace;
+  .reason .rtext {{ font-size: 12.5px; font-family: 'IBM Plex Mono', monospace;
                     color: #334155; word-break: break-word; margin-top: 6px;
                     line-height: 1.5; }}
   .ts {{ font-size: 11px; color: #94a3b8; margin-top: 10px;
-         font-family: 'JetBrains Mono', monospace; text-align: center; }}
+         font-family: 'IBM Plex Mono', monospace; text-align: center; }}
   .actions {{ text-align: center; padding: 22px 32px 30px; }}
   .btn {{ display: inline-block; padding: 11px 22px; background: #0f172a;
-          color: #fff; text-decoration: none; border-radius: 11px;
+          color: #fff; text-decoration: none; border-radius:0;
           font-weight: 700; font-size: 14px; }}
   .btn:hover {{ background: #1e293b; }}
   .footer {{ padding: 14px 32px; font-size: 11px; color: #94a3b8;
@@ -2833,7 +2921,6 @@ def _maintenance_html(subsystem_name: str, health: dict) -> str:
          <div class="brandsub">Identity &amp; Access</div></div>
   </div>
   <div class="hero">
-    <div class="hicon">🔧</div>
     <div class="eyebrow">บริการชั่วคราวไม่พร้อมใช้งาน</div>
     <h1>{safe_name}</h1>
     <span class="pill">● ปิดปรับปรุงชั่วคราว</span>
@@ -2868,25 +2955,23 @@ def _suspended_html(subsystem_name: str) -> str:
   body {{ font-family: 'Sarabun', system-ui, sans-serif; background: #f8fafc;
           margin: 0; min-height: 100vh; display: grid; place-items: center;
           padding: 40px 16px; color: #0f172a; }}
-  .card {{ max-width: 560px; width: 100%; background: #fff; border-radius: 16px;
+  .card {{ max-width: 560px; width: 100%; background: #fff; border-radius:0;
            overflow: hidden; box-shadow: 0 4px 12px rgba(15,23,42,0.08); }}
   .hero {{ background: linear-gradient(135deg,#f59e0b,#b45309); padding: 32px;
            color: #fff; text-align: center; }}
-  .icon {{ font-size: 56px; line-height: 1; }}
   .title {{ font-size: 22px; font-weight: 800; margin-top: 12px; }}
   .body {{ padding: 28px 32px; line-height: 1.6; }}
-  .reason {{ background: #fef3c7; border: 1px solid #fde68a; border-radius: 10px;
+  .reason {{ background: #fef3c7; border: 1px solid #fde68a; border-radius:0;
              padding: 12px 14px; margin: 14px 0; font-size: 13px; color: #78350f; }}
   .actions {{ margin-top: 22px; }}
   .btn {{ display: inline-block; padding: 10px 18px; background: #0f172a;
-          color: #fff; text-decoration: none; border-radius: 8px;
+          color: #fff; text-decoration: none; border-radius:0;
           font-weight: 600; font-size: 14px; }}
   .footer {{ padding: 14px 32px; font-size: 11px; color: #94a3b8;
              border-top: 1px solid #f1f5f9; }}
 </style></head><body>
 <div class="card">
   <div class="hero">
-    <div class="icon">🚫</div>
     <div class="title">{safe_name}<br>ถูกระงับการใช้งาน</div>
   </div>
   <div class="body">
@@ -2957,18 +3042,18 @@ def test_callback(code: str = "", state: str = ""):
 <style>
   body {{ font-family: system-ui, "Sarabun", sans-serif; background: #f1f5f9;
           padding: 40px 16px; }}
-  .box {{ max-width: 600px; margin: 0 auto; background: #fff; border-radius: 12px;
+  .box {{ max-width: 600px; margin: 0 auto; background: #fff; border-radius:0;
           padding: 28px 32px; box-shadow: 0 1px 3px rgba(0,0,0,.1); }}
   h1 {{ font-size: 20px; color: #16a34a; }}
   .field {{ font-family: monospace; background: #1f2937; color: #86efac;
-            padding: 12px 14px; border-radius: 8px; word-break: break-all;
+            padding: 12px 14px; border-radius:0; word-break: break-all;
             margin: 8px 0; font-size: 13px; }}
   .label {{ font-size: 12px; color: #64748b; margin-top: 12px; }}
   .step {{ background: #eff6ff; border-left: 4px solid #2563eb; padding: 12px 14px;
-           border-radius: 4px; margin-top: 16px; font-size: 13px; }}
+           border-radius:0; margin-top: 16px; font-size: 13px; }}
 </style></head><body>
 <div class="box">
-  <h1>✓ Hub ส่ง authorization code กลับมาแล้ว</h1>
+  <h1>Hub ส่ง authorization code กลับมาแล้ว</h1>
   <p>นี่คือหน้าจำลอง redirect_uri ของ subsystem — ในระบบจริง subsystem
      จะเอา code นี้ไปแลก token เอง</p>
 

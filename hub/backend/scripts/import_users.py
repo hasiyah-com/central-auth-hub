@@ -118,13 +118,13 @@ def main() -> None:
         with open(args.csv_path, newline="", encoding="utf-8-sig") as f:
             reader = csv.DictReader(f)
             if not reader.fieldnames:
-                sys.exit("❌ CSV ว่างหรือไม่มี header")
+                sys.exit("CSV ว่างหรือไม่มี header")
             missing = [c for c in REQUIRED if c not in reader.fieldnames]
             if missing:
-                sys.exit(f"❌ header ขาดคอลัมน์บังคับ: {missing} (ต้องมี {list(REQUIRED)})")
+                sys.exit(f"header ขาดคอลัมน์บังคับ: {missing} (ต้องมี {list(REQUIRED)})")
             rows = list(reader)
     except OSError as e:
-        sys.exit(f"❌ เปิดไฟล์ไม่ได้: {e}")
+        sys.exit(f"เปิดไฟล์ไม่ได้: {e}")
 
     seen_emails: dict[str, int] = {}
     seen_idents: dict[str, int] = {}
@@ -143,15 +143,15 @@ def main() -> None:
         row["email"] = email
         valid.append((line_no, row))
 
-    print(f"📄 อ่าน {len(rows)} แถว · ผ่าน validate {len(valid)} · ผิด {len(errors)}")
+    print(f"อ่าน {len(rows)} แถว · ผ่าน validate {len(valid)} · ผิด {len(errors)}")
     for line_no, email, errs in errors:
-        print(f"   ⚠️  บรรทัด {line_no} ({email or '-'}): {'; '.join(errs)}")
+        print(f"    บรรทัด {line_no} ({email or '-'}): {'; '.join(errs)}")
 
     if errors and args.strict:
-        sys.exit("❌ --strict: มีแถวผิด → ยกเลิกทั้งหมด ไม่เขียน DB")
+        sys.exit("--strict: มีแถวผิด → ยกเลิกทั้งหมด ไม่เขียน DB")
 
     if args.dry_run:
-        print("🔍 dry-run — ไม่เขียน DB (ลบ --dry-run เพื่อ import จริง)")
+        print("dry-run — ไม่เขียน DB (ลบ --dry-run เพื่อ import จริง)")
         return
 
     if not valid:
@@ -187,7 +187,7 @@ def main() -> None:
                 and db.query(User).filter(User.identifier == row["identifier"]).first()
             ):
                 print(
-                    f"   ⚠️  บรรทัด {line_no}: identifier '{row['identifier']}' มีในระบบแล้ว → ข้าม"
+                    f"    บรรทัด {line_no}: identifier '{row['identifier']}' มีในระบบแล้ว → ข้าม"
                 )
                 skipped += 1
                 continue
@@ -211,11 +211,11 @@ def main() -> None:
         db.commit()
     except Exception as e:  # noqa: BLE001 — bulk import: rollback + รายงาน ไม่ให้ค้างครึ่งๆ
         db.rollback()
-        sys.exit(f"❌ เขียน DB ล้มเหลว (rollback ทั้งหมดแล้ว): {e}")
+        sys.exit(f"เขียน DB ล้มเหลว (rollback ทั้งหมดแล้ว): {e}")
     finally:
         db.close()
 
-    print(f"✅ เสร็จ · สร้างใหม่ {created} · อัปเดต {updated} · ข้าม {skipped}")
+    print(f"เสร็จ · สร้างใหม่ {created} · อัปเดต {updated} · ข้าม {skipped}")
 
 
 if __name__ == "__main__":

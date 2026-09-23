@@ -1,0 +1,1368 @@
+{
+  "generated_at": "2026-09-22T19:02:12.972270+00:00",
+  "l3_mode": "shadow_hybrid",
+  "conditional_params": "{\"ambiguous_low\": 0.3, \"low_zone_agree\": 0.9, \"w_point\": 0.5, \"w_sequence\": 0.5}",
+  "note": "labeled by construction · stack ในเครื่อง · บัญชีทดสอบ vm-*@example.test",
+  "results": [
+    {
+      "scenario_id": "VM-N01",
+      "label": "normal",
+      "attack_family": "none",
+      "severity": "none",
+      "user": "vm-student-01",
+      "subsystem": "sub-dorm",
+      "scenario_time": "2026-09-23T02:00:00+00:00",
+      "features_changed": {},
+      "session_id": "2a0bb2c6-9075-4b3a-9086-5138a88e6064",
+      "recorded_at": "2026-09-22T19:02:12.111796",
+      "actual_decision": "allow",
+      "risk_score": "0.200",
+      "l1_rule": 0.0,
+      "l2_behavior": 0.2,
+      "l3_anomaly": 0.0,
+      "l3_eligibility": "abstain",
+      "l3_abstain_reason": null,
+      "baseline_shadow": {
+        "final_risk": 0.2,
+        "decision": "would_allow"
+      },
+      "hybrid_shadow": {
+        "final_risk": 0.433723,
+        "decision": "would_allow"
+      },
+      "conditional_shadow": {
+        "final_risk": 0.35644,
+        "decision": "would_allow",
+        "zone": "low",
+        "params": {
+          "ambiguous_low": 0.3,
+          "w_point": 0.5,
+          "w_sequence": 0.5,
+          "low_zone_agree": 0.9
+        }
+      },
+      "reasons": [
+        "no_history (cold start)"
+      ],
+      "shap_top": [],
+      "expected_min": "allow",
+      "expected_max": "allow",
+      "decision_rank": 0,
+      "meets_expectation": true
+    },
+    {
+      "scenario_id": "VM-N02",
+      "label": "normal",
+      "attack_family": "none",
+      "severity": "none",
+      "user": "vm-student-01",
+      "subsystem": "sub-dorm",
+      "scenario_time": "2026-09-23T04:00:00+00:00",
+      "features_changed": {
+        "hours_from_typical_login_time": 1.5
+      },
+      "session_id": "c31619f8-5ae8-4a89-8954-76398f3596e7",
+      "recorded_at": "2026-09-22T19:02:12.146432",
+      "actual_decision": "allow",
+      "risk_score": "0.200",
+      "l1_rule": 0.0,
+      "l2_behavior": 0.2,
+      "l3_anomaly": 0.0,
+      "l3_eligibility": "abstain",
+      "l3_abstain_reason": null,
+      "baseline_shadow": {
+        "final_risk": 0.2,
+        "decision": "would_allow"
+      },
+      "hybrid_shadow": {
+        "final_risk": 0.44572,
+        "decision": "would_allow"
+      },
+      "conditional_shadow": {
+        "final_risk": 0.3616,
+        "decision": "would_allow",
+        "zone": "low",
+        "params": {
+          "ambiguous_low": 0.3,
+          "w_point": 0.5,
+          "w_sequence": 0.5,
+          "low_zone_agree": 0.9
+        }
+      },
+      "reasons": [
+        "no_history (cold start)"
+      ],
+      "shap_top": [],
+      "expected_min": "allow",
+      "expected_max": "warn",
+      "decision_rank": 0,
+      "meets_expectation": true
+    },
+    {
+      "scenario_id": "VM-N03",
+      "label": "normal",
+      "attack_family": "none",
+      "severity": "none",
+      "user": "vm-teacher-01",
+      "subsystem": "sub-library",
+      "scenario_time": "2026-09-23T03:00:00+00:00",
+      "features_changed": {},
+      "session_id": "b191ce5e-2497-43fb-9cfa-8ce8067cb910",
+      "recorded_at": "2026-09-22T19:02:12.181510",
+      "actual_decision": "allow",
+      "risk_score": "0.200",
+      "l1_rule": 0.0,
+      "l2_behavior": 0.2,
+      "l3_anomaly": 0.0,
+      "l3_eligibility": "abstain",
+      "l3_abstain_reason": null,
+      "baseline_shadow": {
+        "final_risk": 0.2,
+        "decision": "would_allow"
+      },
+      "hybrid_shadow": {
+        "final_risk": 0.433723,
+        "decision": "would_allow"
+      },
+      "conditional_shadow": {
+        "final_risk": 0.35644,
+        "decision": "would_allow",
+        "zone": "low",
+        "params": {
+          "ambiguous_low": 0.3,
+          "w_point": 0.5,
+          "w_sequence": 0.5,
+          "low_zone_agree": 0.9
+        }
+      },
+      "reasons": [
+        "no_history (cold start)"
+      ],
+      "shap_top": [],
+      "expected_min": "allow",
+      "expected_max": "allow",
+      "decision_rank": 0,
+      "meets_expectation": true
+    },
+    {
+      "scenario_id": "VM-N04",
+      "label": "normal",
+      "attack_family": "none",
+      "severity": "none",
+      "user": "vm-teacher-01",
+      "subsystem": "sub-library",
+      "scenario_time": "2026-09-23T05:00:00+00:00",
+      "features_changed": {
+        "log_minutes_since_last_login": 10.27,
+        "login_count_24h": 1
+      },
+      "session_id": "f80b1579-681f-4db6-92a9-846d5c5acd53",
+      "recorded_at": "2026-09-22T19:02:12.216341",
+      "actual_decision": "allow",
+      "risk_score": "0.200",
+      "l1_rule": 0.0,
+      "l2_behavior": 0.2,
+      "l3_anomaly": 0.0,
+      "l3_eligibility": "abstain",
+      "l3_abstain_reason": null,
+      "baseline_shadow": {
+        "final_risk": 0.2,
+        "decision": "would_allow"
+      },
+      "hybrid_shadow": {
+        "final_risk": 0.438001,
+        "decision": "would_allow"
+      },
+      "conditional_shadow": {
+        "final_risk": 0.35828,
+        "decision": "would_allow",
+        "zone": "low",
+        "params": {
+          "ambiguous_low": 0.3,
+          "w_point": 0.5,
+          "w_sequence": 0.5,
+          "low_zone_agree": 0.9
+        }
+      },
+      "reasons": [
+        "no_history (cold start)"
+      ],
+      "shap_top": [],
+      "expected_min": "allow",
+      "expected_max": "warn",
+      "decision_rank": 0,
+      "meets_expectation": true
+    },
+    {
+      "scenario_id": "VM-N05",
+      "label": "normal",
+      "attack_family": "none",
+      "severity": "none",
+      "user": "vm-staff-01",
+      "subsystem": "sub-dorm",
+      "scenario_time": "2026-09-23T06:00:00+00:00",
+      "features_changed": {
+        "is_new_user_agent_family": 1
+      },
+      "session_id": "ccb81ffc-7042-4b51-8296-03d0c284f9a2",
+      "recorded_at": "2026-09-22T19:02:12.258659",
+      "actual_decision": "would_challenge",
+      "risk_score": "0.256",
+      "l1_rule": 0.2,
+      "l2_behavior": 0.2,
+      "l3_anomaly": 0.0,
+      "l3_eligibility": "abstain",
+      "l3_abstain_reason": null,
+      "baseline_shadow": {
+        "final_risk": 0.256,
+        "decision": "would_challenge"
+      },
+      "hybrid_shadow": {
+        "final_risk": 0.498823,
+        "decision": "would_challenge"
+      },
+      "conditional_shadow": {
+        "final_risk": 0.427529,
+        "decision": "would_challenge",
+        "zone": "low",
+        "params": {
+          "ambiguous_low": 0.3,
+          "w_point": 0.5,
+          "w_sequence": 0.5,
+          "low_zone_agree": 0.9
+        }
+      },
+      "reasons": [
+        "is_new_user_agent_family=1 -> challenge",
+        "is_new_user_agent_family (+0.2)",
+        "no_history (cold start)"
+      ],
+      "shap_top": [],
+      "expected_min": "allow",
+      "expected_max": "warn",
+      "decision_rank": 2,
+      "meets_expectation": false
+    },
+    {
+      "scenario_id": "VM-A06",
+      "label": "attack",
+      "attack_family": "credential_stuffing",
+      "severity": "high",
+      "user": "vm-student-02",
+      "subsystem": "sub-dorm",
+      "scenario_time": "2026-09-23T07:10:00+00:00",
+      "features_changed": {
+        "failed_logins_24h": 25,
+        "is_new_device": 1,
+        "is_new_user_agent_family": 1
+      },
+      "session_id": "3ed4e225-6d0c-4271-8cc6-b3addb74badb",
+      "recorded_at": "2026-09-22T19:02:12.284232",
+      "actual_decision": "would_block",
+      "risk_score": "1.000",
+      "l1_rule": 0.0,
+      "l2_behavior": 0.0,
+      "l3_anomaly": 0.0,
+      "l3_eligibility": null,
+      "l3_abstain_reason": null,
+      "baseline_shadow": {
+        "final_risk": 1.0,
+        "decision": "would_block"
+      },
+      "hybrid_shadow": {
+        "final_risk": 1.0,
+        "decision": "would_block"
+      },
+      "conditional_shadow": {
+        "final_risk": 1.0,
+        "decision": "would_block",
+        "zone": "policy_denied",
+        "params": {
+          "ambiguous_low": 0.3,
+          "w_point": 0.5,
+          "w_sequence": 0.5,
+          "low_zone_agree": 0.9
+        }
+      },
+      "reasons": [
+        "failed_logins_24h=25 >= 10"
+      ],
+      "shap_top": [],
+      "expected_min": "challenge",
+      "expected_max": null,
+      "decision_rank": 3,
+      "meets_expectation": true
+    },
+    {
+      "scenario_id": "VM-A07",
+      "label": "attack",
+      "attack_family": "failed_spike",
+      "severity": "high",
+      "user": "vm-student-02",
+      "subsystem": "sub-dorm",
+      "scenario_time": "2026-09-23T08:05:00+00:00",
+      "features_changed": {
+        "failed_logins_24h": 8
+      },
+      "session_id": "2fd536bc-aff5-4f18-b05b-a048afca2663",
+      "recorded_at": "2026-09-22T19:02:12.327599",
+      "actual_decision": "would_block",
+      "risk_score": "1.000",
+      "l1_rule": 1.0,
+      "l2_behavior": 0.2,
+      "l3_anomaly": 0.0,
+      "l3_eligibility": "abstain",
+      "l3_abstain_reason": null,
+      "baseline_shadow": {
+        "final_risk": 1.0,
+        "decision": "would_block"
+      },
+      "hybrid_shadow": {
+        "final_risk": 1.0,
+        "decision": "would_block"
+      },
+      "conditional_shadow": {
+        "final_risk": 1.0,
+        "decision": "would_block",
+        "zone": "high",
+        "params": {
+          "ambiguous_low": 0.3,
+          "w_point": 0.5,
+          "w_sequence": 0.5,
+          "low_zone_agree": 0.9
+        }
+      },
+      "reasons": [
+        "is_new_device=1 -> challenge",
+        "is_new_user_agent_family=1 -> challenge",
+        "failed_logins_24h=8 -> challenge",
+        "is_new_device (+0.3)",
+        "is_new_user_agent_family (+0.2)",
+        "failed_logins_24h (+0.3)",
+        "failed_logins_24h (+0.2)",
+        "no_history (cold start)"
+      ],
+      "shap_top": [
+        {
+          "feature": "is_new_user_agent_family",
+          "shap": 1.4818,
+          "value": 1.0,
+          "direction": "anomaly"
+        },
+        {
+          "feature": "is_new_device",
+          "shap": 1.2934,
+          "value": 1.0,
+          "direction": "anomaly"
+        },
+        {
+          "feature": "failed_logins_24h",
+          "shap": 1.2701,
+          "value": 8.0,
+          "direction": "anomaly"
+        },
+        {
+          "feature": "hour_of_day",
+          "shap": 0.2738,
+          "value": 19.0,
+          "direction": "anomaly"
+        },
+        {
+          "feature": "impossible_travel_score",
+          "shap": 0.2581,
+          "value": 0.0,
+          "direction": "anomaly"
+        }
+      ],
+      "expected_min": "challenge",
+      "expected_max": null,
+      "decision_rank": 3,
+      "meets_expectation": true
+    },
+    {
+      "scenario_id": "VM-A08",
+      "label": "attack",
+      "attack_family": "combined_ato",
+      "severity": "critical",
+      "user": "vm-student-03",
+      "subsystem": "sub-dorm",
+      "scenario_time": "2026-09-23T09:05:00+00:00",
+      "features_changed": {
+        "is_thailand": 0,
+        "is_new_country": 1,
+        "is_new_device": 1,
+        "is_new_user_agent_family": 1,
+        "failed_logins_24h": 5,
+        "new_passkey_recently_added": 1,
+        "passkey_age_days": 0
+      },
+      "session_id": "d8e8a6c3-ccf1-4e59-8bc6-85ef3d995bbb",
+      "recorded_at": "2026-09-22T19:02:12.369403",
+      "actual_decision": "would_block",
+      "risk_score": "1.000",
+      "l1_rule": 1.0,
+      "l2_behavior": 0.2,
+      "l3_anomaly": 0.0,
+      "l3_eligibility": "abstain",
+      "l3_abstain_reason": null,
+      "baseline_shadow": {
+        "final_risk": 1.0,
+        "decision": "would_block"
+      },
+      "hybrid_shadow": {
+        "final_risk": 1.0,
+        "decision": "would_block"
+      },
+      "conditional_shadow": {
+        "final_risk": 1.0,
+        "decision": "would_block",
+        "zone": "high",
+        "params": {
+          "ambiguous_low": 0.3,
+          "w_point": 0.5,
+          "w_sequence": 0.5,
+          "low_zone_agree": 0.9
+        }
+      },
+      "reasons": [
+        "is_new_device=1 -> challenge",
+        "is_new_user_agent_family=1 -> challenge",
+        "is_new_country=1 -> challenge",
+        "failed_logins_24h=5 -> challenge",
+        "new_passkey_recently_added=1 -> challenge",
+        "is_new_device (+0.3)",
+        "is_new_user_agent_family (+0.2)",
+        "is_new_country (+0.3)"
+      ],
+      "shap_top": [
+        {
+          "feature": "is_new_user_agent_family",
+          "shap": 1.3852,
+          "value": 1.0,
+          "direction": "anomaly"
+        },
+        {
+          "feature": "new_passkey_recently_added",
+          "shap": 1.3252,
+          "value": 1.0,
+          "direction": "anomaly"
+        },
+        {
+          "feature": "is_new_device",
+          "shap": 1.1053,
+          "value": 1.0,
+          "direction": "anomaly"
+        },
+        {
+          "feature": "failed_logins_24h",
+          "shap": 1.0305,
+          "value": 5.0,
+          "direction": "anomaly"
+        },
+        {
+          "feature": "impossible_travel_score",
+          "shap": 0.2659,
+          "value": 0.0,
+          "direction": "anomaly"
+        }
+      ],
+      "expected_min": "challenge",
+      "expected_max": null,
+      "decision_rank": 3,
+      "meets_expectation": true
+    },
+    {
+      "scenario_id": "VM-A09",
+      "label": "attack",
+      "attack_family": "impossible_travel",
+      "severity": "high",
+      "user": "vm-teacher-02",
+      "subsystem": "sub-library",
+      "scenario_time": "2026-09-23T10:05:00+00:00",
+      "features_changed": {
+        "impossible_travel_score": 0.95,
+        "is_new_country": 1,
+        "is_thailand": 0,
+        "country_change_count_30d": 2
+      },
+      "session_id": "c8a6a72f-8c66-4e73-95d7-3b021520ae8a",
+      "recorded_at": "2026-09-22T19:02:12.418329",
+      "actual_decision": "would_block",
+      "risk_score": "1.000",
+      "l1_rule": 1.0,
+      "l2_behavior": 0.2,
+      "l3_anomaly": 0.0,
+      "l3_eligibility": "abstain",
+      "l3_abstain_reason": null,
+      "baseline_shadow": {
+        "final_risk": 1.0,
+        "decision": "would_block"
+      },
+      "hybrid_shadow": {
+        "final_risk": 1.0,
+        "decision": "would_block"
+      },
+      "conditional_shadow": {
+        "final_risk": 1.0,
+        "decision": "would_block",
+        "zone": "high",
+        "params": {
+          "ambiguous_low": 0.3,
+          "w_point": 0.5,
+          "w_sequence": 0.5,
+          "low_zone_agree": 0.9
+        }
+      },
+      "reasons": [
+        "is_new_country=1 -> challenge",
+        "is_new_country (+0.3)",
+        "is_thailand (+0.1)",
+        "impossible_travel_score (+0.3)",
+        "new_foreign_country (+0.30)",
+        "no_history (cold start)"
+      ],
+      "shap_top": [],
+      "expected_min": "challenge",
+      "expected_max": null,
+      "decision_rank": 3,
+      "meets_expectation": true
+    },
+    {
+      "scenario_id": "VM-A10",
+      "label": "attack",
+      "attack_family": "concurrent_sessions",
+      "severity": "high",
+      "user": "vm-teacher-02",
+      "subsystem": "sub-library",
+      "scenario_time": "2026-09-23T11:05:00+00:00",
+      "features_changed": {
+        "concurrent_session_count": 4
+      },
+      "session_id": "09bf2675-abfb-45b0-9e81-2be33efa84f5",
+      "recorded_at": "2026-09-22T19:02:12.478358",
+      "actual_decision": "would_challenge",
+      "risk_score": "0.768",
+      "l1_rule": 0.75,
+      "l2_behavior": 0.2,
+      "l3_anomaly": 0.0,
+      "l3_eligibility": "abstain",
+      "l3_abstain_reason": null,
+      "baseline_shadow": {
+        "final_risk": 0.7675,
+        "decision": "would_challenge"
+      },
+      "hybrid_shadow": {
+        "final_risk": 0.801222,
+        "decision": "would_challenge"
+      },
+      "conditional_shadow": {
+        "final_risk": 0.815137,
+        "decision": "would_challenge",
+        "zone": "high",
+        "params": {
+          "ambiguous_low": 0.3,
+          "w_point": 0.5,
+          "w_sequence": 0.5,
+          "low_zone_agree": 0.9
+        }
+      },
+      "reasons": [
+        "is_new_device=1 -> challenge",
+        "is_new_user_agent_family=1 -> challenge",
+        "concurrent_session_count=4 -> challenge",
+        "is_new_device (+0.3)",
+        "is_new_user_agent_family (+0.2)",
+        "concurrent_session_count (+0.25)",
+        "no_history (cold start)"
+      ],
+      "shap_top": [
+        {
+          "feature": "is_new_user_agent_family",
+          "shap": 1.5174,
+          "value": 1.0,
+          "direction": "anomaly"
+        },
+        {
+          "feature": "is_new_device",
+          "shap": 1.2651,
+          "value": 1.0,
+          "direction": "anomaly"
+        },
+        {
+          "feature": "failed_logins_24h",
+          "shap": 0.6007,
+          "value": 1.0,
+          "direction": "anomaly"
+        },
+        {
+          "feature": "concurrent_session_count",
+          "shap": 0.527,
+          "value": 4.0,
+          "direction": "anomaly"
+        },
+        {
+          "feature": "impossible_travel_score",
+          "shap": 0.2635,
+          "value": 0.0,
+          "direction": "anomaly"
+        }
+      ],
+      "expected_min": "challenge",
+      "expected_max": null,
+      "decision_rank": 2,
+      "meets_expectation": true
+    },
+    {
+      "scenario_id": "VM-A11",
+      "label": "attack",
+      "attack_family": "permission_change",
+      "severity": "high",
+      "user": "vm-staff-02",
+      "subsystem": "sub-dorm",
+      "scenario_time": "2026-09-23T12:05:00+00:00",
+      "features_changed": {
+        "ever_changed_permission": 1,
+        "permission_change_age": 0.05
+      },
+      "session_id": "ad7fdd23-6c46-4487-941a-893f6173ee4c",
+      "recorded_at": "2026-09-22T19:02:12.546743",
+      "actual_decision": "would_challenge",
+      "risk_score": "0.396",
+      "l1_rule": 0.35,
+      "l2_behavior": 0.2,
+      "l3_anomaly": 0.0,
+      "l3_eligibility": "abstain",
+      "l3_abstain_reason": null,
+      "baseline_shadow": {
+        "final_risk": 0.3955,
+        "decision": "would_challenge"
+      },
+      "hybrid_shadow": {
+        "final_risk": 0.467182,
+        "decision": "would_challenge"
+      },
+      "conditional_shadow": {
+        "final_risk": 0.514224,
+        "decision": "would_challenge",
+        "zone": "ambiguous",
+        "params": {
+          "ambiguous_low": 0.3,
+          "w_point": 0.5,
+          "w_sequence": 0.5,
+          "low_zone_agree": 0.9
+        }
+      },
+      "reasons": [
+        "permission_change_age=0 -> challenge",
+        "permission_change_age (+0.25)",
+        "permission_change_age (+0.1)",
+        "no_history (cold start)"
+      ],
+      "shap_top": [],
+      "expected_min": "challenge",
+      "expected_max": null,
+      "decision_rank": 2,
+      "meets_expectation": true
+    },
+    {
+      "scenario_id": "VM-A12",
+      "label": "attack",
+      "attack_family": "new_device",
+      "severity": "high",
+      "user": "vm-staff-02",
+      "subsystem": "sub-dorm",
+      "scenario_time": "2026-09-23T13:05:00+00:00",
+      "features_changed": {
+        "is_new_device": 1,
+        "is_new_country": 1,
+        "is_thailand": 0
+      },
+      "session_id": "37abb77e-2db4-45f2-87ce-7c5d4d8e5801",
+      "recorded_at": "2026-09-22T19:02:12.608033",
+      "actual_decision": "would_block",
+      "risk_score": "1.000",
+      "l1_rule": 1.0,
+      "l2_behavior": 0.2,
+      "l3_anomaly": 0.0,
+      "l3_eligibility": "abstain",
+      "l3_abstain_reason": null,
+      "baseline_shadow": {
+        "final_risk": 1.0,
+        "decision": "would_block"
+      },
+      "hybrid_shadow": {
+        "final_risk": 1.0,
+        "decision": "would_block"
+      },
+      "conditional_shadow": {
+        "final_risk": 1.0,
+        "decision": "would_block",
+        "zone": "high",
+        "params": {
+          "ambiguous_low": 0.3,
+          "w_point": 0.5,
+          "w_sequence": 0.5,
+          "low_zone_agree": 0.9
+        }
+      },
+      "reasons": [
+        "is_new_device=1 -> challenge",
+        "is_new_user_agent_family=1 -> challenge",
+        "is_new_country=1 -> challenge",
+        "is_new_device (+0.3)",
+        "is_new_user_agent_family (+0.2)",
+        "is_new_country (+0.3)",
+        "is_thailand (+0.1)",
+        "new_foreign_country (+0.30)"
+      ],
+      "shap_top": [
+        {
+          "feature": "is_new_user_agent_family",
+          "shap": 1.6464,
+          "value": 1.0,
+          "direction": "anomaly"
+        },
+        {
+          "feature": "is_new_device",
+          "shap": 1.4502,
+          "value": 1.0,
+          "direction": "anomaly"
+        },
+        {
+          "feature": "hour_of_day",
+          "shap": 0.3039,
+          "value": 19.0,
+          "direction": "anomaly"
+        },
+        {
+          "feature": "impossible_travel_score",
+          "shap": 0.2774,
+          "value": 0.0,
+          "direction": "anomaly"
+        },
+        {
+          "feature": "log_minutes_since_last_login",
+          "shap": 0.2155,
+          "value": -0.6931,
+          "direction": "anomaly"
+        }
+      ],
+      "expected_min": "challenge",
+      "expected_max": null,
+      "decision_rank": 3,
+      "meets_expectation": true
+    },
+    {
+      "scenario_id": "VM-S13",
+      "label": "attack",
+      "attack_family": "login_velocity",
+      "severity": "medium",
+      "user": "vm-student-04",
+      "subsystem": "sub-dorm",
+      "scenario_time": "2026-09-23T14:30:00+00:00",
+      "features_changed": {
+        "log_minutes_since_last_login": 0.69,
+        "login_count_24h": 12
+      },
+      "session_id": "c9c0aeb7-6d7e-49a2-a6ea-b956c46f5a2f",
+      "recorded_at": "2026-09-22T19:02:12.643524",
+      "actual_decision": "allow",
+      "risk_score": "0.303",
+      "l1_rule": 0.25,
+      "l2_behavior": 0.2,
+      "l3_anomaly": 0.0,
+      "l3_eligibility": "abstain",
+      "l3_abstain_reason": null,
+      "baseline_shadow": {
+        "final_risk": 0.3025,
+        "decision": "would_allow"
+      },
+      "hybrid_shadow": {
+        "final_risk": 0.439999,
+        "decision": "would_allow"
+      },
+      "conditional_shadow": {
+        "final_risk": 0.437222,
+        "decision": "would_allow",
+        "zone": "ambiguous",
+        "params": {
+          "ambiguous_low": 0.3,
+          "w_point": 0.5,
+          "w_sequence": 0.5,
+          "low_zone_agree": 0.9
+        }
+      },
+      "reasons": [
+        "login_velocity (+0.25)",
+        "no_history (cold start)"
+      ],
+      "shap_top": [],
+      "expected_min": "warn",
+      "expected_max": null,
+      "decision_rank": 0,
+      "meets_expectation": false
+    },
+    {
+      "scenario_id": "VM-S14",
+      "label": "attack",
+      "attack_family": "subtle_quiet_lateral",
+      "severity": "medium",
+      "user": "vm-student-04",
+      "subsystem": "sub-grade",
+      "scenario_time": "2026-09-23T15:05:00+00:00",
+      "features_changed": {
+        "active_subsystem_count": 3,
+        "scope_sensitivity_score": 0.8
+      },
+      "session_id": "a033f463-7849-4a9e-bf87-0f3f5e59d010",
+      "recorded_at": "2026-09-22T19:02:12.676360",
+      "actual_decision": "would_challenge",
+      "risk_score": "0.256",
+      "l1_rule": 0.2,
+      "l2_behavior": 0.2,
+      "l3_anomaly": 0.0,
+      "l3_eligibility": "abstain",
+      "l3_abstain_reason": null,
+      "baseline_shadow": {
+        "final_risk": 0.256,
+        "decision": "would_challenge"
+      },
+      "hybrid_shadow": {
+        "final_risk": 0.463669,
+        "decision": "would_challenge"
+      },
+      "conditional_shadow": {
+        "final_risk": 0.413468,
+        "decision": "would_challenge",
+        "zone": "low",
+        "params": {
+          "ambiguous_low": 0.3,
+          "w_point": 0.5,
+          "w_sequence": 0.5,
+          "low_zone_agree": 0.9
+        }
+      },
+      "reasons": [
+        "active_subsystem_count=3 -> challenge",
+        "active_subsystem_count (+0.2)",
+        "no_history (cold start)"
+      ],
+      "shap_top": [],
+      "expected_min": "warn",
+      "expected_max": null,
+      "decision_rank": 2,
+      "meets_expectation": true
+    },
+    {
+      "scenario_id": "VM-S15",
+      "label": "attack",
+      "attack_family": "subsystem_lateral",
+      "severity": "medium",
+      "user": "vm-teacher-03",
+      "subsystem": "sub-grade",
+      "scenario_time": "2026-09-23T16:05:00+00:00",
+      "features_changed": {
+        "active_subsystem_count": 6,
+        "scope_sensitivity_score": 0.6
+      },
+      "session_id": "11878f2b-8708-42c6-8ecf-793468856f69",
+      "recorded_at": "2026-09-22T19:02:12.712206",
+      "actual_decision": "would_challenge",
+      "risk_score": "0.256",
+      "l1_rule": 0.2,
+      "l2_behavior": 0.2,
+      "l3_anomaly": 0.0,
+      "l3_eligibility": "abstain",
+      "l3_abstain_reason": null,
+      "baseline_shadow": {
+        "final_risk": 0.256,
+        "decision": "would_challenge"
+      },
+      "hybrid_shadow": {
+        "final_risk": 0.445441,
+        "decision": "would_challenge"
+      },
+      "conditional_shadow": {
+        "final_risk": 0.406176,
+        "decision": "would_challenge",
+        "zone": "low",
+        "params": {
+          "ambiguous_low": 0.3,
+          "w_point": 0.5,
+          "w_sequence": 0.5,
+          "low_zone_agree": 0.9
+        }
+      },
+      "reasons": [
+        "active_subsystem_count=6 -> challenge",
+        "active_subsystem_count (+0.2)",
+        "no_history (cold start)"
+      ],
+      "shap_top": [],
+      "expected_min": "warn",
+      "expected_max": null,
+      "decision_rank": 2,
+      "meets_expectation": true
+    },
+    {
+      "scenario_id": "VM-S16",
+      "label": "attack",
+      "attack_family": "subtle_slow_burst",
+      "severity": "medium",
+      "user": "vm-teacher-03",
+      "subsystem": "sub-library",
+      "scenario_time": "2026-09-23T18:00:00+00:00",
+      "features_changed": {
+        "login_count_24h": 7,
+        "failed_logins_24h": 2
+      },
+      "session_id": "d56655cd-85a8-4655-9c8e-b8fbeff3a7ab",
+      "recorded_at": "2026-09-22T19:02:12.750923",
+      "actual_decision": "would_challenge",
+      "risk_score": "0.768",
+      "l1_rule": 0.75,
+      "l2_behavior": 0.2,
+      "l3_anomaly": 0.0,
+      "l3_eligibility": "abstain",
+      "l3_abstain_reason": null,
+      "baseline_shadow": {
+        "final_risk": 0.7675,
+        "decision": "would_challenge"
+      },
+      "hybrid_shadow": {
+        "final_risk": 0.801713,
+        "decision": "would_challenge"
+      },
+      "conditional_shadow": {
+        "final_risk": 0.815593,
+        "decision": "would_challenge",
+        "zone": "high",
+        "params": {
+          "ambiguous_low": 0.3,
+          "w_point": 0.5,
+          "w_sequence": 0.5,
+          "low_zone_agree": 0.9
+        }
+      },
+      "reasons": [
+        "is_new_device=1 -> challenge",
+        "is_new_user_agent_family=1 -> challenge",
+        "is_new_device (+0.3)",
+        "is_new_user_agent_family (+0.2)",
+        "login_velocity (+0.25)",
+        "no_history (cold start)"
+      ],
+      "shap_top": [
+        {
+          "feature": "is_new_user_agent_family",
+          "shap": 1.4158,
+          "value": 1.0,
+          "direction": "anomaly"
+        },
+        {
+          "feature": "failed_logins_24h",
+          "shap": 1.2739,
+          "value": 2.0,
+          "direction": "anomaly"
+        },
+        {
+          "feature": "is_new_device",
+          "shap": 1.2385,
+          "value": 1.0,
+          "direction": "anomaly"
+        },
+        {
+          "feature": "login_count_24h",
+          "shap": 0.3662,
+          "value": 7.0,
+          "direction": "anomaly"
+        },
+        {
+          "feature": "impossible_travel_score",
+          "shap": 0.2808,
+          "value": 0.0,
+          "direction": "anomaly"
+        }
+      ],
+      "expected_min": "warn",
+      "expected_max": null,
+      "decision_rank": 2,
+      "meets_expectation": true
+    },
+    {
+      "scenario_id": "VM-S17",
+      "label": "attack",
+      "attack_family": "subtle_rare_device",
+      "severity": "medium",
+      "user": "vm-staff-03",
+      "subsystem": "sub-dorm",
+      "scenario_time": "2026-09-23T19:05:00+00:00",
+      "features_changed": {
+        "is_new_device": 1
+      },
+      "session_id": "05994f55-9d57-4ee6-ab8d-63886feb59e1",
+      "recorded_at": "2026-09-22T19:02:12.793668",
+      "actual_decision": "would_challenge",
+      "risk_score": "0.349",
+      "l1_rule": 0.3,
+      "l2_behavior": 0.2,
+      "l3_anomaly": 0.0,
+      "l3_eligibility": "abstain",
+      "l3_abstain_reason": null,
+      "baseline_shadow": {
+        "final_risk": 0.349,
+        "decision": "would_challenge"
+      },
+      "hybrid_shadow": {
+        "final_risk": 0.520459,
+        "decision": "would_challenge"
+      },
+      "conditional_shadow": {
+        "final_risk": 0.500097,
+        "decision": "would_challenge",
+        "zone": "ambiguous",
+        "params": {
+          "ambiguous_low": 0.3,
+          "w_point": 0.5,
+          "w_sequence": 0.5,
+          "low_zone_agree": 0.9
+        }
+      },
+      "reasons": [
+        "is_new_device=1 -> challenge",
+        "is_new_device (+0.3)",
+        "no_history (cold start)"
+      ],
+      "shap_top": [],
+      "expected_min": "warn",
+      "expected_max": null,
+      "decision_rank": 2,
+      "meets_expectation": true
+    },
+    {
+      "scenario_id": "VM-S18",
+      "label": "attack",
+      "attack_family": "new_passkey",
+      "severity": "medium",
+      "user": "vm-staff-03",
+      "subsystem": "sub-dorm",
+      "scenario_time": "2026-09-23T20:05:00+00:00",
+      "features_changed": {
+        "new_passkey_recently_added": 1,
+        "passkey_count": 2,
+        "passkey_age_days": 0
+      },
+      "session_id": "cac8f9df-006b-45a5-a7d2-2d204bf79972",
+      "recorded_at": "2026-09-22T19:02:12.830284",
+      "actual_decision": "would_challenge",
+      "risk_score": "0.814",
+      "l1_rule": 0.8,
+      "l2_behavior": 0.2,
+      "l3_anomaly": 0.0,
+      "l3_eligibility": "abstain",
+      "l3_abstain_reason": null,
+      "baseline_shadow": {
+        "final_risk": 0.814,
+        "decision": "would_challenge"
+      },
+      "hybrid_shadow": {
+        "final_risk": 0.842854,
+        "decision": "would_challenge"
+      },
+      "conditional_shadow": {
+        "final_risk": 0.853854,
+        "decision": "would_block",
+        "zone": "high",
+        "params": {
+          "ambiguous_low": 0.3,
+          "w_point": 0.5,
+          "w_sequence": 0.5,
+          "low_zone_agree": 0.9
+        }
+      },
+      "reasons": [
+        "is_new_device=1 -> challenge",
+        "is_new_user_agent_family=1 -> challenge",
+        "new_passkey_recently_added=1 -> challenge",
+        "is_new_device (+0.3)",
+        "is_new_user_agent_family (+0.2)",
+        "new_passkey_recently_added (+0.3)",
+        "no_history (cold start)"
+      ],
+      "shap_top": [
+        {
+          "feature": "new_passkey_recently_added",
+          "shap": 1.4264,
+          "value": 1.0,
+          "direction": "anomaly"
+        },
+        {
+          "feature": "is_new_user_agent_family",
+          "shap": 1.4034,
+          "value": 1.0,
+          "direction": "anomaly"
+        },
+        {
+          "feature": "is_new_device",
+          "shap": 1.1421,
+          "value": 1.0,
+          "direction": "anomaly"
+        },
+        {
+          "feature": "passkey_count",
+          "shap": 0.4159,
+          "value": 2.0,
+          "direction": "anomaly"
+        },
+        {
+          "feature": "hour_of_day",
+          "shap": 0.248,
+          "value": 19.0,
+          "direction": "anomaly"
+        }
+      ],
+      "expected_min": "challenge",
+      "expected_max": null,
+      "decision_rank": 2,
+      "meets_expectation": true
+    },
+    {
+      "scenario_id": "VM-S19",
+      "label": "attack",
+      "attack_family": "subtle_mild_offhour",
+      "severity": "low",
+      "user": "vm-student-05",
+      "subsystem": "sub-dorm",
+      "scenario_time": "2026-09-23T20:05:00+00:00",
+      "features_changed": {
+        "hour_of_day": 3,
+        "hours_from_typical_login_time": 5
+      },
+      "session_id": "7a17553a-fb34-40c9-b321-9c5bf1cb2609",
+      "recorded_at": "2026-09-22T19:02:12.866603",
+      "actual_decision": "allow",
+      "risk_score": "0.200",
+      "l1_rule": 0.0,
+      "l2_behavior": 0.2,
+      "l3_anomaly": 0.0,
+      "l3_eligibility": "abstain",
+      "l3_abstain_reason": null,
+      "baseline_shadow": {
+        "final_risk": 0.2,
+        "decision": "would_allow"
+      },
+      "hybrid_shadow": {
+        "final_risk": 0.49594,
+        "decision": "would_allow"
+      },
+      "conditional_shadow": {
+        "final_risk": 0.3832,
+        "decision": "would_allow",
+        "zone": "low",
+        "params": {
+          "ambiguous_low": 0.3,
+          "w_point": 0.5,
+          "w_sequence": 0.5,
+          "low_zone_agree": 0.9
+        }
+      },
+      "reasons": [
+        "no_history (cold start)"
+      ],
+      "shap_top": [],
+      "expected_min": "warn",
+      "expected_max": null,
+      "decision_rank": 0,
+      "meets_expectation": false
+    },
+    {
+      "scenario_id": "VM-S20",
+      "label": "attack",
+      "attack_family": "campaign",
+      "severity": "high",
+      "user": "vm-student-05",
+      "subsystem": "sub-grade",
+      "scenario_time": "2026-09-23T01:00:00+00:00",
+      "features_changed": {
+        "hours_from_typical_login_time": 3,
+        "is_new_device": 1
+      },
+      "session_id": "50eddebe-d8ef-4e39-a766-2a2035c346ea",
+      "recorded_at": "2026-09-22T19:02:12.903721",
+      "actual_decision": "would_challenge",
+      "risk_score": "0.349",
+      "l1_rule": 0.3,
+      "l2_behavior": 0.2,
+      "l3_anomaly": 0.0,
+      "l3_eligibility": "abstain",
+      "l3_abstain_reason": null,
+      "baseline_shadow": {
+        "final_risk": 0.349,
+        "decision": "would_challenge"
+      },
+      "hybrid_shadow": {
+        "final_risk": 0.554469,
+        "decision": "would_challenge"
+      },
+      "conditional_shadow": {
+        "final_risk": 0.512466,
+        "decision": "would_challenge",
+        "zone": "ambiguous",
+        "params": {
+          "ambiguous_low": 0.3,
+          "w_point": 0.5,
+          "w_sequence": 0.5,
+          "low_zone_agree": 0.9
+        }
+      },
+      "reasons": [
+        "is_new_device=1 -> challenge",
+        "is_new_device (+0.3)",
+        "no_history (cold start)"
+      ],
+      "shap_top": [
+        {
+          "feature": "is_new_device",
+          "shap": 1.3866,
+          "value": 1.0,
+          "direction": "anomaly"
+        },
+        {
+          "feature": "hours_from_typical_login_time",
+          "shap": 0.9152,
+          "value": 3.0,
+          "direction": "anomaly"
+        },
+        {
+          "feature": "hour_of_day",
+          "shap": 0.321,
+          "value": 19.0,
+          "direction": "anomaly"
+        },
+        {
+          "feature": "impossible_travel_score",
+          "shap": 0.2484,
+          "value": 0.0,
+          "direction": "anomaly"
+        },
+        {
+          "feature": "log_minutes_since_last_login",
+          "shap": 0.2365,
+          "value": -0.6931,
+          "direction": "anomaly"
+        }
+      ],
+      "expected_min": "challenge",
+      "expected_max": null,
+      "decision_rank": 2,
+      "meets_expectation": true
+    },
+    {
+      "scenario_id": "VM-S20",
+      "label": "attack",
+      "attack_family": "campaign",
+      "severity": "high",
+      "user": "vm-student-05",
+      "subsystem": "sub-grade",
+      "scenario_time": "2026-09-24T13:00:00+00:00",
+      "features_changed": {
+        "active_subsystem_count": 3,
+        "scope_sensitivity_score": 0.8,
+        "failed_logins_24h": 2
+      },
+      "session_id": "14178580-380e-4b43-ada2-cd20ee2f9316",
+      "recorded_at": "2026-09-22T19:02:12.935836",
+      "actual_decision": "would_challenge",
+      "risk_score": "0.256",
+      "l1_rule": 0.2,
+      "l2_behavior": 0.2,
+      "l3_anomaly": 0.0,
+      "l3_eligibility": "abstain",
+      "l3_abstain_reason": null,
+      "baseline_shadow": {
+        "final_risk": 0.256,
+        "decision": "would_challenge"
+      },
+      "hybrid_shadow": {
+        "final_risk": 0.52849,
+        "decision": "would_challenge"
+      },
+      "conditional_shadow": {
+        "final_risk": 0.439396,
+        "decision": "would_challenge",
+        "zone": "low",
+        "params": {
+          "ambiguous_low": 0.3,
+          "w_point": 0.5,
+          "w_sequence": 0.5,
+          "low_zone_agree": 0.9
+        }
+      },
+      "reasons": [
+        "active_subsystem_count=3 -> challenge",
+        "active_subsystem_count (+0.2)",
+        "no_history (cold start)"
+      ],
+      "shap_top": [],
+      "expected_min": "challenge",
+      "expected_max": null,
+      "decision_rank": 2,
+      "meets_expectation": true
+    },
+    {
+      "scenario_id": "VM-S20",
+      "label": "attack",
+      "attack_family": "campaign",
+      "severity": "high",
+      "user": "vm-student-05",
+      "subsystem": "sub-grade",
+      "scenario_time": "2026-09-26T01:00:00+00:00",
+      "features_changed": {
+        "log_minutes_since_last_login": 1.1,
+        "login_count_24h": 6,
+        "is_new_device": 1
+      },
+      "session_id": "3b74dccc-cac2-41fe-9a02-ef693eda479d",
+      "recorded_at": "2026-09-22T19:02:12.968478",
+      "actual_decision": "would_challenge",
+      "risk_score": "0.814",
+      "l1_rule": 0.8,
+      "l2_behavior": 0.2,
+      "l3_anomaly": 0.0,
+      "l3_eligibility": "abstain",
+      "l3_abstain_reason": null,
+      "baseline_shadow": {
+        "final_risk": 0.814,
+        "decision": "would_challenge"
+      },
+      "hybrid_shadow": {
+        "final_risk": 0.834006,
+        "decision": "would_challenge"
+      },
+      "conditional_shadow": {
+        "final_risk": 0.845626,
+        "decision": "would_challenge",
+        "zone": "high",
+        "params": {
+          "ambiguous_low": 0.3,
+          "w_point": 0.5,
+          "w_sequence": 0.5,
+          "low_zone_agree": 0.9
+        }
+      },
+      "reasons": [
+        "is_new_device=1 -> challenge",
+        "concurrent_session_count=3 -> challenge",
+        "is_new_device (+0.3)",
+        "concurrent_session_count (+0.25)",
+        "login_velocity (+0.25)",
+        "no_history (cold start)"
+      ],
+      "shap_top": [],
+      "expected_min": "challenge",
+      "expected_max": null,
+      "decision_rank": 2,
+      "meets_expectation": true
+    }
+  ]
+}

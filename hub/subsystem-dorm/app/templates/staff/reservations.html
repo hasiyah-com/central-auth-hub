@@ -6,7 +6,7 @@
 <div class="flex items-start justify-between flex-wrap gap-4 mb-6">
   <div>
     <div class="flex items-center gap-2 mb-3">
-      <span class="badge badge-staff">👔 STAFF</span>
+      <span class="badge badge-staff">STAFF</span>
       <span style="color:#0A0A0A;">·</span>
       <span class="mono text-xs font-extrabold" style="color:#6B6B6B; letter-spacing:.08em;">RESERVATION_MGMT</span>
     </div>
@@ -22,15 +22,14 @@
 <!-- ══════════ Status Filter Tabs ══════════ -->
 <div class="tab-bar mb-6">
   {% for s, label, icon in [
-    ("pending","รออนุมัติ","⏳"),
-    ("approved","อนุมัติแล้ว","✅"),
-    ("checked_in","Check-in แล้ว","🏠"),
-    ("rejected","ปฏิเสธแล้ว","❌"),
-    ("all","ทั้งหมด","📋")
+    ("pending","รออนุมัติ",""),
+    ("approved","อนุมัติแล้ว",""),
+    ("checked_in","Check-in แล้ว",""),
+    ("rejected","ปฏิเสธแล้ว",""),
+    ("all","ทั้งหมด","")
   ] %}
   <a href="/staff/reservations?status={{ s }}"
      class="tab-btn {% if current_status == s %}active{% endif %}">
-    <span>{{ icon }}</span>
     {{ label }}
   </a>
   {% endfor %}
@@ -89,11 +88,11 @@
           <!-- Status -->
           <td>
             <span class="badge badge-{{ r.status }}">
-              {% if r.status == "pending" %}⏳ รออนุมัติ
-              {% elif r.status == "approved" %}✅ อนุมัติแล้ว
-              {% elif r.status == "checked_in" %}🏠 check-in
-              {% elif r.status == "rejected" %}❌ ปฏิเสธ
-              {% elif r.cancelled_at %}🚫 ยกเลิก
+              {% if r.status == "pending" %}รออนุมัติ
+              {% elif r.status == "approved" %}อนุมัติแล้ว
+              {% elif r.status == "checked_in" %}check-in
+              {% elif r.status == "rejected" %}ปฏิเสธ
+              {% elif r.cancelled_at %}ยกเลิก
               {% else %}{{ r.status }}{% endif %}
             </span>
           </td>
@@ -101,7 +100,7 @@
           <!-- Reason -->
           <td class="max-w-xs">
             {% if r.status == "rejected" and r.reject_reason %}
-            <div class="text-xs font-medium" style="color:#B22A2E;">⚠️ {{ r.reject_reason }}</div>
+            <div class="text-xs font-medium" style="color:#B22A2E;">{{ r.reject_reason }}</div>
             {% elif r.reason %}
             <div class="text-xs line-clamp-2" style="color:#6B6B6B;">{{ r.reason }}</div>
             {% else %}
@@ -116,13 +115,13 @@
               <!-- Approve -->
               <form action="/staff/reservations/{{ r.id }}/approve" method="post" class="inline">
                 <button type="submit" class="btn btn-xs btn-success">
-                  ✅ อนุมัติ
+                  อนุมัติ
                 </button>
               </form>
               <!-- Reject with popover -->
               <details class="relative inline-block">
                 <summary class="btn btn-xs btn-danger list-none cursor-pointer">
-                  ❌ ปฏิเสธ
+                  ปฏิเสธ
                 </summary>
                 <div class="absolute right-0 mt-2 w-72 z-30 card p-4">
                   <p class="text-xs font-extrabold mb-2 mono" style="color:#0A0A0A; letter-spacing:.06em;">REJECT_REASON</p>
@@ -140,7 +139,7 @@
               {% elif r.status == "approved" %}
               <form action="/staff/reservations/{{ r.id }}/checkin" method="post" class="inline">
                 <button type="submit" class="btn btn-xs btn-primary">
-                  🏠 Check-in
+                  Check-in
                 </button>
               </form>
 
@@ -158,10 +157,10 @@
   {% else %}
   <div class="empty-state" style="border:none; border-radius:0;">
     <div class="empty-state-icon">
-      {% if current_status == "pending" %}⏳
-      {% elif current_status == "approved" %}✅
-      {% elif current_status == "checked_in" %}🏠
-      {% else %}📋{% endif %}
+      {% if current_status == "pending" %}
+      {% elif current_status == "approved" %}
+      {% elif current_status == "checked_in" %}
+      {% else %}{% endif %}
     </div>
     <h3>ไม่มีคำขอจองในสถานะนี้</h3>
     <p>ลองเปลี่ยน filter ด้านบน</p>

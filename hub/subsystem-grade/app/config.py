@@ -70,8 +70,7 @@ class Settings(BaseSettings):
                 errors.append("grade_client_id ต้องไม่ว่างใน production")
             if errors:
                 raise ValueError(
-                    "❌ Production config validation failed:\n  - "
-                    + "\n  - ".join(errors)
+                    "Production config validation failed:\n  - " + "\n  - ".join(errors)
                 )
         return self
 

@@ -21,7 +21,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 ENV_FILE="$ROOT/.env"
 
 if [ ! -f "$ENV_FILE" ]; then
-  echo "❌ ไม่พบ $ENV_FILE — รันที่ root ของ repo"
+  echo "ไม่พบ $ENV_FILE — รันที่ root ของ repo"
   exit 1
 fi
 
@@ -71,7 +71,7 @@ case "$ACTION" in
     docker compose up -d --force-recreate hub-backend subsystem-dorm subsystem-library
 
     echo
-    echo "✅ Phase 1 complete — $KID added as verify-only extra"
+    echo "Phase 1 complete — $KID added as verify-only extra"
     echo
     echo "── Verify ──────────────────────────────────────"
     sleep 5
@@ -117,7 +117,7 @@ case "$ACTION" in
     docker compose up -d --force-recreate hub-backend subsystem-dorm subsystem-library
 
     echo
-    echo "✅ Phase 2 complete — signing with $KID; $OLD_KID still in JWKS"
+    echo "Phase 2 complete — signing with $KID; $OLD_KID still in JWKS"
     echo
     echo "── ขั้นต่อไป ────────────────────────────────────"
     echo "รอ 65 นาที (token เก่า TTL = 60min) → bash $0 finalize $OLD_KID"
@@ -138,7 +138,7 @@ case "$ACTION" in
     docker compose up -d --force-recreate hub-backend subsystem-dorm subsystem-library
 
     echo
-    echo "✅ Phase 3 complete — $KID removed from JWKS"
+    echo "Phase 3 complete — $KID removed from JWKS"
     echo
     echo "── Optional: archive old key files ─────────────"
     echo "docker compose exec hub-backend mv /app/keys/${KID}_private.pem /app/keys/archived_${KID}_private.pem"

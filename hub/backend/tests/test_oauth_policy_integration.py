@@ -116,6 +116,7 @@ async def test_finalize_denies_when_inactive_user(policy_sub):
         )
         if not u:
             pytest.skip("ไม่มี student")
+        uid, original_status = u.id, u.status
         u.status = "suspended"
         db.flush()
 
@@ -130,5 +131,9 @@ async def test_finalize_denies_when_inactive_user(policy_sub):
             )
         assert ei.value.status_code == 403
     finally:
-        db.rollback()  # คืน user.status + policy
+        # _finalize_subsystem_login commit ภายใน → สถานะที่ flush ไว้ถูกบันทึกถาวรไปแล้ว
+        # rollback อย่างเดียวจึงไม่พอ ต้องสั่งคืนค่าตรง ๆ ด้วย id (ไม่พึ่ง object ที่อาจ stale)
+        db.rollback()
+        db.query(User).filter(User.id == uid).update({"status": original_status})
+        db.commit()
         db.close()

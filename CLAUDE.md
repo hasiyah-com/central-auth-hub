@@ -648,6 +648,14 @@ docker compose exec ml-service python -m scripts.train_model
 → **บทเรียนวิธีวิทยา:** รอบแรกสรุปเหตุ-ผลผิดจากการวัด **2 จุดปลายทาง** ที่บังเอิญอยู่คนละฝั่งของทั้งเกณฑ์และเพดาน — อนุมานสาเหตุจากสองจุดปลาย ต้องมีจุดกลางยืนยันเสมอ
 → **Verify:** `tests/test_l3_explainability.py` (spike ครบ 6 มิติ × 7 ย่าน)
 
+**B68. การ optimize ความเร็วของ `final` เผลอเปิด holdout ซ้ำหลายครั้ง — ทำลาย single-open** — Round 2 มี commit perf ("final ช้าเกิน") ก่อน freeze สุดท้าย → `final` ถูกรันบน holdout `[101-105]` หลายครั้งระหว่างจูนความเร็ว bootstrap · ค่า gate ยัง deterministic และ decision logic ไม่เปลี่ยน (fail-closed จึงไม่ deploy ผิด) แต่ holdout ที่เปิดแล้วใช้เป็น clean final อีกไม่ได้ และการเปิดซ้ำเปิดช่องปรับโค้ดตามที่เห็นบน holdout
+→ **กฎ:** (1) วัด/optimize ความเร็วบน **validation หรือข้อมูลสังเคราะห์** ห้ามรัน `final` บน holdout จริงเพื่อจับเวลา (2) `cmd_final` มี **holdout ledger** (`holdout_ledger.json`) บันทึกถาวรว่า seed ใดเปิดแล้ว → ปฏิเสธเปิดซ้ำเว้นแต่ `--reopen-spent-holdout` (ห้ามลบ entry) (3) รอบถัดไปใช้ seed ชุดใหม่เสมอ
+→ **Verify:** `_load_holdout_ledger`/`_record_holdout_open` ใน `exp_hybrid_gate.py` · `tests/reports/hybrid_risk_round2_2026-09-04.md` §5
+
+**B70. ชั้นหลักฐานห้ามมีฟิลด์ในแกน access decision — มีเมื่อไรจะมีคนเชื่อว่ามันทำงาน** — `BehaviorResult.min_action` ถูกตั้งเป็น `challenge` พร้อมคอมเมนต์ว่า "policy floor" แต่เส้นทางจริงของ production อ่านเฉพาะ `PolicyOutcome.min_action` · วัดจริงได้ `{None: 81}` จาก 81 เหตุการณ์ที่ถูก challenge → ไม่เคยมีผลเลย และไม่มีเทสจับเพราะเทสที่ยืนยันพฤติกรรม L2 วัดผ่าน `aggregate()` ที่ไม่มี caller ใน production (อาการเดียวกับ B66)
+→ **กฎ:** L1/L2/L3 คืน**หลักฐาน**เท่านั้น · ฟิลด์ที่สื่อว่า "บังคับ" ต้องมีเทสพิสูจน์บน**เส้นทางที่ production เรียกจริง** · ห้าม "ต่อสาย" dead field ให้กลายเป็น enforcement โดยไม่ผ่าน validation
+→ **Verify:** `tests/test_l2_evidence_only.py`
+
 ### หมวดบั๊กเพิ่มเติม (ดูรายละเอียดใน `docs/bugs-encountered.md`)
 
 | Section | Range | Theme |
@@ -665,7 +673,7 @@ docker compose exec ml-service python -m scripts.train_model
 | 🚨 Risk-Triggered MFA (Week 9-10) | B44-B48 | Hard block threshold at finalizer, Force-enroll OTP gate, Browser unsupported → Recovery, atomic consume, runtime grace period |
 | 🧠 ML Feature Expansion (Week 10-11) | B49 | Feature reorder ลืม sync rule_engine.FEAT (score มั่ว) + train/serve skew (synthetic ≠ ค่าจริง) |
 | 🎓 Subsystem C (เกรด) + SOC Dashboard + User 360 (Week 10-11) | B50-B55 | Access policy ขัด docstring (teacher login ไม่ได้), falsy-zero KPI (`\|\|` กับ 0 จริง), force-logout ขาด webhook back-channel, relative-time parse naive-UTC เป็น local (+7ชม.), health-check เข้า `localhost:PORT` จาก container ไม่ได้ (503 gate), subsystem ใหม่ลืม session_cookie_secure |
-| 🧪 Measurement Integrity / Explainability (Week 12-13) | B64-B67 | การทดลองวัดคนละคอนฟิกกับ production (12.5% ของการตัดสิน), SHAP เสื่อมก่อนคะแนนอิ่มตัว, `--replace-text` ไม่แตะไฟล์ ZIP, redactor+scanner จุดบอดร่วม |
+| 🧪 Measurement Integrity / Explainability (Week 12-13) | B64-B80 | การทดลองวัดคนละคอนฟิกกับ production (12.5% ของการตัดสิน), SHAP เสื่อมก่อนคะแนนอิ่มตัว, `--replace-text` ไม่แตะไฟล์ ZIP, redactor+scanner จุดบอดร่วม, optimize `final` เผลอเปิด holdout ซ้ำ (single-open พัง), สรุปผลจากการเทียบสอง holdout คนละประชากร, ฟิลด์ที่ประกาศว่าเป็น policy floor แต่ไม่มีผลจริง, ตัวสร้างข้อมูลได้ประชากรผิดชุด, ตัวตรวจเทียบ `>` แต่ production ใช้ `>=`, ตาราง calibration เปิดใช้เพราะมีไฟล์, re-freeze เขียนทับเหตุผลเดิม, เทส race ผูกกับความเร็วเครื่อง, นาฬิกาถอยหลังทำให้ token ใหม่ถูกปฏิเสธ (JWT ไม่มี leeway), `repr(settings)` พา secret ออกมาใน error (ต้องใช้ `SecretStr`), SHAP explainer สร้างซ้ำตอน process เย็น (ขาดล็อก), migration chain เริ่มจากฐานว่างไม่ได้ + default drift ที่ autogenerate มองไม่เห็น |
 
 ### วิธีเพิ่ม bug ใหม่
 
@@ -713,17 +721,57 @@ docker compose exec ml-service python -m scripts.train_model
 - ถ้า test fail → อ่าน traceback เต็ม อย่าเดาหรือข้าม
 - test คือ source of truth — test fail = งานยังไม่เสร็จ
 
-**Run commands** — container WORKDIR=`/app`, run pytest จาก `.`:
+**Run commands** — ชุดเทสรันบนฐานข้อมูล `hub_test` และ Redis DB 15 เท่านั้น
+ไม่ใช่ `hub_db` ของ dev · `conftest.py` มี guard แบบ fail-closed ถ้าชี้ผิดจะหยุดก่อน
+collect (ไม่มี flag ยกเว้น) — เหตุผลอยู่ใน `tests/support/env_guard.py`
+
 ```bash
-# รัน test ทั้งหมด
-docker compose exec hub-backend pytest . -v
+# ครั้งแรก / เมื่อต้องการฐานข้อมูลเทสสะอาด (drop + create + seed + manifest)
+bash scripts/test/setup_test_db.sh
 
-# รันเฉพาะไฟล์ + stop ที่ fail แรก
-docker compose exec hub-backend pytest tests/test_auth.py -x -v
+# รัน test ทั้งหมด (Functional Gate — ค่าเริ่มต้น ไม่รวมเทส latency/throughput)
+bash scripts/test/run_tests.sh
 
-# แสดง print output (debug)
-docker compose exec hub-backend pytest . -v -s
+# Performance Gate แยกต่างหาก (ผลขึ้นกับความเร็วของเครื่อง) / ทุกตัว
+TEST_GATE=performance bash scripts/test/run_tests.sh
+TEST_GATE=all bash scripts/test/run_tests.sh
+
+# รันเฉพาะไฟล์
+bash scripts/test/run_tests.sh tests/test_auth.py
+
+# เปิดเครื่องมือวินิจฉัย (บันทึกเหตุที่ token ถูกปฏิเสธ + การกระโดดของนาฬิกา)
+TEST_DIAG=1 bash scripts/test/run_tests.sh
+
+# พิสูจน์ว่า cleanup ยังทำงานแม้เทสล้ม
+TEST_FORCE_FAIL=test_auth bash scripts/test/run_tests.sh tests/test_auth.py
+
+# ตรวจ schema ของ hub_test ทีละรายการ (ไม่เชื่อว่า `alembic stamp head` = schema ถูก)
+bash scripts/test/verify_test_schema.sh
+
+# พิสูจน์ว่าผลไม่ขึ้นกับลำดับ — setup ฐานข้อมูลใหม่ก่อนทุกโหมด
+bash scripts/test/order_matrix.sh all        # forward / reverse / shuffle 3 seed
+bash scripts/test/order_matrix.sh per-file   # รันทีละไฟล์ คนละ process
+bash scripts/test/order_matrix.sh repeat 3   # release gate — ชุดเต็ม 3 รอบติด
 ```
+
+ก่อนเริ่มทุกรอบ `run_tests.sh` ตรวจนาฬิกาของคอนเทนเนอร์ 10 วินาที (`CLOCK_GUARD_SECONDS`) —
+กระโดดเกิน 1 วินาที หรือต่างจากเครื่องหลักเกิน 3 วินาที จะไม่เริ่ม เพราะจะออกมาเป็น 401 สุ่ม (B77)
+ถ้าไม่ผ่าน ให้ sync นาฬิกาของ Windows ก่อน (`w32tm /stripchart /computer:time.windows.com`)
+
+ท้ายรอบจะพิมพ์รายงานเทียบ state ก่อน/หลัง ถ้าพบข้อมูลรั่ว (ผู้ใช้ค้าง, session ค้าง,
+key ค้างใน namespace) รอบนั้นถือว่า **ไม่ผ่าน** แม้เทสทุกตัวจะเขียว
+
+**สภาพแวดล้อมของเทสมี 3 ชั้น**
+
+| ชั้น | dev | test |
+|---|---|---|
+| PostgreSQL | `hub_db` | `hub_test` (สร้างใหม่ทุกครั้งที่ setup) |
+| Redis | DB 0 | DB 15 + key ขึ้นต้น `test:{run_id}:` |
+| ml-service | `ml-service` (Redis DB 0) | `ml-service-test` ใน `docker-compose.test.yml` (Redis DB 15) |
+
+ที่ต้องมี ml-service แยกเพราะ **แกน L3 อ่าน Redis ด้วย connection ของตัวเอง** — hub เขียน
+`l3resid:{user_id}` แล้ว ml-service อ่านเอง ถ้าชี้คนละ DB จะมองไม่เห็นประวัติและ abstain
+ทั้งหมด · key กลุ่มนี้ (`l3resid:`, `l3dup:`) จึงไม่ใส่ prefix และอาศัยการแยก DB แทน
 
 **Test file layout** (`hub/backend/tests/`):
 - `conftest.py` — shared fixtures (db session, test client, seeded users)

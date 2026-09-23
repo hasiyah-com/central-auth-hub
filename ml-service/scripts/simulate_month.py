@@ -26,12 +26,12 @@ START = datetime(2026, 5, 18)
 DAYS = 30
 CLONES = {"student": 115, "teacher": 24, "staff": 16, "admin": 7}
 # 2 บัญชีจริงที่โดนโจมตีจริง (admin สิทธิ์สูง + นศ. active สุด)
-# ⚠️ อีเมลจริงไม่ hardcode (นโยบาย PII) — ตั้งผ่าน env ก่อนรัน:
+# อีเมลจริงไม่ hardcode (นโยบาย PII) — ตั้งผ่าน env ก่อนรัน:
 #     ATTACKED_EMAILS="a@example.com,b@example.com" py ml-service/scripts/simulate_month.py
 ATTACKED = {e.strip() for e in os.getenv("ATTACKED_EMAILS", "").split(",") if e.strip()}
 if not ATTACKED:
     raise SystemExit(
-        "❌ ต้องตั้ง ATTACKED_EMAILS (คั่นด้วย ,) — อีเมลจริงไม่เก็บในไฟล์นี้ตามนโยบาย PII"
+        "ต้องตั้ง ATTACKED_EMAILS (คั่นด้วย ,) — อีเมลจริงไม่เก็บในไฟล์นี้ตามนโยบาย PII"
     )
 COMPROMISE_DAY = 12  # โดน takeover ตั้งแต่วันที่ 12
 ATTACK_PER_DAY = (10, 17)  # login มุ่งร้ายต่อวัน (ช่วงโดน) — ให้ได้ ~4%
@@ -401,7 +401,7 @@ def main():
     n_atk = sum(1 for r in all_rows if r["label"] == 1)
     n_norm = len(all_rows) - n_atk
     risky0 = sum(1 for r in all_rows if r["anomaly_level"] == 1 and r["label"] == 0)
-    print("✅ จำลอง 1 เดือน — normal ~10k + attack 2 บัญชีจริง")
+    print("จำลอง 1 เดือน — normal ~10k + attack 2 บัญชีจริง")
     print(f"   total      : {len(all_rows)}")
     print(f"   normal (0) : {n_norm}  (ในนั้น 'เสี่ยงแต่ไม่โดน' = {risky0})")
     print(

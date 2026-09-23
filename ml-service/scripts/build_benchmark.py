@@ -497,7 +497,7 @@ SYNTH_PLAN = [
 
 def main():
     if not BASE.exists():
-        print(f"❌ ยังไม่มี base sample: {BASE}\n   รัน sample_rba_base.py ก่อน")
+        print(f"ยังไม่มี base sample: {BASE}\n   รัน sample_rba_base.py ก่อน")
         return
 
     with open(BASE, "r", encoding="utf-8", newline="") as f:
@@ -510,9 +510,7 @@ def main():
         (r["Country"] or "").strip() for r in base_rows if r["label"] == "0"
     )
     home_country = normal_countries.most_common(1)[0][0] if normal_countries else "NO"
-    print(
-        f"🏠 home country (modal normal) = {home_country!r}  -> map เป็น is_thailand=1"
-    )
+    print(f"home country (modal normal) = {home_country!r}  -> map เป็น is_thailand=1")
 
     rows = [build_real_row(r, header_idx, home_country) for r in base_rows]
 
@@ -531,7 +529,7 @@ def main():
 
     n_total = len(rows)
     n_attack = sum(1 for r in rows if r["label"] == 1)
-    print("\n✅ benchmark dataset พร้อม")
+    print("\nbenchmark dataset พร้อม")
     print(f"   total      : {n_total:,}")
     print(f"   normal (0) : {n_total - n_attack:,}")
     print(

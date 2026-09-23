@@ -8,6 +8,8 @@ import type {
   Anomaly,
   UserSession,
   FeedbackResponse,
+  RiskBreakdown,
+  ShadowResult,
   ShapContribution,
 } from "../_types";
 import { DECISION_TONE, DEVICE_ICON, FEEDBACK_LABELS, featureLabelTh } from "../_types";
@@ -134,6 +136,10 @@ export function SessionDetailPanel({ session, onFeedbackSaved, hideUserLink }: P
         {bd?.iforest_explanation && bd.iforest_explanation.length > 0 && (
           <ShapBreakdown items={bd.iforest_explanation} />
         )}
+
+        {/* ผลจำลองของ L3 — ต้องอ่านออกทันทีว่าไม่มีผลต่อสิทธิ์จริง
+            การตัดสินจริงด้านบนมาจาก Policy Gate + L1 + L2 เท่านั้น */}
+        <ShadowPanel bd={bd} actual={session.decision} />
       </div>
 
       {/* ── 2. Detail grid ── */}
@@ -348,6 +354,60 @@ function BreakdownBar({
       </div>
       <div className="h-1.5 bg-ink-100 rounded-full overflow-hidden">
         <div className={`h-full ${color}`} style={{ width: `${Math.min(pct, 100)}%` }} />
+      </div>
+    </div>
+  );
+}
+
+/** ผลจำลองของ L3 (Shadow) — แสดงคู่กับการตัดสินจริงเพื่อเทียบ แต่ต้องอ่านออกว่าไม่มีผลต่อสิทธิ์
+ *
+ *  การตัดสินจริงมาจาก Policy Gate + L1 + L2 เท่านั้น (app/security/risk_engine.py) ·
+ *  baseline = จำลองด้วย L1+L2 · hybrid = จำลองเมื่อนับ L3 ด้วย · conditional = candidate G
+ *  ค่าเหล่านี้ถูกบันทึกไว้เพื่อเปรียบเทียบและตรวจย้อน ไม่มีเส้นทางใดนำไปตัดสินการเข้าถึง
+ */
+function ShadowPanel({
+  bd,
+  actual,
+}: {
+  bd: RiskBreakdown | null;
+  actual: string | null;
+}) {
+  const rows = (
+    [
+      ["Baseline (L1+L2)", bd?.baseline_shadow],
+      ["Hybrid (นับ L3)", bd?.hybrid_shadow],
+      ["Conditional (candidate)", bd?.conditional_shadow],
+    ] as Array<[string, ShadowResult | undefined]>
+  ).filter(([, v]) => v != null);
+
+  if (rows.length === 0) return null;
+
+  return (
+    <div className="mt-4 rounded border border-dashed border-ink-300 p-2">
+      <div className="flex items-center justify-between text-[11px] font-medium text-ink-500">
+        <span>ผลจำลอง (Shadow)</span>
+        <span
+          className="rounded bg-ink-100 px-1.5 py-0.5 text-[10px] text-ink-500"
+          title="ค่าเหล่านี้เป็นการจำลองเพื่อเปรียบเทียบเท่านั้น การตัดสินจริงมาจาก Policy Gate + L1 + L2"
+        >
+          ไม่มีผลต่อสิทธิ์จริง
+        </span>
+      </div>
+      <div className="mt-2 space-y-1">
+        {rows.map(([label, v]) => (
+          <div key={label} className="flex items-center justify-between text-[11px]">
+            <span className="text-ink-500">{label}</span>
+            <span className="tabular-nums text-ink-600">
+              {v!.final_risk.toFixed(3)}
+              <span className="ml-2 text-ink-400">{v!.decision}</span>
+              {v!.zone && <span className="ml-2 text-ink-300">({v!.zone})</span>}
+            </span>
+          </div>
+        ))}
+        <div className="flex items-center justify-between border-t border-ink-200 pt-1 text-[11px]">
+          <span className="text-ink-500">การตัดสินจริง</span>
+          <span className="tabular-nums font-medium text-ink-700">{actual || "—"}</span>
+        </div>
       </div>
     </div>
   );

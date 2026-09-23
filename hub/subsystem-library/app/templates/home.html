@@ -12,7 +12,6 @@
     </div>
   </div>
   <div style="display:flex; align-items:center; gap:10px;">
-    <span class="icon-btn" title="การแจ้งเตือน (เร็วๆ นี้)" style="opacity:.6; cursor:not-allowed;">✉</span>
     <a class="icon-btn" href="/books" title="ค้นหาหนังสือ">⌕</a>
     <a class="user-chip" href="/me" title="โปรไฟล์">
       <div class="avatar" style="width:32px; height:32px; font-size:14px;">{{ (nickname or '?')[0]|upper }}</div>
@@ -26,7 +25,7 @@
 
 {# ════════════ HERO BANNER ════════════ #}
 <div class="hero-banner">
-  <div class="hero-eyebrow">❦ &nbsp; ประจำสัปดาห์</div>
+  <div class="hero-eyebrow">&nbsp; ประจำสัปดาห์</div>
   <h2>มหกรรมหนังสือคลาสสิกไทย</h2>
   <p>
     พบกับการรวมตัวของวรรณกรรมไทยร่วมสมัยกว่า ๒๐๐ ชื่อ จัดแสดง ณ ห้องสมุดชั้น ๓
@@ -77,7 +76,6 @@
         <a href="/books/{{ book.id }}" style="display:flex; gap:16px; padding:18px; {% if not loop.last %}border-bottom:1px dashed var(--rule);{% endif %} text-decoration:none; color:inherit;">
           {# book cover #}
           <div class="book-cover" style="width:56px; height:84px; flex-shrink:0; --cover: {{ covers[ci] }}; --cover-accent: {{ accents[ci] }};">
-            <div style="position:absolute; top:4px; left:0; right:0; text-align:center; color:{{ accents[ci] }}; font-family:var(--font-display); font-size:9px; opacity:.7;">❦</div>
             <div style="position:absolute; inset:0; display:flex; align-items:center; justify-content:center; padding:6px; z-index:1;">
               <div style="font-family:var(--font-display); font-size:8px; font-weight:600; color:{{ accents[ci] }}; line-height:1.15; text-align:center; text-shadow:0 1px 0 rgba(0,0,0,.4);">{{ book.title[:14] }}</div>
             </div>
@@ -96,7 +94,6 @@
         {% endfor %}
       {% else %}
         <div style="padding: 40px 20px; text-align: center; font-family:var(--font-serif);">
-          <div style="font-size:36px; color:var(--gold); margin-bottom:10px;">❦</div>
           <div style="color:var(--ink-3); font-style:italic;">คุณยังไม่ได้ยืมหนังสือเล่มใด</div>
           <a href="/books" class="btn btn-primary btn-sm" style="margin-top:14px;">ไปค้นหาหนังสือ →</a>
         </div>
@@ -120,15 +117,12 @@
         <div class="qa-tile-label">ค้นหาหนังสือ</div>
       </a>
       <span class="qa-tile" style="opacity:.5; cursor:not-allowed;" title="เร็วๆ นี้">
-        <div class="qa-tile-ico">✦</div>
         <div class="qa-tile-label">จองหนังสือ</div>
       </span>
       <a href="/me" class="qa-tile">
-        <div class="qa-tile-ico">❧</div>
         <div class="qa-tile-label">ประวัติการยืม</div>
       </a>
       <span class="qa-tile" style="opacity:.5; cursor:not-allowed;" title="เร็วๆ นี้">
-        <div class="qa-tile-ico">✚</div>
         <div class="qa-tile-label">ชำระค่าปรับ</div>
       </span>
     </div>
@@ -137,7 +131,7 @@
       <span style="letter-spacing:.2em;">หมวดหมู่ยอดนิยม</span>
     </div>
     <div class="paper" style="padding: 4px;">
-      {% set cat_icons = ['❦','✦','✧','☙','❧','✚','❉','✤'] %}
+      {% set cat_icons = ['','','','','','','',''] %}
       {% for c in categories_top %}
         <a class="cat-row" href="/books?category={{ c.name }}">
           <span class="cat-ico">{{ cat_icons[loop.index0 % cat_icons|length] }}</span>
@@ -156,9 +150,7 @@
 {% if recommended_books %}
 <div style="margin-top: 40px;">
   <div class="orn-rule" style="margin-bottom:22px;">
-    <span class="orn-fleur">❦</span>
     <span style="letter-spacing:.2em;">หนังสือแนะนำสำหรับคุณ</span>
-    <span class="orn-fleur">❦</span>
   </div>
   <div style="display:grid; grid-template-columns: repeat(4, 1fr); gap: 20px;">
     {% set covers = ["#7a2e1f","#3a4a3a","#2a3a4a","#5a2a1a"] %}
@@ -168,7 +160,6 @@
     <a href="/books/{{ book.id }}" class="book-card">
       <div style="display:flex; justify-content:center; margin-bottom: 14px;">
         <div class="book-cover" style="width:120px; height:180px; --cover: {{ covers[ci] }}; --cover-accent: {{ accents[ci] }};">
-          <div style="position:absolute; top:10px; left:0; right:0; text-align:center; color:{{ accents[ci] }}; font-family:var(--font-display); font-size:13px; opacity:.75;">❦ ✦ ❦</div>
           <div style="position:absolute; inset:0; display:flex; align-items:center; justify-content:center; padding:14px; z-index:1;">
             <div style="font-family:var(--font-display); font-size:13px; font-weight:600; color:{{ accents[ci] }}; line-height:1.2; text-align:center; text-shadow:0 1px 0 rgba(0,0,0,.4);">{{ book.title }}</div>
           </div>

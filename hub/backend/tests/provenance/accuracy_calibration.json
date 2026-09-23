@@ -1,0 +1,1274 @@
+{
+  "stage": "calibration",
+  "pre_registration": "hub/backend/tests/reports/accuracy_gate_2026-09-23.md",
+  "git_commit": "27dd2e4fdec423db9651f0f0a47a3a043b3b1268",
+  "created_at": "2026-09-22T18:23:55.188617+00:00",
+  "seeds": [
+    401,
+    402,
+    403,
+    404,
+    405
+  ],
+  "sizes": [
+    50,
+    100,
+    500,
+    1000,
+    5000
+  ],
+  "matched_fpr": {
+    "challenge": 0.005,
+    "block": 0.001
+  },
+  "gamma": {
+    "B": 1.0,
+    "E": 1.0,
+    "G": 1.0
+  },
+  "candidates": {
+    "B": {
+      "thresholds": {
+        "warn": 0.98,
+        "challenge": 0.9984,
+        "block": 0.9996
+      },
+      "reachable": true
+    },
+    "E": {
+      "thresholds": {
+        "warn": 0.994804,
+        "challenge": 0.99998,
+        "block": 0.99998
+      },
+      "reachable": true
+    },
+    "G": {
+      "thresholds": {
+        "warn": 0.994804,
+        "challenge": 0.99998,
+        "block": 0.999995
+      },
+      "reachable": true,
+      "params": {
+        "ambiguous_low": 0.3,
+        "w_point": 0.5,
+        "w_sequence": 0.5,
+        "low_zone_agree": 0.9
+      },
+      "selected_from": "G00"
+    }
+  },
+  "all": {
+    "B": {
+      "thresholds": {
+        "warn": 0.98,
+        "challenge": 0.9984,
+        "block": 0.9996
+      },
+      "reachable": true,
+      "parity_checked": 1000,
+      "family_recall": {
+        "campaign": 0.30425,
+        "combined_ato": 1.0,
+        "concurrent_sessions": 1.0,
+        "failed_spike": 1.0,
+        "login_velocity": 0.265625,
+        "new_device": 1.0,
+        "new_os": 1.0,
+        "new_passkey": 0.07125,
+        "new_ua_family": 1.0,
+        "off_hours": 0.865,
+        "permission_change": 1.0,
+        "subsystem_lateral": 0.77375,
+        "subtle_lowandslow": 0.79375,
+        "subtle_mild_offhour": 0.65375,
+        "subtle_quiet_lateral": 0.616875,
+        "subtle_rare_device": 0.0376,
+        "subtle_slow_burst": 0.09375
+      },
+      "weak_recall_mean": 0.2315583333333333,
+      "severe_recall": 1.0,
+      "challenge_fpr": 0.0049875,
+      "challenge_search": {
+        "threshold": 0.9984,
+        "worst_fpr": 0.0049875,
+        "reachable": true
+      },
+      "block_search": {
+        "threshold": 0.9996,
+        "worst_fpr": 0.0009375,
+        "reachable": true
+      }
+    },
+    "E": {
+      "thresholds": {
+        "warn": 0.994804,
+        "challenge": 0.99998,
+        "block": 0.99998
+      },
+      "reachable": true,
+      "parity_checked": 1000,
+      "family_recall": {
+        "campaign": 0.19425,
+        "combined_ato": 1.0,
+        "concurrent_sessions": 1.0,
+        "failed_spike": 1.0,
+        "login_velocity": 0.04625,
+        "new_device": 1.0,
+        "new_os": 1.0,
+        "new_passkey": 0.03125,
+        "new_ua_family": 1.0,
+        "off_hours": 0.135625,
+        "permission_change": 1.0,
+        "subsystem_lateral": 0.21375,
+        "subtle_lowandslow": 0.08625,
+        "subtle_mild_offhour": 0.066875,
+        "subtle_quiet_lateral": 0.18125,
+        "subtle_rare_device": 0.0168,
+        "subtle_slow_burst": 0.024375
+      },
+      "weak_recall_mean": 0.08236249999999999,
+      "severe_recall": 1.0,
+      "challenge_fpr": 0.0048625,
+      "challenge_search": {
+        "threshold": 0.99998,
+        "worst_fpr": 0.0048625,
+        "reachable": true
+      },
+      "block_search": {
+        "threshold": 0.99998,
+        "worst_fpr": 0.000675,
+        "reachable": true
+      }
+    },
+    "G00": {
+      "thresholds": {
+        "warn": 0.994804,
+        "challenge": 0.99998,
+        "block": 0.999995
+      },
+      "reachable": true,
+      "parity_checked": 1000,
+      "family_recall": {
+        "campaign": 0.235375,
+        "combined_ato": 1.0,
+        "concurrent_sessions": 1.0,
+        "failed_spike": 1.0,
+        "login_velocity": 0.09,
+        "new_device": 1.0,
+        "new_os": 1.0,
+        "new_passkey": 0.07,
+        "new_ua_family": 1.0,
+        "off_hours": 0.718125,
+        "permission_change": 1.0,
+        "subsystem_lateral": 0.67125,
+        "subtle_lowandslow": 0.32875,
+        "subtle_mild_offhour": 0.2675,
+        "subtle_quiet_lateral": 0.54625,
+        "subtle_rare_device": 0.036,
+        "subtle_slow_burst": 0.060625
+      },
+      "weak_recall_mean": 0.17304166666666668,
+      "severe_recall": 1.0,
+      "challenge_fpr": 0.004925,
+      "params": {
+        "ambiguous_low": 0.3,
+        "w_point": 0.5,
+        "w_sequence": 0.5,
+        "low_zone_agree": 0.9
+      },
+      "challenge_search": {
+        "threshold": 0.99998,
+        "worst_fpr": 0.004925,
+        "reachable": true
+      },
+      "block_search": {
+        "threshold": 0.999995,
+        "worst_fpr": 0.000975,
+        "reachable": true
+      }
+    },
+    "G01": {
+      "thresholds": {
+        "warn": 0.994804,
+        "challenge": 0.99998,
+        "block": 0.999995
+      },
+      "reachable": true,
+      "parity_checked": 1000,
+      "family_recall": {
+        "campaign": 0.235375,
+        "combined_ato": 1.0,
+        "concurrent_sessions": 1.0,
+        "failed_spike": 1.0,
+        "login_velocity": 0.09,
+        "new_device": 1.0,
+        "new_os": 1.0,
+        "new_passkey": 0.07,
+        "new_ua_family": 1.0,
+        "off_hours": 0.718125,
+        "permission_change": 1.0,
+        "subsystem_lateral": 0.67125,
+        "subtle_lowandslow": 0.32875,
+        "subtle_mild_offhour": 0.2675,
+        "subtle_quiet_lateral": 0.54625,
+        "subtle_rare_device": 0.036,
+        "subtle_slow_burst": 0.060625
+      },
+      "weak_recall_mean": 0.17304166666666668,
+      "severe_recall": 1.0,
+      "challenge_fpr": 0.004925,
+      "params": {
+        "ambiguous_low": 0.3,
+        "w_point": 0.5,
+        "w_sequence": 0.5,
+        "low_zone_agree": 0.95
+      },
+      "challenge_search": {
+        "threshold": 0.99998,
+        "worst_fpr": 0.004925,
+        "reachable": true
+      },
+      "block_search": {
+        "threshold": 0.999995,
+        "worst_fpr": 0.000975,
+        "reachable": true
+      }
+    },
+    "G02": {
+      "thresholds": {
+        "warn": 0.994804,
+        "challenge": 0.99999,
+        "block": 0.999995
+      },
+      "reachable": true,
+      "parity_checked": 1000,
+      "family_recall": {
+        "campaign": 0.199125,
+        "combined_ato": 1.0,
+        "concurrent_sessions": 1.0,
+        "failed_spike": 1.0,
+        "login_velocity": 0.06125,
+        "new_device": 1.0,
+        "new_os": 1.0,
+        "new_passkey": 0.051875,
+        "new_ua_family": 1.0,
+        "off_hours": 0.63,
+        "permission_change": 1.0,
+        "subsystem_lateral": 0.635,
+        "subtle_lowandslow": 0.250625,
+        "subtle_mild_offhour": 0.189375,
+        "subtle_quiet_lateral": 0.496875,
+        "subtle_rare_device": 0.02,
+        "subtle_slow_burst": 0.04
+      },
+      "weak_recall_mean": 0.14485416666666667,
+      "severe_recall": 1.0,
+      "challenge_fpr": 0.004475,
+      "params": {
+        "ambiguous_low": 0.3,
+        "w_point": 0.5,
+        "w_sequence": 1.0,
+        "low_zone_agree": 0.9
+      },
+      "challenge_search": {
+        "threshold": 0.99999,
+        "worst_fpr": 0.004475,
+        "reachable": true
+      },
+      "block_search": {
+        "threshold": 0.999995,
+        "worst_fpr": 0.000975,
+        "reachable": true
+      }
+    },
+    "G03": {
+      "thresholds": {
+        "warn": 0.994804,
+        "challenge": 0.99998,
+        "block": 0.999995
+      },
+      "reachable": true,
+      "parity_checked": 1000,
+      "family_recall": {
+        "campaign": 0.235375,
+        "combined_ato": 1.0,
+        "concurrent_sessions": 1.0,
+        "failed_spike": 1.0,
+        "login_velocity": 0.09,
+        "new_device": 1.0,
+        "new_os": 1.0,
+        "new_passkey": 0.07,
+        "new_ua_family": 1.0,
+        "off_hours": 0.718125,
+        "permission_change": 1.0,
+        "subsystem_lateral": 0.67125,
+        "subtle_lowandslow": 0.32875,
+        "subtle_mild_offhour": 0.2675,
+        "subtle_quiet_lateral": 0.54625,
+        "subtle_rare_device": 0.036,
+        "subtle_slow_burst": 0.060625
+      },
+      "weak_recall_mean": 0.17304166666666668,
+      "severe_recall": 1.0,
+      "challenge_fpr": 0.0049375,
+      "params": {
+        "ambiguous_low": 0.3,
+        "w_point": 0.5,
+        "w_sequence": 1.0,
+        "low_zone_agree": 0.95
+      },
+      "challenge_search": {
+        "threshold": 0.99998,
+        "worst_fpr": 0.0049375,
+        "reachable": true
+      },
+      "block_search": {
+        "threshold": 0.999995,
+        "worst_fpr": 0.000975,
+        "reachable": true
+      }
+    },
+    "G04": {
+      "thresholds": {
+        "warn": 0.994804,
+        "challenge": 0.99998,
+        "block": 0.999995
+      },
+      "reachable": true,
+      "parity_checked": 1000,
+      "family_recall": {
+        "campaign": 0.235375,
+        "combined_ato": 1.0,
+        "concurrent_sessions": 1.0,
+        "failed_spike": 1.0,
+        "login_velocity": 0.09,
+        "new_device": 1.0,
+        "new_os": 1.0,
+        "new_passkey": 0.07,
+        "new_ua_family": 1.0,
+        "off_hours": 0.718125,
+        "permission_change": 1.0,
+        "subsystem_lateral": 0.67125,
+        "subtle_lowandslow": 0.32875,
+        "subtle_mild_offhour": 0.2675,
+        "subtle_quiet_lateral": 0.54625,
+        "subtle_rare_device": 0.036,
+        "subtle_slow_burst": 0.060625
+      },
+      "weak_recall_mean": 0.17304166666666668,
+      "severe_recall": 1.0,
+      "challenge_fpr": 0.0049625,
+      "params": {
+        "ambiguous_low": 0.3,
+        "w_point": 1.0,
+        "w_sequence": 0.5,
+        "low_zone_agree": 0.9
+      },
+      "challenge_search": {
+        "threshold": 0.99998,
+        "worst_fpr": 0.0049625,
+        "reachable": true
+      },
+      "block_search": {
+        "threshold": 0.999995,
+        "worst_fpr": 0.000975,
+        "reachable": true
+      }
+    },
+    "G05": {
+      "thresholds": {
+        "warn": 0.994804,
+        "challenge": 0.99998,
+        "block": 0.999995
+      },
+      "reachable": true,
+      "parity_checked": 1000,
+      "family_recall": {
+        "campaign": 0.235375,
+        "combined_ato": 1.0,
+        "concurrent_sessions": 1.0,
+        "failed_spike": 1.0,
+        "login_velocity": 0.09,
+        "new_device": 1.0,
+        "new_os": 1.0,
+        "new_passkey": 0.07,
+        "new_ua_family": 1.0,
+        "off_hours": 0.718125,
+        "permission_change": 1.0,
+        "subsystem_lateral": 0.67125,
+        "subtle_lowandslow": 0.32875,
+        "subtle_mild_offhour": 0.2675,
+        "subtle_quiet_lateral": 0.54625,
+        "subtle_rare_device": 0.036,
+        "subtle_slow_burst": 0.060625
+      },
+      "weak_recall_mean": 0.17304166666666668,
+      "severe_recall": 1.0,
+      "challenge_fpr": 0.00495,
+      "params": {
+        "ambiguous_low": 0.3,
+        "w_point": 1.0,
+        "w_sequence": 0.5,
+        "low_zone_agree": 0.95
+      },
+      "challenge_search": {
+        "threshold": 0.99998,
+        "worst_fpr": 0.00495,
+        "reachable": true
+      },
+      "block_search": {
+        "threshold": 0.999995,
+        "worst_fpr": 0.000975,
+        "reachable": true
+      }
+    },
+    "G06": {
+      "thresholds": {
+        "warn": 0.994804,
+        "challenge": 0.99999,
+        "block": 0.999995
+      },
+      "reachable": true,
+      "parity_checked": 1000,
+      "family_recall": {
+        "campaign": 0.199125,
+        "combined_ato": 1.0,
+        "concurrent_sessions": 1.0,
+        "failed_spike": 1.0,
+        "login_velocity": 0.06125,
+        "new_device": 1.0,
+        "new_os": 1.0,
+        "new_passkey": 0.051875,
+        "new_ua_family": 1.0,
+        "off_hours": 0.63,
+        "permission_change": 1.0,
+        "subsystem_lateral": 0.635,
+        "subtle_lowandslow": 0.250625,
+        "subtle_mild_offhour": 0.189375,
+        "subtle_quiet_lateral": 0.496875,
+        "subtle_rare_device": 0.02,
+        "subtle_slow_burst": 0.04
+      },
+      "weak_recall_mean": 0.14485416666666667,
+      "severe_recall": 1.0,
+      "challenge_fpr": 0.0045125,
+      "params": {
+        "ambiguous_low": 0.3,
+        "w_point": 1.0,
+        "w_sequence": 1.0,
+        "low_zone_agree": 0.9
+      },
+      "challenge_search": {
+        "threshold": 0.99999,
+        "worst_fpr": 0.0045125,
+        "reachable": true
+      },
+      "block_search": {
+        "threshold": 0.999995,
+        "worst_fpr": 0.000975,
+        "reachable": true
+      }
+    },
+    "G07": {
+      "thresholds": {
+        "warn": 0.994804,
+        "challenge": 0.99998,
+        "block": 0.999995
+      },
+      "reachable": true,
+      "parity_checked": 1000,
+      "family_recall": {
+        "campaign": 0.235375,
+        "combined_ato": 1.0,
+        "concurrent_sessions": 1.0,
+        "failed_spike": 1.0,
+        "login_velocity": 0.09,
+        "new_device": 1.0,
+        "new_os": 1.0,
+        "new_passkey": 0.07,
+        "new_ua_family": 1.0,
+        "off_hours": 0.718125,
+        "permission_change": 1.0,
+        "subsystem_lateral": 0.67125,
+        "subtle_lowandslow": 0.32875,
+        "subtle_mild_offhour": 0.2675,
+        "subtle_quiet_lateral": 0.54625,
+        "subtle_rare_device": 0.036,
+        "subtle_slow_burst": 0.060625
+      },
+      "weak_recall_mean": 0.17304166666666668,
+      "severe_recall": 1.0,
+      "challenge_fpr": 0.0049625,
+      "params": {
+        "ambiguous_low": 0.3,
+        "w_point": 1.0,
+        "w_sequence": 1.0,
+        "low_zone_agree": 0.95
+      },
+      "challenge_search": {
+        "threshold": 0.99998,
+        "worst_fpr": 0.0049625,
+        "reachable": true
+      },
+      "block_search": {
+        "threshold": 0.999995,
+        "worst_fpr": 0.000975,
+        "reachable": true
+      }
+    },
+    "G08": {
+      "thresholds": {
+        "warn": 0.994804,
+        "challenge": 0.99998,
+        "block": 0.999995
+      },
+      "reachable": true,
+      "parity_checked": 1000,
+      "family_recall": {
+        "campaign": 0.235375,
+        "combined_ato": 1.0,
+        "concurrent_sessions": 1.0,
+        "failed_spike": 1.0,
+        "login_velocity": 0.09,
+        "new_device": 1.0,
+        "new_os": 1.0,
+        "new_passkey": 0.07,
+        "new_ua_family": 1.0,
+        "off_hours": 0.718125,
+        "permission_change": 1.0,
+        "subsystem_lateral": 0.67125,
+        "subtle_lowandslow": 0.32875,
+        "subtle_mild_offhour": 0.2675,
+        "subtle_quiet_lateral": 0.54625,
+        "subtle_rare_device": 0.036,
+        "subtle_slow_burst": 0.060625
+      },
+      "weak_recall_mean": 0.17304166666666668,
+      "severe_recall": 1.0,
+      "challenge_fpr": 0.004925,
+      "params": {
+        "ambiguous_low": 0.4,
+        "w_point": 0.5,
+        "w_sequence": 0.5,
+        "low_zone_agree": 0.9
+      },
+      "challenge_search": {
+        "threshold": 0.99998,
+        "worst_fpr": 0.004925,
+        "reachable": true
+      },
+      "block_search": {
+        "threshold": 0.999995,
+        "worst_fpr": 0.000975,
+        "reachable": true
+      }
+    },
+    "G09": {
+      "thresholds": {
+        "warn": 0.994804,
+        "challenge": 0.99998,
+        "block": 0.999995
+      },
+      "reachable": true,
+      "parity_checked": 1000,
+      "family_recall": {
+        "campaign": 0.235375,
+        "combined_ato": 1.0,
+        "concurrent_sessions": 1.0,
+        "failed_spike": 1.0,
+        "login_velocity": 0.09,
+        "new_device": 1.0,
+        "new_os": 1.0,
+        "new_passkey": 0.07,
+        "new_ua_family": 1.0,
+        "off_hours": 0.718125,
+        "permission_change": 1.0,
+        "subsystem_lateral": 0.67125,
+        "subtle_lowandslow": 0.32875,
+        "subtle_mild_offhour": 0.2675,
+        "subtle_quiet_lateral": 0.54625,
+        "subtle_rare_device": 0.036,
+        "subtle_slow_burst": 0.060625
+      },
+      "weak_recall_mean": 0.17304166666666668,
+      "severe_recall": 1.0,
+      "challenge_fpr": 0.004925,
+      "params": {
+        "ambiguous_low": 0.4,
+        "w_point": 0.5,
+        "w_sequence": 0.5,
+        "low_zone_agree": 0.95
+      },
+      "challenge_search": {
+        "threshold": 0.99998,
+        "worst_fpr": 0.004925,
+        "reachable": true
+      },
+      "block_search": {
+        "threshold": 0.999995,
+        "worst_fpr": 0.000975,
+        "reachable": true
+      }
+    },
+    "G10": {
+      "thresholds": {
+        "warn": 0.994804,
+        "challenge": 0.99999,
+        "block": 0.999995
+      },
+      "reachable": true,
+      "parity_checked": 1000,
+      "family_recall": {
+        "campaign": 0.199125,
+        "combined_ato": 1.0,
+        "concurrent_sessions": 1.0,
+        "failed_spike": 1.0,
+        "login_velocity": 0.06125,
+        "new_device": 1.0,
+        "new_os": 1.0,
+        "new_passkey": 0.051875,
+        "new_ua_family": 1.0,
+        "off_hours": 0.63,
+        "permission_change": 1.0,
+        "subsystem_lateral": 0.635,
+        "subtle_lowandslow": 0.250625,
+        "subtle_mild_offhour": 0.189375,
+        "subtle_quiet_lateral": 0.496875,
+        "subtle_rare_device": 0.02,
+        "subtle_slow_burst": 0.04
+      },
+      "weak_recall_mean": 0.14485416666666667,
+      "severe_recall": 1.0,
+      "challenge_fpr": 0.004475,
+      "params": {
+        "ambiguous_low": 0.4,
+        "w_point": 0.5,
+        "w_sequence": 1.0,
+        "low_zone_agree": 0.9
+      },
+      "challenge_search": {
+        "threshold": 0.99999,
+        "worst_fpr": 0.004475,
+        "reachable": true
+      },
+      "block_search": {
+        "threshold": 0.999995,
+        "worst_fpr": 0.000975,
+        "reachable": true
+      }
+    },
+    "G11": {
+      "thresholds": {
+        "warn": 0.994804,
+        "challenge": 0.99998,
+        "block": 0.999995
+      },
+      "reachable": true,
+      "parity_checked": 1000,
+      "family_recall": {
+        "campaign": 0.235375,
+        "combined_ato": 1.0,
+        "concurrent_sessions": 1.0,
+        "failed_spike": 1.0,
+        "login_velocity": 0.09,
+        "new_device": 1.0,
+        "new_os": 1.0,
+        "new_passkey": 0.07,
+        "new_ua_family": 1.0,
+        "off_hours": 0.718125,
+        "permission_change": 1.0,
+        "subsystem_lateral": 0.67125,
+        "subtle_lowandslow": 0.32875,
+        "subtle_mild_offhour": 0.2675,
+        "subtle_quiet_lateral": 0.54625,
+        "subtle_rare_device": 0.036,
+        "subtle_slow_burst": 0.060625
+      },
+      "weak_recall_mean": 0.17304166666666668,
+      "severe_recall": 1.0,
+      "challenge_fpr": 0.0049375,
+      "params": {
+        "ambiguous_low": 0.4,
+        "w_point": 0.5,
+        "w_sequence": 1.0,
+        "low_zone_agree": 0.95
+      },
+      "challenge_search": {
+        "threshold": 0.99998,
+        "worst_fpr": 0.0049375,
+        "reachable": true
+      },
+      "block_search": {
+        "threshold": 0.999995,
+        "worst_fpr": 0.000975,
+        "reachable": true
+      }
+    },
+    "G12": {
+      "thresholds": {
+        "warn": 0.994804,
+        "challenge": 0.99998,
+        "block": 0.999995
+      },
+      "reachable": true,
+      "parity_checked": 1000,
+      "family_recall": {
+        "campaign": 0.235375,
+        "combined_ato": 1.0,
+        "concurrent_sessions": 1.0,
+        "failed_spike": 1.0,
+        "login_velocity": 0.09,
+        "new_device": 1.0,
+        "new_os": 1.0,
+        "new_passkey": 0.07,
+        "new_ua_family": 1.0,
+        "off_hours": 0.718125,
+        "permission_change": 1.0,
+        "subsystem_lateral": 0.67125,
+        "subtle_lowandslow": 0.32875,
+        "subtle_mild_offhour": 0.2675,
+        "subtle_quiet_lateral": 0.54625,
+        "subtle_rare_device": 0.036,
+        "subtle_slow_burst": 0.060625
+      },
+      "weak_recall_mean": 0.17304166666666668,
+      "severe_recall": 1.0,
+      "challenge_fpr": 0.0049625,
+      "params": {
+        "ambiguous_low": 0.4,
+        "w_point": 1.0,
+        "w_sequence": 0.5,
+        "low_zone_agree": 0.9
+      },
+      "challenge_search": {
+        "threshold": 0.99998,
+        "worst_fpr": 0.0049625,
+        "reachable": true
+      },
+      "block_search": {
+        "threshold": 0.999995,
+        "worst_fpr": 0.000975,
+        "reachable": true
+      }
+    },
+    "G13": {
+      "thresholds": {
+        "warn": 0.994804,
+        "challenge": 0.99998,
+        "block": 0.999995
+      },
+      "reachable": true,
+      "parity_checked": 1000,
+      "family_recall": {
+        "campaign": 0.235375,
+        "combined_ato": 1.0,
+        "concurrent_sessions": 1.0,
+        "failed_spike": 1.0,
+        "login_velocity": 0.09,
+        "new_device": 1.0,
+        "new_os": 1.0,
+        "new_passkey": 0.07,
+        "new_ua_family": 1.0,
+        "off_hours": 0.718125,
+        "permission_change": 1.0,
+        "subsystem_lateral": 0.67125,
+        "subtle_lowandslow": 0.32875,
+        "subtle_mild_offhour": 0.2675,
+        "subtle_quiet_lateral": 0.54625,
+        "subtle_rare_device": 0.036,
+        "subtle_slow_burst": 0.060625
+      },
+      "weak_recall_mean": 0.17304166666666668,
+      "severe_recall": 1.0,
+      "challenge_fpr": 0.00495,
+      "params": {
+        "ambiguous_low": 0.4,
+        "w_point": 1.0,
+        "w_sequence": 0.5,
+        "low_zone_agree": 0.95
+      },
+      "challenge_search": {
+        "threshold": 0.99998,
+        "worst_fpr": 0.00495,
+        "reachable": true
+      },
+      "block_search": {
+        "threshold": 0.999995,
+        "worst_fpr": 0.000975,
+        "reachable": true
+      }
+    },
+    "G14": {
+      "thresholds": {
+        "warn": 0.994804,
+        "challenge": 0.99999,
+        "block": 0.999995
+      },
+      "reachable": true,
+      "parity_checked": 1000,
+      "family_recall": {
+        "campaign": 0.199125,
+        "combined_ato": 1.0,
+        "concurrent_sessions": 1.0,
+        "failed_spike": 1.0,
+        "login_velocity": 0.06125,
+        "new_device": 1.0,
+        "new_os": 1.0,
+        "new_passkey": 0.051875,
+        "new_ua_family": 1.0,
+        "off_hours": 0.63,
+        "permission_change": 1.0,
+        "subsystem_lateral": 0.635,
+        "subtle_lowandslow": 0.250625,
+        "subtle_mild_offhour": 0.189375,
+        "subtle_quiet_lateral": 0.496875,
+        "subtle_rare_device": 0.02,
+        "subtle_slow_burst": 0.04
+      },
+      "weak_recall_mean": 0.14485416666666667,
+      "severe_recall": 1.0,
+      "challenge_fpr": 0.0045125,
+      "params": {
+        "ambiguous_low": 0.4,
+        "w_point": 1.0,
+        "w_sequence": 1.0,
+        "low_zone_agree": 0.9
+      },
+      "challenge_search": {
+        "threshold": 0.99999,
+        "worst_fpr": 0.0045125,
+        "reachable": true
+      },
+      "block_search": {
+        "threshold": 0.999995,
+        "worst_fpr": 0.000975,
+        "reachable": true
+      }
+    },
+    "G15": {
+      "thresholds": {
+        "warn": 0.994804,
+        "challenge": 0.99998,
+        "block": 0.999995
+      },
+      "reachable": true,
+      "parity_checked": 1000,
+      "family_recall": {
+        "campaign": 0.235375,
+        "combined_ato": 1.0,
+        "concurrent_sessions": 1.0,
+        "failed_spike": 1.0,
+        "login_velocity": 0.09,
+        "new_device": 1.0,
+        "new_os": 1.0,
+        "new_passkey": 0.07,
+        "new_ua_family": 1.0,
+        "off_hours": 0.718125,
+        "permission_change": 1.0,
+        "subsystem_lateral": 0.67125,
+        "subtle_lowandslow": 0.32875,
+        "subtle_mild_offhour": 0.2675,
+        "subtle_quiet_lateral": 0.54625,
+        "subtle_rare_device": 0.036,
+        "subtle_slow_burst": 0.060625
+      },
+      "weak_recall_mean": 0.17304166666666668,
+      "severe_recall": 1.0,
+      "challenge_fpr": 0.0049625,
+      "params": {
+        "ambiguous_low": 0.4,
+        "w_point": 1.0,
+        "w_sequence": 1.0,
+        "low_zone_agree": 0.95
+      },
+      "challenge_search": {
+        "threshold": 0.99998,
+        "worst_fpr": 0.0049625,
+        "reachable": true
+      },
+      "block_search": {
+        "threshold": 0.999995,
+        "worst_fpr": 0.000975,
+        "reachable": true
+      }
+    },
+    "G16": {
+      "thresholds": {
+        "warn": 0.994804,
+        "challenge": 0.99998,
+        "block": 0.999995
+      },
+      "reachable": true,
+      "parity_checked": 1000,
+      "family_recall": {
+        "campaign": 0.235375,
+        "combined_ato": 1.0,
+        "concurrent_sessions": 1.0,
+        "failed_spike": 1.0,
+        "login_velocity": 0.09,
+        "new_device": 1.0,
+        "new_os": 1.0,
+        "new_passkey": 0.07,
+        "new_ua_family": 1.0,
+        "off_hours": 0.718125,
+        "permission_change": 1.0,
+        "subsystem_lateral": 0.67125,
+        "subtle_lowandslow": 0.32875,
+        "subtle_mild_offhour": 0.2675,
+        "subtle_quiet_lateral": 0.54625,
+        "subtle_rare_device": 0.036,
+        "subtle_slow_burst": 0.060625
+      },
+      "weak_recall_mean": 0.17304166666666668,
+      "severe_recall": 1.0,
+      "challenge_fpr": 0.004925,
+      "params": {
+        "ambiguous_low": 0.5,
+        "w_point": 0.5,
+        "w_sequence": 0.5,
+        "low_zone_agree": 0.9
+      },
+      "challenge_search": {
+        "threshold": 0.99998,
+        "worst_fpr": 0.004925,
+        "reachable": true
+      },
+      "block_search": {
+        "threshold": 0.999995,
+        "worst_fpr": 0.000975,
+        "reachable": true
+      }
+    },
+    "G17": {
+      "thresholds": {
+        "warn": 0.994804,
+        "challenge": 0.99998,
+        "block": 0.999995
+      },
+      "reachable": true,
+      "parity_checked": 1000,
+      "family_recall": {
+        "campaign": 0.235375,
+        "combined_ato": 1.0,
+        "concurrent_sessions": 1.0,
+        "failed_spike": 1.0,
+        "login_velocity": 0.09,
+        "new_device": 1.0,
+        "new_os": 1.0,
+        "new_passkey": 0.07,
+        "new_ua_family": 1.0,
+        "off_hours": 0.718125,
+        "permission_change": 1.0,
+        "subsystem_lateral": 0.67125,
+        "subtle_lowandslow": 0.32875,
+        "subtle_mild_offhour": 0.2675,
+        "subtle_quiet_lateral": 0.54625,
+        "subtle_rare_device": 0.036,
+        "subtle_slow_burst": 0.060625
+      },
+      "weak_recall_mean": 0.17304166666666668,
+      "severe_recall": 1.0,
+      "challenge_fpr": 0.004925,
+      "params": {
+        "ambiguous_low": 0.5,
+        "w_point": 0.5,
+        "w_sequence": 0.5,
+        "low_zone_agree": 0.95
+      },
+      "challenge_search": {
+        "threshold": 0.99998,
+        "worst_fpr": 0.004925,
+        "reachable": true
+      },
+      "block_search": {
+        "threshold": 0.999995,
+        "worst_fpr": 0.000975,
+        "reachable": true
+      }
+    },
+    "G18": {
+      "thresholds": {
+        "warn": 0.994804,
+        "challenge": 0.99999,
+        "block": 0.999995
+      },
+      "reachable": true,
+      "parity_checked": 1000,
+      "family_recall": {
+        "campaign": 0.199125,
+        "combined_ato": 1.0,
+        "concurrent_sessions": 1.0,
+        "failed_spike": 1.0,
+        "login_velocity": 0.06125,
+        "new_device": 1.0,
+        "new_os": 1.0,
+        "new_passkey": 0.051875,
+        "new_ua_family": 1.0,
+        "off_hours": 0.63,
+        "permission_change": 1.0,
+        "subsystem_lateral": 0.635,
+        "subtle_lowandslow": 0.250625,
+        "subtle_mild_offhour": 0.189375,
+        "subtle_quiet_lateral": 0.496875,
+        "subtle_rare_device": 0.02,
+        "subtle_slow_burst": 0.04
+      },
+      "weak_recall_mean": 0.14485416666666667,
+      "severe_recall": 1.0,
+      "challenge_fpr": 0.004475,
+      "params": {
+        "ambiguous_low": 0.5,
+        "w_point": 0.5,
+        "w_sequence": 1.0,
+        "low_zone_agree": 0.9
+      },
+      "challenge_search": {
+        "threshold": 0.99999,
+        "worst_fpr": 0.004475,
+        "reachable": true
+      },
+      "block_search": {
+        "threshold": 0.999995,
+        "worst_fpr": 0.000975,
+        "reachable": true
+      }
+    },
+    "G19": {
+      "thresholds": {
+        "warn": 0.994804,
+        "challenge": 0.99998,
+        "block": 0.999995
+      },
+      "reachable": true,
+      "parity_checked": 1000,
+      "family_recall": {
+        "campaign": 0.235375,
+        "combined_ato": 1.0,
+        "concurrent_sessions": 1.0,
+        "failed_spike": 1.0,
+        "login_velocity": 0.09,
+        "new_device": 1.0,
+        "new_os": 1.0,
+        "new_passkey": 0.07,
+        "new_ua_family": 1.0,
+        "off_hours": 0.718125,
+        "permission_change": 1.0,
+        "subsystem_lateral": 0.67125,
+        "subtle_lowandslow": 0.32875,
+        "subtle_mild_offhour": 0.2675,
+        "subtle_quiet_lateral": 0.54625,
+        "subtle_rare_device": 0.036,
+        "subtle_slow_burst": 0.060625
+      },
+      "weak_recall_mean": 0.17304166666666668,
+      "severe_recall": 1.0,
+      "challenge_fpr": 0.0049375,
+      "params": {
+        "ambiguous_low": 0.5,
+        "w_point": 0.5,
+        "w_sequence": 1.0,
+        "low_zone_agree": 0.95
+      },
+      "challenge_search": {
+        "threshold": 0.99998,
+        "worst_fpr": 0.0049375,
+        "reachable": true
+      },
+      "block_search": {
+        "threshold": 0.999995,
+        "worst_fpr": 0.000975,
+        "reachable": true
+      }
+    },
+    "G20": {
+      "thresholds": {
+        "warn": 0.994804,
+        "challenge": 0.99998,
+        "block": 0.999995
+      },
+      "reachable": true,
+      "parity_checked": 1000,
+      "family_recall": {
+        "campaign": 0.235375,
+        "combined_ato": 1.0,
+        "concurrent_sessions": 1.0,
+        "failed_spike": 1.0,
+        "login_velocity": 0.09,
+        "new_device": 1.0,
+        "new_os": 1.0,
+        "new_passkey": 0.07,
+        "new_ua_family": 1.0,
+        "off_hours": 0.718125,
+        "permission_change": 1.0,
+        "subsystem_lateral": 0.67125,
+        "subtle_lowandslow": 0.32875,
+        "subtle_mild_offhour": 0.2675,
+        "subtle_quiet_lateral": 0.54625,
+        "subtle_rare_device": 0.036,
+        "subtle_slow_burst": 0.060625
+      },
+      "weak_recall_mean": 0.17304166666666668,
+      "severe_recall": 1.0,
+      "challenge_fpr": 0.0049625,
+      "params": {
+        "ambiguous_low": 0.5,
+        "w_point": 1.0,
+        "w_sequence": 0.5,
+        "low_zone_agree": 0.9
+      },
+      "challenge_search": {
+        "threshold": 0.99998,
+        "worst_fpr": 0.0049625,
+        "reachable": true
+      },
+      "block_search": {
+        "threshold": 0.999995,
+        "worst_fpr": 0.000975,
+        "reachable": true
+      }
+    },
+    "G21": {
+      "thresholds": {
+        "warn": 0.994804,
+        "challenge": 0.99998,
+        "block": 0.999995
+      },
+      "reachable": true,
+      "parity_checked": 1000,
+      "family_recall": {
+        "campaign": 0.235375,
+        "combined_ato": 1.0,
+        "concurrent_sessions": 1.0,
+        "failed_spike": 1.0,
+        "login_velocity": 0.09,
+        "new_device": 1.0,
+        "new_os": 1.0,
+        "new_passkey": 0.07,
+        "new_ua_family": 1.0,
+        "off_hours": 0.718125,
+        "permission_change": 1.0,
+        "subsystem_lateral": 0.67125,
+        "subtle_lowandslow": 0.32875,
+        "subtle_mild_offhour": 0.2675,
+        "subtle_quiet_lateral": 0.54625,
+        "subtle_rare_device": 0.036,
+        "subtle_slow_burst": 0.060625
+      },
+      "weak_recall_mean": 0.17304166666666668,
+      "severe_recall": 1.0,
+      "challenge_fpr": 0.00495,
+      "params": {
+        "ambiguous_low": 0.5,
+        "w_point": 1.0,
+        "w_sequence": 0.5,
+        "low_zone_agree": 0.95
+      },
+      "challenge_search": {
+        "threshold": 0.99998,
+        "worst_fpr": 0.00495,
+        "reachable": true
+      },
+      "block_search": {
+        "threshold": 0.999995,
+        "worst_fpr": 0.000975,
+        "reachable": true
+      }
+    },
+    "G22": {
+      "thresholds": {
+        "warn": 0.994804,
+        "challenge": 0.99999,
+        "block": 0.999995
+      },
+      "reachable": true,
+      "parity_checked": 1000,
+      "family_recall": {
+        "campaign": 0.199125,
+        "combined_ato": 1.0,
+        "concurrent_sessions": 1.0,
+        "failed_spike": 1.0,
+        "login_velocity": 0.06125,
+        "new_device": 1.0,
+        "new_os": 1.0,
+        "new_passkey": 0.051875,
+        "new_ua_family": 1.0,
+        "off_hours": 0.63,
+        "permission_change": 1.0,
+        "subsystem_lateral": 0.635,
+        "subtle_lowandslow": 0.250625,
+        "subtle_mild_offhour": 0.189375,
+        "subtle_quiet_lateral": 0.496875,
+        "subtle_rare_device": 0.02,
+        "subtle_slow_burst": 0.04
+      },
+      "weak_recall_mean": 0.14485416666666667,
+      "severe_recall": 1.0,
+      "challenge_fpr": 0.0045125,
+      "params": {
+        "ambiguous_low": 0.5,
+        "w_point": 1.0,
+        "w_sequence": 1.0,
+        "low_zone_agree": 0.9
+      },
+      "challenge_search": {
+        "threshold": 0.99999,
+        "worst_fpr": 0.0045125,
+        "reachable": true
+      },
+      "block_search": {
+        "threshold": 0.999995,
+        "worst_fpr": 0.000975,
+        "reachable": true
+      }
+    },
+    "G23": {
+      "thresholds": {
+        "warn": 0.994804,
+        "challenge": 0.99998,
+        "block": 0.999995
+      },
+      "reachable": true,
+      "parity_checked": 1000,
+      "family_recall": {
+        "campaign": 0.235375,
+        "combined_ato": 1.0,
+        "concurrent_sessions": 1.0,
+        "failed_spike": 1.0,
+        "login_velocity": 0.09,
+        "new_device": 1.0,
+        "new_os": 1.0,
+        "new_passkey": 0.07,
+        "new_ua_family": 1.0,
+        "off_hours": 0.718125,
+        "permission_change": 1.0,
+        "subsystem_lateral": 0.67125,
+        "subtle_lowandslow": 0.32875,
+        "subtle_mild_offhour": 0.2675,
+        "subtle_quiet_lateral": 0.54625,
+        "subtle_rare_device": 0.036,
+        "subtle_slow_burst": 0.060625
+      },
+      "weak_recall_mean": 0.17304166666666668,
+      "severe_recall": 1.0,
+      "challenge_fpr": 0.0049625,
+      "params": {
+        "ambiguous_low": 0.5,
+        "w_point": 1.0,
+        "w_sequence": 1.0,
+        "low_zone_agree": 0.95
+      },
+      "challenge_search": {
+        "threshold": 0.99998,
+        "worst_fpr": 0.0049625,
+        "reachable": true
+      },
+      "block_search": {
+        "threshold": 0.999995,
+        "worst_fpr": 0.000975,
+        "reachable": true
+      }
+    }
+  }
+}

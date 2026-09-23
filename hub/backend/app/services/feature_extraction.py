@@ -15,7 +15,7 @@ Cold Start Policy:
   - personalized features (hours_from_typical, weekday_usage) require MIN_HISTORY
   - ถ้า history น้อยไป ให้ค่า neutral (0) — ไม่ลงโทษ user ใหม่
 
-⚠️ Point-in-time invariant (กัน data leakage) — **ห้ามลืมเมื่อเพิ่ม feature ใหม่**:
+Point-in-time invariant (กัน data leakage) — **ห้ามลืมเมื่อเพิ่ม feature ใหม่**:
   ทุก query ที่ดึง "ประวัติ" ต้องกรอง `created_at < now` เสมอ
   (LoginSession, PasskeyCredential, AccessList — รวมถึงฟิลด์เวลาอย่าง last_used_at/granted_at)
 
@@ -61,7 +61,7 @@ MIN_HISTORY_FOR_PERSONALIZATION = 5
 #   challenge/would_challenge/mfa/would_mfa/mfa_required (ยังไม่พิสูจน์ — ถ้าผ่านจริง
 #   row จะกลายเป็น mfa_passed เอง), block/would_block, NULL
 #
-# ⚠️ ห้ามเอาไปกรอง signal ประเภท "ปริมาณ/การเคลื่อนไหว" (country_change_count_30d,
+# ห้ามเอาไปกรอง signal ประเภท "ปริมาณ/การเคลื่อนไหว" (country_change_count_30d,
 # impossible_travel, login_count_24h, failed_logins_24h, concurrent) — attacker ที่
 # login 5 ประเทศแล้วโดน would_block ทุกครั้ง จะถูกกรองจนนับได้ 0 = ดูปลอดภัยขึ้น (ผิดทาง)
 TRUSTED_DECISIONS = ("allow", "mfa_passed", "pass")

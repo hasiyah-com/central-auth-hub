@@ -1,0 +1,17 @@
+{
+  "opens": [
+    {
+      "at": "2026-09-22T18:25:11.848241+00:00",
+      "git_commit": "fb4cca0186d3882a79166150db111ee018cb2b89",
+      "seeds": [
+        501,
+        502,
+        503,
+        504,
+        505
+      ],
+      "calibration_sha256": "9386b816b4632987eb028b1a1ee5c81cfb97d837e57a919d27e54f8c63fd2c76",
+      "reopen_reason": null
+    }
+  ]
+}

@@ -43,7 +43,9 @@ def _redis_key(refresh_id: str) -> str:
 def _hash_secret(secret: str) -> str:
     """HMAC-SHA256 ของ secret — เก็บค่านี้ใน Redis แทน plaintext (เหมือน secret_service.hash_retrieval_token)."""
     mac = hmac.new(
-        settings.secret_key.encode("utf-8"), secret.encode("utf-8"), hashlib.sha256
+        settings.secret_key.get_secret_value().encode("utf-8"),
+        secret.encode("utf-8"),
+        hashlib.sha256,
     )
     return mac.hexdigest()
 

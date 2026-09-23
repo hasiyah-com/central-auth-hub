@@ -60,7 +60,7 @@ def test_fast_cadence_fires():
     r = evaluate_behavior(base_vec(gap_log=2.0), profile(), subsystem_id="SUB_A")
     assert any("cadence" in x for x in r.reasons)
     assert 0.10 <= r.score <= 0.30  # soft เท่านั้น
-    assert r.min_action is None  # ไม่มี floor
+    assert not hasattr(r, "min_action")  # ชั้นหลักฐานไม่มีฟิลด์บังคับ action (B70)
 
 
 # ── cadence: login ช้ากว่าปกติ (gap ใหญ่) → ไม่ยิง (velocity สนใจแค่เร็วเกิน) ──
@@ -83,7 +83,7 @@ def test_rare_seen_signature_fires():
         base_vec(), profile(), subsystem_id="SUB_A", user_agent=MAC_SAFARI
     )
     assert any("signature" in x for x in r.reasons)
-    assert r.min_action is None
+    assert not hasattr(r, "min_action")
 
 
 # ── signature: เครื่องใหม่ล้วน (ไม่เคยเห็น) → behavior ไม่ยิง (ปล่อย is_new_device rule = B56) ──

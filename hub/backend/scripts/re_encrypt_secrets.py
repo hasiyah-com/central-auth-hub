@@ -62,14 +62,14 @@ def main() -> int:
 
         db.commit()
         log.info(
-            "✅ Re-encrypted %d tokens (%d unchanged, %d failed)",
+            "Re-encrypted %d tokens (%d unchanged, %d failed)",
             rotated,
             len(rows) - rotated - failed,
             failed,
         )
         if failed:
             log.warning(
-                "⚠ มี %d token ที่ rotate ไม่สำเร็จ — อาจ encrypt ด้วย key ที่ไม่อยู่ใน "
+                "มี %d token ที่ rotate ไม่สำเร็จ — อาจ encrypt ด้วย key ที่ไม่อยู่ใน "
                 "SECRET_ENCRYPTION_KEYS_LEGACY ดูด้วย: token เก่าจะหมดอายุใน 15 นาทีอยู่แล้ว",
                 failed,
             )

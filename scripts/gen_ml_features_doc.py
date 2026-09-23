@@ -142,7 +142,7 @@ FEATURES = [
         "why": "Attacker มักทำงานนอกเวลาที่เจ้าของบัญชีใช้ปกติ (เช่น ตี 3) — feature นี้คู่กับ behavior profile (feature #4)",
         "l1": "—",
         "l2": "indirect (compute typical_hour)",
-        "l3": "✓",
+        "l3": "ใช่",
         "citation": "Wiefling 2022",
     },
     {
@@ -154,7 +154,7 @@ FEATURES = [
         "why": "ใช้คู่กับ is_weekend ตรวจ pattern เช่น admin ที่ปกติเข้าจ-ศ แล้วโผล่มาอาทิตย์เช้า",
         "l1": "—",
         "l2": "indirect (weekend pattern)",
-        "l3": "✓",
+        "l3": "ใช่",
         "citation": "Wiefling 2020",
     },
     {
@@ -166,7 +166,7 @@ FEATURES = [
         "why": "เทียบกับ typical_weekend ของ user (จาก 30-day profile) — mismatch = สงสัย",
         "l1": "—",
         "l2": "+0.10 ถ้า mismatch",
-        "l3": "✓",
+        "l3": "ใช่",
         "citation": "Wiefling 2022",
     },
     {
@@ -179,7 +179,7 @@ FEATURES = [
         "Cold start: ถ้า user มี history &lt; 5 sessions ใช้ค่า neutral (0.0)",
         "l1": "—",
         "l2": "<b>+0.40</b> (≥10h) / +0.20 (≥6h)",
-        "l3": "✓",
+        "l3": "ใช่",
         "citation": "Wiefling 2022 (Sec 5.2)",
     },
     {
@@ -191,7 +191,7 @@ FEATURES = [
         "why": "Hub ของมหา'ลัยคาดว่า user ส่วนใหญ่อยู่ในไทย — login นอกประเทศ = score เพิ่ม +0.10",
         "l1": "+0.10 ถ้า =0",
         "l2": "—",
-        "l3": "✓",
+        "l3": "ใช่",
         "citation": "Wiefling 2022",
     },
     {
@@ -204,7 +204,7 @@ FEATURES = [
         "ประเทศใหม่เป็นสัญญาณ phishing หรือ credential leak ที่ชัดเจน",
         "l1": "<b>+0.30</b>",
         "l2": "<b>+0.30</b>",
-        "l3": "✓",
+        "l3": "ใช่",
         "citation": "Freeman 2016 / Wiefling 2022",
     },
     {
@@ -217,7 +217,7 @@ FEATURES = [
         "Normal user 0-2 ครั้งต่อเดือนเท่านั้น",
         "l1": "<b>HARD BLOCK ≥ 8</b>",
         "l2": "—",
-        "l3": "✓",
+        "l3": "ใช่",
         "citation": "Wiefling 2022 (country churn)",
     },
     {
@@ -230,7 +230,7 @@ FEATURES = [
         "Combine กับ is_new_country → 99% เป็น takeover",
         "l1": "<b>+0.30</b>",
         "l2": "+0.20",
-        "l3": "✓",
+        "l3": "ใช่",
         "citation": "Laperdrix 2020",
     },
     {
@@ -242,7 +242,7 @@ FEATURES = [
         "why": "User-Agent string สามารถ spoof ได้ง่าย แต่การเปลี่ยน browser family บอกได้ว่ามีการเปลี่ยน OS หรือ device",
         "l1": "+0.20",
         "l2": "—",
-        "l3": "✓",
+        "l3": "ใช่",
         "citation": "Laperdrix 2020 / Iqbal 2021",
     },
     {
@@ -255,7 +255,7 @@ FEATURES = [
         "ใช้ log scale เพราะ raw minutes กระจายเป็น power law",
         "l1": "—",
         "l2": "—",
-        "l3": "✓ (only)",
+        "l3": "ใช่ (เท่านั้น)",
         "citation": "Microsoft Entra ID Protection",
     },
     {
@@ -268,7 +268,7 @@ FEATURES = [
         "Normal user 1-5 ครั้งต่อวัน",
         "l1": "<b>HARD BLOCK ≥ 50</b>",
         "l2": "—",
-        "l3": "✓",
+        "l3": "ใช่",
         "citation": "OWASP API4:2023",
     },
     {
@@ -281,7 +281,7 @@ FEATURES = [
         "NIST SP 800-63B-4 แนะนำให้ rate-limit ที่ตัวเลขนี้",
         "l1": "+0.20 (≥3), <b>BLOCK ≥ 10</b>",
         "l2": "—",
-        "l3": "✓",
+        "l3": "ใช่",
         "citation": "NIST SP 800-63B-4",
     },
 ]
@@ -479,10 +479,10 @@ def build():
     story.append(
         P(
             "<b>High-risk features (rank by max total weight):</b><br/>"
-            "🔥 <b>is_new_country</b> (max 0.60) — Layer 1 + 2 score รวม<br/>"
-            "🔥 <b>is_new_device</b> (max 0.50) — Layer 1 + 2 รวม<br/>"
-            "🔥 <b>hours_from_typical_login_time</b> (max 0.40 — Layer 2 เท่านั้น)<br/>"
-            "☠️ <b>HARD BLOCK triggers:</b> country_change_count_30d ≥ 8, "
+            "<b>is_new_country</b> (max 0.60) — Layer 1 + 2 score รวม<br/>"
+            "<b>is_new_device</b> (max 0.50) — Layer 1 + 2 รวม<br/>"
+            "<b>hours_from_typical_login_time</b> (max 0.40 — Layer 2 เท่านั้น)<br/>"
+            "<b>HARD BLOCK triggers:</b> country_change_count_30d ≥ 8, "
             "login_count_24h ≥ 50, failed_logins_24h ≥ 10, IP blacklist, impossible travel",
             BODY,
         )
@@ -623,8 +623,8 @@ def build():
     story.append(P("Sign convention (สำคัญ):", H3))
     story.append(
         P(
-            "• <b>shap &gt; 0</b> (positive) → feature ผลัก score ไปทาง <b>anomaly</b> (🔴 แดงใน UI)<br/>"
-            "• <b>shap &lt; 0</b> (negative) → feature ผลักไปทาง <b>normal</b> (🟢 เขียวใน UI)<br/>"
+            "• <b>shap &gt; 0</b> (positive) → feature ผลัก score ไปทาง <b>anomaly</b> (แดงใน UI)<br/>"
+            "• <b>shap &lt; 0</b> (negative) → feature ผลักไปทาง <b>normal</b> (เขียวใน UI)<br/>"
             "• Top-5 features เรียงตาม <b>|shap|</b> (absolute value)<br/>"
             "• Fail-safe: ถ้า SHAP error → คืน explanation=[] ระบบทำงานต่อได้",
             BODY,
@@ -637,7 +637,7 @@ def build():
             "Admin Dashboard → /admin/ml → คลิก session → SessionDetailPanel:<br/>"
             "• <b>Risk Score header</b> + 4-Layer breakdown bars<br/>"
             "• <b>Reasons (Layer 1 + 2)</b> — bars สีแดง พร้อม weight<br/>"
-            "• <b>SHAP (Layer 3 · IForest)</b> — bars สี (🔴 anomaly / 🟢 normal)",
+            "• <b>SHAP (Layer 3 · IForest)</b> — bars สี (anomaly / normal)",
             BODY,
         )
     )
@@ -761,7 +761,7 @@ def build():
 
     # Build
     doc.build(story)
-    print(f"✓ Generated {out} ({out.stat().st_size:,} bytes)")
+    print(f"Generated {out} ({out.stat().st_size:,} bytes)")
 
 
 if __name__ == "__main__":

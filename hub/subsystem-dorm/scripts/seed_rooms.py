@@ -21,7 +21,7 @@ def seed():
 
     existing = db.query(Room).count()
     if existing > 0:
-        print(f"⚠️  มีห้อง {existing} ห้องอยู่แล้ว")
+        print(f" มีห้อง {existing} ห้องอยู่แล้ว")
         ans = input("ต้องการลบของเก่าแล้ว seed ใหม่หรือไม่? (y/N): ").strip().lower()
         if ans != "y":
             print("ยกเลิก")
@@ -29,7 +29,7 @@ def seed():
             return
         db.query(Room).delete()
         db.commit()
-        print(f"✓ ลบห้องเก่า {existing} ห้องแล้ว")
+        print(f"ลบห้องเก่า {existing} ห้องแล้ว")
 
     count = 0
     for building in BUILDINGS:
@@ -48,7 +48,7 @@ def seed():
                 count += 1
     db.commit()
 
-    print(f"\n✅ Seed สำเร็จ — {count} ห้อง")
+    print(f"\nSeed สำเร็จ — {count} ห้อง")
     print(f"   ตึก: {', '.join(BUILDINGS)}")
     print(f"   ชั้น: {FLOORS}")
     print(f"   ห้องต่อชั้น: {ROOMS_PER_FLOOR}")

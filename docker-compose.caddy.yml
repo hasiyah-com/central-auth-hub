@@ -7,6 +7,21 @@
 #   1. แก้ Caddyfile — แทน <DOMAIN> ด้วย domain จริง
 #   2. ชี้ DNS A record ของ hub./admin./dorm./library.<DOMAIN> → server IP
 #   3. server เปิด port 80 + 443
+#
+# ความปลอดภัย — ต้องปิด host port ที่ bypass Caddy ได้
+#   ไฟล์นี้เป็น overlay ทับ docker-compose.yml ซึ่ง publish host ports ไว้
+#   (8000 hub-backend, 3000 frontend, 9000 ml, 5432 pg, 6379 redis) และ Compose
+#   *append* list `ports:` → overlay ลบไม่ได้ (ดูหมายเหตุหัว docker-compose.prod.yml)
+#   ⇒ ถ้าไม่ปิด attacker ยิง http://<server-ip>:8000 ตรงได้ พร้อมปลอม X-Real-IP
+#     → ปลอมประเทศ / bypass IP blacklist / ปลอม audit log
+#
+#   เลือกทางใดทางหนึ่ง:
+#   (A) แนะนำ — ใช้ docker-compose.prod.yml แทน (standalone, ไม่มี host ports, nginx+TLS)
+#         docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --build
+#   (B) ถ้าจะใช้ Caddy overlay จริง — ปิด port ด้วย firewall ที่ OS:
+#         sudo ufw default deny incoming && sudo ufw allow 22,80,443/tcp && sudo ufw enable
+#         sudo ufw status                      # ยืนยันว่า 8000/3000/9000/5432/6379 ไม่เปิด
+#       ตรวจซ้ำจากเครื่องนอก: curl -m 5 http://<server-ip>:8000/health  → ต้อง timeout/refused
 services:
   caddy:
     image: caddy:2-alpine

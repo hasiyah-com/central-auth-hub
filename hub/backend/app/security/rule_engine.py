@@ -63,32 +63,161 @@ HARD_BLOCK_RULES = [
     ("country_change_count_30d", ">=", 8),
 ]
 
-# (feature, op, threshold, weight) — op รองรับ ">=", "==", "<="
-# floor = min action ที่บังคับเมื่อกฎนี้ยิง (deterministic security event) —
-#   "challenge" = ต้อง step-up เสมอ, None = แค่เพิ่มคะแนน (ปล่อยให้ aggregator ตัดสิน)
-SCORE_RULES = [
-    # ── Device (มี floor เพราะเป็น deterministic takeover sign) ──
-    ("is_new_device", "==", 1, 0.30, "challenge"),
-    ("is_new_user_agent_family", "==", 1, 0.20, "challenge"),
-    # ── Geo (คงไว้เพื่อ portability — ไม่ยิงเมื่อไม่มี geo) ──
-    ("is_new_country", "==", 1, 0.30, "challenge"),
-    ("is_thailand", "==", 0, 0.10, None),
-    ("impossible_travel_score", ">=", 0.5, 0.30, "challenge"),
+# ── กฎของ L1 — ต้องประกาศ `kind` ให้ชัดทุกข้อ ห้ามอนุมาน ──
+#
+# kind = "policy_floor"   ข้อเท็จจริงที่ตรวจได้แน่นอน -> บังคับ step-up เสมอ
+#                         (Policy Gate เป็นผู้บังคับ ไม่ใช่ชั้นให้คะแนน)
+# kind = "risk_evidence"  เพิ่มน้ำหนักหลักฐานอย่างเดียว ให้ L4 ตัดสิน
+#
+# **ทำไมต้องประกาศแทนการอนุมานจาก min_action:** ถ้าอนุมานว่า "กฎที่มี min_action
+# = policy floor" การแก้น้ำหนักคะแนนของกฎใดกฎหนึ่งจะเปลี่ยนนโยบายการเข้าถึงไปด้วย
+# โดยไม่มีใครตั้งใจ · ตัวอย่างจริง: `impossible_travel_score` เคยถูกอนุมานเป็น
+# policy floor ทั้งที่เป็นการ **อนุมาน** (VPN / roaming / GeoIP คลาดเคลื่อน)
+# จึงต้องเป็นหลักฐาน ไม่ใช่ข้อบังคับ
+SCORE_RULES_SPEC = [
+    # ── Device — ข้อเท็จจริงตายตัว ──
+    {
+        "id": "new_device",
+        "feature": "is_new_device",
+        "op": "==",
+        "threshold": 1,
+        "weight": 0.30,
+        "kind": "policy_floor",
+        "min_action": "challenge",
+    },
+    {
+        "id": "new_ua_family",
+        "feature": "is_new_user_agent_family",
+        "op": "==",
+        "threshold": 1,
+        "weight": 0.20,
+        "kind": "policy_floor",
+        "min_action": "challenge",
+    },
+    # ── Geo ──
+    {
+        "id": "new_country",
+        "feature": "is_new_country",
+        "op": "==",
+        "threshold": 1,
+        "weight": 0.30,
+        "kind": "policy_floor",
+        "min_action": "challenge",
+    },
+    {
+        "id": "foreign",
+        "feature": "is_thailand",
+        "op": "==",
+        "threshold": 0,
+        "weight": 0.10,
+        "kind": "risk_evidence",
+        "min_action": None,
+    },
+    # การอนุมาน ไม่ใช่ข้อเท็จจริง -> หลักฐาน (แก้ 2 ก.ย. 2569)
+    {
+        "id": "impossible_travel",
+        "feature": "impossible_travel_score",
+        "op": ">=",
+        "threshold": 0.5,
+        "weight": 0.30,
+        "kind": "risk_evidence",
+        "min_action": None,
+    },
     # ── Brute force ──
-    ("failed_logins_24h", ">=", 5, 0.30, "challenge"),
-    ("failed_logins_24h", ">=", 3, 0.20, None),  # graded: 3-4 ครั้ง = แค่คะแนน
-    # ── Velocity / burst (B60: ฟีเจอร์ที่เดิมไม่มีชั้นไหนให้คะแนน) ──
-    ("login_count_24h", ">=", 15, 0.20, None),
-    # ── Session — concurrent + lateral movement ──
-    ("concurrent_session_count", ">=", 3, 0.25, "challenge"),
-    ("active_subsystem_count", ">=", 2, 0.20, "challenge"),
-    # ── Credential — passkey เพิ่งลงทะเบียน (takeover sign) ──
-    ("new_passkey_recently_added", "==", 1, 0.30, "challenge"),
-    # ── Privilege — สิทธิ์เพิ่งเปลี่ยน ──
-    ("permission_change_age", "<=", 1, 0.25, "challenge"),
-    ("permission_change_age", "<=", 7, 0.10, None),  # graded: 2-7 วัน = แค่คะแนน
-    # ── History — เคยมี incident จริง (ground-truth) ──
-    ("confirmed_incident_count", ">=", 1, 0.40, "challenge"),
+    {
+        "id": "failed_5",
+        "feature": "failed_logins_24h",
+        "op": ">=",
+        "threshold": 5,
+        "weight": 0.30,
+        "kind": "policy_floor",
+        "min_action": "challenge",
+    },
+    {
+        "id": "failed_3",
+        "feature": "failed_logins_24h",
+        "op": ">=",
+        "threshold": 3,
+        "weight": 0.20,
+        "kind": "risk_evidence",
+        "min_action": None,
+    },
+    # ── Velocity ──
+    {
+        "id": "login_burst",
+        "feature": "login_count_24h",
+        "op": ">=",
+        "threshold": 15,
+        "weight": 0.20,
+        "kind": "risk_evidence",
+        "min_action": None,
+    },
+    # ── Session ──
+    {
+        "id": "concurrent",
+        "feature": "concurrent_session_count",
+        "op": ">=",
+        "threshold": 3,
+        "weight": 0.25,
+        "kind": "policy_floor",
+        "min_action": "challenge",
+    },
+    {
+        "id": "lateral",
+        "feature": "active_subsystem_count",
+        "op": ">=",
+        "threshold": 2,
+        "weight": 0.20,
+        "kind": "policy_floor",
+        "min_action": "challenge",
+    },
+    # ── Credential ──
+    {
+        "id": "new_passkey",
+        "feature": "new_passkey_recently_added",
+        "op": "==",
+        "threshold": 1,
+        "weight": 0.30,
+        "kind": "policy_floor",
+        "min_action": "challenge",
+    },
+    # ── Privilege ──
+    {
+        "id": "perm_fresh",
+        "feature": "permission_change_age",
+        "op": "<=",
+        "threshold": 1,
+        "weight": 0.25,
+        "kind": "policy_floor",
+        "min_action": "challenge",
+    },
+    {
+        "id": "perm_recent",
+        "feature": "permission_change_age",
+        "op": "<=",
+        "threshold": 7,
+        "weight": 0.10,
+        "kind": "risk_evidence",
+        "min_action": None,
+    },
+    # ── History — label จริงจากผู้ดูแล ──
+    {
+        "id": "prior_incident",
+        "feature": "confirmed_incident_count",
+        "op": ">=",
+        "threshold": 1,
+        "weight": 0.40,
+        "kind": "policy_floor",
+        "min_action": "challenge",
+    },
+]
+
+RULE_KINDS = ("policy_floor", "risk_evidence")
+
+# รูปแบบ tuple เดิม — คงไว้ให้โค้ดที่มีอยู่ใช้ต่อได้ (derive จาก spec ไม่พิมพ์ซ้ำ)
+SCORE_RULES = [
+    (r["feature"], r["op"], r["threshold"], r["weight"], r["min_action"])
+    for r in SCORE_RULES_SPEC
 ]
 
 # Multiple accounts from same IP

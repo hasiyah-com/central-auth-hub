@@ -17,6 +17,8 @@ import sys
 from types import SimpleNamespace
 from unittest.mock import patch
 
+from pydantic import SecretStr
+
 from app.database import SessionLocal
 from app.models import Subsystem
 from app.services import change_request_service as crs
@@ -151,7 +153,7 @@ def main() -> int:
     with patch.object(wd, "httpx", SimpleNamespace(Client=FakeClient)):
         # ต้องมี webhook_shared_key + resolvable url
         with (
-            patch.object(wd.settings, "webhook_shared_key", "testkey123"),
+            patch.object(wd.settings, "webhook_shared_key", SecretStr("testkey123")),
             patch.object(
                 wd,
                 "_resolve_webhook_url",

@@ -14,7 +14,6 @@
   <div class="max-w-5xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-4">
     <div class="flex items-center gap-6">
       <a href="/" class="flex items-center gap-2.5">
-        <div class="w-10 h-10 rounded-lg bg-indigo-600 grid place-items-center text-white text-xl">🎓</div>
         <div class="hidden sm:block">
           <div class="text-base font-extrabold leading-none text-slate-900">ระบบเกรด</div>
           <div class="text-[10px] mt-1 text-slate-400 font-mono">CENTRAL_AUTH · SUB_C</div>
@@ -49,10 +48,10 @@
 
 <main class="flex-1 w-full max-w-5xl mx-auto px-4 sm:px-6 py-8">
   {% if request.query_params.get("error") %}
-  <div class="mb-4 p-3 rounded-lg bg-rose-100 border border-rose-300 text-rose-800 text-sm">⚠ {{ request.query_params.get("error") }}</div>
+  <div class="mb-4 p-3 rounded-lg bg-rose-100 border border-rose-300 text-rose-800 text-sm">{{ request.query_params.get("error") }}</div>
   {% endif %}
   {% if request.query_params.get("msg") %}
-  <div class="mb-4 p-3 rounded-lg bg-emerald-100 border border-emerald-300 text-emerald-800 text-sm">✓ {{ request.query_params.get("msg") }}</div>
+  <div class="mb-4 p-3 rounded-lg bg-emerald-100 border border-emerald-300 text-emerald-800 text-sm">{{ request.query_params.get("msg") }}</div>
   {% endif %}
   {% block content %}{% endblock %}
 </main>

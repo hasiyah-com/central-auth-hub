@@ -63,7 +63,13 @@ services:
       - "127.0.0.1:9000:9000"
     volumes:
       - ./ml-service:/app
-    command: uvicorn app.main:app --host 0.0.0.0 --port 9000 --reload
+    # 4 worker แต่ละตัวมี socket ของตัวเอง (SO_REUSEPORT) — ML Capacity Gate ผ่านที่ค่านี้
+    # (hub/backend/tests/reports/ml_capacity_gate_2026-09-21.md §10–18) · RAM รวม ~1.2 GB
+    # `uvicorn --workers` ใช้ socket ร่วมแล้วงานไม่เท่ากัน (worker บางตัวค้างเย็น) — อย่าเปลี่ยนกลับ
+    # ไม่มี --reload แล้ว: แก้โค้ด ml-service ต้อง `docker compose restart ml-service`
+    # การแบ่ง worker ตามผู้ใช้ (L3_SHARD_URLS) เป็น opt-in — ยังอยู่ระหว่างทดลอง (ML Capacity Gate
+    # §20–21: C3 ผ่าน แต่ P1 v2 ไม่ผ่าน) · เปิดด้วย docker-compose.shard.yml
+    command: python -m app.serve --host 0.0.0.0 --port 9000 --workers 4
 
   hub-backend:
     build:

@@ -54,11 +54,11 @@ const Loading = () => (
 
 const StatusBadge = ({ status }) => {
   const map = {
-    pending: "⏳ รออนุมัติ", approved: "✅ อนุมัติแล้ว",
-    checked_in: "🏠 check-in", rejected: "❌ ปฏิเสธ",
-    cancelled: "🚫 ยกเลิก", active: "✅ active",
-    available: "✅ ว่าง", full: "🔴 เต็ม", maintenance: "🔧 ซ่อม",
-    staff: "👔 staff", teacher: "📚 teacher", resident: "👤 resident",
+    pending: "รออนุมัติ", approved: "อนุมัติแล้ว",
+    checked_in: "check-in", rejected: "ปฏิเสธ",
+    cancelled: "ยกเลิก", active: "active",
+    available: "ว่าง", full: "เต็ม", maintenance: "ซ่อม",
+    staff: "staff", teacher: "teacher", resident: "resident",
   };
   return (
     <span className={`badge badge-${status}`}>{map[status] || status}</span>
@@ -69,13 +69,7 @@ const StatCard = ({ icon, label, value, sub, accentColor, bgTint }) => (
   <div className="card" style={{ padding: 18 }}>
     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
       <span style={{ fontSize: 12, color: "var(--ink-mute)", fontWeight: 500 }}>{label}</span>
-      <div style={{
-        width: 32, height: 32,
-        background: bgTint || "var(--bg-soft)",
-        color: accentColor || "var(--ink)",
-        display: "grid", placeItems: "center",
-        border: "1.5px solid var(--ink)",
-      }}>{icon}</div>
+      {icon && <div style={{ width: 32, height: 32, background: bgTint || "var(--bg-soft)", color: accentColor || "var(--ink)", display: "grid", placeItems: "center", border: "1.5px solid var(--ink)" }}>{icon}</div>}
     </div>
     <div className="display" style={{ fontSize: 30, margin: "4px 0 2px" }}>{value}</div>
     {sub && <div style={{ fontSize: 11, color: "var(--ink-mute)" }}>{sub}</div>}
@@ -115,7 +109,7 @@ const SideNav = ({ user, page, setPage }) => {
   return (
     <aside className="sidenav">
       <div className="sidenav-logo">
-        <div className="sidenav-logo-sq">🏠</div>
+        <div className="sidenav-logo-sq">A</div>
         <span>หอพัก</span>
       </div>
       <div className="sidenav-label">{sectionLabel}</div>
@@ -268,7 +262,7 @@ const HomePage = ({ user, setPage }) => {
                       borderRadius: "50%", background: "var(--pink)" }} />
         <div style={{ position: "relative", zIndex: 1 }}>
           <div style={{ fontSize: 12, opacity: .7, marginBottom: 6, fontFamily: "JetBrains Mono, monospace", letterSpacing: ".06em" }}>
-            {role === "staff" ? "👔 STAFF_VIEW" : role === "teacher" ? "📚 TEACHER_VIEW" : "🎓 STUDENT_VIEW"}
+            {role === "staff" ? "STAFF_VIEW" : role === "teacher" ? "TEACHER_VIEW" : "STUDENT_VIEW"}
           </div>
           <h2 className="display" style={{ fontSize: 34, margin: "0 0 8px", color: "var(--bg-card)" }}>
             สวัสดี, {user?.full_name}
@@ -292,7 +286,7 @@ const HomePage = ({ user, setPage }) => {
           {/* Announcements */}
           <div className="card dash-card">
             <div className="dash-card-head">
-              <h3 className="dash-card-title">📣 ประกาศและกิจกรรม</h3>
+              <h3 className="dash-card-title">ประกาศและกิจกรรม</h3>
               <span className="chip chip-primary">{stats.pending_count ?? 0} pending</span>
             </div>
             {(role === "staff" ? [
@@ -340,8 +334,8 @@ const HomePage = ({ user, setPage }) => {
           {role === "student" && data.current_room && (
             <div className="card dash-card dash-room-card">
               <div className="dash-card-head">
-                <h3 className="dash-card-title">🏠 ห้องของฉัน</h3>
-                <span className="chip chip-good">✓ check-in</span>
+                <h3 className="dash-card-title">ห้องของฉัน</h3>
+                <span className="chip chip-good">check-in</span>
               </div>
               <div className="dash-room-grid">
                 <div>
@@ -415,7 +409,7 @@ const HomePage = ({ user, setPage }) => {
                     <React.Fragment key={key}>
                       <div className="timeline-step">
                         <div className={`timeline-dot${done ? " done" : ""}${cur ? " cur" : ""}`}>
-                          {done ? "✓" : i + 1}
+                          {i + 1}
                         </div>
                         <div className={`timeline-label${cur ? " cur" : ""}`}>{label}</div>
                       </div>
@@ -481,7 +475,7 @@ const HomePage = ({ user, setPage }) => {
             <div className="card dash-card" style={{ background: "var(--yellow)" }}>
               <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
                 <div style={{ width: 32, height: 32, background: "var(--ink)", color: "var(--yellow)",
-                              display: "grid", placeItems: "center", border: "2px solid var(--ink)" }}>📚</div>
+                              display: "grid", placeItems: "center", border: "2px solid var(--ink)" }}></div>
                 <h3 style={{ margin: 0, fontSize: 14, fontWeight: 700 }}>บทบาทอาจารย์</h3>
               </div>
               <p style={{ fontSize: 13, color: "var(--ink)", margin: 0, lineHeight: 1.6 }}>
@@ -645,7 +639,7 @@ const RoomsPage = ({ user, setPage }) => {
 
       {rooms.length === 0 && (
         <div className="empty-state">
-          <div className="empty-state-icon">{query || filter !== "all" ? "🔍" : "🏠"}</div>
+          <div className="empty-state-icon">{query || filter !== "all" ? "" : ""}</div>
           <h3>{query || filter !== "all" ? "ไม่พบห้องตามเงื่อนไข" : "ยังไม่มีห้องในระบบ"}</h3>
           <p>{query || filter !== "all" ? "ลองล้าง filter หรือเปลี่ยนคำค้น" : "ติดต่อผู้ดูแลระบบ"}</p>
           {(query || filter !== "all") && (
@@ -704,7 +698,6 @@ const RoomDetailPage = ({ user, roomId, setPage }) => {
                     ตึก <strong style={{ color: "var(--ink)" }}>{room.building}</strong> · ชั้น <strong style={{ color: "var(--ink)" }}>{room.floor}</strong> · รองรับ <strong style={{ color: "var(--ink)" }}>{room.capacity}</strong> คน
                   </p>
                 </div>
-                <div style={{ width: 56, height: 56, background: "var(--yellow)", border: "2px solid var(--ink)", display: "grid", placeItems: "center", fontSize: 28 }}>🛏️</div>
               </div>
 
               {/* Stats grid */}
@@ -740,7 +733,7 @@ const RoomDetailPage = ({ user, roomId, setPage }) => {
           {occupants.length > 0 && (
             <div className="card" style={{ padding: 20 }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
-                <h2 className="display" style={{ fontSize: 18, margin: 0 }}>👥 ผู้พักในห้องนี้</h2>
+                <h2 className="display" style={{ fontSize: 18, margin: 0 }}>ผู้พักในห้องนี้</h2>
                 <span className="chip">{occupants.length} คน</span>
               </div>
               <ul style={{ padding: 0, margin: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: 10 }}>
@@ -770,7 +763,6 @@ const RoomDetailPage = ({ user, roomId, setPage }) => {
             {active_reservation ? (
               <>
                 <div className="alert alert-info" style={{ marginBottom: 14 }}>
-                  <span className="alert-icon">📋</span>
                   <div>
                     <strong style={{ display: "block", marginBottom: 4 }}>คุณมี Reservation อยู่แล้ว</strong>
                     สถานะ: <StatusBadge status={active_reservation.status} />
@@ -784,7 +776,6 @@ const RoomDetailPage = ({ user, roomId, setPage }) => {
             ) : !canReserve ? (
               <>
                 <div className="alert alert-danger" style={{ marginBottom: 14 }}>
-                  <span className="alert-icon">🔒</span>
                   <div>
                     <strong style={{ display: "block", marginBottom: 4 }}>ห้องนี้ไม่พร้อมจอง</strong>
                     <span style={{ color: "var(--ink-soft)" }}>
@@ -800,7 +791,6 @@ const RoomDetailPage = ({ user, roomId, setPage }) => {
             ) : (
               <>
                 <div className="alert alert-success" style={{ marginBottom: 18 }}>
-                  <span className="alert-icon">✅</span>
                   <div>ห้องนี้ว่าง — สามารถส่งคำขอจองได้</div>
                 </div>
                 <form action={`/reservation/rooms/${room.id}/reserve`} method="post" style={{ display: "flex", flexDirection: "column", gap: 14 }}>
@@ -837,12 +827,12 @@ const RoomDetailPage = ({ user, roomId, setPage }) => {
 // STAFF / TEACHER ME PAGE (work profile + recent actions)
 // ═══════════════════════════════════════════════════════════════
 const ACTION_LABELS = {
-  approve_reservation: { icon: "✅", label: "อนุมัติคำขอจอง", color: "good" },
-  reject_reservation:  { icon: "❌", label: "ปฏิเสธคำขอจอง",  color: "danger" },
-  check_in_resident:   { icon: "🏠", label: "Check-in ผู้พัก",  color: "good" },
-  check_out_resident:  { icon: "🚪", label: "Check-out ผู้พัก", color: "warn" },
-  create_reservation:  { icon: "📝", label: "สร้างคำขอจอง",   color: "info" },
-  cancel_reservation:  { icon: "🗑️", label: "ยกเลิกคำขอจอง",  color: "warn" },
+  approve_reservation: { icon: "", label: "อนุมัติคำขอจอง", color: "good" },
+  reject_reservation:  { icon: "", label: "ปฏิเสธคำขอจอง",  color: "danger" },
+  check_in_resident:   { icon: "", label: "Check-in ผู้พัก",  color: "good" },
+  check_out_resident:  { icon: "", label: "Check-out ผู้พัก", color: "warn" },
+  create_reservation:  { icon: "", label: "สร้างคำขอจอง",   color: "info" },
+  cancel_reservation:  { icon: "", label: "ยกเลิกคำขอจอง",  color: "warn" },
 };
 
 const StaffMePage = ({ user, setPage }) => {
@@ -910,18 +900,18 @@ const StaffMePage = ({ user, setPage }) => {
             {(() => {
               const scope = user.provided_scope || [];
               const ALL_FIELDS = [
-                ["student_id", "🎓 รหัสนักศึกษา"],
-                ["employee_id", "👔 รหัสบุคลากร"],
-                ["faculty", "🏛️ คณะ"],
-                ["major", "📚 สาขา"],
-                ["year", "🗓️ ชั้นปี"],
-                ["position", "💼 ตำแหน่ง"],
-                ["phone", "📞 โทรศัพท์"],
-                ["address", "🏠 ที่อยู่"],
+                ["student_id", "รหัสนักศึกษา"],
+                ["employee_id", "รหัสบุคลากร"],
+                ["faculty", "คณะ"],
+                ["major", "สาขา"],
+                ["year", "ชั้นปี"],
+                ["position", "ตำแหน่ง"],
+                ["phone", "โทรศัพท์"],
+                ["address", "ที่อยู่"],
               ];
               const items = [
-                ["📧 อีเมล", user.email],
-                ["👤 ชื่อ-นามสกุล", user.full_name],
+                ["อีเมล", user.email],
+                ["ชื่อ-นามสกุล", user.full_name],
               ];
               ALL_FIELDS.forEach(([key, label]) => {
                 if (scope.includes(key)) {
@@ -941,7 +931,6 @@ const StaffMePage = ({ user, setPage }) => {
           </div>
 
           <div style={{ marginTop: 14, padding: 12, background: "var(--bg-soft)", border: "2px solid var(--line)", borderRadius: "var(--radius-sm)", fontSize: 12, color: "var(--ink-soft)", display: "flex", gap: 8 }}>
-            <span>ℹ️</span>
             <span>ข้อมูลนี้มาจาก Hub ตาม JWT scope — หากต้องการแก้ไข กรุณาติดต่อ admin มหาวิทยาลัย</span>
           </div>
         </div>
@@ -950,23 +939,23 @@ const StaffMePage = ({ user, setPage }) => {
         <div className="card" style={{ padding: 24 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
             <h2 className="display" style={{ fontSize: 20, margin: 0 }}>
-              {role === "staff" ? "🛠️" : "📊"} ขอบเขตงานของ{roleLabel}
+              {role === "staff" ? "" : ""} ขอบเขตงานของ{roleLabel}
             </h2>
             <span className="chip mono">{roleScopeLabel}</span>
           </div>
 
           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             {[
-              { icon: "🏘️", label: "TOTAL_RESIDENTS",      value: `${ws?.total_residents ?? 0} คน`,            sub: `จัดการได้ทั้งหมด` },
-              { icon: "🛏️", label: "TOTAL_ROOMS",          value: `${ws?.total_rooms ?? 0} ห้อง`,             sub: `ในระบบหอพัก` },
-              { icon: "⏳", label: "PENDING_RESERVATIONS", value: `${ws?.pending_reservations ?? 0} รายการ`,  sub: `รออนุมัติ` },
-              { icon: "✅", label: "APPROVED_THIS_MONTH",  value: `${ws?.approved_this_month ?? 0} รายการ`,  sub: `อนุมัติเดือนนี้` },
+              { icon: "", label: "TOTAL_RESIDENTS",      value: `${ws?.total_residents ?? 0} คน`,            sub: `จัดการได้ทั้งหมด` },
+              { icon: "", label: "TOTAL_ROOMS",          value: `${ws?.total_rooms ?? 0} ห้อง`,             sub: `ในระบบหอพัก` },
+              { icon: "", label: "PENDING_RESERVATIONS", value: `${ws?.pending_reservations ?? 0} รายการ`,  sub: `รออนุมัติ` },
+              { icon: "", label: "APPROVED_THIS_MONTH",  value: `${ws?.approved_this_month ?? 0} รายการ`,  sub: `อนุมัติเดือนนี้` },
               ws?.first_action_at && {
-                icon: "🕐", label: "FIRST_ACTION", value: fmtDate(ws.first_action_at), sub: `เริ่มทำงานในระบบ`,
+                icon: "", label: "FIRST_ACTION", value: fmtDate(ws.first_action_at), sub: `เริ่มทำงานในระบบ`,
               },
             ].filter(Boolean).map((item, i) => (
               <div key={i} style={{ display: "flex", alignItems: "center", gap: 12, padding: 14, background: "var(--bg-soft)", border: "2px solid var(--line)", borderRadius: "var(--radius-sm)" }}>
-                <span style={{ fontSize: 22 }}>{item.icon}</span>
+                {item.icon && <span style={{ fontSize: 22 }}>{item.icon}</span>}
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 10, fontWeight: 700, color: "var(--ink-mute)", letterSpacing: ".08em", marginBottom: 2 }}>{item.label}</div>
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
@@ -1023,7 +1012,7 @@ const StaffMePage = ({ user, setPage }) => {
                       </td>
                       <td>
                         <span className={`chip chip-${def.color}`}>
-                          <span style={{ marginRight: 4 }}>{def.icon}</span>{def.label}
+                          {def.icon && <span style={{ marginRight: 4 }}>{def.icon}</span>}{def.label}
                         </span>
                       </td>
                       <td style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 12, color: "var(--ink-soft)" }}>
@@ -1054,7 +1043,6 @@ const StaffMePage = ({ user, setPage }) => {
           </div>
         ) : (
           <div className="empty-state" style={{ padding: "32px 16px" }}>
-            <div className="empty-state-icon">📋</div>
             <h3>ยังไม่มีกิจกรรมในระบบ</h3>
             <p>เมื่อคุณอนุมัติ / ปฏิเสธคำขอ หรือจัดการผู้พัก จะแสดงที่นี่</p>
           </div>
@@ -1120,19 +1108,19 @@ const MePage = ({ user, setPage }) => {
             {(() => {
               const scope = user.provided_scope || [];
               const ALL_FIELDS = [
-                ["student_id", "🎓 รหัสนักศึกษา"],
-                ["employee_id", "👔 รหัสบุคลากร"],
-                ["faculty", "🏛️ คณะ"],
-                ["major", "📚 สาขา"],
-                ["year", "🗓️ ชั้นปี"],
-                ["position", "💼 ตำแหน่ง"],
-                ["phone", "📞 โทรศัพท์"],
-                ["address", "🏠 ที่อยู่"],
+                ["student_id", "รหัสนักศึกษา"],
+                ["employee_id", "รหัสบุคลากร"],
+                ["faculty", "คณะ"],
+                ["major", "สาขา"],
+                ["year", "ชั้นปี"],
+                ["position", "ตำแหน่ง"],
+                ["phone", "โทรศัพท์"],
+                ["address", "ที่อยู่"],
               ];
               // แสดง email + name เสมอ + optional fields ที่อยู่ใน scope
               const items = [
-                ["📧 อีเมล", user.email],
-                ["👤 ชื่อ-นามสกุล", user.full_name],
+                ["อีเมล", user.email],
+                ["ชื่อ-นามสกุล", user.full_name],
               ];
               ALL_FIELDS.forEach(([key, label]) => {
                 if (scope.includes(key)) {
@@ -1152,7 +1140,6 @@ const MePage = ({ user, setPage }) => {
           </div>
 
           <div style={{ marginTop: 14, padding: 12, background: "var(--bg-soft)", border: "2px solid var(--line)", borderRadius: "var(--radius-sm)", fontSize: 12, color: "var(--ink-soft)", display: "flex", gap: 8 }}>
-            <span>ℹ️</span>
             <span>ข้อมูลนี้มาจาก Hub ตาม JWT scope — หากต้องการแก้ไข กรุณาติดต่อ admin มหาวิทยาลัย</span>
           </div>
         </div>
@@ -1160,21 +1147,21 @@ const MePage = ({ user, setPage }) => {
         {/* Dorm status */}
         <div className="card" style={{ padding: 24 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-            <h2 className="display" style={{ fontSize: 20, margin: 0 }}>🏠 สถานะในระบบหอพัก</h2>
+            <h2 className="display" style={{ fontSize: 20, margin: 0 }}>สถานะในระบบหอพัก</h2>
             <span className="chip mono">DORM_STATUS</span>
           </div>
 
           {resident ? (
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
               {[
-                { icon: resident.status === "checked_in" ? "🏠" : "✅", label: "STATUS", value: resident.status },
-                { icon: "🛏️", label: "CURRENT_ROOM",
+                { icon: resident.status === "checked_in" ? "" : "", label: "STATUS", value: resident.status },
+                { icon: "", label: "CURRENT_ROOM",
                   value: current_room ? `${current_room.room_number} (ตึก ${current_room.building} ชั้น ${current_room.floor})` : "ยังไม่ได้ check-in" },
-                resident.checked_in_at && { icon: "📅", label: "CHECKED_IN_AT", value: `${fmtDate(resident.checked_in_at)} · ${fmtTime(resident.checked_in_at)}` },
-                { icon: "🕐", label: "FIRST_LOGIN", value: fmtDate(resident.created_at) },
+                resident.checked_in_at && { icon: "", label: "CHECKED_IN_AT", value: `${fmtDate(resident.checked_in_at)} · ${fmtTime(resident.checked_in_at)}` },
+                { icon: "", label: "FIRST_LOGIN", value: fmtDate(resident.created_at) },
               ].filter(Boolean).map((item, i) => (
                 <div key={i} style={{ display: "flex", alignItems: "center", gap: 12, padding: 14, background: "var(--bg-soft)", border: "2px solid var(--line)", borderRadius: "var(--radius-sm)" }}>
-                  <span style={{ fontSize: 22 }}>{item.icon}</span>
+                  {item.icon && <span style={{ fontSize: 22 }}>{item.icon}</span>}
                   <div>
                     <div style={{ fontFamily: "JetBrains Mono, monospace", fontSize: 10, fontWeight: 700, color: "var(--ink-mute)", letterSpacing: ".08em", marginBottom: 2 }}>{item.label}</div>
                     <div style={{ fontWeight: 700, color: "var(--ink)" }}>{item.value}</div>
@@ -1184,7 +1171,6 @@ const MePage = ({ user, setPage }) => {
             </div>
           ) : (
             <div className="empty-state" style={{ padding: "32px 16px" }}>
-              <div className="empty-state-icon">🏠</div>
               <h3>ยังไม่มีข้อมูลในระบบ</h3>
               <p>เริ่มส่งคำขอจองห้องเพื่อสร้างโปรไฟล์</p>
             </div>
@@ -1238,7 +1224,7 @@ const MePage = ({ user, setPage }) => {
                     <td><StatusBadge status={r.cancelled_at ? "cancelled" : r.status} /></td>
                     <td style={{ maxWidth: 180 }}>
                       {r.status === "rejected" && r.reject_reason
-                        ? <span style={{ fontSize: 12, color: "var(--bad)" }}>❌ {r.reject_reason}</span>
+                        ? <span style={{ fontSize: 12, color: "var(--bad)" }}>{r.reject_reason}</span>
                         : r.reason
                         ? <span style={{ fontSize: 12, color: "var(--ink-mute)" }}>{r.reason}</span>
                         : <span style={{ fontSize: 12, color: "var(--ink-mute)" }}>—</span>}
@@ -1260,7 +1246,6 @@ const MePage = ({ user, setPage }) => {
           </div>
         ) : (
           <div className="empty-state" style={{ border: "none", borderRadius: 0 }}>
-            <div className="empty-state-icon">📋</div>
             <h3>ยังไม่เคยส่งคำขอจอง</h3>
             <p>ไปที่ <a onClick={() => setPage("rooms")} style={{ color: "var(--primary)", fontWeight: 700, cursor: "pointer", textDecoration: "underline" }}>ห้องทั้งหมด</a> เพื่อเริ่มจอง</p>
           </div>
@@ -1289,11 +1274,11 @@ const StaffReservationsPage = () => {
   const fmtTime = (iso) => iso ? new Date(iso).toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" }) : "";
 
   const tabs = [
-    { id: "pending", label: "รออนุมัติ", icon: "⏳" },
-    { id: "approved", label: "อนุมัติแล้ว", icon: "✅" },
-    { id: "checked_in", label: "Check-in แล้ว", icon: "🏠" },
-    { id: "rejected", label: "ปฏิเสธแล้ว", icon: "❌" },
-    { id: "all", label: "ทั้งหมด", icon: "📋" },
+    { id: "pending", label: "รออนุมัติ", icon: "" },
+    { id: "approved", label: "อนุมัติแล้ว", icon: "" },
+    { id: "checked_in", label: "Check-in แล้ว", icon: "" },
+    { id: "rejected", label: "ปฏิเสธแล้ว", icon: "" },
+    { id: "all", label: "ทั้งหมด", icon: "" },
   ];
 
   const currentCount = data?.rows?.length ?? 0;
@@ -1303,7 +1288,7 @@ const StaffReservationsPage = () => {
       <div className="page-header">
         <div>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-            <span className="chip chip-primary">👔 STAFF</span>
+            <span className="chip chip-primary">STAFF</span>
             <span className="mono" style={{ fontSize: 11, color: "var(--ink-mute)", letterSpacing: ".08em" }}>RESERVATION_MGMT</span>
           </div>
           <h1 className="display" style={{ fontSize: 34, margin: 0 }}>คำขอจองห้องพัก</h1>
@@ -1322,7 +1307,7 @@ const StaffReservationsPage = () => {
         {tabs.map(t => (
           <button key={t.id} className={`tab-btn${activeTab === t.id ? " active" : ""}`}
                   onClick={() => changeTab(t.id)} style={{ cursor: "pointer" }}>
-            <span>{t.icon}</span> {t.label}
+            {t.label}
           </button>
         ))}
       </div>
@@ -1368,7 +1353,7 @@ const StaffReservationsPage = () => {
                     <td><StatusBadge status={r.status} /></td>
                     <td style={{ maxWidth: 160 }}>
                       {r.status === "rejected" && r.reject_reason
-                        ? <span style={{ fontSize: 12, color: "var(--bad)" }}>⚠️ {r.reject_reason}</span>
+                        ? <span style={{ fontSize: 12, color: "var(--bad)" }}>{r.reject_reason}</span>
                         : r.reason
                         ? <span style={{ fontSize: 12, color: "var(--ink-mute)" }}>{r.reason}</span>
                         : <span style={{ fontSize: 12, color: "var(--ink-mute)" }}>—</span>}
@@ -1385,7 +1370,7 @@ const StaffReservationsPage = () => {
                         )}
                         {r.status === "approved" && (
                           <form action={`/staff/reservations/${r.id}/checkin`} method="post" style={{ display: "inline" }}>
-                            <button type="submit" className="btn btn-xs btn-primary">🏠 Check-in</button>
+                            <button type="submit" className="btn btn-xs btn-primary">Check-in</button>
                           </form>
                         )}
                         {r.status !== "pending" && r.status !== "approved" && (
@@ -1401,7 +1386,7 @@ const StaffReservationsPage = () => {
         ) : (
           <div className="empty-state" style={{ border: "none", borderRadius: 0 }}>
             <div className="empty-state-icon">
-              {activeTab === "pending" ? "⏳" : activeTab === "approved" ? "✅" : activeTab === "checked_in" ? "🏠" : "📋"}
+              {activeTab === "pending" ? "" : activeTab === "approved" ? "" : activeTab === "checked_in" ? "" : ""}
             </div>
             <h3>ไม่มีคำขอจองในสถานะนี้</h3>
             <p>ลองเปลี่ยน filter ด้านบน</p>
@@ -1460,7 +1445,7 @@ const ResidentsPage = ({ user }) => {
       <div className="page-header">
         <div>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-            <span className="chip chip-primary">{isStaff ? "👔 STAFF" : "📚 TEACHER"}</span>
+            <span className="chip chip-primary">{isStaff ? "STAFF" : "TEACHER"}</span>
             <span className="mono" style={{ fontSize: 11, color: "var(--ink-mute)", letterSpacing: ".08em" }}>RESIDENT_DIRECTORY</span>
           </div>
           <h1 className="display" style={{ fontSize: 34, margin: 0 }}>ผู้พักทั้งหมด</h1>
@@ -1540,7 +1525,6 @@ const ResidentsPage = ({ user }) => {
           </div>
         ) : (
           <div className="empty-state" style={{ border: "none", borderRadius: 0 }}>
-            <div className="empty-state-icon">👥</div>
             <h3>ยังไม่มีผู้พักในระบบ</h3>
             <p>ผู้ใช้จะปรากฏที่นี่หลังจาก login ครั้งแรก</p>
           </div>
@@ -1587,7 +1571,6 @@ const App = () => {
       <div style={{ height: "100dvh", display: "flex", alignItems: "center", justifyContent: "center",
                     background: "var(--bg)", fontFamily: "Anuphan, sans-serif" }}>
         <div style={{ textAlign: "center" }}>
-          <div style={{ fontSize: 48, marginBottom: 16 }}>🏠</div>
           <div style={{ fontSize: 16, color: "var(--ink-mute)" }}>กำลังโหลด...</div>
         </div>
       </div>

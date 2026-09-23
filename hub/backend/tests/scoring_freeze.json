@@ -1,0 +1,141 @@
+{
+  "frozen_at": "2026-09-23T05:21:13+00:00",
+  "git_commit": "da09f21099abc568395229ff8a2a715511a2d1d2",
+  "git_branch": "feature/hybrid-accuracy-validation",
+  "reason": "เพิ่ม calibration.tail_transform (candidate H ของ Accuracy Gate §9) — ฟังก์ชันบริสุทธิ์ที่ยังไม่มีเส้นทาง production ใดเรียก ใช้เฉพาะ harness ของการทดลองเพื่อให้ไม่มีสำเนา logic (B66) · ไม่เปลี่ยนการตัดสินจริง ผล baseline hybrid หรือ conditional · เทส test_tail_transform_* ใน tests/test_accuracy_gate.py",
+  "scope": "เฉพาะตรรกะการให้คะแนนและการตัดสิน (app/security/*) — generator และ harness ของการทดลอง **ไม่** ถูก freeze เพราะต้องแก้เพื่อเพิ่มโปรไฟล์ผู้ใช้",
+  "unfreeze_when": "เหมือนเดิม: ตัดสินเกณฑ์/น้ำหนักจากข้อมูล production replay หรือ Shadow Pilot",
+  "hash_method": "sha256 ของไฟล์หลัง normalize CRLF -> LF",
+  "files": {
+    "app/security/evidence.py": "89d0317acafd622f61b7298f6e0adf41e223e33e09bd1c23e730e6d7bcf14e33",
+    "app/security/policy_gate.py": "f8b982e43c7667d4d424e3a0683df795333eb026938285ee186f045a5269f0bb",
+    "app/security/calibration.py": "8c77c4189cbb4b8524823bc2afef2ab12902b727108abd03d690424ea3e555bb",
+    "app/security/rule_engine.py": "d775ba9908624842c134f31fd62af16255062fe4eb3de83375d8e085fdb72873",
+    "app/security/behavior_profiling.py": "f8659bf7fb7771c51d0c574a14baaca2bd8d7716d9e8b74d13dd0b7732f7d855",
+    "app/security/risk_evidence.py": "afda6b7407067fcf5a983d7cbdf35fd4fd611693880632c0d5c67d00ca5719a9",
+    "app/security/risk_fusion.py": "dda653c117224d2083883b4dfbf9421f83df4237d7d51232664a2504c1463756",
+    "app/security/conditional_params.py": "a10c834193c06712612709301254611a17691ad39a2285354b494a7b1b71a1b7",
+    "app/security/risk_aggregator.py": "51c2a61257481a07b6818ad5be6eb90e6aaa0e5fd036f91e6aa67ca9fd957b22",
+    "app/security/iforest_scorer.py": "40f8f959c0f1e6741e209db77e9224e7278eea99c6fc603da8d3966c8ed6f398",
+    "app/security/risk_engine.py": "d4d79d4ba6bb53482b2565b1bb8b16c2e4239424aa4690bf33ed05760ea42250"
+  },
+  "history": [
+    {
+      "frozen_at": "2026-09-07T17:09:13+00:00",
+      "git_commit": "unavailable (รันในคอนเทนเนอร์ที่ไม่มี git)",
+      "reason": "ตรึงตรรกะการให้คะแนนระหว่างรอบทดลองประชากรโปรไฟล์ผู้ใช้ P48 — ผลของรอบนี้ต้องผูกกับระบบเดียวที่ไม่ขยับ (บทเรียน B66)",
+      "files_changed": []
+    },
+    {
+      "frozen_at": "2026-09-15T14:31:05+00:00",
+      "git_commit": "9dd22787188a0c86362d83dc69078e05e4f71ce2",
+      "reason": "เพิ่มการคำนวณผลจำลอง baseline/hybrid และการจับเวลาใน risk_engine.py (ขั้นที่ 3-4 ของแผน Hybrid Shadow) — การตัดสินจริงไม่เปลี่ยน ยืนยันด้วย tests/test_shadow_invariant.py ครบ 5 เส้นทาง login และ harness ของการทดลองไม่ import risk_engine จึงไม่กระทบตัวเลข P48/P48-T2",
+      "files_changed": [
+        "app/security/risk_engine.py"
+      ]
+    },
+    {
+      "frozen_at": "2026-09-16T08:45:41+00:00",
+      "git_commit": "9dd22787188a0c86362d83dc69078e05e4f71ce2",
+      "reason": "เพิ่ม sha256, การเปิดใช้ตารางแบบประกาศชัด (CALIBRATION_PATH) และ validate_startup ใน calibration.py (ขั้นที่ 7 ของแผน Hybrid Shadow) — เมื่อไม่ได้ตั้ง CALIBRATION_PATH สถานะเป็น not_configured และการตัดสินจริงไม่เปลี่ยน (ยืนยันจากคอนเทนเนอร์) · harness ของ P48/P48-T2 ใช้ calibrate_fn ของตัวเอง และ parity gate ชี้ไฟล์เองจึงได้สถานะ unverified ทำงานเหมือนเดิม · ไฟล์ที่ freeze อีก 9 ไฟล์ไม่เปลี่ยน",
+      "files_changed": [
+        "app/security/calibration.py"
+      ]
+    },
+    {
+      "frozen_at": "2026-09-17T05:03:47+00:00",
+      "git_commit": "7a2a351521d2f0a7dc8aa9d0d447194f512ed497",
+      "reason": "เพิ่มสวิตช์ปิดฉุกเฉิน HYBRID_SHADOW_ENABLED และเพดานเวลารวมของ L3 (asyncio.wait_for นับตั้งแต่เริ่ม _evaluate_l3) ใน risk_engine.py — แผน Hybrid Shadow ขั้นที่ 3/13 · สวิตช์ปิดแล้วไม่คำนวณ hybrid และไม่นับ L3 ในการรวมคะแนนใด ๆ · หมดเวลาแล้ว L3 abstain พร้อม l3_timeout · ค่าเริ่มต้นและโหมด shadow ปัจจุบันให้การตัดสินจริงเท่าเดิม ยืนยันด้วย tests/test_hybrid_shadow_switch.py และ tests/test_shadow_invariant.py · harness ของ P48/P48-T2 ไม่ import risk_engine",
+      "files_changed": [
+        "app/security/risk_engine.py"
+      ],
+      "hash_changes": {
+        "app/security/risk_engine.py": {
+          "old": "ea762aa3364b75c54d85aa60f02ae820f0725ee166a1fd36ff19842697e10502",
+          "new": "7e2c983edbbe5aa98ecd87546e00b26269274ab30b34f6c9b1c0796ca922ea31"
+        }
+      },
+      "note": "hash หลัง ruff-format (จัดรูปแบบอย่างเดียว) — แก้ในรายการเดียวกันก่อน commit"
+    },
+    {
+      "frozen_at": "2026-09-22T07:20:06+00:00",
+      "git_commit": "ab509a455b172b90e7599678291bb64147ca75f7",
+      "reason": "risk_engine._l3_summary บันทึก abstain_reason (model_warming) ลง risk_breakdown.l3 เพื่อแยก 'L3 ยังไม่พร้อม' ออกจาก 'L3 ดูแล้วไม่ยิง' ในข้อมูล shadow (ML Capacity Gate §19-20) · ข้อมูลเท่านั้น ไม่เปลี่ยนการตัดสินจริงหรือผลจำลอง (เทส test_recording_the_reason_does_not_change_the_decision) · ผู้ใช้อนุมัติ re-freeze 2026-09-22",
+      "files_changed": [
+        "app/security/risk_engine.py"
+      ],
+      "hash_changes": {
+        "app/security/risk_engine.py": {
+          "old": "7e2c983edbbe5aa98ecd87546e00b26269274ab30b34f6c9b1c0796ca922ea31",
+          "new": "68fb86031933977196b1368af6c89b6becb64012724f99a2a6a52e5b61cc3be2"
+        }
+      }
+    },
+    {
+      "frozen_at": "2026-09-22T17:50:05+00:00",
+      "git_commit": "5d5ec3c25ab895ea1262664f2be186db1a4fe8a1",
+      "reason": "Conditional L3 fusion (candidate G, Accuracy Gate 2026-09-23 ระยะที่ 5): risk_fusion เพิ่ม ConditionalParams/fuse_conditional และ ResolverInput.action_cap (ค่าเริ่มต้น None ไม่เปลี่ยนผล fuse เดิม — tests/test_conditional_fusion.py::test_existing_fuse_is_unchanged_by_the_new_field) · risk_engine บันทึก conditional_shadow ลง risk_breakdown เป็นผลจำลองชุดที่สาม เฉพาะเมื่อตั้ง L3_CONDITIONAL_PARAMS และโหมด shadow_hybrid/hybrid_stepup · ไม่เปลี่ยนการตัดสินจริง ผล baseline หรือ hybrid (test_14_conditional_shadow_never_changes_the_actual_decision) · โค้ดอยู่ใน commit ถัดจาก 5d5ec3c บน feature/hybrid-accuracy-validation · ผู้ใช้อนุมัติ re-freeze ในแผนพัฒนา 2026-09-23 ข้อ 5.5",
+      "files_changed": [
+        "app/security/risk_engine.py",
+        "app/security/risk_fusion.py"
+      ],
+      "hash_changes": {
+        "app/security/risk_engine.py": {
+          "old": "68fb86031933977196b1368af6c89b6becb64012724f99a2a6a52e5b61cc3be2",
+          "new": "a5a9633b48f7a374d5eceba0de2483c4cb1b9f93f42f68a5ce391e2eb5c2b4b9"
+        },
+        "app/security/risk_fusion.py": {
+          "old": "74b1f24d91f3d32762e2de7e4ab2a65123eef5e11c7940c2955dc801cd8f1744",
+          "new": "67c64fe68d6c88bf8df33a8b3862425cd1a236f35f8499507d578b09da94a0f0"
+        }
+      }
+    },
+    {
+      "frozen_at": "2026-09-22T18:58:28+00:00",
+      "git_commit": "eb69c39b75de7b8e5ffcd2b65442b29ffddd715f",
+      "reason": "ย้าย ConditionalParams ไป app/security/conditional_params.py (โมดูลใบ) — validator ของ Settings ต้องตรวจค่าตอน start โดยไม่ import risk_fusion ซึ่งวนกลับมาหา config ทำให้แอป start ไม่ขึ้นเมื่อตั้ง L3_CONDITIONAL_PARAMS จริง (เจอตอนสาธิตใน VM) · risk_fusion re-export ชื่อเดิม ไม่มีการเปลี่ยนตรรกะการให้คะแนนหรือการตัดสิน · เพิ่มไฟล์ใหม่เข้า FROZEN_FILES · เทสใหม่รัน process จริงกันการกลับมาเป็นซ้ำ (test_app_starts_with_conditional_params_set_in_the_environment)",
+      "files_changed": [
+        "app/security/conditional_params.py",
+        "app/security/risk_fusion.py"
+      ],
+      "hash_changes": {
+        "app/security/conditional_params.py": {
+          "old": null,
+          "new": "a10c834193c06712612709301254611a17691ad39a2285354b494a7b1b71a1b7"
+        },
+        "app/security/risk_fusion.py": {
+          "old": "67c64fe68d6c88bf8df33a8b3862425cd1a236f35f8499507d578b09da94a0f0",
+          "new": "dda653c117224d2083883b4dfbf9421f83df4237d7d51232664a2504c1463756"
+        }
+      }
+    },
+    {
+      "frozen_at": "2026-09-22T19:03:27+00:00",
+      "git_commit": "c2d59f236a81c4a69d427b8b878e575fb14a9a4c",
+      "reason": "risk_engine คำนวณ conditional_shadow ในเส้นทาง policy denied ด้วย (zone=policy_denied) — เดิมหายทั้งแถวจึงแยกไม่ออกว่า 'ไม่มีผล' หรือ 'ไม่ได้วัด' (เจอตอนสาธิต VM-A06) · ผลจำลองเท่านั้น ไม่เปลี่ยนการตัดสินจริง · เทส test_conditional_shadow_exists_even_when_policy_denies",
+      "files_changed": [
+        "app/security/risk_engine.py"
+      ],
+      "hash_changes": {
+        "app/security/risk_engine.py": {
+          "old": "a5a9633b48f7a374d5eceba0de2483c4cb1b9f93f42f68a5ce391e2eb5c2b4b9",
+          "new": "d4d79d4ba6bb53482b2565b1bb8b16c2e4239424aa4690bf33ed05760ea42250"
+        }
+      }
+    },
+    {
+      "frozen_at": "2026-09-23T05:21:13+00:00",
+      "git_commit": "da09f21099abc568395229ff8a2a715511a2d1d2",
+      "reason": "เพิ่ม calibration.tail_transform (candidate H ของ Accuracy Gate §9) — ฟังก์ชันบริสุทธิ์ที่ยังไม่มีเส้นทาง production ใดเรียก ใช้เฉพาะ harness ของการทดลองเพื่อให้ไม่มีสำเนา logic (B66) · ไม่เปลี่ยนการตัดสินจริง ผล baseline hybrid หรือ conditional · เทส test_tail_transform_* ใน tests/test_accuracy_gate.py",
+      "files_changed": [
+        "app/security/calibration.py"
+      ],
+      "hash_changes": {
+        "app/security/calibration.py": {
+          "old": "26a89a9542432f1321331fcb7565b5a9c0a8ba660322775137bccc25c3a069b6",
+          "new": "8c77c4189cbb4b8524823bc2afef2ab12902b727108abd03d690424ea3e555bb"
+        }
+      }
+    }
+  ]
+}

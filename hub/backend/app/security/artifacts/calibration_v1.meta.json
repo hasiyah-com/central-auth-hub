@@ -1,0 +1,65 @@
+{
+  "version": "hybrid-shadow-calibration-v1-synthetic",
+  "sha256": "e093b3ac25a46094e31b1304fe02e13c1e4f8c4cf12e9bfcffc20d9bbc944fbc",
+  "gamma": 1.0,
+  "fusion_config": "B",
+  "thresholds": {
+    "warn": 0.9864,
+    "challenge": 0.996407,
+    "block": 0.999914
+  },
+  "from_percentile": {
+    "warn": 0.98,
+    "challenge": 0.995,
+    "block": 0.9999
+  },
+  "population": "p48t2",
+  "n_validation_profiles": 32,
+  "n_holdout_profiles_untouched": 16,
+  "fit_seeds": [
+    511,
+    512,
+    513,
+    514,
+    515,
+    516,
+    517,
+    518
+  ],
+  "check_seeds": [
+    519,
+    520
+  ],
+  "history_size": 5000,
+  "n_events": 128000,
+  "grid_points_per_layer": {
+    "rule": 20000,
+    "behavior": 20000,
+    "anomaly_point": 20000,
+    "anomaly_sequence": 20000
+  },
+  "fire_rate_fit": {
+    "warn": 0.019172,
+    "challenge": 0.003078,
+    "block": 6.3e-05
+  },
+  "fire_rate_check": {
+    "warn": 0.018875,
+    "challenge": 0.002719,
+    "block": 6.3e-05
+  },
+  "created_at": "2026-09-16T08:56:38+00:00",
+  "generator_commit": "bfa53fc",
+  "generator_note": "สร้างจาก working tree ก่อน commit bfa53fc (ตัวสร้าง) — โค้ดตรงกับ commit นั้น ยกเว้นการจัดรูปแบบของ ruff-format ตอน commit · สร้างซ้ำได้ด้วยคำสั่งใน reproduce (ได้เกณฑ์และอัตรายิงเท่าเดิมทุกตัวเมื่อสร้างรอบ 2 และ 3)",
+  "reproduce": "cd hub/backend && PYTHONPATH=. python ../../ml-service/scripts/build_calibration.py --population p48t2 --seeds 511 512 513 514 515 516 517 518 --check-seeds 519 520 --size 5000 --allow-spent-seeds --out <path>",
+  "ledger_entry": "511,512,513,514,515,516,517,518,519,520 (open 3)",
+  "synthetic_only": true,
+  "use": "ทำให้คะแนนสามชั้นเทียบกันได้ระหว่างเก็บข้อมูล shadow · ห้ามอ้างเป็น FPR ของผู้ใช้จริง",
+  "activation": "ไม่โหลดเอง — ต้องตั้ง CALIBRATION_PATH, CALIBRATION_SHA256, CALIBRATION_VERSION และ L4_GAMMA / L4_THRESHOLD_* ให้ตรงกับไฟล์นี้ ไม่งั้น validate_startup ไม่ยอม start",
+  "report": "hub/backend/tests/reports/calibration_v1_2026-09-16.md",
+  "line_endings": {
+    "note": "ไฟล์ที่สร้างบน Windows มี CRLF เพราะ write_text · แปลงเป็น LF แล้ว เนื้อหา JSON เท่าเดิมทุกค่า",
+    "sha256_crlf_as_built": "1e9038c3edfe5bed3311f46c97d67ebbe011bbfeeab8c9a710e917dfa1c5a4f0",
+    "sha256_lf": "e093b3ac25a46094e31b1304fe02e13c1e4f8c4cf12e9bfcffc20d9bbc944fbc"
+  }
+}

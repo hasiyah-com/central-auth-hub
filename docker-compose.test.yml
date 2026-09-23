@@ -1,0 +1,24 @@
+# บริการเสริมสำหรับรันชุดเทสแบบแยกสภาพแวดล้อม — ใช้คู่กับ docker-compose.yml
+#
+#   docker compose -f docker-compose.yml -f docker-compose.test.yml up -d ml-service-test
+#
+# ทำไมต้องมี: แกนคำนวณ L3 อยู่ใน ml-service ซึ่ง **อ่าน Redis ด้วย connection ของตัวเอง**
+# (hub เขียน key `l3resid:{user_id}` แล้ว ml-service อ่านเอง) ถ้าชุดเทสย้ายไป Redis DB
+# ของเทสแต่ ml-service ยังอ่าน DB ของ dev อยู่ จะมองไม่เห็นประวัติและตอบ abstain ทั้งหมด
+# ตัวนี้จึงเป็น ml-service อีกตัวที่ชี้ Redis DB เดียวกับชุดเทส และไม่เปิด port ออกนอก
+services:
+  ml-service-test:
+    # ใช้ image เดียวกับ ml-service ของ dev (ไม่ build ซ้ำ) — เพื่อให้หลักฐานการทดสอบ
+    # อ้างอิง image digest เดียวกันได้จริง ไม่ใช่ image ที่บังเอิญ build จาก Dockerfile เดียวกัน
+    image: cah-hub-ml-service:latest
+    container_name: hub-ml-test
+    environment:
+      REDIS_URL: redis://redis:6379/${TEST_REDIS_DB:-15}
+    volumes:
+      - ./ml-service:/app
+    # worker เดียวโดยตั้งใจ (ต่างจาก ml-service ที่ deploy ซึ่งใช้ app.serve 4 worker) —
+    # cache โมเดลของ L3 แยกต่อ process จนกว่าจะมี cache ร่วม · ถ้าใช้ 4 worker ในชุดเทส
+    # request ของผู้ใช้คนเดียวจะสลับไปลง worker ที่ยังเย็นแล้วได้ model_warming ซ้ำ
+    # ทำให้เทส functional ขึ้นกับการแจกงานของ kernel · พฤติกรรมหลาย worker วัดใน
+    # ML Capacity Gate (hub/backend/tests/reports/ml_capacity_gate_2026-09-21.md) แทน
+    command: uvicorn app.main:app --host 0.0.0.0 --port 9000

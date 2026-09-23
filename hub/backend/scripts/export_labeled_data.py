@@ -79,10 +79,10 @@ def main() -> None:
             w.writerow(names + ["label"])
             w.writerows(rows)
 
-        print(f"✅ export real labeled → {OUT}")
+        print(f"export real labeled → {OUT}")
         print(f"   total: {len(rows)}  (normal={n_neg}, anomaly={n_pos})")
         if n_pos == 0:
-            print("   ⚠️ ยังไม่มี attack label จริง — loop จะเพิ่มแค่ real normal (ช่วยลด FPR)")
+            print("   ยังไม่มี attack label จริง — loop จะเพิ่มแค่ real normal (ช่วยลด FPR)")
             print(
                 "      label attack ผ่าน admin: toggle-attack-ip / MLFeedback=true_positive"
             )

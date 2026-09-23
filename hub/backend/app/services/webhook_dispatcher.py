@@ -206,7 +206,7 @@ def _resolve_webhook_url(subsystem: Subsystem, path: str) -> str | None:
 
 def _sign(body: bytes) -> str:
     """HMAC-SHA256(WEBHOOK_SHARED_KEY, body) → hex string."""
-    key = settings.webhook_shared_key.encode("utf-8")
+    key = settings.webhook_shared_key.get_secret_value().encode("utf-8")
     return hmac.new(key, body, hashlib.sha256).hexdigest()
 
 
@@ -224,7 +224,7 @@ def send_access_updated(subsystem: Subsystem, payload: dict[str, Any]) -> bool:
 
     Headers/signing เหมือน access_revoked. Returns True ถ้า subsystem ตอบ 200.
     """
-    if not settings.webhook_shared_key:
+    if not settings.webhook_shared_key.get_secret_value():
         log.warning(
             "webhook skipped — WEBHOOK_SHARED_KEY not configured. "
             "subsystem=%s event=access_updated",
@@ -302,7 +302,7 @@ def send_access_revoked(subsystem: Subsystem, payload: dict[str, Any]) -> bool:
 
     Returns True ถ้า subsystem ตอบ 200 — False ถ้า skip/fail (logged)
     """
-    if not settings.webhook_shared_key:
+    if not settings.webhook_shared_key.get_secret_value():
         log.warning(
             "webhook skipped — WEBHOOK_SHARED_KEY not configured. "
             "subsystem=%s event=access_revoked",
@@ -377,7 +377,7 @@ def send_access_restored(subsystem: Subsystem, payload: dict[str, Any]) -> bool:
 
     Headers/signing เหมือน access_revoked. Returns True ถ้า subsystem ตอบ 200.
     """
-    if not settings.webhook_shared_key:
+    if not settings.webhook_shared_key.get_secret_value():
         log.warning(
             "webhook skipped — WEBHOOK_SHARED_KEY not configured. "
             "subsystem=%s event=access_restored",

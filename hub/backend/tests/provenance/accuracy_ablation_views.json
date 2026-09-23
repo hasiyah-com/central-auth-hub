@@ -1,0 +1,73 @@
+{
+  "stage": "ablation_views",
+  "seeds": [
+    606,
+    607,
+    608,
+    609,
+    610
+  ],
+  "git_commit": "c2a512ed70eb8358397b43de93a8d7d916ada60e",
+  "views": {
+    "point": {
+      "auc": 0.8479,
+      "ci_low": 0.8191,
+      "ci_high": 0.8764,
+      "n_normal": 400000,
+      "n_attack": 31650,
+      "n_users": 32
+    },
+    "sequence": {
+      "auc": 0.6438,
+      "ci_low": 0.6025,
+      "ci_high": 0.6859,
+      "n_normal": 320000,
+      "n_attack": 25320,
+      "n_users": 32
+    }
+  },
+  "usable": {
+    "point": {
+      "usable": true,
+      "auc": 0.8479,
+      "ci_low": 0.8191,
+      "thresholds": {
+        "auc": 0.7,
+        "ci_low": 0.6
+      }
+    },
+    "sequence": {
+      "usable": false,
+      "auc": 0.6438,
+      "ci_low": 0.6025,
+      "thresholds": {
+        "auc": 0.7,
+        "ci_low": 0.6
+      }
+    }
+  },
+  "conclusion": {
+    "conclusion": "recalibrate",
+    "usable_views": [
+      "point"
+    ],
+    "winning_arms": [],
+    "losing_arms": [
+      "C",
+      "D",
+      "E",
+      "G"
+    ]
+  },
+  "arms_from": {
+    "file": "ablation.json",
+    "seeds": [
+      601,
+      602,
+      603,
+      604,
+      605
+    ]
+  },
+  "holdout_opened": false
+}

@@ -38,7 +38,7 @@ def hash_otp(otp: str) -> str:
     ห้ามเก็บ plaintext — ถ้า DB หลุด attacker จะ replay OTP ได้
     """
     return hmac.new(
-        settings.secret_key.encode(),
+        settings.secret_key.get_secret_value().encode(),
         otp.encode(),
         hashlib.sha256,
     ).hexdigest()
@@ -85,7 +85,7 @@ def send_otp_email(to_email: str, otp: str, expires_at: datetime) -> bool:
           </div>
 
           <div style="background:#fef3ef; border:1px solid #fecaca; border-radius:10px; padding:12px 14px; font-size:12px; color:#b54324; line-height:1.55;">
-            <strong>⚠ คำเตือน</strong><br>
+            <strong>คำเตือน</strong><br>
             • รหัสนี้ใช้ได้ <strong>{expires_in} นาที</strong> เท่านั้น<br>
             • ห้ามแจ้งรหัสนี้กับผู้อื่น แม้แต่เจ้าหน้าที่ของระบบ<br>
             • ถ้าไม่ได้พยายาม login → เพิกเฉยอีเมลนี้ + เปลี่ยนรหัสผ่าน Google ทันที
