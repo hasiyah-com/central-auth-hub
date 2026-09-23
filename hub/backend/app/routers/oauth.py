@@ -2475,15 +2475,21 @@ def _login_chooser_html(
     )
     # recover link เฉพาะเมื่อ passkey เปิด
     recover_block = (
-        '<a class="recover-link" href="/oauth/passkey/recover">ทำ Passkey หาย? กู้บัญชี</a>'
+        '<a class="recover-link" href="/oauth/passkey/recover">ใช้ Passkey ไม่ได้หรือกู้คืนบัญชี</a>'
         if allow_passkey
         else ""
     )
     # ทางเข้า "ตั้งค่าการยืนยันตัวตน" สำหรับ **ทุก role รวมนักศึกษา**
     # (นักศึกษาเข้า Hub console ไม่ได้ → ถ้าเคยกด "ข้าม/ไม่ถามอีก" ต้องมีทางกลับมาตั้ง)
-    recover_block += (
-        '<a class="recover-link" href="/auth/credentials/setup">'
-        "🛡️ ตั้งค่า Passkey / Authenticator ของบัญชี</a>"
+    setup_link = (
+        '<a class="recover-link" href="/auth/credentials/setup">เพิ่มวิธียืนยันตัวตน</a>'
+    )
+    recover_block = (
+        '<div class="login-help">'
+        + recover_block
+        + ('<span>·</span>' if allow_passkey else '')
+        + setup_link
+        + '</div>'
     )
     return f"""<!DOCTYPE html><html lang="th"><head><meta charset="UTF-8">
 <title>เข้าสู่ระบบ · {safe_name}</title>
@@ -2632,21 +2638,132 @@ def _login_chooser_html(
     .foot {{ padding:14px 24px; font-size:9px; }}
     h1 {{ font-size:27px; }}
   }}
+
+  /* Full Signal Room shell — identical structure to the administrator login. */
+  body {{ display:block; padding:0; overflow:auto; }}
+  .login-page {{ min-height:100vh; position:relative; overflow:hidden; display:grid;
+    grid-template-rows:72px 1fr 52px; }}
+  .login-glow {{ position:absolute; border-radius:50%; pointer-events:none; filter:blur(2px); }}
+  .glow-one {{ width:650px; height:650px; right:-210px; top:-310px;
+    background:radial-gradient(circle,rgba(52,232,196,.13),rgba(52,232,196,.025) 42%,transparent 70%); }}
+  .glow-two {{ width:550px; height:550px; left:-360px; bottom:-250px;
+    background:radial-gradient(circle,rgba(14,165,233,.08),transparent 67%); }}
+  .login-topbar {{ height:72px; position:relative; z-index:3; display:flex; align-items:center;
+    justify-content:space-between; padding:0 clamp(24px,5vw,72px); border-bottom:1px solid rgba(148,178,224,.11); }}
+  .login-topbar::after {{ content:''; position:absolute; left:clamp(24px,5vw,72px);
+    right:clamp(24px,5vw,72px); bottom:-1px; height:1px;
+    background:linear-gradient(90deg,rgba(52,232,196,.65),rgba(52,232,196,.06) 30%,transparent 65%); }}
+  .login-brand {{ display:flex; align-items:center; gap:11px; color:#fff; text-decoration:none; }}
+  .login-brand-icon {{ width:39px; height:39px; border:1px solid rgba(52,232,196,.3);
+    border-radius:10px; background:linear-gradient(145deg,rgba(52,232,196,.14),rgba(52,232,196,.025));
+    display:grid; place-items:center; color:var(--mint); position:relative; font:400 20px 'IBM Plex Mono'; }}
+  .login-brand-icon .dot {{ position:absolute; right:-3px; top:-3px; }}
+  .login-brand strong,.login-brand small {{ display:block; }}
+  .login-brand strong {{ font:600 17px 'IBM Plex Sans Thai',sans-serif; letter-spacing:2px; }}
+  .login-brand small {{ font:500 7px 'IBM Plex Mono'; letter-spacing:1.45px; color:#697c95; }}
+  .login-system-status {{ display:flex; align-items:center; gap:7px; color:#73849b;
+    font:500 7px 'IBM Plex Mono'; letter-spacing:.6px; }}
+  .login-system-status b {{ color:var(--mint); font-size:7px; }}
+  .login-stage {{ width:min(1160px,calc(100% - 48px)); margin:auto; position:relative; z-index:2;
+    display:grid; grid-template-columns:minmax(0,1.05fr) minmax(390px,.72fr);
+    gap:clamp(55px,9vw,130px); align-items:center; padding:45px 0; }}
+  .login-context {{ animation:rise .65s ease both; }}
+  .context-kicker {{ display:flex; align-items:center; gap:8px; color:#7f92aa;
+    font:500 8px 'IBM Plex Mono'; letter-spacing:1.2px; }}
+  .target-icon {{ width:14px; height:14px; color:var(--mint); }}
+  .login-context h1 {{ font-family:'Kanit',sans-serif; font-weight:700;
+    font-size:clamp(40px,5vw,68px); line-height:1.09; letter-spacing:-2.7px;
+    margin:17px 0; max-width:660px; }}
+  .login-context h1 span {{ color:transparent; background:linear-gradient(100deg,#fff 8%,var(--mint) 78%);
+    background-clip:text; -webkit-background-clip:text; }}
+  .trust-rail {{ position:relative; margin-top:40px; display:flex; gap:42px; }}
+  .rail-line {{ position:absolute; left:22px; right:22px; top:18px; height:1px;
+    background:linear-gradient(90deg,var(--mint),rgba(52,232,196,.2),rgba(148,178,224,.08)); }}
+  .rail-line i {{ position:absolute; width:4px; height:4px; background:#506078; border-radius:50%; top:-2px; }}
+  .rail-line i:first-child {{ left:0; background:var(--mint); box-shadow:0 0 8px var(--mint); }}
+  .rail-line i:nth-child(2) {{ left:50%; }} .rail-line i:last-child {{ right:0; }}
+  .trust-point {{ position:relative; z-index:1; flex:1; }}
+  .trust-point>span {{ width:36px; height:36px; border:1px solid rgba(148,178,224,.16);
+    background:#0c121e; color:#708198; display:grid; place-items:center; border-radius:50%; margin-bottom:11px; }}
+  .trust-point.active>span {{ border-color:rgba(52,232,196,.42); color:var(--mint);
+    box-shadow:0 0 18px rgba(52,232,196,.08); }}
+  .trust-point svg {{ width:18px; height:18px; fill:none; stroke:currentColor; stroke-width:1.7; }}
+  .trust-point b,.trust-point small {{ display:block; }}
+  .trust-point b {{ font-size:9px; }} .trust-point small {{ font-size:7px; color:#697a92; margin-top:2px; white-space:nowrap; }}
+  .card {{ max-width:none; padding:32px; animation-delay:.12s; }}
+  .card::before {{ top:31px; height:62px; }}
+  .panel-scanline {{ position:absolute; left:0; right:0; top:0; height:1px;
+    background:linear-gradient(90deg,transparent,var(--mint),transparent); opacity:.35; }}
+  .top {{ padding:0; }} .top h1 {{ font-size:24px; margin:7px 0 2px; }}
+  .top .sub {{ font-size:9px; margin:0 0 23px; }} .badge {{ font-size:7px; }}
+  .body {{ padding:0; }} .btn {{ height:44px; font-size:10px; padding:0 13px; }}
+  .btn-pk {{ margin-top:13px; }} .btn-ghost {{ font-size:9px; }}
+  .divider {{ height:29px; margin:0; gap:9px; font-size:7px; }}
+  .login-help {{ display:flex; align-items:center; justify-content:center; gap:7px; margin:17px 0 0; }}
+  .recover-link {{ display:inline; margin:0; color:#74869d; font-size:7px; }}
+  .login-help span {{ color:#3f4e63; }}
+  .foot {{ margin:22px -32px -32px; padding:10px 13px; background:rgba(5,9,15,.28);
+    display:grid; grid-template-columns:16px 1fr auto; align-items:center; text-align:left;
+    letter-spacing:0; color:#667a92; font-size:7px; }}
+  .foot svg {{ color:#4eaf9a; }} .foot code {{ color:#587166; font-size:6px; }}
+  .login-footer {{ position:relative; z-index:2; border-top:1px solid rgba(148,178,224,.08);
+    display:flex; align-items:center; gap:18px; padding:0 clamp(24px,5vw,72px); color:#506078; font-size:7px; }}
+  .login-footer code {{ font-size:6px; color:#405067; }} .login-footer span:last-child {{ margin-left:auto; }}
+  @media (max-width:900px) {{
+    .login-page {{ overflow:auto; }} .login-stage {{ grid-template-columns:1fr; gap:36px;
+      width:min(580px,calc(100% - 38px)); padding:45px 0 60px; }}
+    .login-context {{ text-align:center; }} .context-kicker {{ justify-content:center; }}
+    .login-context h1 {{ font-size:46px; }} .trust-rail {{ text-align:left; }}
+  }}
+  @media (max-width:560px) {{
+    .login-page {{ grid-template-rows:62px 1fr auto; }} .login-topbar {{ height:62px; padding:0 18px; }}
+    .login-system-status span {{ display:none; }} .login-stage {{ width:calc(100% - 24px); padding:30px 0 38px; gap:29px; }}
+    .login-context h1 {{ font-size:34px; letter-spacing:-1.5px; }} .trust-rail {{ gap:10px; margin-top:28px; }}
+    .trust-point small {{ white-space:normal; }} .trust-point b {{ font-size:8px; }}
+    .card {{ padding:25px 19px; }} .foot {{ margin:20px -19px -25px; }}
+    .login-footer {{ padding:13px 18px; flex-wrap:wrap; gap:5px 12px; }}
+    .login-footer span:last-child {{ width:100%; margin-left:0; }} .login-help {{ flex-wrap:wrap; }}
+  }}
 </style></head><body>
-<div class="card">
-  <div class="top">
-    <span class="badge">SUBSYSTEM AUTHENTICATION</span>
-    <h1>เข้าสู่ <span class="accent">{safe_name}</span></h1>
-    <p class="sub">เลือกวิธียืนยันตัวตนเพื่อดำเนินการต่อ</p>
-  </div>
-  <div class="body">
-    {passkey_block}
-    {divider_block}
-    {google_block}
-    {recover_block}
-  </div>
-  <div class="foot">OAuth 2.0 · PKCE · WebAuthn · JWT RS256</div>
-</div>
+<main class="login-page">
+  <div class="login-glow glow-one"></div><div class="login-glow glow-two"></div>
+  <header class="login-topbar">
+    <a class="login-brand" href="/" aria-label="Central Auth Hub">
+      <span class="login-brand-icon">H<i class="dot"></i></span>
+      <span><strong>HUB</strong><small>IDENTITY CONTROL</small></span>
+    </a>
+    <div class="login-system-status"><i class="dot"></i><span>AUTH GATEWAY</span><b>ONLINE</b></div>
+  </header>
+  <section class="login-stage">
+    <div class="login-context">
+      <div class="context-kicker">
+        <svg class="target-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="2"/><path d="M12 2v3M22 12h-3M12 22v-3M2 12h3"/></svg>
+        <span>SECURE ACCESS · TH-SOUTH-01</span>
+      </div>
+      <h1>ยืนยันตัวตน<br>ก่อนเข้าสู่ <span>{safe_name}</span></h1>
+      <div class="trust-rail" aria-label="คุณสมบัติความปลอดภัย">
+        <div class="rail-line"><i></i><i></i><i></i></div>
+        <div class="trust-point active"><span><svg viewBox="0 0 24 24"><path d="M7 12a5 5 0 0 1 10 0v5M5 12a7 7 0 0 1 14 0v4M9 12a3 3 0 0 1 6 0v8M12 12v9"/></svg></span><div><b>Phishing-resistant</b><small>Passkey · WebAuthn</small></div></div>
+        <div class="trust-point"><span><svg viewBox="0 0 24 24"><path d="M12 3 20 6v5c0 5-3 8-8 10-5-2-8-5-8-10V6l8-3Z"/><path d="m8 12 2.5 2.5L16 9"/></svg></span><div><b>Risk-aware access</b><small>4-layer scoring ก่อนอนุญาต</small></div></div>
+        <div class="trust-point"><span><svg viewBox="0 0 24 24"><rect x="5" y="10" width="14" height="11"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></svg></span><div><b>Audit protected</b><small>Append-only hash chain</small></div></div>
+      </div>
+    </div>
+    <section class="card" aria-labelledby="login-title">
+      <div class="panel-scanline"></div>
+      <div class="top">
+        <span class="badge">SUBSYSTEM AUTHENTICATION</span>
+        <h1 id="login-title">เข้าสู่ระบบ</h1>
+        <p class="sub">ใช้บัญชีมหาวิทยาลัยที่ได้รับสิทธิ์เท่านั้น</p>
+      </div>
+      <div class="body">{passkey_block}{divider_block}{google_block}{recover_block}</div>
+      <div class="foot">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 3 20 6v5c0 5-3 8-8 10-5-2-8-5-8-10V6l8-3Z"/><path d="m8 12 2.5 2.5L16 9"/></svg>
+        <span>Auth policy loaded</span><code>passkey:{'on' if allow_passkey else 'off'} · google:{'on' if allow_google else 'off'}</code>
+      </div>
+    </section>
+  </section>
+  <footer class="login-footer"><span>Central Auth Hub</span><code>TLS 1.3 · WEBAUTHN · OAUTH 2.0</code><span>Princess of Naradhiwas University</span></footer>
+</main>
 
 <script nonce="{nonce}">
 const HUB_STATE = {json.dumps(hub_state)};
