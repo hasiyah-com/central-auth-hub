@@ -2665,7 +2665,7 @@ def _login_chooser_html(
     font:500 7px 'IBM Plex Mono'; letter-spacing:.6px; }}
   .login-system-status b {{ color:var(--mint); font-size:7px; }}
   .login-stage {{ width:min(1450px,calc(100vw - 96px)); max-width:none; margin:auto; position:relative; z-index:2;
-    display:grid; grid-template-columns:minmax(0,1.05fr) minmax(390px,.72fr);
+    display:grid; grid-template-columns:minmax(0,1fr) 524px;
     gap:clamp(64px,8vw,145px); align-items:center; padding:45px 0; }}
   .login-context {{ animation:rise .65s ease both; }}
   .context-kicker {{ display:flex; align-items:center; gap:8px; color:#7f92aa;
@@ -2690,7 +2690,7 @@ def _login_chooser_html(
   .trust-point svg {{ width:18px; height:18px; fill:none; stroke:currentColor; stroke-width:1.7; }}
   .trust-point b,.trust-point small {{ display:block; }}
   .trust-point b {{ font-size:9px; }} .trust-point small {{ font-size:7px; color:#697a92; margin-top:2px; white-space:nowrap; }}
-  .card {{ max-width:none; padding:32px; animation-delay:.12s; }}
+  .card {{ width:524px; max-width:100%; justify-self:end; padding:32px; animation-delay:.12s; }}
   .card::before {{ top:31px; height:62px; }}
   .panel-scanline {{ position:absolute; left:0; right:0; top:0; height:1px;
     background:linear-gradient(90deg,transparent,var(--mint),transparent); opacity:.35; }}
@@ -2714,6 +2714,7 @@ def _login_chooser_html(
       width:min(580px,calc(100% - 38px)); padding:45px 0 60px; }}
     .login-context {{ text-align:center; }} .context-kicker {{ justify-content:center; }}
     .login-context h1 {{ font-size:46px; }} .trust-rail {{ text-align:left; }}
+    .card {{ width:524px; justify-self:center; }}
   }}
   @media (max-width:560px) {{
     .login-page {{ grid-template-rows:62px 1fr auto; }} .login-topbar {{ height:62px; padding:0 18px; }}
