@@ -209,6 +209,18 @@ function formatDuration(sec: number): string {
   return rem ? `${h}h ${rem}m` : `${h}h`;
 }
 
+function downloadCsvFile(filename: string, rows: string[][]) {
+  const csv = "\\uFEFF" + rows
+    .map((row) => row.map((cell) => `"${String(cell ?? "").replace(/"/g, '""')}"`).join(","))
+    .join("\\r\\n");
+  const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
 function parseUTC(iso: string): Date {
   const hasTz = /[+-]\d{2}:?\d{2}$|Z$/i.test(iso);
   return new Date(hasTz ? iso : iso + "Z");
@@ -1783,33 +1795,16 @@ export default function SubsystemDetailPage({
             </button>
           </form>
 
-          {/* CSV bulk upload */}
-          <div className="mb-3 bg-white rounded-xl border border-dashed border-ink-300 p-4 flex flex-wrap items-center gap-3">
+          {/* CSV import / export */}
+          <div className="mb-3 bg-white rounded-xl border border-ink-200 p-4 flex flex-wrap items-center gap-3">
             <div className="flex-1 min-w-[200px]">
-              <div className="text-xs font-bold text-ink-700">
-                อัปโหลด CSV
-              </div>
-              <div className="text-[11px] text-ink-500 mt-0.5">
-                {/* CSV header: <code className="font-mono">email,role,note</code> —
-                ระบบ skip คนที่ไม่อยู่ใน Hub หรือ role ไม่ตรง allowed_roles */}
-              </div>
+              <div className="text-sm font-bold text-ink-800">Import / Export ผู้ใช้</div>
+              <div className="text-[11px] text-ink-500 mt-0.5">ไฟล์ CSV ใช้คอลัมน์ email, role, note · role ต้องอยู่ใน Roles ของ subsystem</div>
             </div>
-            <input
-              ref={csvInputRef}
-              type="file"
-              accept=".csv"
-              onChange={(e) => {
-                const f = e.target.files?.[0];
-                if (f) uploadCsv(f);
-              }}
-              disabled={csvUploading}
-              className="text-xs"
-            />
-            {csvUploading && (
-              <span className="text-xs text-ink-500 animate-pulse">
-                กำลังอัปโหลด…
-              </span>
-            )}
+            <button type="button" onClick={() => downloadCsvFile("whitelist-template.csv", [["email", "role", "note"]])} className="h-10 px-4 border border-ink-200 hover:bg-ink-50 text-sm font-semibold text-ink-700">ดาวน์โหลด Template</button>
+            <button type="button" onClick={() => downloadCsvFile(`whitelist-${sub.id}.csv`, [["email", "role", "note"], ...(whitelist || []).map((u) => [u.email, u.role_in_sub || "user", ""])])} disabled={!whitelist?.length} className="h-10 px-4 border border-ink-200 hover:bg-ink-50 text-sm font-semibold text-ink-700 disabled:opacity-50">Export CSV</button>
+            <input ref={csvInputRef} type="file" accept=".csv" onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadCsv(f); }} disabled={csvUploading} className="hidden" />
+            <button type="button" onClick={() => csvInputRef.current?.click()} disabled={csvUploading} className="h-10 px-4 bg-ink-900 hover:bg-ink-800 text-white text-sm font-semibold disabled:opacity-50">{csvUploading ? "กำลัง Import…" : "Import CSV"}</button>
           </div>
 
           {csvResult && (
