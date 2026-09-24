@@ -576,7 +576,7 @@ def download_whitelist_template(
     validation.prompt = "เลือกรายการ role ที่กำหนดไว้สำหรับระบบย่อยนี้"
     validation.promptTitle = "Role in subsystem"
     sheet.add_data_validation(validation)
-    validation.add("B2:B1000")
+    validation.add("B2:B20001")
 
     output = BytesIO()
     workbook.save(output)
