@@ -460,7 +460,7 @@ export default function SubsystemsPage() {
                 >
                   <span
                     aria-hidden="true"
-                    className="grid h-12 w-12 place-items-center rounded-full border border-dashed border-slate-400 text-3xl font-light"
+                    className="grid h-16 w-16 place-items-center rounded-full border-2 border-dashed border-slate-400 text-5xl font-light"
                   >
                     +
                   </span>
