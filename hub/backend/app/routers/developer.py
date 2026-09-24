@@ -722,6 +722,8 @@ def get_whitelist(
     subsystem_id: str,
     request: Request,
     user: User = Depends(require_developer),
+    skip: int = Query(0, ge=0, description="จำนวนรายการที่ข้าม"),
+    limit: int = Query(50, ge=1, le=200, description="จำนวนรายการต่อหน้า"),
     db: Session = Depends(get_db),
 ):
     """ดูรายชื่อ user ใน whitelist ของ subsystem (owner หรือ hub admin).
@@ -735,7 +737,7 @@ def get_whitelist(
 
     subsystem = _get_owned_subsystem(subsystem_id, user, db, request)
 
-    rows = (
+    query = (
         db.query(AccessList, User)
         .join(User, User.id == AccessList.user_id)
         .filter(
@@ -745,12 +747,18 @@ def get_whitelist(
                 User.status == "deleted",
             ),
         )
+    )
+    total = query.count()
+    rows = (
+        query.order_by(AccessList.granted_at.desc(), AccessList.user_id.asc())
+        .offset(skip)
+        .limit(limit)
         .all()
     )
     return {
         "subsystem": subsystem.name,
         "allowed_roles": list(subsystem.allowed_roles or []),
-        "total": len(rows),
+        "total": total,
         "users": [
             {
                 "user_id": str(u.id),
