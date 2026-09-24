@@ -210,9 +210,9 @@ function formatDuration(sec: number): string {
 }
 
 function downloadCsvFile(filename: string, rows: string[][]) {
-  const csv = "\\uFEFF" + rows
+  const csv = "\uFEFF" + rows
     .map((row) => row.map((cell) => `"${String(cell ?? "").replace(/"/g, '""')}"`).join(","))
-    .join("\\r\\n");
+    .join("\r\n");
   const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
   const link = document.createElement("a");
   link.href = url;
