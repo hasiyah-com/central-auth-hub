@@ -1950,7 +1950,8 @@ export default function SubsystemDetailPage({
                 </button>
               </div>
             </div>
-          )}          </div>
+          )}
+          </div>
         </section>
 
         {/* ── Section 3: Activity ────────────────────────── */}
