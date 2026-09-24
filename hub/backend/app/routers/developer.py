@@ -268,6 +268,38 @@ def _validate_role_in_sub(role: str, subsystem: Subsystem) -> str:
     return cleaned
 
 
+@router.get("/attribute-options")
+def attribute_options(
+    user: User = Depends(require_developer),
+    db: Session = Depends(get_db),
+):
+    """Available attribute values from active users; preserve exact DB spelling."""
+    rows = (
+        db.query(User.faculty, User.major)
+        .filter(User.status == "active")
+        .distinct()
+        .all()
+    )
+    faculties = set()
+    majors = set()
+    by_faculty: dict[str, set[str]] = {}
+    for faculty, major in rows:
+        if faculty and faculty.strip():
+            faculties.add(faculty)
+            if major and major.strip():
+                by_faculty.setdefault(faculty, set()).add(major)
+        if major and major.strip():
+            majors.add(major)
+    return {
+        "faculties": sorted(faculties, key=str.casefold),
+        "majors": sorted(majors, key=str.casefold),
+        "majors_by_faculty": {
+            name: sorted(values, key=str.casefold)
+            for name, values in sorted(by_faculty.items(), key=lambda item: item[0].casefold())
+        },
+    }
+
+
 # ============ 1. ลงทะเบียน subsystem ============
 
 
