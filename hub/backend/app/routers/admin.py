@@ -132,6 +132,71 @@ def admin_overview(
     }
 
 
+@router.get("/dashboard/insights")
+def dashboard_insights(
+    hours: int = Query(24, ge=1, le=720),
+    admin: User = Depends(require_hub_admin),
+    db: Session = Depends(get_db),
+):
+    """Dashboard analytics from persisted sessions; unknown scores remain unknown."""
+    from collections import Counter
+    import re
+    from app.security.risk_aggregator import THRESHOLDS
+
+    now = datetime.utcnow()
+    since = now - timedelta(hours=hours)
+    previous = since - timedelta(hours=hours)
+    score = LoginSession.risk_score
+    warn, challenge, block = (THRESHOLDS[k] for k in ("warn", "challenge", "block"))
+    current = db.query(
+        func.count(LoginSession.id), func.avg(score), func.count(score),
+        func.count(case((score < warn, 1))),
+        func.count(case((and_(score >= warn, score < challenge), 1))),
+        func.count(case((and_(score >= challenge, score < block), 1))),
+        func.count(case((score >= block, 1))),
+        func.count(case((LoginSession.is_attack_ip.is_(True), 1))),
+    ).filter(LoginSession.created_at >= since, LoginSession.created_at < now).one()
+    total, avg, scored, low, medium, high, critical, attack = current
+    prev_total, prev_avg = db.query(func.count(LoginSession.id), func.avg(score)).filter(
+        LoginSession.created_at >= previous, LoginSession.created_at < since,
+    ).one()
+    user_total, new_users = db.query(
+        func.count(User.id),
+        func.count(case((User.created_at >= now - timedelta(days=30), 1))),
+    ).one()
+    signals = Counter()
+    rows = db.query(LoginSession.risk_reasons).filter(
+        LoginSession.created_at >= since, LoginSession.created_at < now,
+        LoginSession.risk_reasons.isnot(None),
+    ).yield_per(500)
+    for (reasons,) in rows:
+        if not isinstance(reasons, list):
+            continue
+        # Count each signal once per session; strip variable values/weights.
+        keys = set()
+        for reason in reasons:
+            if isinstance(reason, str) and reason.strip():
+                keys.add(re.split(r"[\s=(]", reason.strip(), maxsplit=1)[0])
+        signals.update(keys)
+    return {
+        "window_hours": hours,
+        "users": {"total": user_total, "new_30d": new_users},
+        "logins": {"today": total, "yesterday": prev_total,
+                   "change_pct": round((total - prev_total) * 100 / prev_total, 1) if prev_total else None},
+        "risk": {
+            "avg_today": float(avg) if avg is not None else None,
+            "avg_yesterday": float(prev_avg) if prev_avg is not None else None,
+            "delta": float(avg) - float(prev_avg) if avg is not None and prev_avg is not None else None,
+            "thresholds": dict(THRESHOLDS),
+            "distribution": {"low": low, "medium": medium, "high": high,
+                             "critical": critical, "scored_total": scored},
+        },
+        "signals": [{"key": key, "label": key, "count": count}
+                    for key, count in sorted(signals.items(), key=lambda item: (-item[1], item[0]))],
+        "attack_ip": {"sessions": attack, "pct": round(attack * 100 / total, 1) if total else None},
+    }
+
+
 @router.get("/dashboard/map")
 def dashboard_map(
     admin: User = Depends(require_hub_admin),
