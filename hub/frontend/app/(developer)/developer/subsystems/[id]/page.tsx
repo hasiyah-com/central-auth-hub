@@ -552,11 +552,11 @@ export default function DeveloperSubsystemDetailPage({
       setCsvResult(data);
       setMsg({
         kind: "ok",
-        text: `Upload เสร็จ — เพิ่ม ${data.added} คน, ข้าม ${data.skipped} คน`,
+        text: `Import เสร็จ — เพิ่ม ${data.added} คน, ข้าม ${data.skipped} คน`,
       });
       loadWhitelist();
     } catch (e) {
-      setMsg({ kind: "err", text: errText(e, "Upload CSV ไม่สำเร็จ") });
+      setMsg({ kind: "err", text: errText(e, "Import ไม่สำเร็จ") });
     } finally {
       setCsvUploading(false);
       if (csvInputRef.current) csvInputRef.current.value = "";
@@ -1101,7 +1101,7 @@ export default function DeveloperSubsystemDetailPage({
           {csvResult && (
             <div className="mb-3 p-4 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm">
               <div className="font-semibold mb-1">
-                Upload สำเร็จ — เพิ่ม {csvResult.added} คน, ข้าม{" "}
+                Import สำเร็จ — เพิ่ม {csvResult.added} คน, ข้าม{" "}
                 {csvResult.skipped} คน
               </div>
               {csvResult.skipped_details.length > 0 && (
