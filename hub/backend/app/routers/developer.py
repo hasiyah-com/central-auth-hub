@@ -9,10 +9,15 @@ Endpoints:
 
 import csv
 import io
+from io import BytesIO
 from datetime import datetime, timedelta
 from urllib.parse import urlparse
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
+from fastapi.responses import StreamingResponse
+from openpyxl import Workbook, load_workbook
+from openpyxl.worksheet.datavalidation import DataValidation
+from openpyxl.workbook.defined_name import DefinedName
 from pydantic import BaseModel, EmailStr, field_validator
 from sqlalchemy.orm import Session
 
@@ -537,6 +542,52 @@ def _read_capped(fileobj, max_bytes: int) -> bytes:
     return data
 
 
+@router.get("/subsystems/{subsystem_id}/whitelist/template")
+def download_whitelist_template(
+    subsystem_id: str,
+    request: Request,
+    user: User = Depends(require_developer),
+    db: Session = Depends(get_db),
+):
+    """สร้าง Excel template ที่มี dropdown role จาก allowed_roles ของ subsystem."""
+    subsystem = _get_owned_subsystem(subsystem_id, user, db, request)
+    roles = list(subsystem.allowed_roles or ["user"])
+
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "Whitelist"
+    sheet.append(["email", "role", "note"])
+    sheet.freeze_panes = "A2"
+    sheet.auto_filter.ref = "A1:C1"
+    sheet.column_dimensions["A"].width = 34
+    sheet.column_dimensions["B"].width = 22
+    sheet.column_dimensions["C"].width = 36
+
+    role_sheet = workbook.create_sheet("Role options")
+    for index, role in enumerate(roles, start=1):
+        role_sheet.cell(row=index, column=1, value=role)
+    role_sheet.sheet_state = "hidden"
+    workbook.defined_names.add(
+        DefinedName("AllowedRoles", attr_text=f"'Role options'!$A$1:$A${len(roles)}")
+    )
+    validation = DataValidation(type="list", formula1="=AllowedRoles", allow_blank=False)
+    validation.error = "กรุณาเลือก role จากรายการของระบบย่อย"
+    validation.errorTitle = "Role ไม่ถูกต้อง"
+    validation.prompt = "เลือกรายการ role ที่กำหนดไว้สำหรับระบบย่อยนี้"
+    validation.promptTitle = "Role in subsystem"
+    sheet.add_data_validation(validation)
+    validation.add("B2:B1000")
+
+    output = BytesIO()
+    workbook.save(output)
+    output.seek(0)
+    return StreamingResponse(
+        output,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="whitelist-template-{subsystem.id}.xlsx"'},
+    )
+
+
 @router.post(
     "/subsystems/{subsystem_id}/whitelist",
     dependencies=[Depends(_stepup_gate("whitelist_add"))],
@@ -544,7 +595,7 @@ def _read_capped(fileobj, max_bytes: int) -> bytes:
 def upload_whitelist(
     subsystem_id: str,
     request: Request,
-    file: UploadFile = File(..., description="CSV: email,role,note"),
+    file: UploadFile = File(..., description="CSV or XLSX: email,role,note"),
     user: User = Depends(require_developer),
     db: Session = Depends(get_db),
 ):
@@ -558,13 +609,38 @@ def upload_whitelist(
     # owner หรือ hub admin
     subsystem = _get_owned_subsystem(subsystem_id, user, db, request)
 
-    # อ่าน + parse CSV (มีเพดานขนาด — กัน memory DoS)
-    content = _read_capped(file.file, WHITELIST_CSV_MAX_BYTES).decode(
-        "utf-8-sig"  # utf-8-sig รองรับ BOM จาก Excel
-    )
-    reader = csv.DictReader(io.StringIO(content))
-    if "email" not in (reader.fieldnames or []):
-        raise HTTPException(status_code=400, detail="CSV ต้องมี column 'email'")
+    # อ่าน + parse CSV/XLSX (มีเพดานขนาด — กัน memory DoS)
+    raw = _read_capped(file.file, WHITELIST_CSV_MAX_BYTES)
+    filename = (file.filename or "").lower()
+    if filename.endswith(".xlsx"):
+        try:
+            workbook = load_workbook(BytesIO(raw), read_only=True, data_only=True)
+            worksheet = workbook.active
+            rows = worksheet.iter_rows(min_row=1, max_row=20001, max_col=3, values_only=True)
+            headers = [str(value).strip().lower() if value is not None else "" for value in next(rows, ())]
+            if "email" not in headers:
+                raise HTTPException(status_code=400, detail="Excel ต้องมี column 'email'")
+            reader = [dict(zip(headers, row)) for row in rows]
+            workbook.close()
+        except HTTPException:
+            raise
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail="อ่านไฟล์ Excel ไม่สำเร็จ") from exc
+    elif filename.endswith(".csv") or not filename:
+        try:
+            csv_content = raw.decode("utf-8-sig")
+        except UnicodeDecodeError as exc:
+            raise HTTPException(status_code=400, detail="ไฟล์ CSV ต้องเป็น UTF-8") from exc
+        csv_reader = csv.DictReader(io.StringIO(csv_content))
+        headers = [header.strip().lower() for header in (csv_reader.fieldnames or []) if header]
+        if "email" not in headers:
+            raise HTTPException(status_code=400, detail="CSV ต้องมี column 'email'")
+        reader = (
+            {str(key).strip().lower(): value for key, value in row.items() if key}
+            for row in csv_reader
+        )
+    else:
+        raise HTTPException(status_code=400, detail="รองรับเฉพาะไฟล์ .csv และ .xlsx")
 
     added: list[str] = []
     skipped: list[dict] = []
@@ -574,8 +650,8 @@ def upload_whitelist(
     default_role = allowed[0]
 
     for row in reader:
-        email = (row.get("email") or "").strip()
-        role = (row.get("role") or default_role).strip()
+        email = str(row.get("email") or "").strip()
+        role = str(row.get("role") or default_role).strip()
         if not email:
             continue
         # validate role
