@@ -502,6 +502,28 @@ export default function DeveloperSubsystemDetailPage({
     }
   }
 
+  async function downloadRoleTemplate() {
+    try {
+      const response = await fetch(
+        `/api/proxy/developer/subsystems/${id}/whitelist/template`,
+        { credentials: "include" }
+      );
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}));
+        throw { detail: body.detail || "ดาวน์โหลด Template ไม่สำเร็จ" };
+      }
+      const url = URL.createObjectURL(await response.blob());
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `whitelist-template-${id}.xlsx`;
+      link.click();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+      setMsg({ kind: "ok", text: "ดาวน์โหลด Excel Template แล้ว" });
+    } catch (e) {
+      setMsg({ kind: "err", text: errText(e, "ดาวน์โหลด Template ไม่สำเร็จ") });
+    }
+  }
+
   async function uploadCsv(file: File) {
     setCsvUploading(true);
     setCsvResult(null);
@@ -1070,9 +1092,9 @@ export default function DeveloperSubsystemDetailPage({
               <div className="text-sm font-bold text-ink-800">Import / Export ผู้ใช้</div>
               <div className="text-[11px] text-ink-500 mt-0.5">ไฟล์ CSV ใช้คอลัมน์ email, role, note · role ต้องอยู่ใน Roles ของ subsystem</div>
             </div>
-            <button type="button" onClick={() => downloadCsvFile("whitelist-template.csv", [["email", "role", "note"]])} className="h-10 px-4 border border-ink-200 hover:bg-ink-50 text-sm font-semibold text-ink-700">ดาวน์โหลด Template</button>
+            <button type="button" onClick={downloadRoleTemplate} className="h-10 px-4 border border-ink-200 hover:bg-ink-50 text-sm font-semibold text-ink-700">ดาวน์โหลด Template</button>
             <button type="button" onClick={() => downloadCsvFile(`whitelist-${sub.id}.csv`, [["email", "role", "note"], ...(whitelist || []).map((u) => [u.email, u.role_in_sub || "user", ""])])} disabled={!whitelist?.length} className="h-10 px-4 border border-ink-200 hover:bg-ink-50 text-sm font-semibold text-ink-700 disabled:opacity-50">Export CSV</button>
-            <input ref={csvInputRef} type="file" accept=".csv" onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadCsv(f); }} disabled={csvUploading} className="hidden" />
+            <input ref={csvInputRef} type="file" accept=".csv,.xlsx" onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadCsv(f); }} disabled={csvUploading} className="hidden" />
             <button type="button" onClick={() => csvInputRef.current?.click()} disabled={csvUploading} className="h-10 px-4 bg-ink-900 hover:bg-ink-800 text-white text-sm font-semibold disabled:opacity-50">{csvUploading ? "กำลัง Import…" : "Import CSV"}</button>
           </div>
 
