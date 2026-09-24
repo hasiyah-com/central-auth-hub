@@ -418,15 +418,15 @@ export default function ActivityPage() {
             </div>
             <div className="flex items-center gap-3 text-[11px] text-ink-500">
               <span className="flex items-center gap-1">
-                <span className="w-2.5 h-2.5 rounded-sm bg-brand-500 inline-block" /> สำเร็จ
+                <span className="w-2.5 h-2.5 rounded-sm bg-emerald-500 inline-block" /> ไม่ถูกบล็อก
               </span>
               <span className="flex items-center gap-1">
-                <span className="w-2.5 h-2.5 rounded-sm bg-rose-500 inline-block" /> ถูกบล็อก
+                <span className="w-2.5 h-2.5 rounded-sm bg-rose-500 inline-block" /> บล็อก / would-block
               </span>
             </div>
           </header>
-          <div className="p-4">
-            <HourlyChart hourly={data?.hourly ?? []} />
+          <div className="px-5 pt-4 pb-5">
+            <HourlyChart hourly={data?.hourly ?? []} hours={hours} />
           </div>
         </section>
 
@@ -653,65 +653,133 @@ function Select({
   );
 }
 
-function HourlyChart({ hourly }: { hourly: HourBucket[] }) {
-  if (!hourly.length) {
-    return <div className="h-32 grid place-items-center text-ink-300 text-sm">ไม่มีข้อมูล</div>;
-  }
-  const max = Math.max(...hourly.map((h) => h.count), 1);
-  const W = 100;
-  const barW = W / hourly.length;
+function HourlyChart({ hourly, hours }: { hourly: HourBucket[]; hours: number }) {
+  // The API returns only occupied hours. Fill empty buckets to preserve time spacing.
+  // Group longer windows so the bars remain readable.
+  const hourMs = 60 * 60 * 1000;
+  const groupHours = hours <= 24 ? 1 : hours <= 168 ? 6 : 24;
+  const groupMs = groupHours * hourMs;
+  const end = Math.floor(Date.now() / groupMs) * groupMs;
+  const start = Math.floor((Date.now() - hours * hourMs) / groupMs) * groupMs;
+  const count = Math.round((end - start) / groupMs) + 1;
+  const buckets = Array.from({ length: count }, (_, i) => ({
+    time: start + i * groupMs, total: 0, blocked: 0,
+  }));
+
+  hourly.forEach((row) => {
+    if (!row.hour) return;
+    const iso = /[+-]\d{2}:?\d{2}$|Z$/i.test(row.hour) ? row.hour : row.hour + "Z";
+    const timestamp = Date.parse(iso);
+    if (!Number.isFinite(timestamp)) return;
+    const i = Math.round((Math.floor(timestamp / groupMs) * groupMs - start) / groupMs);
+    if (i >= 0 && i < buckets.length) {
+      buckets[i].total += Math.max(0, row.count);
+      buckets[i].blocked += Math.max(0, row.blocked);
+    }
+  });
+
+  const total = buckets.reduce((sum, bucket) => sum + bucket.total, 0);
+  const max = Math.max(1, ...buckets.map((bucket) => bucket.total));
+  const magnitude = Math.pow(10, Math.floor(Math.log10(max / 4)));
+  const step = Math.max(1, Math.ceil(max / 4 / magnitude) * magnitude);
+  const W = 900;
+  const H = 244;
+  const pad = { left: 42, right: 12, top: 14, bottom: 38 };
+  const plotW = W - pad.left - pad.right;
+  const plotH = H - pad.top - pad.bottom;
+  const baseY = pad.top + plotH;
+  const slotW = plotW / buckets.length;
+  const barW = Math.min(28, slotW * 0.66);
+  const heightOf = (value: number) => (value / (step * 4)) * plotH;
+  const xOf = (i: number) => pad.left + i * slotW + slotW / 2;
+  const labelIndices = Array.from(new Set(
+    [0, 0.25, 0.5, 0.75, 1].map((part) => Math.round(part * (buckets.length - 1)))
+  ));
+  const formatTime = (time: number) =>
+    new Intl.DateTimeFormat("th-TH", {
+      timeZone: "Asia/Bangkok",
+      ...(hours > 24
+        ? { month: "short", day: "numeric" }
+        : { hour: "2-digit", minute: "2-digit", hour12: false }),
+    }).format(new Date(time));
+
   return (
-    <div className="relative">
-      <svg viewBox={`0 0 ${W} 40`} preserveAspectRatio="none" className="w-full h-32">
-        {hourly.map((h, i) => {
-          const total = (h.count / max) * 38;
-          const blocked = (h.blocked / max) * 38;
-          const x = i * barW;
-          const gap = barW * 0.18;
+    <div>
+      <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
+        <p className="m-0 text-xs text-ink-500">
+          {hours <= 24 ? "รายชั่วโมง" : hours <= 168 ? "ทุก 6 ชั่วโมง" : "รายวัน"}
+          {" · "}เวลาประเทศไทย
+        </p>
+        <p className="m-0 text-xs font-mono text-ink-500">
+          รวม <strong className="text-ink-900">{total.toLocaleString("th-TH")}</strong> รายการ
+        </p>
+      </div>
+      <svg
+        viewBox={"0 0 " + W + " " + H}
+        className="block w-full"
+        role="img"
+        aria-label={"กราฟปริมาณการเข้าใช้งาน " + hours + " ชั่วโมงล่าสุด รวม " + total + " รายการ"}
+      >
+        <defs>
+          <linearGradient id="activity-bar-gradient" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#34e8c4" />
+            <stop offset="100%" stopColor="#13b89a" />
+          </linearGradient>
+        </defs>
+        {[0, 1, 2, 3, 4].map((i) => {
+          const value = i * step;
+          const y = baseY - heightOf(value);
           return (
             <g key={i}>
-              <rect
-                x={x + gap}
-                y={40 - total}
-                width={barW - gap * 2}
-                height={total}
-                rx={0.4}
-                fill="#6366f1"
-                opacity={0.85}
-              >
-                <title>
-                  {new Date(
-                    (h.hour || "").match(/Z$/) ? h.hour! : h.hour + "Z"
-                  ).toLocaleString("th-TH", { timeZone: "Asia/Bangkok", month: "short", day: "2-digit", hour: "2-digit", hour12: false })}
-                  {" — "}{h.count} login{h.blocked ? `, ${h.blocked} blocked` : ""}
-                </title>
-              </rect>
-              {blocked > 0 && (
-                <rect
-                  x={x + gap}
-                  y={40 - blocked}
-                  width={barW - gap * 2}
-                  height={blocked}
-                  rx={0.4}
-                  fill="#f43f5e"
-                />
-              )}
+              <line x1={pad.left} x2={W - pad.right} y1={y} y2={y}
+                stroke={i === 0 ? "#bfcbd5" : "#e9eef2"}
+                strokeDasharray={i === 0 ? undefined : "4 5"} />
+              <text x={pad.left - 9} y={y + 4} textAnchor="end"
+                fontSize={11} fill="#718096" fontFamily="ui-monospace, monospace">
+                {value.toLocaleString("th-TH")}
+              </text>
             </g>
           );
         })}
+        {buckets.map((bucket, i) => {
+          const blocked = Math.min(bucket.blocked, bucket.total);
+          const other = bucket.total - blocked;
+          const otherH = heightOf(other);
+          const blockedH = heightOf(blocked);
+          const x = xOf(i) - barW / 2;
+          return (
+            <g key={bucket.time}>
+              {bucket.total > 0 && (
+                <>
+                  <rect x={x} y={baseY - otherH} width={barW} height={otherH}
+                    rx={blocked ? 0 : 3} fill="url(#activity-bar-gradient)" />
+                  {blocked > 0 && (
+                    <rect x={x} y={baseY - otherH - blockedH} width={barW}
+                      height={blockedH} rx={3} fill="#f43f5e" />
+                  )}
+                </>
+              )}
+              <rect x={pad.left + i * slotW} y={pad.top} width={slotW} height={plotH}
+                fill="transparent">
+                <title>
+                  {formatTime(bucket.time)} · ทั้งหมด {bucket.total} · ไม่ถูกบล็อก {other} · บล็อก / would-block {blocked}
+                </title>
+              </rect>
+            </g>
+          );
+        })}
+        {labelIndices.map((i) => (
+          <text key={i} x={xOf(i)} y={H - 12} textAnchor="middle"
+            fontSize={11} fill="#718096" fontFamily="Sarabun, sans-serif">
+            {formatTime(buckets[i].time)}
+          </text>
+        ))}
       </svg>
-      <div className="flex justify-between mt-1 text-[10px] text-ink-400 font-mono">
-        <span>
-          {hourly[0]?.hour
-            ? new Date(hourly[0].hour.match(/Z$/) ? hourly[0].hour : hourly[0].hour + "Z").toLocaleString("th-TH", { timeZone: "Asia/Bangkok", month: "short", day: "2-digit", hour: "2-digit", hour12: false })
-            : ""}
-        </span>
-        <span>
-          {hourly[hourly.length - 1]?.hour
-            ? new Date((hourly[hourly.length - 1].hour as string).match(/Z$/) ? (hourly[hourly.length - 1].hour as string) : hourly[hourly.length - 1].hour + "Z").toLocaleString("th-TH", { timeZone: "Asia/Bangkok", month: "short", day: "2-digit", hour: "2-digit", hour12: false })
-            : ""}
-        </span>
-      </div>
+      {total === 0 && (
+        <p className="mt-1 text-center text-xs text-ink-400">
+          ยังไม่มีการเข้าใช้งานในช่วงเวลานี้
+        </p>
+      )}
     </div>
   );
 }
