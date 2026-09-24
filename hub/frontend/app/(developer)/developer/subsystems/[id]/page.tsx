@@ -186,6 +186,9 @@ export default function DeveloperSubsystemDetailPage({
   const [error, setError] = useState<string | null>(null);
   const [whitelist, setWhitelist] = useState<WhitelistEntry[]>([]);
   const [whitelistError, setWhitelistError] = useState<string | null>(null);
+  const [whitelistOffset, setWhitelistOffset] = useState(0);
+  const [whitelistTotal, setWhitelistTotal] = useState(0);
+  const WHITELIST_PAGE_SIZE = 50;
 
   const [newEmail, setNewEmail] = useState("");
   const [newRole, setNewRole] = useState("member");
@@ -375,13 +378,25 @@ export default function DeveloperSubsystemDetailPage({
 
   const loadWhitelist = useCallback(() => {
     setWhitelistError(null);
-    clientFetch<WhitelistResponse>(`/developer/subsystems/${id}/whitelist`)
-      .then((d) => setWhitelist(d.users || []))
+    clientFetch<WhitelistResponse>(
+      `/developer/subsystems/${id}/whitelist?skip=${whitelistOffset}&limit=${WHITELIST_PAGE_SIZE}`
+    )
+      .then((d) => {
+        const users = d.users || [];
+        const total = d.total || 0;
+        setWhitelistTotal(total);
+        if (users.length === 0 && whitelistOffset > 0 && total <= whitelistOffset) {
+          setWhitelistOffset(Math.max(0, whitelistOffset - WHITELIST_PAGE_SIZE));
+          return;
+        }
+        setWhitelist(users);
+      })
       .catch((e) => {
         setWhitelist([]);
+        setWhitelistTotal(0);
         setWhitelistError(e.detail || "โหลด whitelist ไม่สำเร็จ");
       });
-  }, [id]);
+  }, [id, whitelistOffset]);
 
   // ── Insights (KPI / health / active sessions / audit) — owner-scoped ──
   const [stats, setStats] = useState<StatsResponse | null>(null);
@@ -1128,7 +1143,35 @@ export default function DeveloperSubsystemDetailPage({
             }
             emptyMessage="ยังไม่มี user ใน whitelist"
           />
-          </div>
+
+          {whitelistTotal > WHITELIST_PAGE_SIZE && (
+            <div className="mt-3 flex flex-wrap items-center justify-between gap-3 border-t border-ink-100 pt-3">
+              <span className="text-xs text-ink-500">
+                แสดง {whitelistOffset + 1}–{Math.min(whitelistOffset + WHITELIST_PAGE_SIZE, whitelistTotal)} จาก {whitelistTotal.toLocaleString("th-TH")} คน
+              </span>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-ink-500">
+                  หน้า {Math.floor(whitelistOffset / WHITELIST_PAGE_SIZE) + 1} / {Math.ceil(whitelistTotal / WHITELIST_PAGE_SIZE)}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setWhitelistOffset(Math.max(0, whitelistOffset - WHITELIST_PAGE_SIZE))}
+                  disabled={whitelistOffset === 0}
+                  className="px-3 py-1.5 rounded border border-ink-200 text-xs font-medium text-ink-700 hover:bg-ink-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  ก่อนหน้า
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setWhitelistOffset(whitelistOffset + WHITELIST_PAGE_SIZE)}
+                  disabled={whitelistOffset + WHITELIST_PAGE_SIZE >= whitelistTotal}
+                  className="px-3 py-1.5 rounded border border-ink-200 text-xs font-medium text-ink-700 hover:bg-ink-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  ถัดไป
+                </button>
+              </div>
+            </div>
+          )}          </div>
         </section>
 
         {/* ── Active Sessions (read-only) ── */}
