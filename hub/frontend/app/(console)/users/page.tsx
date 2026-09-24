@@ -12,6 +12,13 @@ import "../../signal-console.css";
 import { UserFormModal, type UserRow } from "./_components/UserFormModal";
 import { StatusImportModal } from "./_components/StatusImportModal";
 
+type UserFilterOptions = {
+  faculties: string[];
+  majors: string[];
+  positions: string[];
+  statuses: string[];
+};
+
 type User = {
   id: string;
   email: string;
@@ -44,6 +51,13 @@ export default function UsersPage() {
   const router = useRouter();
   const [users, setUsers] = useState<User[]>([]);
   const [type, setType] = useState<string>("");
+  const [faculty, setFaculty] = useState("");
+  const [major, setMajor] = useState("");
+  const [position, setPosition] = useState("");
+  const [status, setStatus] = useState("");
+  const [filterOptions, setFilterOptions] = useState<UserFilterOptions>({
+    faculties: [], majors: [], positions: [], statuses: [],
+  });
   const [search, setSearch] = useState<string>("");
   // ค่าที่ยิงจริงหลัง debounce — กันยิง request ทุกตัวอักษรที่พิมพ์
   const [debouncedSearch, setDebouncedSearch] = useState<string>("");
@@ -59,6 +73,12 @@ export default function UsersPage() {
       .catch(() => {});
   }, []);
 
+  useEffect(() => {
+    clientFetch<UserFilterOptions>("/admin/users/filter-options")
+      .then(setFilterOptions)
+      .catch(() => {});
+  }, []);
+
   // debounce 300ms — พิมพ์ต่อเนื่องยิงครั้งเดียวตอนหยุดพิมพ์
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(search), 300);
@@ -70,6 +90,10 @@ export default function UsersPage() {
     setError(null);
     const qs = new URLSearchParams();
     if (type) qs.set("user_type", type);
+    if (faculty) qs.set("faculty", faculty);
+    if (major) qs.set("major", major);
+    if (position) qs.set("position", position);
+    if (status) qs.set("status", status);
     if (debouncedSearch.trim()) qs.set("q", debouncedSearch.trim());
     qs.set("limit", "200");
     clientFetch<User[]>(`/admin/users/?${qs.toString()}`)
@@ -79,7 +103,7 @@ export default function UsersPage() {
   }
 
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  useEffect(load, [type, debouncedSearch]);
+  useEffect(load, [type, faculty, major, position, status, debouncedSearch]);
 
   const columns: Column<User>[] = [
     {
@@ -226,7 +250,11 @@ export default function UsersPage() {
               />
             </label>
 
-            <select value={type} onChange={(e) => setType(e.target.value)}>
+            <select
+              aria-label="กรองตามประเภทผู้ใช้"
+              value={type}
+              onChange={(e) => setType(e.target.value)}
+            >
               <option value="">ทุกประเภท</option>
               <option value="student">นักศึกษา</option>
               <option value="teacher">อาจารย์</option>
@@ -234,11 +262,60 @@ export default function UsersPage() {
               <option value="admin">Admin</option>
             </select>
 
-            {(search || type) && (
+            <select
+              aria-label="กรองตามคณะ"
+              value={faculty}
+              onChange={(e) => setFaculty(e.target.value)}
+            >
+              <option value="">ทุกคณะ</option>
+              {filterOptions.faculties.map((value) => (
+                <option key={value} value={value}>{value}</option>
+              ))}
+            </select>
+
+            <select
+              aria-label="กรองตามสาขา"
+              value={major}
+              onChange={(e) => setMajor(e.target.value)}
+            >
+              <option value="">ทุกสาขา</option>
+              {filterOptions.majors.map((value) => (
+                <option key={value} value={value}>{value}</option>
+              ))}
+            </select>
+
+            <select
+              aria-label="กรองตามตำแหน่ง"
+              value={position}
+              onChange={(e) => setPosition(e.target.value)}
+            >
+              <option value="">ทุกตำแหน่ง</option>
+              {filterOptions.positions.map((value) => (
+                <option key={value} value={value}>{value}</option>
+              ))}
+            </select>
+
+            <select
+              aria-label="กรองตามสถานะผู้ใช้"
+              value={status}
+              onChange={(e) => setStatus(e.target.value)}
+            >
+              <option value="">ทุกสถานะ</option>
+              {filterOptions.statuses.map((value) => (
+                <option key={value} value={value}>{value}</option>
+              ))}
+            </select>
+
+            {(search || type || faculty || major || position || status) && (
               <button
+                type="button"
                 onClick={() => {
                   setSearch("");
                   setType("");
+                  setFaculty("");
+                  setMajor("");
+                  setPosition("");
+                  setStatus("");
                 }}
                 className="cx-chip"
               >
