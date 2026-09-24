@@ -157,12 +157,12 @@ export default function UsersPage() {
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <button type="button" onClick={() => setImportOpen(true)}
-            className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50">
+            className="cx-add-button w-[162px] justify-center !border-slate-300 !bg-white !text-slate-800 hover:!bg-slate-50">
             Import / Export
           </button>
           <button
             onClick={() => setFormModal({ mode: "create" })}
-            className="cx-add-button"
+            className="cx-add-button w-[162px] justify-center"
           >
             + เพิ่มผู้ใช้งาน
           </button>
