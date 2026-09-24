@@ -68,6 +68,23 @@ def test_structure(client, admin_token, auth_headers):
         "online",
     }
     assert isinstance(d["hourly"], list)
+    for bucket in d["hourly"]:
+        assert {
+            "hour",
+            "count",
+            "blocked",
+            "low",
+            "medium",
+            "high",
+            "unknown",
+        } <= set(bucket)
+        assert (
+            bucket["low"]
+            + bucket["medium"]
+            + bucket["high"]
+            + bucket["unknown"]
+            == bucket["count"]
+        )
     assert isinstance(d["active"], list)
     assert d["active_count"] == len(d["active"]) == d["kpis"]["online"]
     if d["items"]:

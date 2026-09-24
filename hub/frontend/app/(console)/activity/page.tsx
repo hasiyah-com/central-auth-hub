@@ -38,7 +38,15 @@ type Activity = {
   session_expires_at?: string | null;
 };
 
-type HourBucket = { hour: string | null; count: number; blocked: number };
+type HourBucket = {
+  hour: string | null;
+  count: number;
+  blocked: number;
+  low: number;
+  medium: number;
+  high: number;
+  unknown: number;
+};
 
 type ActivityResponse = {
   active: Activity[];
@@ -409,19 +417,25 @@ export default function ActivityPage() {
           )}
         </section>
 
-        {/* ── Hourly chart ── */}
+        {/* ── Risk activity trend ── */}
         <section className="cx-panel">
           <header>
             <div>
-              <span>hourly volume</span>
-              <h2>Hourly Login Volume</h2>
+              <span>risk level · hourly</span>
+              <h2>Risk Activity Trend</h2>
             </div>
-            <div className="flex items-center gap-3 text-[11px] text-ink-500">
-              <span className="flex items-center gap-1">
-                <span className="w-2.5 h-2.5 rounded-sm bg-emerald-500 inline-block" /> ไม่ถูกบล็อก
+            <div className="flex flex-wrap items-center justify-end gap-x-4 gap-y-1 text-[11px] text-ink-500">
+              <span className="flex items-center gap-1.5">
+                <span className="w-5 h-0.5 rounded-full bg-emerald-500 inline-block" /> ต่ำ
               </span>
-              <span className="flex items-center gap-1">
-                <span className="w-2.5 h-2.5 rounded-sm bg-rose-500 inline-block" /> บล็อก / would-block
+              <span className="flex items-center gap-1.5">
+                <span className="w-5 h-0.5 rounded-full bg-amber-500 inline-block" /> ปานกลาง
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="w-5 h-0.5 rounded-full bg-rose-500 inline-block" /> สูง
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span className="w-5 border-t border-dashed border-slate-400 inline-block" /> ยังไม่ประเมิน
               </span>
             </div>
           </header>
@@ -654,8 +668,8 @@ function Select({
 }
 
 function HourlyChart({ hourly, hours }: { hourly: HourBucket[]; hours: number }) {
-  // The API returns only occupied hours. Fill empty buckets to preserve time spacing.
-  // Group longer windows so the bars remain readable.
+  // API ส่งเฉพาะช่วงที่มีข้อมูล จึงเติมช่วงว่างเพื่อรักษาระยะบนแกนเวลา
+  // ช่วงยาวจะถูกรวม bucket เพื่อให้กราฟยังอ่านง่าย
   const hourMs = 60 * 60 * 1000;
   const groupHours = hours <= 24 ? 1 : hours <= 168 ? 6 : 24;
   const groupMs = groupHours * hourMs;
@@ -663,35 +677,56 @@ function HourlyChart({ hourly, hours }: { hourly: HourBucket[]; hours: number })
   const start = Math.floor((Date.now() - hours * hourMs) / groupMs) * groupMs;
   const count = Math.round((end - start) / groupMs) + 1;
   const buckets = Array.from({ length: count }, (_, i) => ({
-    time: start + i * groupMs, total: 0, blocked: 0,
+    time: start + i * groupMs,
+    total: 0,
+    low: 0,
+    medium: 0,
+    high: 0,
+    unknown: 0,
   }));
 
   hourly.forEach((row) => {
     if (!row.hour) return;
-    const iso = /[+-]\d{2}:?\d{2}$|Z$/i.test(row.hour) ? row.hour : row.hour + "Z";
+    const iso = /[+-]\\d{2}:?\\d{2}$|Z$/i.test(row.hour) ? row.hour : row.hour + "Z";
     const timestamp = Date.parse(iso);
     if (!Number.isFinite(timestamp)) return;
     const i = Math.round((Math.floor(timestamp / groupMs) * groupMs - start) / groupMs);
     if (i >= 0 && i < buckets.length) {
       buckets[i].total += Math.max(0, row.count);
-      buckets[i].blocked += Math.max(0, row.blocked);
+      buckets[i].low += Math.max(0, row.low ?? 0);
+      buckets[i].medium += Math.max(0, row.medium ?? 0);
+      buckets[i].high += Math.max(0, row.high ?? 0);
+      buckets[i].unknown += Math.max(0, row.unknown ?? 0);
     }
   });
 
   const total = buckets.reduce((sum, bucket) => sum + bucket.total, 0);
-  const max = Math.max(1, ...buckets.map((bucket) => bucket.total));
-  const magnitude = Math.pow(10, Math.floor(Math.log10(max / 4)));
-  const step = Math.max(1, Math.ceil(max / 4 / magnitude) * magnitude);
+  const max = Math.max(
+    1,
+    ...buckets.flatMap((bucket) => [bucket.low, bucket.medium, bucket.high, bucket.unknown])
+  );
+  const roughStep = Math.max(1, max / 4);
+  const magnitude = Math.pow(10, Math.floor(Math.log10(roughStep)));
+  const step = Math.max(1, Math.ceil(roughStep / magnitude) * magnitude);
+  const chartMax = step * 4;
   const W = 900;
-  const H = 244;
-  const pad = { left: 42, right: 12, top: 14, bottom: 38 };
+  const H = 272;
+  const pad = { left: 48, right: 14, top: 18, bottom: 42 };
   const plotW = W - pad.left - pad.right;
   const plotH = H - pad.top - pad.bottom;
   const baseY = pad.top + plotH;
-  const slotW = plotW / buckets.length;
-  const barW = Math.min(28, slotW * 0.66);
-  const heightOf = (value: number) => (value / (step * 4)) * plotH;
-  const xOf = (i: number) => pad.left + i * slotW + slotW / 2;
+  const xOf = (i: number) =>
+    buckets.length === 1 ? pad.left + plotW / 2 : pad.left + (i / (buckets.length - 1)) * plotW;
+  const yOf = (value: number) => baseY - (value / chartMax) * plotH;
+  const points = (key: "low" | "medium" | "high" | "unknown") =>
+    buckets.map((bucket, i) => `${xOf(i)},${yOf(bucket[key])}`).join(" ");
+  const areaPath = (key: "low" | "medium" | "high") => {
+    if (!buckets.length) return "";
+    const line = buckets.map((bucket, i) =>
+      `${i === 0 ? "M" : "L"} ${xOf(i)} ${yOf(bucket[key])}`
+    ).join(" ");
+    return `${line} L ${xOf(buckets.length - 1)} ${baseY} L ${xOf(0)} ${baseY} Z`;
+  };
   const labelIndices = Array.from(new Set(
     [0, 0.25, 0.5, 0.75, 1].map((part) => Math.round(part * (buckets.length - 1)))
   ));
@@ -718,63 +753,99 @@ function HourlyChart({ hourly, hours }: { hourly: HourBucket[]; hours: number })
         viewBox={"0 0 " + W + " " + H}
         className="block w-full"
         role="img"
-        aria-label={"กราฟปริมาณการเข้าใช้งาน " + hours + " ชั่วโมงล่าสุด รวม " + total + " รายการ"}
+        aria-label={"กราฟกิจกรรมแยกตามระดับความเสี่ยง " + hours + " ชั่วโมงล่าสุด"}
       >
         <defs>
-          <linearGradient id="activity-bar-gradient" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#34e8c4" />
-            <stop offset="100%" stopColor="#13b89a" />
+          <linearGradient id="risk-low-area" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#10b981" stopOpacity="0.24" />
+            <stop offset="100%" stopColor="#10b981" stopOpacity="0.015" />
+          </linearGradient>
+          <linearGradient id="risk-medium-area" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#f59e0b" stopOpacity="0.22" />
+            <stop offset="100%" stopColor="#f59e0b" stopOpacity="0.01" />
+          </linearGradient>
+          <linearGradient id="risk-high-area" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#f43f5e" stopOpacity="0.20" />
+            <stop offset="100%" stopColor="#f43f5e" stopOpacity="0.01" />
           </linearGradient>
         </defs>
+
         {[0, 1, 2, 3, 4].map((i) => {
           const value = i * step;
-          const y = baseY - heightOf(value);
+          const y = yOf(value);
           return (
             <g key={i}>
-              <line x1={pad.left} x2={W - pad.right} y1={y} y2={y}
-                stroke={i === 0 ? "#bfcbd5" : "#e9eef2"}
-                strokeDasharray={i === 0 ? undefined : "4 5"} />
-              <text x={pad.left - 9} y={y + 4} textAnchor="end"
-                fontSize={11} fill="#718096" fontFamily="ui-monospace, monospace">
+              <line
+                x1={pad.left}
+                x2={W - pad.right}
+                y1={y}
+                y2={y}
+                stroke={i === 0 ? "#cbd5e1" : "#e8eef3"}
+                strokeDasharray={i === 0 ? undefined : "4 5"}
+              />
+              <text
+                x={pad.left - 10}
+                y={y + 4}
+                textAnchor="end"
+                fontSize={11}
+                fill="#718096"
+                fontFamily="ui-monospace, monospace"
+              >
                 {value.toLocaleString("th-TH")}
               </text>
             </g>
           );
         })}
-        {buckets.map((bucket, i) => {
-          const blocked = Math.min(bucket.blocked, bucket.total);
-          const other = bucket.total - blocked;
-          const otherH = heightOf(other);
-          const blockedH = heightOf(blocked);
-          const x = xOf(i) - barW / 2;
-          return (
-            <g key={bucket.time}>
-              {bucket.total > 0 && (
-                <>
-                  <rect x={x} y={baseY - otherH} width={barW} height={otherH}
-                    rx={blocked ? 0 : 3} fill="url(#activity-bar-gradient)" />
-                  {blocked > 0 && (
-                    <rect x={x} y={baseY - otherH - blockedH} width={barW}
-                      height={blockedH} rx={3} fill="#f43f5e" />
-                  )}
-                </>
-              )}
-              <rect x={pad.left + i * slotW} y={pad.top} width={slotW} height={plotH}
-                fill="transparent">
-                <title>
-                  {formatTime(bucket.time)} · ทั้งหมด {bucket.total} · ไม่ถูกบล็อก {other} · บล็อก / would-block {blocked}
-                </title>
-              </rect>
-            </g>
-          );
-        })}
+
+        <path d={areaPath("low")} fill="url(#risk-low-area)" />
+        <path d={areaPath("medium")} fill="url(#risk-medium-area)" />
+        <path d={areaPath("high")} fill="url(#risk-high-area)" />
+
+        <polyline points={points("low")} fill="none" stroke="#10b981" strokeWidth={2.5}
+          strokeLinecap="round" strokeLinejoin="round" />
+        <polyline points={points("medium")} fill="none" stroke="#f59e0b" strokeWidth={2.5}
+          strokeLinecap="round" strokeLinejoin="round" />
+        <polyline points={points("high")} fill="none" stroke="#f43f5e" strokeWidth={2.5}
+          strokeLinecap="round" strokeLinejoin="round" />
+        <polyline points={points("unknown")} fill="none" stroke="#94a3b8" strokeWidth={1.5}
+          strokeDasharray="5 5" strokeLinecap="round" strokeLinejoin="round" />
+
+        {buckets.map((bucket, i) => (
+          <rect
+            key={bucket.time}
+            x={i === 0 ? pad.left : (xOf(i - 1) + xOf(i)) / 2}
+            y={pad.top}
+            width={
+              buckets.length === 1
+                ? plotW
+                : i === 0
+                  ? (xOf(1) - xOf(0)) / 2
+                  : i === buckets.length - 1
+                    ? (xOf(i) - xOf(i - 1)) / 2
+                    : (xOf(i + 1) - xOf(i - 1)) / 2
+            }
+            height={plotH}
+            fill="transparent"
+          >
+            <title>
+              {formatTime(bucket.time)} · ต่ำ {bucket.low} · ปานกลาง {bucket.medium} · สูง {bucket.high}
+              {bucket.unknown ? ` · ยังไม่ประเมิน ${bucket.unknown}` : ""}
+            </title>
+          </rect>
+        ))}
+
         {labelIndices.map((i) => (
-          <text key={i} x={xOf(i)} y={H - 12} textAnchor="middle"
+          <text key={i} x={xOf(i)} y={H - 13} textAnchor="middle"
             fontSize={11} fill="#718096" fontFamily="Sarabun, sans-serif">
             {formatTime(buckets[i].time)}
           </text>
         ))}
       </svg>
+      <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-[10px] text-ink-400">
+        <span>ต่ำ: คะแนน &lt; 0.40</span>
+        <span>ปานกลาง: 0.40–0.49</span>
+        <span>สูง: ≥ 0.50</span>
+      </div>
       {total === 0 && (
         <p className="mt-1 text-center text-xs text-ink-400">
           ยังไม่มีการเข้าใช้งานในช่วงเวลานี้

@@ -2963,12 +2963,41 @@ def access_activity(
     )
     channels = {(m or "unknown"): c for m, c in chan_rows}
 
-    # ── hourly series (date_trunc) ──
+    # ── hourly series (date_trunc) + risk distribution ──
+    # ใช้เกณฑ์เดียวกับ dashboard map / RBA policy:
+    # low < 0.40 · medium 0.40–0.49 · high >= 0.50
+    # NULL แยกเป็น unknown เพื่อไม่ทำให้ข้อมูลที่ยังไม่ถูกประเมินดูปลอดภัยผิด ๆ
     hour_rows = (
         kpi_q.with_entities(
             func.date_trunc("hour", LoginSession.created_at).label("h"),
             func.count(LoginSession.id),
             func.sum(case((LoginSession.decision.in_(_BLOCKED_DECISIONS), 1), else_=0)),
+            func.sum(
+                case(
+                    (
+                        and_(
+                            LoginSession.risk_score.isnot(None),
+                            LoginSession.risk_score < 0.4,
+                        ),
+                        1,
+                    ),
+                    else_=0,
+                )
+            ),
+            func.sum(
+                case(
+                    (
+                        and_(
+                            LoginSession.risk_score >= 0.4,
+                            LoginSession.risk_score < 0.5,
+                        ),
+                        1,
+                    ),
+                    else_=0,
+                )
+            ),
+            func.sum(case((LoginSession.risk_score >= 0.5, 1), else_=0)),
+            func.sum(case((LoginSession.risk_score.is_(None), 1), else_=0)),
         )
         .group_by("h")
         .order_by("h")
@@ -2979,8 +3008,12 @@ def access_activity(
             "hour": h.isoformat() if h else None,
             "count": int(c or 0),
             "blocked": int(b or 0),
+            "low": int(low or 0),
+            "medium": int(medium or 0),
+            "high": int(high or 0),
+            "unknown": int(unknown or 0),
         }
-        for h, c, b in hour_rows
+        for h, c, b, low, medium, high, unknown in hour_rows
     ]
 
     return {
