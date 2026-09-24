@@ -68,6 +68,12 @@ type RegisterResponse = {
 
 type Me = { email: string; full_name: string | null; user_type: string | null };
 
+type AttributeOptions = {
+  faculties: string[];
+  majors: string[];
+  majors_by_faculty: Record<string, string[]>;
+};
+
 /* ── ไอคอนเส้น (โปรเจกต์ไม่ได้ติดตั้ง lucide) ─────────────────────────── */
 
 function Icon({ children, size = 16 }: { children: ReactNode; size?: number }) {
@@ -156,8 +162,13 @@ export default function NewSubsystemPage() {
   const [scope, setScope] = useState<Set<string>>(new Set(["email", "name"]));
   const [accessPolicy, setAccessPolicy] = useState("explicit");
   const [policyRoles, setPolicyRoles] = useState<Set<string>>(new Set());
-  const [policyFaculty, setPolicyFaculty] = useState("");
-  const [policyMajor, setPolicyMajor] = useState("");
+  const [policyFaculty, setPolicyFaculty] = useState<Set<string>>(new Set());
+  const [policyMajor, setPolicyMajor] = useState<Set<string>>(new Set());
+  const [attributeOptions, setAttributeOptions] = useState<AttributeOptions | null>(null);
+  const [attributeLoading, setAttributeLoading] = useState(false);
+  const [attributeError, setAttributeError] = useState(false);
+  const [facultySearch, setFacultySearch] = useState("");
+  const [majorSearch, setMajorSearch] = useState("");
   const [webhookUrl, setWebhookUrl] = useState("");
   const [busy, setBusy] = useState(false);
   const [verifying, setVerifying] = useState(false);
@@ -169,6 +180,54 @@ export default function NewSubsystemPage() {
       .then(setMe)
       .catch(() => setMe(null));
   }, []);
+
+  function loadAttributeOptions() {
+    setAttributeLoading(true);
+    setAttributeError(false);
+    clientFetch<AttributeOptions>("/developer/attribute-options")
+      .then(setAttributeOptions)
+      .catch(() => setAttributeError(true))
+      .finally(() => setAttributeLoading(false));
+  }
+
+  useEffect(() => {
+    if (accessPolicy === "attribute" && !attributeOptions && !attributeLoading && !attributeError) {
+      loadAttributeOptions();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [accessPolicy, attributeOptions, attributeLoading, attributeError]);
+
+  const availableMajors = policyFaculty.size
+    ? Array.from(
+        new Set(Array.from(policyFaculty).flatMap(
+          (faculty) => attributeOptions?.majors_by_faculty[faculty] ?? []
+        ))
+      ).sort((a, b) => a.localeCompare(b, "th"))
+    : attributeOptions?.majors ?? [];
+
+  function toggleFaculty(faculty: string) {
+    const next = new Set(policyFaculty);
+    if (next.has(faculty)) next.delete(faculty);
+    else next.add(faculty);
+    const validMajors = next.size
+      ? new Set(Array.from(next).flatMap(
+          (name) => attributeOptions?.majors_by_faculty[name] ?? []
+        ))
+      : new Set(attributeOptions?.majors ?? []);
+    setPolicyFaculty(next);
+    setPolicyMajor((selected) => new Set(
+      Array.from(selected).filter((major) => validMajors.has(major))
+    ));
+  }
+
+  function toggleMajor(major: string) {
+    setPolicyMajor((current) => {
+      const next = new Set(current);
+      if (next.has(major)) next.delete(major);
+      else next.add(major);
+      return next;
+    });
+  }
 
   function addUri() {
     setRedirectUris((u) => [...u, ""]);
@@ -199,7 +258,7 @@ export default function NewSubsystemPage() {
     accessPolicy === "all" ||
     (accessPolicy === "role" && policyRoles.size > 0) ||
     (accessPolicy === "attribute" &&
-      (policyFaculty.trim().length > 0 || policyMajor.trim().length > 0));
+      (policyFaculty.size > 0 || policyMajor.size > 0));
   const ready = hasName && hasUri && hasScope && policyReady;
   // 01 = ยังไม่กรอกชื่อ, 02 = กรอกชื่อแล้วกำลังตั้งค่า OAuth, 03 = ครบพร้อมส่ง
   const step = !hasName ? 1 : ready ? 3 : 2;
@@ -218,11 +277,6 @@ export default function NewSubsystemPage() {
     }
 
     // สร้าง access_policy_config ตาม policy ที่เลือก
-    const splitList = (s: string) =>
-      s
-        .split(",")
-        .map((x) => x.trim())
-        .filter(Boolean);
     let policyConfig: Record<string, string[]> | null = null;
     if (accessPolicy === "role") {
       if (policyRoles.size === 0) {
@@ -231,8 +285,8 @@ export default function NewSubsystemPage() {
       }
       policyConfig = { roles: Array.from(policyRoles) };
     } else if (accessPolicy === "attribute") {
-      const fac = splitList(policyFaculty);
-      const maj = splitList(policyMajor);
+      const fac = Array.from(policyFaculty);
+      const maj = Array.from(policyMajor);
       if (fac.length === 0 && maj.length === 0) {
         setError("policy 'ตามคุณสมบัติ' ต้องระบุคณะหรือสาขาอย่างน้อย 1 เงื่อนไข");
         return;
@@ -727,24 +781,80 @@ export default function NewSubsystemPage() {
               {accessPolicy === "attribute" && (
                 <div className="cx-policy-config">
                   <span>เงื่อนไขคุณสมบัติ</span>
-                  <div className="cx-register-fields">
-                    <label>
-                      <input
-                        type="text"
-                        placeholder="คณะ — คั่นด้วย , เช่น วิศวกรรมศาสตร์, แพทยศาสตร์"
-                        value={policyFaculty}
-                        onChange={(e) => setPolicyFaculty(e.target.value)}
-                      />
-                    </label>
-                    <label>
-                      <input
-                        type="text"
-                        placeholder="สาขา — คั่นด้วย , เช่น คอมพิวเตอร์, จิตเวช"
-                        value={policyMajor}
-                        onChange={(e) => setPolicyMajor(e.target.value)}
-                      />
-                    </label>
-                  </div>
+                  <p className="cx-policy-note">
+                    เลือกได้หลายค่า · หากเลือกทั้งคณะและสาขา ผู้ใช้ต้องตรงทั้งสองเงื่อนไข
+                  </p>
+                  {attributeLoading && <p className="cx-policy-note">กำลังโหลดรายการคณะและสาขา…</p>}
+                  {attributeError && (
+                    <div className="cx-policy-note" role="alert">
+                      โหลดรายการไม่สำเร็จ{" "}
+                      <button type="button" className="cx-panel-action" onClick={loadAttributeOptions}>
+                        ลองใหม่
+                      </button>
+                    </div>
+                  )}
+                  {attributeOptions && (
+                    <div className="cx-register-fields">
+                      <div>
+                        <label htmlFor="faculty-search"><span>คณะ</span></label>
+                        <input
+                          id="faculty-search"
+                          type="search"
+                          placeholder="ค้นหาคณะ"
+                          value={facultySearch}
+                          onChange={(e) => setFacultySearch(e.target.value)}
+                        />
+                        <div className="cx-role-chips" style={{ maxHeight: 168, overflowY: "auto", marginTop: 10 }}>
+                          {attributeOptions.faculties
+                            .filter((value) => value.toLocaleLowerCase().includes(facultySearch.trim().toLocaleLowerCase()))
+                            .map((value) => (
+                              <button
+                                key={value}
+                                type="button"
+                                className={policyFaculty.has(value) ? "on" : undefined}
+                                aria-pressed={policyFaculty.has(value)}
+                                onClick={() => toggleFaculty(value)}
+                              >
+                                {policyFaculty.has(value) && <IconCheck size={12} />}
+                                {value}
+                              </button>
+                            ))}
+                        </div>
+                        {attributeOptions.faculties.length === 0 && (
+                          <small>ยังไม่มีข้อมูลคณะจากผู้ใช้ที่มีสถานะ active</small>
+                        )}
+                      </div>
+                      <div>
+                        <label htmlFor="major-search"><span>สาขา</span></label>
+                        <input
+                          id="major-search"
+                          type="search"
+                          placeholder="ค้นหาสาขา"
+                          value={majorSearch}
+                          onChange={(e) => setMajorSearch(e.target.value)}
+                        />
+                        <div className="cx-role-chips" style={{ maxHeight: 168, overflowY: "auto", marginTop: 10 }}>
+                          {availableMajors
+                            .filter((value) => value.toLocaleLowerCase().includes(majorSearch.trim().toLocaleLowerCase()))
+                            .map((value) => (
+                              <button
+                                key={value}
+                                type="button"
+                                className={policyMajor.has(value) ? "on" : undefined}
+                                aria-pressed={policyMajor.has(value)}
+                                onClick={() => toggleMajor(value)}
+                              >
+                                {policyMajor.has(value) && <IconCheck size={12} />}
+                                {value}
+                              </button>
+                            ))}
+                        </div>
+                        {availableMajors.length === 0 && (
+                          <small>{policyFaculty.size ? "คณะที่เลือกยังไม่มีข้อมูลสาขา" : "ยังไม่มีข้อมูลสาขาจากผู้ใช้ที่มีสถานะ active"}</small>
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 
