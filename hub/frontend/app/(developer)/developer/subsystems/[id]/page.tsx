@@ -1090,9 +1090,9 @@ export default function DeveloperSubsystemDetailPage({
           <div className="mb-3 rounded-xl border border-ink-200 bg-white p-4 flex flex-wrap items-center gap-3">
             <div className="flex-1 min-w-[200px]">
               <div className="text-sm font-bold text-ink-800">Import / Export ผู้ใช้</div>
-              <div className="text-[11px] text-ink-500 mt-0.5">ไฟล์ CSV ใช้คอลัมน์ email, role, note · role ต้องอยู่ใน Roles ของ subsystem</div>
+              <div className="text-[11px] text-ink-500 mt-0.5">Excel Template มี dropdown Role · CSV / Excel (.xlsx) ใช้คอลัมน์ email, role, note</div>
             </div>
-            <button type="button" onClick={downloadRoleTemplate} className="h-10 px-4 border border-ink-200 hover:bg-ink-50 text-sm font-semibold text-ink-700">ดาวน์โหลด Template</button>
+            <button type="button" onClick={downloadRoleTemplate} className="h-10 px-4 border border-ink-200 hover:bg-ink-50 text-sm font-semibold text-ink-700">ดาวน์โหลด Excel Template</button>
             <button type="button" onClick={() => downloadCsvFile(`whitelist-${sub.id}.csv`, [["email", "role", "note"], ...(whitelist || []).map((u) => [u.email, u.role_in_sub || "user", ""])])} disabled={!whitelist?.length} className="h-10 px-4 border border-ink-200 hover:bg-ink-50 text-sm font-semibold text-ink-700 disabled:opacity-50">Export CSV</button>
             <input ref={csvInputRef} type="file" accept=".csv,.xlsx" onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadCsv(f); }} disabled={csvUploading} className="hidden" />
             <button type="button" onClick={() => csvInputRef.current?.click()} disabled={csvUploading} className="h-10 px-4 bg-ink-900 hover:bg-ink-800 text-white text-sm font-semibold disabled:opacity-50">{csvUploading ? "กำลัง Import…" : "Import CSV"}</button>
