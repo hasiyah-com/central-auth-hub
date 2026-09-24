@@ -2141,9 +2141,17 @@ def _risk_stepup_html(
     safe_email = (
         user_email.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
     )
+    import html as _html
+    import re as _re
+
     # TOTP section (แสดงถ้า user มี ACTIVE TOTP) — ช่องกรอก 6 หลัก + ปุ่มยืนยัน
     # style ฝังใน fragment (nonced) — เลี่ยงแตะ CSS ที่แชร์กับหน้า force-enroll
     totp_label = "หรือใช้ Authenticator" if has_passkey else "ยืนยันด้วย Authenticator"
+    otp_inputs = "".join(
+        f'<input class="otp-digit" type="text" inputmode="numeric" maxlength="6" '
+        f'aria-label="รหัสหลักที่ {i + 1}" autocomplete="{ "one-time-code" if i == 0 else "off" }">'
+        for i in range(6)
+    )
     totp_section = (
         f"""
     <style nonce="{nonce}">
@@ -2154,16 +2162,12 @@ def _risk_stepup_html(
         color:var(--muted); font-size:11px; letter-spacing:.06em; text-transform:uppercase;
         font-family:'IBM Plex Mono',monospace; }}
       .or-sep::before, .or-sep::after {{ content:''; flex:1; height:1px; background:var(--line); }}
-      .totp-in {{ width:100%; padding:13px 14px; border-radius:12px; margin-bottom:10px;
-        background:rgba(7,11,20,.6); border:1px solid var(--line); color:var(--ink);
-        font-family:'IBM Plex Mono',monospace; font-size:20px; letter-spacing:.4em;
-        text-align:center; }}
-      .totp-in:focus {{ outline:none; border-color:var(--mint-2); }}
     </style>
     <div class="totp-box" id="totpBox">
       <div class="or-sep"><span>{totp_label}</span></div>
-      <input class="totp-in" id="totpIn" type="text" inputmode="numeric"
-        autocomplete="one-time-code" maxlength="6" placeholder="รหัส 6 หลัก">
+      <div class="totp-label">รหัสยืนยัน 6 หลัก</div>
+      <div class="otp-digits" role="group" aria-label="รหัสยืนยัน 6 หลัก">{otp_inputs}</div>
+      <input id="totpIn" type="hidden">
       <button class="btn btn-totp" id="verifyTotp">📱 ยืนยันด้วยรหัส</button>
     </div>"""
         if has_totp
@@ -2184,17 +2188,34 @@ def _risk_stepup_html(
     )
     # reasons box แสดงเฉพาะตอนมี reason จริง (risk-triggered) — สำหรับ Always-2FA
     # (ไม่ได้เสี่ยง) จะไม่ขึ้น "ตรวจพบความเสี่ยง" ที่ทำให้ user งงทุก login
-    reasons_html = "".join(
-        f"<li>{r.replace('<', '&lt;').replace('>', '&gt;')}</li>" for r in reasons[:5]
-    )
+    reasons_rows = []
+    for reason in reasons[:5]:
+        text = str(reason)
+        match = _re.fullmatch(r"(.+?)\s*\(([+-]\d+(?:\.\d+)?)\)", text)
+        if match:
+            label, weight = match.groups()
+            reasons_rows.append(
+                f'<li><div class="reason-copy"><span>{_html.escape(label)}</span>'
+                f'<small>ค่าน้ำหนักความเสี่ยง</small></div>'
+                f'<b class="weight">{_html.escape(weight)}</b></li>'
+            )
+        else:
+            reasons_rows.append(f'<li><div class="reason-copy">{_html.escape(text)}</div></li>')
+    reasons_html = "".join(reasons_rows)
+    risk_badge = f'<b class="risk-badge">RISK {risk_score:.3f}</b>' if reasons else ""
     reasons_block = (
         f"""<div class="reasons">
-      <div class="reasons-title">ปัจจัยเสี่ยงที่ตรวจพบ</div>
+      <div class="score"><strong>{risk_score:.3f}</strong><span>Risk score</span></div>
+      <div class="reasons-title">ระบบพบรูปแบบการเข้าใช้งานที่ต้องยืนยันเพิ่มเติมก่อนดำเนินการต่อ</div>
       <ul>{reasons_html}</ul>
-      <div class="score">risk_score: {risk_score:.3f}</div>
     </div>"""
         if reasons
         else ""
+    )
+    context_block = reasons_block or (
+        '<div class="reasons"><div class="overline">ACCOUNT SECURITY</div>'
+        '<h2>ยืนยันตัวตนเพิ่มเติม</h2>'
+        '<p class="sub">ยืนยันด้วยวิธีที่ตั้งค่าไว้เพื่อดำเนินการต่ออย่างปลอดภัย</p></div>'
     )
     subtitle = (
         "ระบบตรวจพบความเสี่ยงจากการ login ครั้งนี้<br>กรุณายืนยันตัวตนเพื่อความปลอดภัย"
@@ -2208,74 +2229,74 @@ def _risk_stepup_html(
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@500;600;700&family=IBM+Plex+Sans+Thai:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style nonce="{nonce}">
-  :root {{ --bg-0:#070b14; --ink:#e8eef7; --muted:#8a99b5; --mint:#34e8c4;
-           --mint-2:#13b89a; --line:rgba(148,178,224,.14); --danger:#ff6b81; --amber:#f5b97a; }}
-  * {{ box-sizing:border-box; }}
-  html,body {{ margin:0; height:100%; }}
-  body {{ font-family:'IBM Plex Sans Thai',system-ui,sans-serif; background:var(--bg-0);
-          color:var(--ink); min-height:100vh; display:grid; place-items:center;
-          padding:32px 16px; overflow:hidden; position:relative; }}
-  body::before {{ content:''; position:fixed; inset:-20%; z-index:0;
-    background:radial-gradient(40% 50% at 18% 22%, rgba(245,185,122,.16), transparent 70%),
-      radial-gradient(45% 55% at 85% 18%, rgba(82,120,255,.16), transparent 70%);
-    filter:blur(20px); }}
-  .card {{ position:relative; z-index:1; width:100%; max-width:440px;
-    background:linear-gradient(180deg, rgba(20,28,48,.86), rgba(11,17,32,.92));
-    border:1px solid var(--line); border-radius:22px; backdrop-filter:blur(14px);
-    box-shadow:0 30px 80px -20px rgba(0,0,0,.7); overflow:hidden;
-    animation:rise .7s cubic-bezier(.2,.8,.2,1) both; }}
-  @keyframes rise {{ from{{opacity:0; transform:translateY(16px)}} to{{opacity:1; transform:none}} }}
-  .top {{ padding:30px 32px 4px; text-align:center; }}
-  .emblem {{ width:62px; height:62px; margin:0 auto 14px; border-radius:18px;
-    background:linear-gradient(135deg, rgba(245,185,122,.2), rgba(245,185,122,.05));
-    border:1px solid rgba(245,185,122,.35); display:grid; place-items:center; color:var(--amber); }}
-  h1 {{ font-family:'Kanit',sans-serif; font-weight:600; font-size:24px; margin:0 0 6px; }}
-  .sub {{ color:var(--muted); font-size:13.5px; margin:0; line-height:1.55; }}
-  .who {{ font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--mint);
-          margin-top:10px; word-break:break-all; }}
-  .body {{ padding:20px 32px 26px; }}
-  .reasons {{ background:rgba(245,185,122,.08); border:1px solid rgba(245,185,122,.22);
-    border-radius:12px; padding:14px 16px; margin-bottom:18px; }}
-  .reasons-title {{ font-size:11px; letter-spacing:.12em; text-transform:uppercase;
-    color:var(--amber); margin-bottom:6px; font-family:'IBM Plex Mono',monospace; }}
-  .reasons ul {{ margin:0; padding-left:18px; font-size:13px; color:#c4d0e4; line-height:1.6; }}
-  .score {{ font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--muted); margin-top:8px; }}
-  .btn {{ display:flex; align-items:center; justify-content:center; gap:10px; width:100%;
-    padding:14px 16px; border-radius:13px; font-family:'Kanit',sans-serif; font-weight:500;
-    font-size:15.5px; border:1px solid transparent; cursor:pointer; text-decoration:none;
-    transition:transform .15s; }}
-  .btn-pk {{ color:#04221c; background:linear-gradient(100deg,var(--mint),#5ff0d6);
-             box-shadow:0 10px 30px -10px rgba(52,232,196,.6); }}
-  .btn-pk:hover {{ transform:translateY(-2px); }}
-  .btn-pk[disabled] {{ opacity:.5; cursor:not-allowed; transform:none; }}
-  .btn-recover {{ color:var(--muted); background:transparent; margin-top:10px; font-size:13px; }}
-  .btn-recover:hover {{ color:var(--ink); }}
-  .err {{ display:none; font-size:12.5px; color:var(--danger); margin-bottom:12px;
-    background:rgba(255,107,129,.08); border:1px solid rgba(255,107,129,.28);
-    padding:10px 12px; border-radius:10px; line-height:1.45; }}
-  .err.show {{ display:block; }}
-  .unsupported {{ display:none; font-size:12.5px; color:var(--amber); margin-bottom:12px;
-    background:rgba(245,185,122,.08); border:1px solid rgba(245,185,122,.28);
-    padding:12px 14px; border-radius:10px; line-height:1.55; }}
-  .unsupported.show {{ display:block; }}
-  .spinner {{ width:16px; height:16px; border:2px solid rgba(4,34,28,.35);
-    border-top-color:#04221c; border-radius:50%; animation:spin .7s linear infinite; }}
-  @keyframes spin {{ to{{transform:rotate(360deg)}} }}
-  .foot {{ padding:13px 32px; border-top:1px solid var(--line); text-align:center;
-    font-family:'IBM Plex Mono',monospace; font-size:10px; color:#56657f; letter-spacing:.06em; }}
+
+:root{{--bg-0:#080e17;--ink:#edf4ff;--muted:#8498b3;--mint:#34dbc1;--mint-2:#13b89a;--line:#2b3b50;--danger:#ff6589;--amber:#ffb45f}}
+*{{box-sizing:border-box}}html,body{{margin:0;min-height:100%;width:100%}}
+body{{font-family:'IBM Plex Sans Thai',system-ui,sans-serif;color:var(--ink);background:radial-gradient(ellipse at 95% 20%,#103833 0,transparent 40%),var(--bg-0)}}
+.page{{min-height:100svh;display:flex;flex-direction:column}}
+.header{{min-height:64px;padding:16px 32px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;gap:16px;background:#0a121d}}
+.brand{{display:flex;gap:12px;align-items:center;font-size:20px;letter-spacing:2px}}.brand b{{color:var(--mint)}}
+.brand small{{padding-left:12px;border-left:1px solid var(--line);font:11px 'IBM Plex Mono';letter-spacing:0;color:var(--muted)}}
+.session{{font:11px 'IBM Plex Mono';letter-spacing:.12em;color:var(--muted);display:flex;align-items:center;gap:12px}}
+.session i{{width:8px;height:8px;border-radius:50%;background:var(--mint);box-shadow:0 0 0 4px #34dbc122}}
+.shell{{width:min(960px,calc(100% - 48px));margin:auto;display:grid;grid-template-columns:minmax(0,.85fr) minmax(0,1.15fr);border:1px solid var(--line)}}
+.context{{background:#0c1521;border-right:1px solid var(--line);padding:26px;display:flex;flex-direction:column;min-width:0}}
+.kicker{{font:11px 'IBM Plex Mono';letter-spacing:.12em;color:var(--muted);padding:10px 0 24px;border-bottom:1px solid var(--line)}}
+.reasons{{margin-top:24px}}.score{{display:flex;align-items:center;gap:16px;flex-wrap:wrap;margin-bottom:18px}}
+.score strong{{font:600 42px 'IBM Plex Mono';color:var(--amber)}}.score span{{font-size:14px;font-weight:600}}
+.reasons-title{{font-size:14px;line-height:1.7;color:var(--muted);margin-bottom:20px}}
+.reasons ul{{list-style:none;counter-reset:reason;margin:0;padding:0}}
+.reasons li{{counter-increment:reason;display:flex;gap:16px;padding:16px 0;border-top:1px solid var(--line);font:11px/1.7 'IBM Plex Mono';overflow-wrap:anywhere}}
+.reasons li::before{{content:counter(reason,decimal-leading-zero);color:var(--muted);flex:none}}
+.context-note{{margin-top:auto;padding-top:40px;color:var(--muted);font-size:12px;line-height:1.7}}
+.context-note p{{padding-top:18px;border-top:1px solid var(--line);margin:0}}
+.panel{{background:#101a2a;min-width:0;padding:32px 38px}}
+.emblem{{display:grid;place-items:center;width:48px;height:48px;color:var(--mint);background:#153b38;border:1px solid #276a61;margin-bottom:24px}}
+.overline{{font:11px 'IBM Plex Mono';letter-spacing:.12em;color:var(--mint);margin-bottom:12px}}
+h1{{font-family:'Kanit',sans-serif;font-size:28px;font-weight:600;margin:0 0 4px}}
+.sub{{color:var(--muted);font-size:14px;line-height:1.6;margin:0}}
+.who{{font:12px 'IBM Plex Mono';color:var(--mint);margin-top:16px;overflow-wrap:anywhere}}
+.body{{margin-top:24px}}.btn{{width:100%;display:flex;justify-content:center;align-items:center;gap:10px;min-height:48px;padding:12px;border:1px solid var(--line);border-radius:0;font:500 14px 'IBM Plex Sans Thai';cursor:pointer;text-decoration:none}}
+.btn-pk{{background:var(--mint);color:#061d19;box-shadow:0 10px 30px #34dbc118}}.btn-pk:hover{{background:#5fe4cd}}
+.btn:disabled{{opacity:.5;cursor:not-allowed}}
+.btn-recover{{margin-top:18px;color:var(--muted);background:transparent;border:0;font-size:12px}}
+.btn-recover:hover{{color:var(--mint)}}
+.err,.unsupported{{display:none;padding:12px 14px;margin-bottom:12px;line-height:1.6;font-size:13px;border:1px solid #63384c;border-left:3px solid var(--danger);background:#281a29;color:var(--danger)}}
+.err.show,.unsupported.show{{display:block}}.unsupported{{color:var(--amber);border-color:#6a5136;background:#2a241f}}
+.spinner{{width:16px;height:16px;border:2px solid #123a32;border-top-color:transparent;border-radius:50%;animation:spin .7s linear infinite}}@keyframes spin{{to{{transform:rotate(360deg)}}}}
+.footer{{display:flex;justify-content:space-between;gap:16px;border-top:1px solid var(--line);padding:16px 32px;color:var(--muted);font:10px 'IBM Plex Mono'}}
+.stage{{flex:1;display:flex;padding:0 0 24px}}
+.totp-label{{display:block;font-size:12px;color:var(--muted);margin-bottom:10px}}
+button:focus-visible,a:focus-visible{{outline:2px solid var(--mint);outline-offset:3px}}
+@media(max-width:760px){{.shell{{grid-template-columns:1fr;width:calc(100% - 24px)}}.context{{border-right:0;border-bottom:1px solid var(--line)}}.panel{{padding:26px 22px}}.context-note{{padding-top:20px}}.header{{padding:16px}}.brand small{{display:none}}.session{{font-size:9px}}.footer{{padding:16px;flex-wrap:wrap}}.stage{{padding:12px 0}}}}
+
+.risk-badge{{padding:10px;background:#2a211b;border:1px solid #6a4931;color:var(--amber);white-space:nowrap}}
+.otp-digits{{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:7px;margin:0 0 12px}}
+.otp-digit{{width:100%;min-width:0;height:50px;border:1px solid #34465e;background:#0b1420;color:var(--ink);text-align:center;font:24px 'IBM Plex Mono';border-radius:0}}
+.otp-digit:focus{{outline:2px solid var(--mint);outline-offset:1px}}
+.reason-copy{{flex:1;min-width:0}}.reason-copy small{{display:block;color:var(--muted);font:10px 'IBM Plex Sans Thai';margin-top:5px}}
+.weight{{color:var(--amber);align-self:center;white-space:nowrap}}
+.btn-pk::after{{content:"›";position:absolute;right:18px}}.btn-pk{{position:relative}}
+.panel .or-sep{{margin:24px 0 20px}}
+@media(max-width:520px){{.session{{flex-wrap:wrap;justify-content:flex-end}}.risk-badge{{padding:6px}}.otp-digit{{height:44px}}.panel{{padding:24px 16px}}.brand{{font-size:16px}}}}
 </style></head><body>
-<div class="card">
+<main class="page">
+<header class="header"><div class="brand"><b>⌘</b> HUB <small>IDENTITY CONTROL</small></div><div class="session"><i></i>SECURE CHALLENGE {risk_badge}</div></header>
+<div class="stage"><div class="shell">
+<aside class="context"><div class="kicker">WHY THIS CHECK</div>{context_block}
+<div class="context-note"><p>ยืนยันตัวตนด้วย Passkey หรือ Authenticator ที่ผูกกับบัญชี เมื่อสำเร็จระบบจะดำเนินการต่อ</p></div></aside>
+<section class="panel" aria-labelledby="verification-title">
   <div class="top">
     <div class="emblem">
-      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 12a5 5 0 0 1 10 0v5M5 12a7 7 0 0 1 14 0v4M9 12a3 3 0 0 1 6 0v8M12 12v9"/></svg>
     </div>
-    <h1>ยืนยันตัวตนอีกครั้ง</h1>
+    <div class="overline">STEP-UP VERIFICATION</div>
+    <h1 id="verification-title">ยืนยันตัวตนอีกครั้ง</h1>
     <p class="sub">{subtitle}</p>
     <div class="who">{safe_email}</div>
   </div>
   <div class="body">
-    {reasons_block}
-    <div class="err" id="err"></div>
+    <div class="err" id="err" role="alert" aria-live="polite"></div>
     <div class="unsupported" id="unsupported">
       ⚠️ <strong>เบราว์เซอร์นี้ไม่รองรับ Passkey</strong><br>
       กรุณาใช้อุปกรณ์ที่รองรับ หรือใช้ <a href="/auth/passkey/recover" style="color:var(--mint)">Account Recovery</a>
@@ -2283,8 +2304,9 @@ def _risk_stepup_html(
     {factor_blocks}
     <a class="btn btn-recover" href="/auth/passkey/recover">ทำ Passkey หาย? → กู้บัญชี</a>
   </div>
-  <div class="foot">WebAuthn · FIDO2 · Risk-Based Authentication</div>
-</div>
+</section></div></div>
+<footer class="footer"><span>Central Auth Hub</span><span>WebAuthn · FIDO2 · Risk-Based Authentication</span></footer>
+</main>
 <script nonce="{nonce}">
 const CHALLENGE_ID = {json.dumps(challenge_id)};
 function b64urlToBuf(s) {{ const p=s.replace(/-/g,'+').replace(/_/g,'/');
@@ -2335,7 +2357,42 @@ if(btn) btn.addEventListener('click', doVerify);
 
 // ── TOTP verify (ถ้า user เปิด Authenticator) ──
 const tBtn=document.getElementById('verifyTotp'), tIn=document.getElementById('totpIn');
+
+const digits = Array.from(document.querySelectorAll('.otp-digit'));
+function syncDigits() {{
+  if(tIn) tIn.value=digits.map(el=>el.value).join('');
+}}
+digits.forEach((el,index)=>{{
+  el.addEventListener('input',()=>{{
+    const value=el.value.replace(/[^0-9]/g,'');
+    if(value.length>1){{
+      const start=value.length===6?0:index;
+      value.slice(0,6-start).split('').forEach((d,i)=>digits[start+i].value=d);
+      digits[Math.min(start+value.length,5)].focus();
+    }}else{{
+      el.value=value;
+      if(value && index<5) digits[index+1].focus();
+    }}
+    syncDigits();
+  }});
+  el.addEventListener('paste',event=>{{
+    const value=(event.clipboardData.getData('text')||'').replace(/[^0-9]/g,'').slice(0,6);
+    if(!value)return;
+    event.preventDefault();
+    const start=value.length===6?0:index;
+    value.slice(0,6-start).split('').forEach((d,i)=>digits[start+i].value=d);
+    syncDigits();digits[Math.min(start+value.length,5)].focus();
+  }});
+  el.addEventListener('keydown',event=>{{
+    if(event.key==='Backspace' && !el.value && index>0) digits[index-1].focus();
+    if(event.key==='ArrowLeft' && index>0){{event.preventDefault();digits[index-1].focus();}}
+    if(event.key==='ArrowRight' && index<5){{event.preventDefault();digits[index+1].focus();}}
+    if(event.key==='Enter' && tBtn && !tBtn.disabled){{event.preventDefault();doVerifyTotp();}}
+  }});
+}});
+
 async function doVerifyTotp(){{
+  if(tBtn.disabled) return;
   errEl.classList.remove('show');
   const code=(tIn.value||'').trim();
   if(code.length<6){{ showErr('กรอกรหัส 6 หลัก'); return; }}
@@ -2348,7 +2405,7 @@ async function doVerifyTotp(){{
     const data=await f.json();
     window.location.href=data.redirect_url;
   }} catch(err){{ showErr(err.message||'ยืนยันไม่สำเร็จ');
-    tBtn.disabled=false; tBtn.textContent='📱 ยืนยันด้วยรหัส'; tIn.value=''; }}
+    tBtn.disabled=false; tBtn.textContent='📱 ยืนยันด้วยรหัส'; tIn.value=''; digits.forEach(el=>el.value=''); if(digits[0]) digits[0].focus(); }}
 }}
 if(tBtn){{
   tBtn.addEventListener('click', doVerifyTotp);
