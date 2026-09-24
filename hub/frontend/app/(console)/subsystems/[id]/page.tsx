@@ -1608,9 +1608,7 @@ export default function SubsystemDetailPage({
           </div>
         </section>
 
-        </div>
-
-        {/* ── Section 1.5: Active Users ──────────────────── */}
+        {/* ── Active Sessions ────────────────────────────── */}
         <section className="cx-panel cx-active-panel">
           <header>
             <div>
@@ -1628,7 +1626,7 @@ export default function SubsystemDetailPage({
               refresh · auto 30s
             </button>
           </header>
-          <div className="overflow-hidden">
+          <div className="cx-panel-body overflow-hidden">
             {active === null ? (
               <div className="p-6 text-center text-ink-400 text-sm">
                 กำลังโหลด…
@@ -1729,6 +1727,8 @@ export default function SubsystemDetailPage({
             )}
           </div>
         </section>
+
+        </div>
 
         {/* ── Subsystem roles ─────────────────────────────── */}
         <section className="cx-panel">
