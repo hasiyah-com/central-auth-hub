@@ -375,12 +375,13 @@ export default function SubsystemsPage() {
                 emptyMessage="ไม่มีระบบย่อย"
               />
             </div>
-          ) : shown.length === 0 ? (
-            <div className="cx-empty">
-              <strong>{subs === null ? "กำลังโหลด…" : "ไม่มีระบบย่อย"}</strong>
-            </div>
           ) : (
             <div className="p-3">
+              {shown.length === 0 && (
+                <div className="cx-empty">
+                  <strong>{subs === null ? "กำลังโหลด…" : "ไม่มีระบบย่อย"}</strong>
+                </div>
+              )}
               <div className="cx-cards">
                 {shown.map((s) => (
                   <article key={s.id} className={`cx-card ${s.status}`}>
@@ -443,6 +444,29 @@ export default function SubsystemsPage() {
                     )}
                   </article>
                 ))}
+                <Link
+                  href="/developer/subsystems/new"
+                  className="cx-card cx-card-create"
+                  aria-label="สร้างระบบย่อยใหม่"
+                  style={{
+                    minHeight: 250,
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 12,
+                    borderStyle: "dashed",
+                    textDecoration: "none",
+                    color: "#526173",
+                  }}
+                >
+                  <span
+                    aria-hidden="true"
+                    className="grid h-12 w-12 place-items-center rounded-full border border-dashed border-slate-400 text-3xl font-light"
+                  >
+                    +
+                  </span>
+                  <strong>สร้างระบบย่อยใหม่</strong>
+                  <span className="text-xs text-slate-500">ลงทะเบียน subsystem</span>
+                </Link>
               </div>
             </div>
           )}
