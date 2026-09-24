@@ -1693,6 +1693,35 @@ export default function SubsystemDetailPage({
           }}
         />
 
+        {/* ── Subsystem roles ─────────────────────────────── */}
+        <section className="cx-panel">
+          <header>
+            <div>
+              <span>access configuration</span>
+              <h2>Roles in Subsystem</h2>
+            </div>
+            <button
+              type="button"
+              onClick={openEditModal}
+              className="px-3 py-2 rounded-lg border border-ink-200 hover:bg-ink-50 text-sm font-semibold text-ink-700"
+            >
+              จัดการ Roles
+            </button>
+          </header>
+          <div className="cx-panel-body">
+            <p className="text-xs text-ink-500 mb-3">
+              กำหนด role ที่เลือกได้ตอนเพิ่มหรือแก้ไขผู้ใช้ใน whitelist
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {(sub.allowed_roles?.length ? sub.allowed_roles : ["user"]).map((role) => (
+                <span key={role} className="px-2.5 py-1 rounded-md bg-brand-50 border border-brand-200 text-brand-800 text-xs font-mono">
+                  {role}
+                </span>
+              ))}
+            </div>
+          </div>
+        </section>
+
         {/* ── Section 2: Whitelist ───────────────────────── */}
         <section className="cx-panel">
           <header>
