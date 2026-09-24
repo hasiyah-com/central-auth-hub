@@ -1095,7 +1095,7 @@ export default function DeveloperSubsystemDetailPage({
             <button type="button" onClick={downloadRoleTemplate} className="h-10 px-4 border border-ink-200 hover:bg-ink-50 text-sm font-semibold text-ink-700">ดาวน์โหลด Excel Template</button>
             <button type="button" onClick={() => downloadCsvFile(`whitelist-${sub.id}.csv`, [["email", "role", "note"], ...(whitelist || []).map((u) => [u.email, u.role_in_sub || "user", ""])])} disabled={!whitelist?.length} className="h-10 px-4 border border-ink-200 hover:bg-ink-50 text-sm font-semibold text-ink-700 disabled:opacity-50">Export CSV</button>
             <input ref={csvInputRef} type="file" accept=".csv,.xlsx" onChange={(e) => { const f = e.target.files?.[0]; if (f) uploadCsv(f); }} disabled={csvUploading} className="hidden" />
-            <button type="button" onClick={() => csvInputRef.current?.click()} disabled={csvUploading} className="h-10 px-4 bg-ink-900 hover:bg-ink-800 text-white text-sm font-semibold disabled:opacity-50">{csvUploading ? "กำลัง Import…" : "Import CSV"}</button>
+            <button type="button" onClick={() => csvInputRef.current?.click()} disabled={csvUploading} className="h-10 px-4 bg-ink-900 hover:bg-ink-800 text-white text-sm font-semibold disabled:opacity-50">{csvUploading ? "กำลัง Import…" : "Import"}</button>
           </div>
 
           {csvResult && (
