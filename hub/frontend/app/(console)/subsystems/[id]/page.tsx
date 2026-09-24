@@ -1201,7 +1201,7 @@ export default function SubsystemDetailPage({
         </div>
       )}
       <Topbar title={sub.name} />
-      <div className="sc">
+      <div className="sc subsystem-detail-view">
       <section className="cx-command">
         <div>
           <span>
@@ -1393,6 +1393,109 @@ export default function SubsystemDetailPage({
           </section>
         )}
 
+        <div className="subsystem-config-grid">
+        {/* ── Section 1: Identity card ───────────────────── */}
+        <section className="cx-panel">
+          <header>
+            <div>
+              <span>oauth client</span>
+              <h2>OAuth Client</h2>
+            </div>
+          </header>
+          <div className="cx-panel-body grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-5">
+            <Field label="Client ID" mono value={sub.client_id} />
+            <Field label="เจ้าของ" value={sub.owner_email || "—"} />
+
+            <div>
+              <FieldLabel>Scope (OAuth)</FieldLabel>
+              {scopes.length > 0 ? (
+                <div className="flex flex-wrap gap-1.5">
+                  {scopes.map((s) => (
+                    <span
+                      key={s}
+                      className="px-2 py-0.5 bg-brand-50 text-brand-700 text-[11px] font-mono font-semibold"
+                    >
+                      {s}
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-sm text-ink-400">—</div>
+              )}
+            </div>
+
+            <div>
+              <FieldLabel>จำนวน Whitelist</FieldLabel>
+              <div className="text-2xl font-extrabold text-ink-900 tabular-nums">
+                {sub.whitelist_count}
+                <span className="ml-1 text-xs font-normal text-ink-400">คน</span>
+              </div>
+            </div>
+
+            <div className="md:col-span-2">
+              <FieldLabel>Redirect URIs</FieldLabel>
+              {sub.redirect_uris && sub.redirect_uris.length > 0 ? (
+                <ul className="space-y-1.5">
+                  {sub.redirect_uris.map((u) => (
+                    <li
+                      key={u}
+                      className="font-mono text-[12px] text-ink-700 break-all"
+                    >
+                      {u}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <div className="text-sm text-ink-400">
+                  ยังไม่ได้ลงทะเบียน redirect URI
+                </div>
+              )}
+            </div>
+          </div>
+        </section>
+
+        {/* ── Access Policy ───────────────────────── */}
+        <AccessPolicyCard
+          subId={id}
+          policy={sub.access_policy || "explicit"}
+          config={sub.access_policy_config}
+          apiKeyPrefix={sub.api_key_prefix}
+          onReload={() => {
+            loadSubsystem();
+            loadWhitelist();
+            loadActive();
+          }}
+        />
+
+        {/* ── Subsystem roles ─────────────────────────────── */}
+        <section className="cx-panel">
+          <header>
+            <div>
+              <span>access configuration</span>
+              <h2>Roles in Subsystem</h2>
+            </div>
+            <button
+              type="button"
+              onClick={openEditModal}
+              className="px-3 py-2 rounded-lg border border-ink-200 hover:bg-ink-50 text-sm font-semibold text-ink-700"
+            >
+              จัดการ Roles
+            </button>
+          </header>
+          <div className="cx-panel-body">
+            <p className="text-xs text-ink-500 mb-3">
+              กำหนด role ที่เลือกได้ตอนเพิ่มหรือแก้ไขผู้ใช้ใน whitelist
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {(sub.allowed_roles?.length ? sub.allowed_roles : ["user"]).map((role) => (
+                <span key={role} className="px-2.5 py-1 rounded-md bg-brand-50 border border-brand-200 text-brand-800 text-xs font-mono">
+                  {role}
+                </span>
+              ))}
+            </div>
+          </div>
+        </section>
+
         {/* ── Section 0.5: Health — สถานะ + กราฟ latency ย้อนหลัง ── */}
         <section className="cx-panel">
           <header>
@@ -1534,65 +1637,7 @@ export default function SubsystemDetailPage({
           </div>
         </section>
 
-        {/* ── Section 1: Identity card ───────────────────── */}
-        <section className="cx-panel">
-          <header>
-            <div>
-              <span>oauth client</span>
-              <h2>OAuth Client</h2>
-            </div>
-          </header>
-          <div className="cx-panel-body grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-5">
-            <Field label="Client ID" mono value={sub.client_id} />
-            <Field label="เจ้าของ" value={sub.owner_email || "—"} />
-
-            <div>
-              <FieldLabel>Scope (OAuth)</FieldLabel>
-              {scopes.length > 0 ? (
-                <div className="flex flex-wrap gap-1.5">
-                  {scopes.map((s) => (
-                    <span
-                      key={s}
-                      className="px-2 py-0.5 bg-brand-50 text-brand-700 text-[11px] font-mono font-semibold"
-                    >
-                      {s}
-                    </span>
-                  ))}
-                </div>
-              ) : (
-                <div className="text-sm text-ink-400">—</div>
-              )}
-            </div>
-
-            <div>
-              <FieldLabel>จำนวน Whitelist</FieldLabel>
-              <div className="text-2xl font-extrabold text-ink-900 tabular-nums">
-                {sub.whitelist_count}
-                <span className="ml-1 text-xs font-normal text-ink-400">คน</span>
-              </div>
-            </div>
-
-            <div className="md:col-span-2">
-              <FieldLabel>Redirect URIs</FieldLabel>
-              {sub.redirect_uris && sub.redirect_uris.length > 0 ? (
-                <ul className="space-y-1.5">
-                  {sub.redirect_uris.map((u) => (
-                    <li
-                      key={u}
-                      className="font-mono text-[12px] text-ink-700 break-all"
-                    >
-                      {u}
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <div className="text-sm text-ink-400">
-                  ยังไม่ได้ลงทะเบียน redirect URI
-                </div>
-              )}
-            </div>
-          </div>
-        </section>
+        </div>
 
         {/* ── Section 1.5: Active Users ──────────────────── */}
         <section className="cx-panel cx-active-panel">
@@ -1711,48 +1756,6 @@ export default function SubsystemDetailPage({
                 </table>
               </div>
             )}
-          </div>
-        </section>
-
-        {/* ── Access Policy ───────────────────────── */}
-        <AccessPolicyCard
-          subId={id}
-          policy={sub.access_policy || "explicit"}
-          config={sub.access_policy_config}
-          apiKeyPrefix={sub.api_key_prefix}
-          onReload={() => {
-            loadSubsystem();
-            loadWhitelist();
-            loadActive();
-          }}
-        />
-
-        {/* ── Subsystem roles ─────────────────────────────── */}
-        <section className="cx-panel">
-          <header>
-            <div>
-              <span>access configuration</span>
-              <h2>Roles in Subsystem</h2>
-            </div>
-            <button
-              type="button"
-              onClick={openEditModal}
-              className="px-3 py-2 rounded-lg border border-ink-200 hover:bg-ink-50 text-sm font-semibold text-ink-700"
-            >
-              จัดการ Roles
-            </button>
-          </header>
-          <div className="cx-panel-body">
-            <p className="text-xs text-ink-500 mb-3">
-              กำหนด role ที่เลือกได้ตอนเพิ่มหรือแก้ไขผู้ใช้ใน whitelist
-            </p>
-            <div className="flex flex-wrap gap-2">
-              {(sub.allowed_roles?.length ? sub.allowed_roles : ["user"]).map((role) => (
-                <span key={role} className="px-2.5 py-1 rounded-md bg-brand-50 border border-brand-200 text-brand-800 text-xs font-mono">
-                  {role}
-                </span>
-              ))}
-            </div>
           </div>
         </section>
 
