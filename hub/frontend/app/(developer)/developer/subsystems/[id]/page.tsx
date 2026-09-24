@@ -1171,7 +1171,8 @@ export default function DeveloperSubsystemDetailPage({
                 </button>
               </div>
             </div>
-          )}          </div>
+          )}
+          </div>
         </section>
 
         {/* ── Active Sessions (read-only) ── */}
