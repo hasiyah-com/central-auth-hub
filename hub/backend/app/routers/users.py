@@ -322,6 +322,9 @@ def list_users(
     ),
     user_type: Optional[str] = Query(None, description="filter by user_type"),
     faculty: Optional[str] = Query(None, description="filter by faculty (ตรงตัวเป๊ะ)"),
+    major: Optional[str] = Query(None, description="filter by major (ตรงตัวเป๊ะ)"),
+    position: Optional[str] = Query(None, description="filter by year_or_position (ตรงตัวเป๊ะ)"),
+    status: Optional[str] = Query(None, description="filter by user status (ตรงตัวเป๊ะ)"),
     admin: User = Depends(require_hub_admin),
     db: Session = Depends(get_db),
 ):
@@ -348,6 +351,12 @@ def list_users(
         query = query.filter(User.user_type == user_type)
     if faculty:
         query = query.filter(User.faculty == faculty)
+    if major:
+        query = query.filter(User.major == major)
+    if position:
+        query = query.filter(User.year_or_position == position)
+    if status:
+        query = query.filter(User.status == status)
     users = query.offset(skip).limit(limit).all()
     return [
         UserResponse(
@@ -376,6 +385,29 @@ def count_users(
 
     rows = db.query(User.user_type, func.count(User.id)).group_by(User.user_type).all()
     return {ut: c for ut, c in rows}
+
+@router.get("/filter-options")
+def user_filter_options(
+    admin: User = Depends(require_hub_admin),
+    db: Session = Depends(get_db),
+):
+    """Return distinct values for the user-directory filters."""
+    def values_for(column):
+        rows = (
+            db.query(column)
+            .filter(column.isnot(None), column != "")
+            .distinct()
+            .order_by(column)
+            .all()
+        )
+        return [row[0] for row in rows]
+
+    return {
+        "faculties": values_for(User.faculty),
+        "majors": values_for(User.major),
+        "positions": values_for(User.year_or_position),
+        "statuses": values_for(User.status),
+    }
 
 
 @router.get("/status-import/template")
