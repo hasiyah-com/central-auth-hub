@@ -216,7 +216,8 @@ function SetupInner() {
                   key={o.key}
                   type="button"
                   onClick={() => go(o.key)}
-                  className={`group flex w-full items-center gap-4 border border-slate-200 bg-slate-50 p-4 text-left transition hover:border-teal-400 hover:bg-teal-50/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 sm:p-5`}
+                  disabled={!!gateError}
+                  className={`group flex w-full items-center gap-4 border border-slate-200 bg-slate-50 p-4 text-left transition hover:border-teal-400 hover:bg-teal-50/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 disabled:cursor-not-allowed disabled:opacity-50 sm:p-5`}
                 >
                   <span className={`grid h-11 w-11 shrink-0 place-items-center border border-slate-200 bg-white font-mono text-xs font-bold text-teal-700`}>
                     {o.key === "passkey" ? "PK" : o.key === "totp" ? "6D" : "2FA"}
