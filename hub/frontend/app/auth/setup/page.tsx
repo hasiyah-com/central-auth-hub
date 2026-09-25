@@ -80,8 +80,16 @@ function SetupInner() {
       const me = await fetch("/api/me", { credentials: "include" })
         .then((r) => (r.ok ? r.json() : null))
         .catch(() => null);
-      const isAdmin = me?.is_hub_admin === true || me?.user_type === "admin";
       setEmail(typeof me?.email === "string" ? me.email : "");
+
+      const status = await fetchSecurityStatus().catch(() => null);
+      if (!status) {
+        setGateError("ตรวจสอบสถานะความปลอดภัยไม่ได้ กรุณาลองใหม่ก่อนเข้าใช้งาน");
+        setReady(true);
+        return;
+      }
+
+      const isAdmin = status.is_admin || me?.is_hub_admin === true || me?.user_type === "admin";
       const home = isAdmin ? "/dashboard" : "/developer/subsystems";
       const acct = isAdmin ? "/account" : "/developer/account";
       const requestedNext = params.get("next") || home;
@@ -90,13 +98,6 @@ function SetupInner() {
         : home;
       setAccountHref(acct);
       setDest(next);
-
-      const status = await fetchSecurityStatus().catch(() => null);
-      if (!status) {
-        setGateError("ตรวจสอบสถานะความปลอดภัยไม่ได้ กรุณาลองใหม่ก่อนเข้าใช้งาน");
-        setReady(true);
-        return;
-      }
 
       // admin ที่ยังไม่มี factor ต้องตั้งค่าจริงก่อนเข้าหน้าหลัก แม้เคยกด snooze/dismiss
       const mustSetup = status.is_admin && !status.has_second_factor;
