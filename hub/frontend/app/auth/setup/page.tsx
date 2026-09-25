@@ -18,7 +18,10 @@ import {
   fetchSecurityStatus,
   dismissSecurityOnboarding,
   snoozeSecurityOnboarding,
+  registerPasskey,
 } from "@/lib/passkey";
+import { TotpCard } from "@/components/account/TotpCard";
+import { BackupCodesModal } from "@/components/account/BackupCodesModal";
 
 type Factor = "passkey" | "totp" | "both";
 
@@ -112,11 +115,12 @@ function SetupInner() {
   }, []);
 
   const go = (setup: Factor) => {
-    const query = new URLSearchParams({ setup });
     if (required) {
-      query.set("required", "1");
-      query.set("next", dest);
+      const query = new URLSearchParams({ enroll: setup, required: "1", next: dest });
+      router.push(`/auth/setup?${query.toString()}`);
+      return;
     }
+    const query = new URLSearchParams({ setup });
     router.push(`${accountHref}?${query.toString()}`);
   };
 
@@ -151,6 +155,13 @@ function SetupInner() {
         </div>
       </main>
     );
+  }
+
+  const enrollFactor = params.get("enroll");
+  const nextParam = params.get("next") || dest;
+  const safeNext = nextParam.startsWith("/") && !nextParam.startsWith("//") ? nextParam : "/dashboard";
+  if (required && (enrollFactor === "passkey" || enrollFactor === "totp" || enrollFactor === "both")) {
+    return <RequiredEnrollment factor={enrollFactor} next={safeNext} email={email} />;
   }
 
   return (
@@ -257,6 +268,102 @@ function SetupInner() {
           </footer>
         </div>
       </section>
+    </main>
+  );
+}
+
+
+function RequiredEnrollment({ factor, next, email }: { factor: Factor; next: string; email: string }) {
+  const [deviceName, setDeviceName] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [backupCodes, setBackupCodes] = useState<string[] | null>(null);
+  const [status, setStatus] = useState<{ has_passkey: boolean; has_totp: boolean } | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    let redirected = false;
+    const check = async () => {
+      try {
+        const current = await fetchSecurityStatus();
+        if (cancelled || redirected) return;
+        setStatus(current);
+        const complete = factor === "passkey" ? current.has_passkey
+          : factor === "totp" ? current.has_totp
+          : current.has_passkey && current.has_totp;
+        if (complete && !backupCodes) {
+          redirected = true;
+          window.location.replace(next);
+        }
+      } catch {
+        if (!cancelled) setError("ตรวจสอบสถานะการลงทะเบียนไม่ได้ กรุณาลองอีกครั้ง");
+      }
+    };
+    void check();
+    const timer = window.setInterval(() => void check(), 1500);
+    return () => { cancelled = true; window.clearInterval(timer); };
+  }, [factor, next, backupCodes]);
+
+  const submitPasskey = async () => {
+    if (!deviceName.trim()) { setError("กรุณาตั้งชื่ออุปกรณ์"); return; }
+    setBusy(true);
+    setError(null);
+    try {
+      const result = await registerPasskey(deviceName.trim());
+      setDeviceName("");
+      if (result.backup_codes && result.backup_codes_must_acknowledge) setBackupCodes(result.backup_codes);
+      else setStatus(await fetchSecurityStatus());
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "ลงทะเบียน Passkey ไม่สำเร็จ");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const passkeyReady = status?.has_passkey === true;
+  const showTotp = factor === "totp" || (factor === "both" && passkeyReady && !status?.has_totp);
+  const title = factor === "passkey" ? "ลงทะเบียน Passkey" : factor === "totp" ? "ลงทะเบียน Authenticator" : "ลงทะเบียน Passkey และ Authenticator";
+
+  return (
+    <main className="min-h-screen bg-[#f1f5f8] px-4 py-8 sm:px-6">
+      <section className="mx-auto w-full max-w-3xl overflow-hidden border border-slate-300 bg-white shadow-[0_24px_70px_rgba(15,23,42,0.14)]">
+        <header className="bg-[#0b1728] px-6 py-7 text-white sm:px-10">
+          <div className="font-mono text-[11px] uppercase tracking-[0.2em] text-teal-300">Central Auth Hub · Required security setup</div>
+          <h1 className="mt-3 text-2xl font-bold sm:text-3xl">{title}</h1>
+          <p className="mt-2 text-sm text-slate-300">ลงทะเบียนวิธีที่เลือกให้สำเร็จก่อน จึงจะเข้าใช้งานหน้าหลักของผู้ดูแลระบบได้</p>
+          {email && <p className="mt-3 break-all font-mono text-xs text-teal-300">{email}</p>}
+        </header>
+        <div className="space-y-5 p-6 sm:p-10">
+          {factor !== "totp" && !passkeyReady && (
+            <section className="border border-slate-200 p-5">
+              <h2 className="font-semibold text-slate-900">Passkey</h2>
+              <p className="mt-1 text-sm text-slate-500">ใช้ลายนิ้วมือ, Face ID, PIN หรือ security key เพื่อยืนยันตัวตน</p>
+              <label className="mt-4 block text-xs font-medium text-slate-600" htmlFor="required-device-name">ชื่ออุปกรณ์</label>
+              <div className="mt-2 flex flex-col gap-2 sm:flex-row">
+                <input id="required-device-name" value={deviceName} onChange={(e) => setDeviceName(e.target.value)} placeholder="เช่น คอมพิวเตอร์สำนักงาน" disabled={busy} className="min-h-11 flex-1 border border-slate-300 px-3 text-sm" />
+                <button type="button" onClick={submitPasskey} disabled={busy} className="min-h-11 bg-teal-600 px-5 text-sm font-semibold text-white disabled:opacity-50">{busy ? "กำลังลงทะเบียน…" : "ลงทะเบียน Passkey"}</button>
+              </div>
+            </section>
+          )}
+          {showTotp && (
+            <section className="border border-slate-200 p-4 sm:p-5">
+              {factor === "both" && <p className="mb-4 text-sm text-slate-600">Passkey ลงทะเบียนแล้ว ขั้นต่อไปให้ตั้งค่า Authenticator</p>}
+              <TotpCard />
+            </section>
+          )}
+          {factor === "passkey" && passkeyReady && !backupCodes && (
+            <div className="border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">ลงทะเบียน Passkey สำเร็จ กำลังพาไปหน้าหลัก…</div>
+          )}
+          {factor === "totp" && status?.has_totp && (
+            <div className="border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">ลงทะเบียน Authenticator สำเร็จ กำลังพาไปหน้าหลัก…</div>
+          )}
+          {factor === "both" && passkeyReady && status?.has_totp && (
+            <div className="border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">ลงทะเบียนทั้งสองวิธีสำเร็จ กำลังพาไปหน้าหลัก…</div>
+          )}
+          {error && <div role="alert" className="border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">{error}</div>}
+        </div>
+      </section>
+      {backupCodes && <BackupCodesModal codes={backupCodes} onAcknowledged={() => setBackupCodes(null)} />}
     </main>
   );
 }
