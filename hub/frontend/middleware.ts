@@ -163,8 +163,7 @@ export async function middleware(req: NextRequest) {
           is_admin?: boolean;
           has_second_factor?: boolean;
         };
-        requireFactorSetup =
-          security.is_admin === true && security.has_second_factor !== true;
+        requireFactorSetup = security.has_second_factor !== true;
       }
     } catch {
       statusCheckFailed = true;
