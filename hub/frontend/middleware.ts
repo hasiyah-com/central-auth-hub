@@ -136,14 +136,12 @@ export async function middleware(req: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  // Admins without an active factor must finish onboarding before opening protected pages.
-  // The account page is the only allowed destination while registering the chosen factor.
-  const isProtectedPortal =
-    pathMatches(ADMIN_PATHS, pathname) || pathMatches(DEV_PATHS, pathname);
-  const isFactorSetupPage =
-    (pathname === "/account" || pathname === "/developer/account") &&
-    req.nextUrl.searchParams.get("required") === "1";
-  if (isAdmin(payload) && isProtectedPortal && !isFactorSetupPage) {
+  // Admins without an active factor must finish setup in /auth/setup before
+  // opening any protected portal page, including /account.
+  if (
+    isAdmin(payload) &&
+    (pathMatches(ADMIN_PATHS, pathname) || pathMatches(DEV_PATHS, pathname))
+  ) {
     let requireFactorSetup = true;
     let statusCheckFailed = false;
     try {
