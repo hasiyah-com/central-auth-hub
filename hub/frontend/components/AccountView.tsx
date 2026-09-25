@@ -24,6 +24,7 @@ import { Topbar } from "@/components/Topbar";
 import { clientFetch } from "@/lib/api";
 import {
   changeGoogleStart,
+  fetchSecurityStatus,
   fetchBackupCodesStatus,
   isPasskeySupported,
   isPlatformAuthenticatorAvailable,
@@ -165,6 +166,11 @@ export function AccountView() {
   const [error, setError] = useState<string | null>(null);
   const [backupCodes, setBackupCodes] = useState<string[] | null>(null);
   const [showAdd, setShowAdd] = useState(false);
+  const [requiredSetup, setRequiredSetup] = useState<{
+    factor: "passkey" | "totp" | "both";
+    next: string;
+  } | null>(null);
+  const [setupNotice, setSetupNotice] = useState<string | null>(null);
 
   // เปลี่ยนบัญชี Google (re-link) — step-up ด้วย passkey แล้ว redirect ไป Google
   const [googleBusy, setGoogleBusy] = useState(false);
@@ -229,14 +235,24 @@ export function AccountView() {
     refresh();
   }, [refresh]);
 
-  // มาจากการ์ด SecurityOnboarding (?setup=passkey|totp|both) — scroll ไปการ์ดที่เลือก
+  // มาจาก security onboarding — scroll ไปวิธีที่เลือก และเปิดโหมดบังคับสำหรับ admin ใหม่
   useEffect(() => {
     if (typeof window === "undefined") return;
-    const setup = new URLSearchParams(window.location.search).get("setup");
-    if (!setup) return;
-    const targetId = setup === "totp" ? "setup-totp" : "setup-passkey";
-    const t = setTimeout(() => scrollTo(targetId), 300);
-    return () => clearTimeout(t);
+    const params = new URLSearchParams(window.location.search);
+    const setup = params.get("setup");
+    if (setup === "passkey" || setup === "totp" || setup === "both") {
+      const rawNext = params.get("next") || "/dashboard";
+      const next = rawNext.startsWith("/") && !rawNext.startsWith("//")
+        ? rawNext
+        : "/dashboard";
+      if (params.get("required") === "1") {
+        setRequiredSetup({ factor: setup, next });
+        setSetupNotice("กำลังตรวจสอบว่าลงทะเบียนวิธีที่เลือกสำเร็จแล้วหรือยัง");
+      }
+      const targetId = setup === "totp" ? "setup-totp" : "setup-passkey";
+      const t = setTimeout(() => scrollTo(targetId), 300);
+      return () => clearTimeout(t);
+    }
   }, []);
 
   const atMax = passkeys.length >= maxPasskeys;
@@ -244,6 +260,55 @@ export function AccountView() {
   const totpOn = totp?.enabled === true;
   const readyCount = 1 + (hasPasskey ? 1 : 0) + (totpOn ? 1 : 0);
   const hasCodes = (backupStatus?.generation ?? 0) > 0;
+
+  // Complete the forced setup only after the selected factor is active in the backend.
+  useEffect(() => {
+    if (!requiredSetup) return;
+    let cancelled = false;
+    let redirected = false;
+
+    const checkSetup = async () => {
+      try {
+        const status = await fetchSecurityStatus();
+        if (cancelled || redirected) return;
+        const complete =
+          requiredSetup.factor === "passkey"
+            ? status.has_passkey
+            : requiredSetup.factor === "totp"
+              ? status.has_totp
+              : status.has_passkey && status.has_totp;
+
+        if (complete && !backupCodes) {
+          redirected = true;
+          setSetupNotice("ลงทะเบียนสำเร็จ กำลังพาไปหน้าหลัก…");
+          window.location.replace(requiredSetup.next);
+          return;
+        }
+        setSetupNotice(
+          requiredSetup.factor === "both"
+            ? "กรุณาลงทะเบียน Passkey และ Authenticator ให้ครบทั้งสองวิธี"
+            : `กรุณาลงทะเบียน ${requiredSetup.factor === "totp" ? "Authenticator" : "Passkey"} ให้สำเร็จก่อนเข้าใช้งาน`
+        );
+      } catch {
+        if (!cancelled) {
+          setSetupNotice("ยังตรวจสอบผลการลงทะเบียนไม่ได้ กรุณาทำรายการให้เสร็จและรอสักครู่");
+        }
+      }
+    };
+
+    void checkSetup();
+    const timer = window.setInterval(() => void checkSetup(), 1500);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [requiredSetup, backupCodes]);
+
+  useEffect(() => {
+    if (requiredSetup?.factor !== "both" || !hasPasskey || totpOn) return;
+    const t = window.setTimeout(() => scrollTo("setup-totp"), 450);
+    return () => window.clearTimeout(t);
+  }, [requiredSetup, hasPasskey, totpOn]);
   // Google เชื่อมอยู่แล้วเสมอ (login เข้ามาได้ = ผูกแล้ว) จึงนับเป็น 1 วิธีพื้นฐาน
 
   const handleRegister = async () => {
@@ -295,6 +360,12 @@ export function AccountView() {
       <Topbar title="บัญชีของฉัน" />
 
       <div className="cx-document">
+        {requiredSetup && (
+          <div role="status" className="mb-4 border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+            <strong className="block">ต้องตั้งค่าความปลอดภัยก่อนเข้าใช้งาน</strong>
+            <span>{setupNotice || "กรุณาลงทะเบียนวิธีที่เลือกให้สำเร็จ"}</span>
+          </div>
+        )}
         {/* ── หัวหน้า: ตัวตน + ตัวเลขสำคัญ 3 ช่อง ── */}
         <section className="cx-account-cover">
           <div className="cx-account-avatar mono">{initialsOf(me)}</div>
