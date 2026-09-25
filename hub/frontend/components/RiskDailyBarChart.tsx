@@ -29,7 +29,7 @@ export function RiskDailyBarChart({ daily, days, rangeEnd }: Props) {
   const safeDays = Math.max(1, Math.min(days, 31));
   const byDate = new Map(daily.map((item) => [item.date.slice(0, 10), item]));
   const parsedEnd = new Date(
-    /[+-]\\d{2}:?\\d{2}$|Z$/i.test(rangeEnd) ? rangeEnd : rangeEnd + "Z"
+    /[+-]\d{2}:?\d{2}$|Z$/i.test(rangeEnd) ? rangeEnd : rangeEnd + "Z"
   );
   const end = Number.isFinite(parsedEnd.getTime()) ? parsedEnd : new Date();
   const points = Array.from({ length: safeDays }, (_, index) => {
