@@ -103,7 +103,7 @@ function SetupInner() {
       setDest(next);
 
       // admin ที่ยังไม่มี factor ต้องตั้งค่าจริงก่อนเข้าหน้าหลัก แม้เคยกด snooze/dismiss
-      const mustSetup = status.is_admin && !status.has_second_factor;
+      const mustSetup = isAdmin && !status.has_second_factor;
       setRequired(mustSetup);
       if (!mustSetup && !status.should_prompt_setup) {
         window.location.href = next;
