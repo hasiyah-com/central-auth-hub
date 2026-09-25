@@ -12,7 +12,7 @@ export const dynamic = "force-dynamic";
  */
 
 import { Suspense, useEffect, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import {
   fetchSecurityStatus,
   dismissSecurityOnboarding,
@@ -67,10 +67,8 @@ const OPTIONS: {
 ];
 
 function SetupInner() {
-  const router = useRouter();
   const params = useSearchParams();
   const [ready, setReady] = useState(false);
-  const [accountHref, setAccountHref] = useState("/account");
   const [dest, setDest] = useState("/dashboard");
   const [busy, setBusy] = useState<"" | "later" | "never">("");
   const [email, setEmail] = useState("");
@@ -93,12 +91,10 @@ function SetupInner() {
 
       const isAdmin = status.is_admin || me?.is_hub_admin === true || me?.user_type === "admin";
       const home = isAdmin ? "/dashboard" : "/developer/subsystems";
-      const acct = isAdmin ? "/account" : "/developer/account";
       const requestedNext = params.get("next") || home;
       const next = requestedNext.startsWith("/") && !requestedNext.startsWith("//")
         ? requestedNext
         : home;
-      setAccountHref(acct);
       setDest(next);
 
       // admin ที่ยังไม่มี factor ต้องตั้งค่าจริงก่อนเข้าหน้าหลัก แม้เคยกด snooze/dismiss
@@ -118,13 +114,11 @@ function SetupInner() {
   }, []);
 
   const go = (setup: Factor) => {
-    if (required || params.get("required") === "1") {
-      const query = new URLSearchParams({ enroll: setup, required: "1", next: dest });
-      window.location.assign(`/auth/setup?${query.toString()}`);
-      return;
-    }
-    const query = new URLSearchParams({ setup });
-    router.push(`${accountHref}?${query.toString()}`);
+    const query = new URLSearchParams({ enroll: setup, next: dest });
+    if (required || params.get("required") === "1") query.set("required", "1");
+    // Choosing a factor always opens its focused enrollment screen; never route
+    // to Account, where the user could switch away before finishing this choice.
+    window.location.assign(`/auth/setup?${query.toString()}`);
   };
 
   const later = async () => {
@@ -163,8 +157,8 @@ function SetupInner() {
   const enrollFactor = params.get("enroll");
   const nextParam = params.get("next") || dest;
   const safeNext = nextParam.startsWith("/") && !nextParam.startsWith("//") ? nextParam : "/dashboard";
-  if (required && (enrollFactor === "passkey" || enrollFactor === "totp" || enrollFactor === "both")) {
-    return <RequiredEnrollment factor={enrollFactor} next={safeNext} email={email} />;
+  if (enrollFactor === "passkey" || enrollFactor === "totp" || enrollFactor === "both") {
+    return <RequiredEnrollment factor={enrollFactor} next={safeNext} email={email} required={required} />;
   }
 
   return (
@@ -276,7 +270,7 @@ function SetupInner() {
 }
 
 
-function RequiredEnrollment({ factor, next, email }: { factor: Factor; next: string; email: string }) {
+function RequiredEnrollment({ factor, next, email, required }: { factor: Factor; next: string; email: string; required: boolean }) {
   const [deviceName, setDeviceName] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -333,7 +327,7 @@ function RequiredEnrollment({ factor, next, email }: { factor: Factor; next: str
         <header className="bg-[#0b1728] px-6 py-7 text-white sm:px-10">
           <div className="font-mono text-[11px] uppercase tracking-[0.2em] text-teal-300">Central Auth Hub · Required security setup</div>
           <h1 className="mt-3 text-2xl font-bold sm:text-3xl">{title}</h1>
-          <p className="mt-2 text-sm text-slate-300">ลงทะเบียนวิธีที่เลือกให้สำเร็จก่อน จึงจะเข้าใช้งานหน้าหลักของผู้ดูแลระบบได้</p>
+          <p className="mt-2 text-sm text-slate-300">{required ? "ลงทะเบียนวิธีที่เลือกให้สำเร็จก่อน จึงจะเข้าใช้งานหน้าหลักของผู้ดูแลระบบได้" : "ลงทะเบียนวิธีที่เลือกเพื่อเปิดใช้งาน แล้วระบบจะพากลับไปหน้าก่อนหน้า"}</p>
           {email && <p className="mt-3 break-all font-mono text-xs text-teal-300">{email}</p>}
         </header>
         <div className="space-y-5 p-6 sm:p-10">
