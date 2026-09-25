@@ -7,9 +7,8 @@ export const dynamic = "force-dynamic";
  * หน้า interstitial "เพิ่มความปลอดภัยให้บัญชี" — แสดง **ครั้งเดียวหลัง login**
  * สำหรับ user ที่ยังไม่มี factor (should_prompt_setup) ก่อนเข้าหน้าหลัก.
  *
- * ธีมเดียวกับหน้า login: dark indigo hero + การ์ดขาวยกลอย. เลือกวิธี → ไปหน้า account
- * ตั้งค่าจริง; "ไว้ทีหลัง" = snooze 7 วัน; "ไม่ต้องถามอีก" = ปิดถาวร. ทั้ง 3 ทางออกไป
- * `next` (หน้าหลักตาม role).
+ * แอดมินที่ถูกบังคับตั้งค่าจะลงทะเบียนในหน้านี้ก่อนเข้า portal; onboarding
+ * แบบไม่บังคับยังไปจัดการต่อในหน้า Account ได้.
  */
 
 import { Suspense, useEffect, useState } from "react";
@@ -103,7 +102,11 @@ function SetupInner() {
       setDest(next);
 
       // admin ที่ยังไม่มี factor ต้องตั้งค่าจริงก่อนเข้าหน้าหลัก แม้เคยกด snooze/dismiss
-      const mustSetup = isAdmin && !status.has_second_factor;
+      // `required=1` มาจาก middleware หลังตรวจ JWT ว่าเป็น admin แล้ว
+      // ใช้ค่านี้ด้วย เพราะ security-status อาจไม่มี is_admin ในบาง token/schema version.
+      const mustSetup =
+        (isAdmin || params.get("required") === "1") &&
+        status.has_second_factor !== true;
       setRequired(mustSetup);
       if (!mustSetup && !status.should_prompt_setup) {
         window.location.href = next;
@@ -115,9 +118,9 @@ function SetupInner() {
   }, []);
 
   const go = (setup: Factor) => {
-    if (required) {
+    if (required || params.get("required") === "1") {
       const query = new URLSearchParams({ enroll: setup, required: "1", next: dest });
-      router.push(`/auth/setup?${query.toString()}`);
+      window.location.assign(`/auth/setup?${query.toString()}`);
       return;
     }
     const query = new URLSearchParams({ setup });
