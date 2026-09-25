@@ -26,6 +26,7 @@ def test_insights_empty_window(analytics_db):
     db, _ = analytics_db
     result = admin.dashboard_insights(hours=24, admin=None, db=db)
     assert result["risk"]["distribution"]["scored_total"] == 0
+    assert result["risk"]["distribution"]["histogram"] == [0] * 20
     assert result["risk"]["avg_today"] is None
     assert result["risk"]["delta"] is None
     assert result["logins"]["change_pct"] is None
@@ -43,9 +44,17 @@ def test_insights_real_scores_and_signal_counts(analytics_db):
     db.add(LoginSession(created_at=now + timedelta(hours=1), risk_score=1))
     db.flush()
     result = admin.dashboard_insights(hours=24, admin=None, db=db)
-    assert result["risk"]["distribution"] == {
+    distribution = result["risk"]["distribution"]
+    assert {key: distribution[key] for key in ("low", "medium", "high", "critical", "scored_total")} == {
         "low": 1, "medium": 1, "high": 1, "critical": 2, "scored_total": 5,
     }
+    assert len(distribution["histogram"]) == 20
+    assert sum(distribution["histogram"]) == 5
+    assert distribution["histogram"][0] == 1
+    assert distribution["histogram"][10] == 1
+    assert distribution["histogram"][14] == 1
+    assert distribution["histogram"][17] == 1
+    assert distribution["histogram"][19] == 1
     assert result["risk"]["thresholds"] == THRESHOLDS
     assert result["logins"] == {"today": 6, "yesterday": 1, "change_pct": 500.0}
     assert result["attack_ip"] == {"sessions": 1, "pct": 16.7}

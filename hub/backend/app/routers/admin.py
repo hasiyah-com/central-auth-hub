@@ -157,6 +157,17 @@ def dashboard_insights(
         func.count(case((LoginSession.is_attack_ip.is_(True), 1))),
     ).filter(LoginSession.created_at >= since, LoginSession.created_at < now).one()
     total, avg, scored, low, medium, high, critical, attack = current
+    # 20 equal-width buckets across 0.00–1.00 for the dashboard histogram.
+    # Keep this derived from persisted scores; NULL scores remain excluded.
+    histogram = [0] * 20
+    score_rows = db.query(score).filter(
+        LoginSession.created_at >= since,
+        LoginSession.created_at < now,
+        score.isnot(None),
+    ).yield_per(1000)
+    for (value,) in score_rows:
+        numeric = max(0.0, min(float(value), 1.0))
+        histogram[min(int(numeric * 20), 19)] += 1
     prev_total, prev_avg = db.query(func.count(LoginSession.id), func.avg(score)).filter(
         LoginSession.created_at >= previous, LoginSession.created_at < since,
     ).one()
@@ -189,7 +200,8 @@ def dashboard_insights(
             "delta": float(avg) - float(prev_avg) if avg is not None and prev_avg is not None else None,
             "thresholds": dict(THRESHOLDS),
             "distribution": {"low": low, "medium": medium, "high": high,
-                             "critical": critical, "scored_total": scored},
+                             "critical": critical, "scored_total": scored,
+                             "histogram": histogram},
         },
         "signals": [{"key": key, "label": key, "count": count}
                     for key, count in sorted(signals.items(), key=lambda item: (-item[1], item[0]))],

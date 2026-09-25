@@ -1099,7 +1099,7 @@
   display: flex;
   align-items: flex-end;
   gap: 3px;
-  height: 138px;
+  height: 172px;
   border-bottom: 1px solid #cfd7df;
   /* เส้น grid แนวนอนทุก 34px */
   background: repeating-linear-gradient(transparent 0, transparent 33px, #edf0f4 34px);
@@ -1109,6 +1109,7 @@
   flex: 1;
   min-height: 2px;
   opacity: 0.9;
+  min-width: 0;
 }
 /* ช่วงที่ไม่มี session — วาดเป็นขีดจาง ๆ ให้แกนอ่านต่อเนื่อง
    ไม่งั้นจะเห็นเป็นช่องขาวเหมือนรูโหว่ระหว่างแท่ง */
@@ -1363,14 +1364,15 @@
   margin-top: auto;
 }
 
-/* histogram ยืดเต็มพื้นที่ที่เหลือ แต่ไม่ต่ำกว่าสัดส่วนของดีไซน์ */
+/* histogram ใช้สัดส่วนกะทัดรัดตามการ์ดอ้างอิง */
 .sr .risk-distribution {
   display: flex;
   flex-direction: column;
+  flex: 0 0 auto;
 }
 .sr .histogram {
-  flex: 1 1 auto;
-  min-height: 138px;
+  flex: 0 0 172px;
+  min-height: 172px;
 }
 
 /* แถบสัญญาณ — กระจายให้เต็มความสูงแทนที่จะกองอยู่ด้านบน */
