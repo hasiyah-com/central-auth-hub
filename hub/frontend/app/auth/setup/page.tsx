@@ -72,6 +72,8 @@ function SetupInner() {
   const [dest, setDest] = useState("/dashboard");
   const [busy, setBusy] = useState<"" | "later" | "never">("");
   const [email, setEmail] = useState("");
+  const [required, setRequired] = useState(false);
+  const [gateError, setGateError] = useState<string | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -82,13 +84,24 @@ function SetupInner() {
       setEmail(typeof me?.email === "string" ? me.email : "");
       const home = isAdmin ? "/dashboard" : "/developer/subsystems";
       const acct = isAdmin ? "/account" : "/developer/account";
-      const next = params.get("next") || home;
+      const requestedNext = params.get("next") || home;
+      const next = requestedNext.startsWith("/") && !requestedNext.startsWith("//")
+        ? requestedNext
+        : home;
       setAccountHref(acct);
       setDest(next);
 
-      // มี factor แล้ว / ปิดถาวร / อยู่ในช่วง snooze → ข้ามไปหน้าหลักเลย
       const status = await fetchSecurityStatus().catch(() => null);
-      if (!status || !status.should_prompt_setup) {
+      if (!status) {
+        setGateError("ตรวจสอบสถานะความปลอดภัยไม่ได้ กรุณาลองใหม่ก่อนเข้าใช้งาน");
+        setReady(true);
+        return;
+      }
+
+      // admin ที่ยังไม่มี factor ต้องตั้งค่าจริงก่อนเข้าหน้าหลัก แม้เคยกด snooze/dismiss
+      const mustSetup = status.is_admin && !status.has_second_factor;
+      setRequired(mustSetup);
+      if (!mustSetup && !status.should_prompt_setup) {
         window.location.href = next;
         return;
       }
@@ -97,9 +110,17 @@ function SetupInner() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const go = (setup: Factor) => router.push(`${accountHref}?setup=${setup}`);
+  const go = (setup: Factor) => {
+    const query = new URLSearchParams({ setup });
+    if (required) {
+      query.set("required", "1");
+      query.set("next", dest);
+    }
+    router.push(`${accountHref}?${query.toString()}`);
+  };
 
   const later = async () => {
+    if (required) return;
     setBusy("later");
     try {
       await snoozeSecurityOnboarding(); // พัก 7 วัน (ผูกกับบัญชี)
@@ -110,6 +131,7 @@ function SetupInner() {
   };
 
   const never = async () => {
+    if (required) return;
     setBusy("never");
     try {
       await dismissSecurityOnboarding();
@@ -174,7 +196,19 @@ function SetupInner() {
           </header>
 
           <div className="flex flex-1 flex-col justify-center px-6 py-7 sm:px-10 sm:py-9">
-            <p className="mb-5 max-w-2xl text-sm leading-6 text-slate-500">ตั้งค่าครั้งเดียว แล้วใช้ยืนยันตัวตนเมื่อเข้าใช้งานครั้งต่อไป เลือกวิธีที่เหมาะกับคุณ</p>
+            {required ? (
+              <p className="mb-5 max-w-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900">
+                บัญชีผู้ดูแลระบบต้องลงทะเบียนวิธีที่เลือกให้สำเร็จก่อน จึงจะเข้าใช้งานหน้าหลักได้
+              </p>
+            ) : (
+              <p className="mb-5 max-w-2xl text-sm leading-6 text-slate-500">ตั้งค่าครั้งเดียว แล้วใช้ยืนยันตัวตนเมื่อเข้าใช้งานครั้งต่อไป เลือกวิธีที่เหมาะกับคุณ</p>
+            )}
+            {gateError && (
+              <div role="alert" className="mb-4 flex flex-wrap items-center justify-between gap-3 border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
+                <span>{gateError}</span>
+                <button type="button" onClick={() => window.location.reload()} className="font-semibold underline">ลองตรวจสอบอีกครั้ง</button>
+              </div>
+            )}
             <div className="space-y-3">
               {OPTIONS.map((o) => (
                 <button
@@ -199,15 +233,21 @@ function SetupInner() {
             </div>
 
             <div className="mt-7 flex flex-col gap-3 border-t border-slate-200 pt-5 sm:flex-row sm:items-center sm:justify-between">
-              <p className="text-xs text-slate-500">ข้ามได้ — ตั้งค่าภายหลังในหน้า “บัญชีของฉัน”</p>
-              <div className="flex flex-wrap items-center gap-2 sm:justify-end">
-                <button type="button" onClick={later} disabled={!!busy} className="min-h-10 border border-slate-300 px-4 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:opacity-50">
-                  {busy === "later" ? "กำลังบันทึก…" : "ไว้ทีหลัง"}
-                </button>
-                <button type="button" onClick={never} disabled={!!busy} className="min-h-10 border border-slate-300 px-4 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:opacity-50">
-                  {busy === "never" ? "กำลังบันทึก…" : "ไม่ต้องถามอีก"}
-                </button>
-              </div>
+              {required ? (
+                <p className="text-xs font-medium text-slate-600">ต้องลงทะเบียนวิธีที่เลือกให้เสร็จก่อน จึงจะไปหน้าหลักได้</p>
+              ) : (
+                <>
+                  <p className="text-xs text-slate-500">ข้ามได้ — ตั้งค่าภายหลังในหน้า “บัญชีของฉัน”</p>
+                  <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+                    <button type="button" onClick={later} disabled={!!busy} className="min-h-10 border border-slate-300 px-4 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:opacity-50">
+                      {busy === "later" ? "กำลังบันทึก…" : "ไว้ทีหลัง"}
+                    </button>
+                    <button type="button" onClick={never} disabled={!!busy} className="min-h-10 border border-slate-300 px-4 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:opacity-50">
+                      {busy === "never" ? "กำลังบันทึก…" : "ไม่ต้องถามอีก"}
+                    </button>
+                  </div>
+                </>
+              )}
             </div>
           </div>
           <footer className="flex items-center justify-between border-t border-slate-200 bg-slate-50 px-6 py-4 font-mono text-[10px] uppercase tracking-wider text-slate-500 sm:px-10">
