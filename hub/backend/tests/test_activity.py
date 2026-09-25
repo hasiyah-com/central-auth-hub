@@ -73,6 +73,7 @@ def test_structure(client, admin_token, auth_headers):
             "hour",
             "count",
             "blocked",
+            "challenged",
             "low",
             "medium",
             "high",
@@ -85,6 +86,8 @@ def test_structure(client, admin_token, auth_headers):
             + bucket["unknown"]
             == bucket["count"]
         )
+        assert 0 <= bucket["blocked"] <= bucket["count"]
+        assert 0 <= bucket["challenged"] <= bucket["count"] - bucket["blocked"]
     assert isinstance(d["active"], list)
     assert d["active_count"] == len(d["active"]) == d["kpis"]["online"]
     if d["items"]:
