@@ -3085,6 +3085,7 @@ def access_activity(
             func.date_trunc("hour", LoginSession.created_at).label("h"),
             func.count(LoginSession.id),
             func.sum(case((LoginSession.decision.in_(_BLOCKED_DECISIONS), 1), else_=0)),
+            func.sum(case((LoginSession.decision.in_(_CHALLENGED_DECISIONS), 1), else_=0)),
             func.sum(
                 case(
                     (
@@ -3121,12 +3122,13 @@ def access_activity(
             "hour": h.isoformat() if h else None,
             "count": int(c or 0),
             "blocked": int(b or 0),
+            "challenged": int(challenged or 0),
             "low": int(low or 0),
             "medium": int(medium or 0),
             "high": int(high or 0),
             "unknown": int(unknown or 0),
         }
-        for h, c, b, low, medium, high, unknown in hour_rows
+        for h, c, b, challenged, low, medium, high, unknown in hour_rows
     ]
 
     return {
