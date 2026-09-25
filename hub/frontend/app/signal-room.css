@@ -1326,6 +1326,10 @@
   color: #b66c00;
   background: #fff2dc;
 }
+.sr .queue-icon.recovery {
+  color: #2876c8;
+  background: #eaf3ff;
+}
 .sr .queue-item strong,
 .sr .queue-item span,
 .sr .queue-item code {

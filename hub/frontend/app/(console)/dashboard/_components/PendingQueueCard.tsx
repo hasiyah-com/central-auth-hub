@@ -23,6 +23,20 @@ type PendingSubsystem = {
   created_at?: string | null;
 };
 
+type RecoveryTicket = {
+  id: string;
+  email: string;
+  recovery_level: "NORMAL" | "HIGH";
+  created_at: string | null;
+  approvals: number;
+  required: number;
+};
+
+type RecoveryTicketResponse = {
+  items: RecoveryTicket[];
+  total: number;
+};
+
 type QueueItem = {
   id: string;
   title: string;
@@ -30,7 +44,7 @@ type QueueItem = {
   code: string;
   createdAt: string | null;
   href: string;
-  tone: "subsystem" | "change" | "owner";
+  tone: "subsystem" | "change" | "owner" | "recovery";
 };
 
 const REQUEST_LABELS: Record<string, string> = {
@@ -61,6 +75,14 @@ function timeAgo(value: string | null) {
 }
 
 function QueueIcon({ tone }: { tone: QueueItem["tone"] }) {
+  if (tone === "recovery") {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <circle cx="8" cy="15" r="4" />
+        <path d="m11 12 8-8M17 6l2 2M14 9l2 2" />
+      </svg>
+    );
+  }
   if (tone === "owner") {
     return (
       <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -100,11 +122,13 @@ export function PendingQueueCard() {
     Promise.allSettled([
       clientFetch<PendingSubsystem[]>("/admin/subsystems?status=pending"),
       clientFetch<ChangeRequestResponse>("/admin/change-requests?status=pending&limit=100"),
-    ]).then(([subsystemsResult, changesResult]) => {
+      clientFetch<RecoveryTicketResponse>("/admin/recovery-tickets?status=pending"),
+    ]).then(([subsystemsResult, changesResult, recoveryResult]) => {
       if (!active) return;
 
       const subsystems = subsystemsResult.status === "fulfilled" ? subsystemsResult.value : [];
       const changes = changesResult.status === "fulfilled" ? changesResult.value : { items: [], total: 0 };
+      const recovery = recoveryResult.status === "fulfilled" ? recoveryResult.value : { items: [], total: 0 };
       const queue: QueueItem[] = [
         ...subsystems.map((item) => ({
           id: `subsystem-${item.id}`,
@@ -124,6 +148,15 @@ export function PendingQueueCard() {
           href: "/pending-requests",
           tone: item.request_type === "owner_transfer" ? ("owner" as const) : ("change" as const),
         })),
+        ...recovery.items.map((item) => ({
+          id: `recovery-${item.id}`,
+          title: "คำขอกู้บัญชี",
+          subtitle: item.email,
+          code: `${item.recovery_level} · ${item.approvals}/${item.required} approvals`,
+          createdAt: item.created_at,
+          href: "/recovery-tickets",
+          tone: "recovery" as const,
+        })),
       ].sort((a, b) => {
         const at = a.createdAt ? parseUTC(a.createdAt).getTime() : 0;
         const bt = b.createdAt ? parseUTC(b.createdAt).getTime() : 0;
@@ -131,8 +164,12 @@ export function PendingQueueCard() {
       });
 
       setItems(queue.slice(0, 3));
-      setTotal(subsystems.length + changes.total);
-      setFailed(subsystemsResult.status === "rejected" && changesResult.status === "rejected");
+      setTotal(subsystems.length + changes.total + recovery.total);
+      setFailed(
+        subsystemsResult.status === "rejected" &&
+          changesResult.status === "rejected" &&
+          recoveryResult.status === "rejected"
+      );
       setLoading(false);
     });
 
