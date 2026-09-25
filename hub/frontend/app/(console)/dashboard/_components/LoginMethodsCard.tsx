@@ -132,7 +132,7 @@ export function LoginMethodsCard() {
   ];
 
   return (
-    <section>
+    <section className="login-methods-panel">
       {verifying && (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40">
           <div className="bg-white border border-ink-200 px-6 py-5 flex items-center gap-3 text-sm text-ink-700">
@@ -211,47 +211,49 @@ export function LoginMethodsCard() {
           <b className="mono">TRUST WINDOW · 15 MIN</b>
         </div>
 
-        <div className="px-4 pb-4 pt-3">
-          {noneSelected && (
-          <div className="mb-3 text-xs text-rose-700 bg-rose-50 border border-rose-200 p-2.5">
-            ต้องเปิดอย่างน้อย 1 วิธี — ไม่งั้นจะไม่มีใคร login เข้าระบบได้
+        {(!policy || dirty || noneSelected || msg) && (
+          <div className="auth-policy-actions px-4 pb-4 pt-3">
+            {noneSelected && (
+              <div className="mb-3 text-xs text-rose-700 bg-rose-50 border border-rose-200 p-2.5">
+                ต้องเปิดอย่างน้อย 1 วิธี — ไม่งั้นจะไม่มีใคร login เข้าระบบได้
+              </div>
+            )}
+
+            {msg && (
+              <div
+                className={
+                  "mb-3 text-xs p-2.5 border " +
+                  (msg.kind === "ok"
+                    ? "text-emerald-800 bg-emerald-50 border-emerald-200"
+                    : "text-rose-700 bg-rose-50 border-rose-200")
+                }
+              >
+                {msg.text}
+              </div>
+            )}
+
+            <div className="flex items-center gap-2">
+              <button
+                onClick={save}
+                disabled={busy || !dirty || noneSelected}
+                className="px-4 py-2 bg-ink-900 hover:bg-ink-800 disabled:bg-ink-300 disabled:cursor-not-allowed text-white text-sm font-bold transition"
+              >
+                {busy ? "กำลังบันทึก…" : "บันทึก + ตัด session ทั้งหมด"}
+              </button>
+              {dirty && !busy && (
+                <button
+                  onClick={reset}
+                  className="px-3 py-2 border border-ink-200 hover:bg-ink-50 text-sm text-ink-600"
+                >
+                  ยกเลิก
+                </button>
+              )}
+              {!policy && (
+                <span className="text-xs text-ink-400">กำลังโหลด…</span>
+              )}
+            </div>
           </div>
         )}
-
-        {msg && (
-          <div
-            className={
-              "mb-3 text-xs p-2.5 border " +
-              (msg.kind === "ok"
-                ? "text-emerald-800 bg-emerald-50 border-emerald-200"
-                : "text-rose-700 bg-rose-50 border-rose-200")
-            }
-          >
-            {msg.text}
-          </div>
-        )}
-
-        <div className="flex items-center gap-2">
-          <button
-            onClick={save}
-            disabled={busy || !dirty || noneSelected}
-            className="px-4 py-2 bg-ink-900 hover:bg-ink-800 disabled:bg-ink-300 disabled:cursor-not-allowed text-white text-sm font-bold transition"
-          >
-            {busy ? "กำลังบันทึก…" : "บันทึก + ตัด session ทั้งหมด"}
-          </button>
-          {dirty && !busy && (
-            <button
-              onClick={reset}
-              className="px-3 py-2 border border-ink-200 hover:bg-ink-50 text-sm text-ink-600"
-            >
-              ยกเลิก
-            </button>
-          )}
-          {!policy && (
-            <span className="text-xs text-ink-400">กำลังโหลด…</span>
-          )}
-          </div>
-        </div>
       </div>
     </section>
   );

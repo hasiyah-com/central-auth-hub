@@ -26,6 +26,7 @@ import "../../signal-room.css";
 import { Topbar } from "@/components/Topbar";
 import { clientFetch } from "@/lib/api";
 import { LoginMethodsCard } from "./_components/LoginMethodsCard";
+import { PendingQueueCard } from "./_components/PendingQueueCard";
 
 type Overview = {
   users: { total: number; active: number };
@@ -1260,8 +1261,11 @@ export default function DashboardPage() {
             </section>
           </div>
 
-          {/* ── auth policy ── */}
-          <LoginMethodsCard />
+          {/* ── auth policy + pending decision queue ── */}
+          <div className="lower-grid dashboard-bottom-grid">
+            <LoginMethodsCard />
+            <PendingQueueCard />
+          </div>
         </div>
       </main>
     </>
