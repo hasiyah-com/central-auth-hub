@@ -19,7 +19,7 @@
  *  - B51: เช็ค "ยังไม่โหลด" จาก source object ไม่ใช่ค่าที่คำนวณได้ (0 จริงต้องเป็น 0)
  */
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 // design system ที่ port มาจากดีไซน์ตัวจริง (central-auth-hub-signal) — ทุกกฎ scope ใต้ .sr
 import "../../signal-room.css";
@@ -337,6 +337,32 @@ export default function DashboardPage() {
   const [notif, setNotif] = useState<NotifCount | null>(null);
   const [map, setMap] = useState<MapData | null>(null);
   const [ins, setIns] = useState<Insights | null>(null);
+  const [insError, setInsError] = useState<string | null>(null);
+  const [insLoading, setInsLoading] = useState(true);
+  const insPending = useRef(false);
+  const loadInsights = useCallback(async () => {
+    if (insPending.current) return;
+    insPending.current = true;
+    setInsLoading(true);
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15_000);
+    try {
+      const result = await clientFetch<Insights>("/admin/dashboard/insights?hours=24", {
+        signal: controller.signal,
+      });
+      if (!result?.risk?.distribution || !result.risk.thresholds || !Array.isArray(result.signals)) {
+        throw new Error("Invalid insights response");
+      }
+      setIns(result);
+      setInsError(null);
+    } catch {
+      setInsError("โหลดข้อมูลความเสี่ยงไม่สำเร็จ กรุณาลองใหม่");
+    } finally {
+      clearTimeout(timeout);
+      insPending.current = false;
+      setInsLoading(false);
+    }
+  }, []);
   const [act, setAct] = useState<ActivityResp | null>(null);
   const [range, setRange] = useState<Range>(24);
   const [traffic, setTraffic] = useState<HourBucket[] | null>(null);
@@ -349,7 +375,6 @@ export default function DashboardPage() {
   const refreshLive = () => {
     clientFetch<NotifCount>("/admin/notifications/count").then(setNotif).catch(() => {});
     clientFetch<MapData>("/admin/dashboard/map").then(setMap).catch(() => {});
-    clientFetch<Insights>("/admin/dashboard/insights?hours=24").then(setIns).catch(() => {});
     clientFetch<ActivityResp>("/admin/activity?hours=24&limit=5").then(setAct).catch(() => {});
   };
 
@@ -388,18 +413,22 @@ export default function DashboardPage() {
   };
 
   useEffect(() => {
+    void loadInsights();
+    const timer = setInterval(() => void loadInsights(), 30_000);
+    return () => clearInterval(timer);
+  }, [loadInsights]);
+
+  useEffect(() => {
     Promise.all([
       clientFetch<Overview>("/admin/overview"),
       clientFetch<NotifCount>("/admin/notifications/count").catch(() => null),
       clientFetch<MapData>("/admin/dashboard/map").catch(() => null),
-      clientFetch<Insights>("/admin/dashboard/insights?hours=24").catch(() => null),
       clientFetch<ActivityResp>("/admin/activity?hours=24&limit=5").catch(() => null),
     ])
-      .then(([ov, nc, mp, iv, ac]) => {
+      .then(([ov, nc, mp, ac]) => {
         setData(ov);
         if (nc) setNotif(nc);
         if (mp) setMap(mp);
-        if (iv) setIns(iv);
         if (ac) setAct(ac);
       })
       .catch((e) => setError(e.detail || "โหลดข้อมูลไม่สำเร็จ"));
@@ -1075,6 +1104,15 @@ export default function DashboardPage() {
           </div>
 
           {/* ── risk distribution + security signals ── */}
+          {insError && (
+            <div role="alert" className="my-3 border border-amber-300 bg-amber-50 p-3 text-sm">
+              {insError}{ins ? " (กำลังแสดงข้อมูลที่โหลดสำเร็จครั้งล่าสุด)" : ""}
+              <button type="button" className="ml-3 underline" disabled={insLoading}
+                onClick={() => void loadInsights()}>
+                {insLoading ? "กำลังลองใหม่…" : "ลองใหม่"}
+              </button>
+            </div>
+          )}
           <div className="analytics-grid">
             <section className="card distribution-card">
               <div className="card-head chart-card-head">
@@ -1085,7 +1123,7 @@ export default function DashboardPage() {
               </div>
 
               {!dist || !ins ? (
-                <div className="py-8 text-center text-sm text-ink-400">กำลังโหลด…</div>
+                <div className="py-8 text-center text-sm text-ink-400">{insLoading ? "กำลังโหลด…" : "ยังโหลดข้อมูลไม่ได้"}</div>
               ) : dist.scored_total === 0 ? (
                 <div className="py-8 text-center text-sm text-ink-400">
                   ยังไม่มี session ที่ให้คะแนนใน 24 ชั่วโมงที่ผ่านมา
@@ -1174,7 +1212,7 @@ export default function DashboardPage() {
               </div>
 
               {!ins ? (
-                <div className="py-8 text-center text-sm text-ink-400">กำลังโหลด…</div>
+                <div className="py-8 text-center text-sm text-ink-400">{insLoading ? "กำลังโหลด…" : "ยังโหลดข้อมูลไม่ได้"}</div>
               ) : ins.signals.length === 0 ? (
                 <div className="py-8 text-center text-sm text-ink-400">
                   ไม่พบสัญญาณผิดปกติใน 24 ชั่วโมงที่ผ่านมา
