@@ -36,16 +36,15 @@ export function RiskDailyBarChart({ daily, days, rangeEnd }: Props) {
     const date = new Date(end);
     date.setUTCDate(end.getUTCDate() - (safeDays - 1 - index));
     const key = dateKey(date);
+    const item = byDate.get(key);
     return {
       date: key,
       label: key.slice(5),
-      ...(byDate.get(key) ?? {
-        count: 0,
-        low: 0,
-        medium: 0,
-        high: 0,
-        unknown: 0,
-      }),
+      count: item?.count ?? 0,
+      low: item?.low ?? 0,
+      medium: item?.medium ?? 0,
+      high: item?.high ?? 0,
+      unknown: item?.unknown ?? 0,
     };
   });
 
