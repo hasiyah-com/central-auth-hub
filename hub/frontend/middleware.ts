@@ -106,6 +106,7 @@ export async function middleware(req: NextRequest) {
   }
 
   const token = req.cookies.get(TOKEN_COOKIE)?.value;
+  let activeToken = token;
   let payload = token ? parseJwt(token) : null;
   let refreshedResponse: NextResponse | null = null;
 
@@ -120,6 +121,7 @@ export async function middleware(req: NextRequest) {
     }
     payload = refreshed.payload;
     refreshedResponse = refreshed.res;
+    activeToken = refreshed.res.cookies.get(TOKEN_COOKIE)?.value ?? token;
   }
 
   if (pathMatches(ADMIN_PATHS, pathname) && !isAdmin(payload)) {
@@ -132,6 +134,55 @@ export async function middleware(req: NextRequest) {
     const url = new URL("/auth/login", req.url);
     url.searchParams.set("error", "not_developer");
     return NextResponse.redirect(url);
+  }
+
+  // Admins without an active factor must finish onboarding before opening protected pages.
+  // The account page is the only allowed destination while registering the chosen factor.
+  const isProtectedPortal =
+    pathMatches(ADMIN_PATHS, pathname) || pathMatches(DEV_PATHS, pathname);
+  const isFactorSetupPage =
+    (pathname === "/account" || pathname === "/developer/account") &&
+    req.nextUrl.searchParams.get("required") === "1";
+  if (isAdmin(payload) && isProtectedPortal && !isFactorSetupPage) {
+    let requireFactorSetup = true;
+    let statusCheckFailed = false;
+    try {
+      const response = await fetch(
+        `${HUB_INTERNAL}/auth/account/security-status`,
+        {
+          headers: activeToken
+            ? { authorization: `Bearer ${activeToken}` }
+            : {},
+          cache: "no-store",
+        }
+      );
+      if (!response.ok) {
+        statusCheckFailed = true;
+      } else {
+        const security = (await response.json()) as {
+          is_admin?: boolean;
+          has_second_factor?: boolean;
+        };
+        requireFactorSetup =
+          security.is_admin === true && security.has_second_factor !== true;
+      }
+    } catch {
+      statusCheckFailed = true;
+    }
+
+    if (requireFactorSetup || statusCheckFailed) {
+      const url = new URL("/auth/setup", req.url);
+      url.searchParams.set("required", "1");
+      url.searchParams.set("next", pathname + req.nextUrl.search);
+      if (statusCheckFailed) url.searchParams.set("check", "failed");
+      const redirect = NextResponse.redirect(url);
+      if (refreshedResponse) {
+        for (const cookie of refreshedResponse.cookies.getAll()) {
+          redirect.cookies.set(cookie);
+        }
+      }
+      return redirect;
+    }
   }
 
   return refreshedResponse ?? NextResponse.next();
