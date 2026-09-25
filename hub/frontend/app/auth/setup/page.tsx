@@ -71,6 +71,7 @@ function SetupInner() {
   const [accountHref, setAccountHref] = useState("/account");
   const [dest, setDest] = useState("/dashboard");
   const [busy, setBusy] = useState<"" | "later" | "never">("");
+  const [email, setEmail] = useState("");
 
   useEffect(() => {
     (async () => {
@@ -78,6 +79,7 @@ function SetupInner() {
         .then((r) => (r.ok ? r.json() : null))
         .catch(() => null);
       const isAdmin = me?.is_hub_admin === true || me?.user_type === "admin";
+      setEmail(typeof me?.email === "string" ? me.email : "");
       const home = isAdmin ? "/dashboard" : "/developer/subsystems";
       const acct = isAdmin ? "/account" : "/developer/account";
       const next = params.get("next") || home;
@@ -129,105 +131,90 @@ function SetupInner() {
   }
 
   return (
-    <main className="min-h-screen grid place-items-center bg-gradient-to-br from-ink-900 via-ink-800 to-brand-900 px-4 py-10">
-      <div className="reveal w-full max-w-3xl overflow-hidden rounded-3xl bg-white shadow-2xl">
-        {/* accent bar */}
-        <div className="h-1.5 bg-gradient-to-r from-emerald-400 via-brand-500 to-brand-700" />
-
-        <div className="px-7 pb-7 pt-8 sm:px-10 sm:pb-9">
-          {/* header */}
-          <div
-            className="reveal flex items-center gap-3"
-            style={{ animationDelay: "60ms" }}
-          >
-            <div className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-gradient-to-br from-brand-600 to-brand-900 text-xl text-white shadow-md">
-
-            </div>
-            <div>
-              <div className="text-[11px] font-semibold uppercase tracking-[0.18em] text-brand-600">
-                Central Auth Hub
-              </div>
-              <h1 className="text-xl font-extrabold text-ink-900 sm:text-2xl">
-                เพิ่มความปลอดภัยให้บัญชี
-              </h1>
-            </div>
-          </div>
-
-          <p
-            className="reveal mt-3 max-w-xl text-sm leading-relaxed text-ink-500"
-            style={{ animationDelay: "110ms" }}
-          >
-            เลือกวิธียืนยันตัวตนอีกชั้น เพื่อให้บัญชีปลอดภัยแม้รหัส Google หลุด —
-            ตั้งครั้งเดียว ใช้ได้ตลอด
-          </p>
-
-          {/* options */}
-          <div className="mt-6 grid gap-3 sm:grid-cols-3">
-            {OPTIONS.map((o, i) => (
-              <button
-                key={o.key}
-                onClick={() => go(o.key)}
-                style={{ animationDelay: `${180 + i * 80}ms` }}
-                className={`reveal group relative flex flex-col gap-3 rounded-2xl border border-ink-200 bg-white p-4 text-left transition-all duration-200 hover:-translate-y-1 hover:shadow-lg hover:ring-4 ${o.ring} focus:outline-none focus-visible:ring-4 focus-visible:ring-brand-200`}
-              >
-                <div className="flex items-start justify-between">
-                  {o.badge && (
-                    <span
-                      className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${o.badgeCls}`}
-                    >
-                      {o.badge}
-                    </span>
-                  )}
-                </div>
-                <div>
-                  <div className="text-sm font-bold text-ink-900">{o.title}</div>
-                  <div className="mt-1 text-xs leading-relaxed text-ink-400">
-                    {o.desc}
-                  </div>
-                </div>
-                <div className="mt-auto flex items-center gap-1 pt-1 text-xs font-semibold text-ink-400 transition-colors group-hover:text-brand-600">
-                  ตั้งค่า
-                  <span className="transition-transform duration-200 group-hover:translate-x-0.5">
-                    →
-                  </span>
-                </div>
-              </button>
-            ))}
-          </div>
-
-          {/* footer actions */}
-          <div
-            className="reveal mt-7 flex flex-col gap-3 border-t border-ink-100 pt-5 sm:flex-row sm:items-center sm:justify-between"
-            style={{ animationDelay: "440ms" }}
-          >
-            <p className="text-xs text-ink-400">
-              ข้ามไปก่อนได้ — ตั้งภายหลังในหน้า “บัญชีของฉัน”
+    <main className="min-h-screen bg-[#f1f5f8] px-4 py-6 sm:px-6 lg:grid lg:place-items-center lg:py-10">
+      <section className="mx-auto grid w-full max-w-6xl overflow-hidden border border-slate-300 bg-white shadow-[0_24px_70px_rgba(15,23,42,0.14)] lg:min-h-[650px] lg:grid-cols-[32%_68%]">
+        <aside className="relative flex flex-col justify-between overflow-hidden bg-[#0b1728] px-7 py-8 text-white sm:px-10 lg:px-11">
+          <div className="pointer-events-none absolute -right-28 -top-24 h-80 w-80 rounded-full bg-teal-400/10 blur-3xl" />
+          <div className="relative">
+            <div className="font-mono text-[11px] uppercase tracking-[0.2em] text-teal-300">Central Auth Hub</div>
+            <div className="mt-1 font-mono text-[10px] uppercase tracking-[0.18em] text-slate-400">Identity Control</div>
+            <div className="mt-14 font-mono text-[11px] uppercase tracking-[0.18em] text-slate-400">Account Security</div>
+            <h1 className="mt-3 text-3xl font-extrabold leading-tight sm:text-4xl">เพิ่มความปลอดภัย<br className="hidden lg:block" />ให้บัญชี</h1>
+            <p className="mt-4 max-w-sm text-sm leading-6 text-slate-300">
+              เลือกวิธียืนยันตัวตนอีกชั้น เพื่อปกป้องบัญชีของคุณ แม้รหัส Google หลุด
             </p>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={later}
-                disabled={!!busy}
-                className="rounded-lg px-3 py-2 text-sm font-medium text-ink-500 transition hover:bg-ink-50 hover:text-ink-800 disabled:opacity-50"
-              >
-                {busy === "later" ? "กำลังบันทึก…" : "ไว้ทีหลัง"}
-              </button>
-              <button
-                onClick={never}
-                disabled={!!busy}
-                className="rounded-lg px-3 py-2 text-sm text-ink-400 transition hover:text-ink-600 disabled:opacity-50"
-              >
-                {busy === "never" ? "กำลังบันทึก…" : "ไม่ต้องถามอีก"}
-              </button>
+            {email && <p className="mt-4 break-all font-mono text-xs text-teal-300">{email}</p>}
+
+            <ol className="mt-10 space-y-5">
+              {[
+                { n: "01", title: "เลือกวิธียืนยัน", detail: "Passkey หรือ Authenticator", active: true },
+                { n: "02", title: "ตั้งค่าอุปกรณ์", detail: "ทำตามขั้นตอนบนหน้าจอ", active: false },
+                { n: "03", title: "เสร็จสิ้น", detail: "กลับไปใช้งานบัญชี", active: false },
+              ].map((step) => (
+                <li key={step.n} className={`flex items-center gap-4 ${step.active ? "text-white" : "text-slate-500"}`}>
+                  <span className={`grid h-9 w-9 shrink-0 place-items-center border font-mono text-xs ${step.active ? "border-teal-400 bg-teal-400/10 text-teal-300" : "border-slate-700 text-slate-500"}`}>{step.n}</span>
+                  <span><b className="block text-sm">{step.title}</b><small className="mt-0.5 block text-xs">{step.detail}</small></span>
+                </li>
+              ))}
+            </ol>
+          </div>
+          <div className="relative mt-10 border-t border-slate-700 pt-4 text-xs leading-5 text-slate-400">
+            Passkey · WebAuthn · TOTP (RFC 6238)<br />
+            ใช้อุปกรณ์ของคุณยืนยันตัวตนโดยตรง
+          </div>
+        </aside>
+
+        <div className="flex min-w-0 flex-col">
+          <header className="flex items-center justify-between gap-4 border-b border-slate-200 px-6 py-5 sm:px-10">
+            <div>
+              <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-slate-500">Passkey / TOTP setup</div>
+              <h2 className="mt-1 text-xl font-bold text-slate-900 sm:text-2xl">เลือกวิธีตั้งค่าการยืนยันตัวตน</h2>
+            </div>
+            <span className="shrink-0 border border-teal-200 bg-teal-50 px-3 py-2 font-mono text-[10px] uppercase tracking-wider text-teal-800">Setup · Active</span>
+          </header>
+
+          <div className="flex flex-1 flex-col justify-center px-6 py-7 sm:px-10 sm:py-9">
+            <p className="mb-5 max-w-2xl text-sm leading-6 text-slate-500">ตั้งค่าครั้งเดียว แล้วใช้ยืนยันตัวตนเมื่อเข้าใช้งานครั้งต่อไป เลือกวิธีที่เหมาะกับคุณ</p>
+            <div className="space-y-3">
+              {OPTIONS.map((o) => (
+                <button
+                  key={o.key}
+                  type="button"
+                  onClick={() => go(o.key)}
+                  className={`group flex w-full items-center gap-4 border border-slate-200 bg-slate-50 p-4 text-left transition hover:border-teal-400 hover:bg-teal-50/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-500 sm:p-5`}
+                >
+                  <span className={`grid h-11 w-11 shrink-0 place-items-center border border-slate-200 bg-white font-mono text-xs font-bold text-teal-700`}>
+                    {o.key === "passkey" ? "PK" : o.key === "totp" ? "6D" : "2FA"}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="flex flex-wrap items-center gap-2">
+                      <b className="text-sm text-slate-900">{o.title}</b>
+                      {o.badge && <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${o.badgeCls}`}>{o.badge}</span>}
+                    </span>
+                    <small className="mt-1 block text-xs leading-5 text-slate-500">{o.desc}</small>
+                  </span>
+                  <span className="shrink-0 text-xs font-semibold text-slate-500 transition group-hover:text-teal-700">ตั้งค่า <span aria-hidden="true">›</span></span>
+                </button>
+              ))}
+            </div>
+
+            <div className="mt-7 flex flex-col gap-3 border-t border-slate-200 pt-5 sm:flex-row sm:items-center sm:justify-between">
+              <p className="text-xs text-slate-500">ข้ามได้ — ตั้งค่าภายหลังในหน้า “บัญชีของฉัน”</p>
+              <div className="flex flex-wrap items-center gap-2 sm:justify-end">
+                <button type="button" onClick={later} disabled={!!busy} className="min-h-10 border border-slate-300 px-4 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:opacity-50">
+                  {busy === "later" ? "กำลังบันทึก…" : "ไว้ทีหลัง"}
+                </button>
+                <button type="button" onClick={never} disabled={!!busy} className="min-h-10 border border-slate-300 px-4 text-sm font-medium text-slate-700 transition hover:bg-slate-50 disabled:opacity-50">
+                  {busy === "never" ? "กำลังบันทึก…" : "ไม่ต้องถามอีก"}
+                </button>
+              </div>
             </div>
           </div>
+          <footer className="flex items-center justify-between border-t border-slate-200 bg-slate-50 px-6 py-4 font-mono text-[10px] uppercase tracking-wider text-slate-500 sm:px-10">
+            <span>Secure account setup</span><span>2FA</span>
+          </footer>
         </div>
-
-        {/* security strip — tie to login footer */}
-        <div className="flex items-center justify-between border-t border-ink-100 bg-ink-50 px-7 py-4 text-xs text-ink-500 sm:px-10">
-          <span>Passkey · WebAuthn · TOTP (RFC 6238)</span>
-          <span className="font-mono text-ink-400">2FA</span>
-        </div>
-      </div>
+      </section>
     </main>
   );
 }
