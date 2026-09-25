@@ -1330,11 +1330,43 @@ def subsystem_stats(
         or 0
     )
 
-    # daily login counts (last N days)
+    # daily login counts แยกตามระดับความเสี่ยง
+    # เกณฑ์เดียวกับ RBA/dashboard: low < 0.40 · medium 0.40–0.49 · high >= 0.50
+    # NULL แยก unknown เพื่อไม่ทำให้ login ที่ยังไม่ประเมินดูปลอดภัยผิด ๆ
     daily_rows = (
         db.query(
             func.date(LoginSession.created_at).label("d"),
             func.count(LoginSession.id).label("cnt"),
+            func.sum(
+                case(
+                    (
+                        and_(
+                            LoginSession.risk_score.isnot(None),
+                            LoginSession.risk_score < 0.4,
+                        ),
+                        1,
+                    ),
+                    else_=0,
+                )
+            ).label("low"),
+            func.sum(
+                case(
+                    (
+                        and_(
+                            LoginSession.risk_score >= 0.4,
+                            LoginSession.risk_score < 0.5,
+                        ),
+                        1,
+                    ),
+                    else_=0,
+                )
+            ).label("medium"),
+            func.sum(case((LoginSession.risk_score >= 0.5, 1), else_=0)).label(
+                "high"
+            ),
+            func.sum(case((LoginSession.risk_score.is_(None), 1), else_=0)).label(
+                "unknown"
+            ),
         )
         .filter(
             LoginSession.subsystem_id == subsystem.id,
@@ -1347,9 +1379,13 @@ def subsystem_stats(
     daily = [
         {
             "date": (d.isoformat() if hasattr(d, "isoformat") else str(d)),
-            "count": int(c),
+            "count": int(c or 0),
+            "low": int(low or 0),
+            "medium": int(medium or 0),
+            "high": int(high or 0),
+            "unknown": int(unknown or 0),
         }
-        for d, c in daily_rows
+        for d, c, low, medium, high, unknown in daily_rows
     ]
 
     return {

@@ -7,6 +7,7 @@ import { DataTable, type Column } from "@/components/DataTable";
 import { Badge } from "@/components/Badge";
 import { LineChart } from "@/components/LineChart";
 import { LatencyBandChart } from "@/components/LatencyBandChart";
+import { RiskDailyBarChart } from "@/components/RiskDailyBarChart";
 import { clientFetch } from "@/lib/api";
 import { mutateWithStepup, runWithStepup } from "@/lib/passkey";
 import "@/app/signal-console.css";
@@ -121,7 +122,14 @@ type StatsResponse = {
   unique_users: number;
   active_now: number;
   decision_breakdown: Record<string, number>;
-  daily: Array<{ date: string; count: number }>;
+  daily: Array<{
+    date: string;
+    count: number;
+    low: number;
+    medium: number;
+    high: number;
+    unknown: number;
+  }>;
 };
 
 type HealthPoint = {
@@ -813,35 +821,25 @@ export default function DeveloperSubsystemDetailPage({
                 tone="danger"
               />
             </div>
-            {stats.daily.length > 0 &&
-              (() => {
-                const max = Math.max(...stats.daily.map((x) => x.count), 1);
-                return (
-                  <section className="cx-panel">
-                    <header>
-                      <div>
-                        <span>daily logins · 7 วัน</span>
-                        <h2>Daily Logins</h2>
-                      </div>
-                      <span className="cx-chip mono">max {max}</span>
-                    </header>
-                    <div className="cx-panel-body">
-                      <LineChart
-                        labels={stats.daily.map((d) => d.date.slice(5))}
-                        series={[
-                          {
-                            name: "Login",
-                            color: "#6366f1",
-                            values: stats.daily.map((d) => d.count),
-                          },
-                        ]}
-                        height={170}
-                        valueSuffix=" logins"
-                      />
-                    </div>
-                  </section>
-                );
-              })()}
+            {/* Daily grouped bars — แยกตามระดับความเสี่ยงจริง */}
+            <section className="cx-panel">
+              <header>
+                <div>
+                  <span>daily login risk · {stats.range.days} วัน</span>
+                  <h2>Login Risk by Day</h2>
+                </div>
+                <span className="cx-chip mono">
+                  total {stats.total_logins.toLocaleString("en-US")}
+                </span>
+              </header>
+              <div className="cx-panel-body">
+                <RiskDailyBarChart
+                  daily={stats.daily}
+                  days={stats.range.days}
+                  rangeEnd={stats.range.to}
+                />
+              </div>
+            </section>
           </section>
         )}
 

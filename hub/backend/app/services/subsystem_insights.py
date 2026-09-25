@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 
-from sqlalchemy import func
+from sqlalchemy import and_, case, func
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -84,6 +84,36 @@ def stats_payload(db: Session, subsystem: Subsystem, days: int = 7) -> dict:
         db.query(
             func.date(LoginSession.created_at).label("d"),
             func.count(LoginSession.id).label("cnt"),
+            func.sum(
+                case(
+                    (
+                        and_(
+                            LoginSession.risk_score.isnot(None),
+                            LoginSession.risk_score < 0.4,
+                        ),
+                        1,
+                    ),
+                    else_=0,
+                )
+            ).label("low"),
+            func.sum(
+                case(
+                    (
+                        and_(
+                            LoginSession.risk_score >= 0.4,
+                            LoginSession.risk_score < 0.5,
+                        ),
+                        1,
+                    ),
+                    else_=0,
+                )
+            ).label("medium"),
+            func.sum(case((LoginSession.risk_score >= 0.5, 1), else_=0)).label(
+                "high"
+            ),
+            func.sum(case((LoginSession.risk_score.is_(None), 1), else_=0)).label(
+                "unknown"
+            ),
         )
         .filter(
             LoginSession.subsystem_id == subsystem.id,
@@ -96,9 +126,13 @@ def stats_payload(db: Session, subsystem: Subsystem, days: int = 7) -> dict:
     daily = [
         {
             "date": (d.isoformat() if hasattr(d, "isoformat") else str(d)),
-            "count": int(c),
+            "count": int(c or 0),
+            "low": int(low or 0),
+            "medium": int(medium or 0),
+            "high": int(high or 0),
+            "unknown": int(unknown or 0),
         }
-        for d, c in daily_rows
+        for d, c, low, medium, high, unknown in daily_rows
     ]
 
     return {
