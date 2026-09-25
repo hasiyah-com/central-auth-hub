@@ -80,6 +80,7 @@ type Insights = {
       high: number;
       critical: number;
       scored_total: number;
+      histogram: number[];
     };
   };
   signals: { key: string; label: string; count: number }[];
@@ -1119,7 +1120,9 @@ export default function DashboardPage() {
                 <div>
                   <span className="overline">risk distribution</span>
                   <h2>การกระจายคะแนนความเสี่ยง</h2>
+                  <p>Session ทั้งหมดใน 24 ชั่วโมง · เส้นประคือเกณฑ์ปัจจุบัน</p>
                 </div>
+                <IconGauge />
               </div>
 
               {!dist || !ins ? (
@@ -1131,15 +1134,16 @@ export default function DashboardPage() {
               ) : (
                 (() => {
                   const th = ins.risk.thresholds;
-                  // แท่งวางบนแกน 0–1 จริง: ความกว้าง = ช่วงคะแนนของ band, ความสูง = จำนวน
-                  // (ข้อมูลจริงมี 4 ช่วง ไม่ใช่ 20 ช่องแบบต้นแบบ — จึงกางตามช่วงจริงแทนการปั้นข้อมูล)
                   const bands = [
                     { k: "low", from: 0, to: th.warn, v: dist.low },
                     { k: "mid", from: th.warn, to: th.challenge, v: dist.medium },
                     { k: "high", from: th.challenge, to: th.block, v: dist.high },
                     { k: "crit", from: th.block, to: 1, v: dist.critical },
                   ];
-                  const max = Math.max(...bands.map((b) => b.v), 1);
+                  const histogram = Array.isArray(dist.histogram) && dist.histogram.length === 20
+                    ? dist.histogram
+                    : [];
+                  const max = Math.max(...histogram, 1);
                   return (
                     <>
                       <div className="risk-distribution">
@@ -1148,18 +1152,21 @@ export default function DashboardPage() {
                           role="img"
                           aria-label={`การกระจายคะแนนความเสี่ยง พร้อมเส้น MFA ${th.challenge} และ Block ${th.block}`}
                         >
-                          {bands.map((b) => (
-                            <i
-                              key={b.k}
-                              className={b.k}
-                              data-empty={b.v === 0 ? "true" : undefined}
-                              style={{
-                                height: `${Math.max((b.v / max) * 100, 3)}%`,
-                                flex: `0 0 ${(b.to - b.from) * 100}%`,
-                              }}
-                              title={`คะแนน ${b.from}–${b.to}: ${b.v} session`}
-                            />
-                          ))}
+                          {histogram.map((value, index) => {
+                            const from = index / 20;
+                            const to = (index + 1) / 20;
+                            const midpoint = (from + to) / 2;
+                            const tone = midpoint < th.warn ? "low" : midpoint < th.challenge ? "mid" : midpoint < th.block ? "high" : "crit";
+                            return (
+                              <i
+                                key={index}
+                                className={tone}
+                                data-empty={value === 0 ? "true" : undefined}
+                                style={{ height: `${Math.max((value / max) * 100, 2)}%` }}
+                                title={`คะแนน ${from.toFixed(2)}–${to.toFixed(2)}: ${value} session`}
+                              />
+                            );
+                          })}
                           <span
                             className="threshold mfa-line"
                             style={{ left: `${th.challenge * 100}%` }}
