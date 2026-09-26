@@ -21,6 +21,8 @@ import {
 } from "@/lib/passkey";
 import { TotpCard } from "@/components/account/TotpCard";
 import { BackupCodesModal } from "@/components/account/BackupCodesModal";
+import "@/app/signal-room.css";
+import "@/app/signal-console.css";
 
 type Factor = "passkey" | "totp" | "both";
 
@@ -322,15 +324,29 @@ function RequiredEnrollment({ factor, next, email, required }: { factor: Factor;
   const title = factor === "passkey" ? "ลงทะเบียน Passkey" : factor === "totp" ? "ลงทะเบียน Authenticator" : "ลงทะเบียน Passkey และ Authenticator";
 
   return (
-    <main className="min-h-screen bg-[#f1f5f8] px-4 py-8 sm:px-6">
-      <section className="mx-auto w-full max-w-3xl overflow-hidden border border-slate-300 bg-white shadow-[0_24px_70px_rgba(15,23,42,0.14)]">
+    <main className="sc min-h-screen bg-[#eef3f7] px-4 py-8 sm:px-6 lg:py-12">
+      <section className="mx-auto w-full max-w-4xl overflow-hidden border border-slate-300 bg-white shadow-[0_24px_70px_rgba(15,23,42,0.14)]">
         <header className="bg-[#0b1728] px-6 py-7 text-white sm:px-10">
           <div className="font-mono text-[11px] uppercase tracking-[0.2em] text-teal-300">Central Auth Hub · Required security setup</div>
           <h1 className="mt-3 text-2xl font-bold sm:text-3xl">{title}</h1>
           <p className="mt-2 text-sm text-slate-300">{required ? "ลงทะเบียนวิธีที่เลือกให้สำเร็จก่อน จึงจะเข้าใช้งานหน้าหลักของผู้ดูแลระบบได้" : "ลงทะเบียนวิธีที่เลือกเพื่อเปิดใช้งาน แล้วระบบจะพากลับไปหน้าก่อนหน้า"}</p>
           {email && <p className="mt-3 break-all font-mono text-xs text-teal-300">{email}</p>}
         </header>
-        <div className="space-y-5 p-6 sm:p-10">
+        <div className="space-y-6 p-6 sm:p-10">
+          <div className="grid grid-cols-3 border border-slate-200 bg-slate-50">
+            {[
+              { label: "เลือกวิธี", done: true },
+              { label: factor === "both" && passkeyReady ? "ตั้งค่า Authenticator" : "ลงทะเบียน", done: factor === "both" ? passkeyReady : false },
+              { label: "เข้าใช้งาน", done: false },
+            ].map((step, index) => (
+              <div key={step.label} className={`flex min-h-14 items-center gap-3 px-3 sm:px-5 ${index > 0 ? "border-l border-slate-200" : ""}`}>
+                <span className={`grid h-7 w-7 shrink-0 place-items-center rounded-full font-mono text-[10px] font-bold ${step.done ? "bg-teal-600 text-white" : index === 1 ? "border border-teal-500 bg-white text-teal-700" : "border border-slate-300 bg-white text-slate-400"}`}>
+                  {step.done ? "✓" : index + 1}
+                </span>
+                <span className="hidden text-xs font-semibold text-slate-600 sm:block">{step.label}</span>
+              </div>
+            ))}
+          </div>
           {factor !== "totp" && !passkeyReady && (
             <section className="border border-slate-200 p-5">
               <h2 className="font-semibold text-slate-900">Passkey</h2>
@@ -343,10 +359,15 @@ function RequiredEnrollment({ factor, next, email, required }: { factor: Factor;
             </section>
           )}
           {showTotp && (
-            <section className="border border-slate-200 p-4 sm:p-5">
-              {factor === "both" && <p className="mb-4 text-sm text-slate-600">Passkey ลงทะเบียนแล้ว ขั้นต่อไปให้ตั้งค่า Authenticator</p>}
+            <div className="space-y-4">
+              {factor === "both" && (
+                <div className="flex items-start gap-3 border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900">
+                  <span className="grid h-6 w-6 shrink-0 place-items-center rounded-full bg-emerald-600 text-xs font-bold text-white">✓</span>
+                  <span><b className="block">ลงทะเบียน Passkey แล้ว</b>ขั้นต่อไปให้เชื่อมต่อแอป Authenticator และยืนยันรหัส 6 หลัก</span>
+                </div>
+              )}
               <TotpCard />
-            </section>
+            </div>
           )}
           {factor === "passkey" && passkeyReady && !backupCodes && (
             <div className="border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">ลงทะเบียน Passkey สำเร็จ กำลังพาไปหน้าหลัก…</div>
