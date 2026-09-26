@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import uuid
 
 import pyotp
@@ -16,6 +17,7 @@ from app.models import (
     UserTotpCredential,
 )
 from app.services import stepup_cache, totp_service
+from app.services.secret_service import encrypt_secret
 from app.services.jwt_service import create_access_token
 
 
@@ -71,10 +73,27 @@ def victim(db):
 # ── request (public, opaque) ──
 
 
+# 1x1 PNG — หลักฐานจำลองสำหรับ API tests
+_PNG = base64.b64encode(
+    b"\x89PNG\r\n\x1a\n" + b"test-recovery-evidence"
+).decode()
+
+
+def _request_payload(email: str) -> dict:
+    return {
+        "email": email,
+        "credential_type": "TOTP",
+        "reason": "lost phone",
+        "evidence_type": "student_card",
+        "evidence_mime": "image/png",
+        "evidence_image": _PNG,
+    }
+
+
 def test_request_creates_pending_ticket(client, victim, db):
     r = client.post(
         "/auth/recovery/request",
-        json={"email": victim.email, "credential_type": "TOTP", "reason": "lost phone"},
+        json=_request_payload(victim.email),
     )
     assert r.status_code == 200 and r.json()["submitted"] is True
     t = db.query(RecoveryTicket).filter(RecoveryTicket.user_id == victim.id).first()
@@ -83,11 +102,30 @@ def test_request_creates_pending_ticket(client, victim, db):
 
 def test_request_unknown_email_opaque_no_ticket(client, db):
     email = f"ghost_{uuid.uuid4().hex[:6]}@x.com"
-    r = client.post("/auth/recovery/request", json={"email": email})
+    r = client.post("/auth/recovery/request", json=_request_payload(email))
     assert r.status_code == 200 and r.json()["submitted"] is True
     assert (
         db.query(RecoveryTicket).filter(RecoveryTicket.email == email).first() is None
     )
+
+
+def test_request_returns_tracking_credential_and_status(client, victim):
+    created = client.post(
+        "/auth/recovery/request", json=_request_payload(victim.email)
+    )
+    assert created.status_code == 200
+    receipt = created.json()
+    assert receipt["ticket_id"] and receipt["tracking_secret"]
+
+    status = client.post(
+        "/auth/recovery/status",
+        json={
+            "ticket_id": receipt["ticket_id"],
+            "tracking_secret": receipt["tracking_secret"],
+        },
+    )
+    assert status.status_code == 200
+    assert status.json()["status"] == "pending"
 
 
 # ── admin approve — NORMAL (1) ──
@@ -100,6 +138,9 @@ def test_approve_normal_issues_link(client, victim, admin_user, auth_headers, db
             email=victim.email,
             recovery_level="NORMAL",
             status="pending",
+            evidence_type="student_card",
+            evidence_mime="image/png",
+            evidence_encrypted=encrypt_secret(_PNG),
         )
     )
     db.commit()
@@ -137,6 +178,9 @@ def test_approve_high_requires_two_admins(client, db, auth_headers):
                 email=victim2.email,
                 recovery_level="HIGH",
                 status="pending",
+                evidence_type="citizen_id",
+                evidence_mime="image/png",
+                evidence_encrypted=encrypt_secret(_PNG),
             )
         )
         db.commit()
