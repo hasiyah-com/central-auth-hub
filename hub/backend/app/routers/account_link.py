@@ -388,6 +388,9 @@ def _consume_ticket(db: Session, ticket_id: str) -> None:
         if t and t.status == "approved":
             t.status = "consumed"
             t.consumed_at = datetime.now(timezone.utc)
+            # ลดการเก็บข้อมูลอ่อนไหวหลังจบคำขอ
+            t.evidence_encrypted = None
+            t.link_token = None
             db.commit()
     except Exception as e:  # noqa: BLE001
         log.warning("consume ticket %s failed: %r", ticket_id, e)
