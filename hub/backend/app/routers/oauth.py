@@ -1,6 +1,7 @@
 import html
 import json
 import secrets
+import uuid
 from datetime import datetime
 from urllib.parse import urlparse
 
@@ -580,6 +581,8 @@ async def _finalize_subsystem_login(
         geo_country=geo_country,
         subsystem_id=authreq["subsystem_id"],
     )
+    # B86: authreq มาจาก JSON ใน Redis → subsystem_id เป็นสตริง แต่ profile ของ L2 เก็บเป็น UUID
+    # (`not in seen_subsystems` จริงเสมอ → new_subsystem +0.30 ทุกครั้ง) · แปลงที่ขอบข้อมูลนี้
     risk = await evaluate_login_risk(
         features=features,
         user_id=str(user.id),
@@ -587,7 +590,7 @@ async def _finalize_subsystem_login(
         geo_country=geo_country,
         db=db,
         shadow_mode=settings.ml_shadow_mode,
-        subsystem_id=authreq["subsystem_id"],  # cross-subsystem risk propagation
+        subsystem_id=uuid.UUID(str(authreq["subsystem_id"])),  # cross-subsystem risk
         user_agent=user_agent,
     )
     risk_score = risk["score"]
@@ -3203,9 +3206,9 @@ def _login_chooser_html(
     recover_block = (
         '<div class="login-help">'
         + recover_block
-        + ('<span>·</span>' if allow_passkey else '')
+        + ("<span>·</span>" if allow_passkey else "")
         + setup_link
-        + '</div>'
+        + "</div>"
     )
     return f"""<!DOCTYPE html><html lang="th"><head><meta charset="UTF-8">
 <title>เข้าสู่ระบบ · {safe_name}</title>

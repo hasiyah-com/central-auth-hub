@@ -428,6 +428,14 @@
 - เพิ่มเติม: step-up OTP ทาง email ที่ผิดบันทึกเป็น `stepup_otp_failed` แล้ว (นับเฉพาะ `otp_invalid` · `otp_locked` ไม่นับเพราะปฏิเสธจากสถานะล็อกก่อนตรวจ OTP · `otp_expired` ไม่มี OTP ให้ตรวจ)
 - **Verify:** `tests/test_failed_logins_24h.py` (7 tests · mutation ถูกจับ) · `tests/test_stepup_otp_failed_audit.py` (4 tests) · `test_feature_point_in_time.py::test_failed_logins_24h_excludes_future`
 
+**B86. subsystem_id จาก Redis เป็นสตริง แต่ profile ของ L2 เป็น UUID → ทุก login เข้า subsystem เป็น "ระบบใหม่"**
+- อาการ: ผู้ใช้ที่มีประวัติ >= 20 ครั้งได้ `new_subsystem +0.30 floor=challenge` ทุกครั้งที่เข้า subsystem ที่ใช้อยู่ทุกวัน · ผู้ใช้ปกติบนเครื่องใหม่ได้ 0.90 ถูกบล็อกที่ finalizer (>= 0.85) ในโหมดบังคับใช้ · กฎ `subsystem_rarity` ไม่เคยทำงาน (ตกกิ่ง new ก่อนเสมอ)
+- สาเหตุ: `_finalize_subsystem_login` ส่ง `authreq["subsystem_id"]` (JSON → str) ให้ risk engine แต่ `behavior_profiling` สร้าง `seen_subsystems`/`subsystem_counts` จาก `LoginSession.subsystem_id` (UUID) → `str not in {UUID}` จริงเสมอ · L1 และฟีเจอร์ใช้ค่านี้ใน SQL เท่านั้นจึงไม่โดน · การทดลองใช้ชื่อ subsystem เป็นสตริงทั้งสองฝั่ง จึงไม่เคยเห็นบั๊กนี้ (B66)
+- แก้: แปลงเป็น UUID ที่ขอบข้อมูล (finalizer ก่อนเรียก `evaluate_login_risk`) · **L3 residual คงรับสตริงไว้โดยเจตนา** — ประวัติ L3 สะสมด้วยค่านั้นมาตลอด (count = 0 เสมอ แบบเดียวกับ B84) เปลี่ยนชนิด = เปลี่ยนความหมายประวัติ → งานแยกพร้อมเปลี่ยนคีย์/รุ่น
+- ผลต่อ freeze 2026-08-29: ตัวเลขที่ freeze มาจาก harness ที่ชนิดตรงกันอยู่แล้ว จึงไม่เปลี่ยน · การแก้ทำให้ระบบจริงตรงกับที่วัดไว้ (ไม่ได้ปรับโมเดลหรือเกณฑ์)
+- **กฎ:** ค่าที่ผ่าน JSON/Redis ต้องแปลงกลับเป็นชนิดเดียวกับฐานข้อมูลที่ขอบ ก่อนนำไปเทียบใน Python (`in`, `dict.get`) · เทสของ risk path ต้องป้อนค่าผ่าน JSON แบบเดียวกับของจริง
+- **Verify:** `tests/test_subsystem_id_type_b86.py` (4 tests · ผ่าน finalizer จริง)
+
 ---
 
 ## วิธีเพิ่ม bug ใหม่
