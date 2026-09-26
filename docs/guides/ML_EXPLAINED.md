@@ -166,8 +166,8 @@ weekend_mismatch | #2 day_of_week (เทียบกับ profile)	           
 ### 🛡️ Brute Force
 
 **11. failed_logins_24h** — ล็อกอินล้มเหลวใน 24 ชม.
-- ข้อมูล: `login_sessions.decision` · สูตร: นับ `decision ∈ {block, would_block}` ใน 24 ชม.
-- ตัวอย่าง: ถูกบล็อก 3 ครั้ง → **3**
+- ข้อมูล: `audit_logs` · สูตร: นับการยืนยันตัวตนที่ไม่ผ่านจริง (passkey/OTP/step-up) ของบัญชีนี้ใน 24 ชม. — ไม่นับผลตัดสิน block/would_block ของระบบเอง
+- ตัวอย่าง: ยืนยัน passkey ไม่ผ่าน 3 ครั้ง → **3**
 - หน่วย: จำนวนครั้ง (count)
 
 ### 🔑 Passkey (ความน่าเชื่อถืออุปกรณ์)

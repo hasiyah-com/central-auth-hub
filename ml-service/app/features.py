@@ -40,7 +40,7 @@ FEATURE_NAMES: list[str] = [
     "log_minutes_since_last_login",  # log scale (กัน log(0))
     "login_count_24h",  # นับการ login ใน 24 ชม.
     # === Brute force (1) ===
-    "failed_logins_24h",  # attributable authenticator failures จาก audit trail
+    "failed_logins_24h",  # audit_logs: ยืนยันตัวตนไม่ผ่านจริง (ไม่ใช่ decision)
     # === Passkey / Device Trust (4) ===
     "passkey_count",  # 0-10 — 0 = ไม่มี passkey (แทน has_passkey)
     "passkey_age_days",  # อายุ passkey เก่าสุด (ใหม่ = น่าสงสัย)

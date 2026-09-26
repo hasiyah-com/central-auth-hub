@@ -101,6 +101,9 @@ def _purge(db, uid):
     db.query(AccessList).filter(AccessList.user_id == uid).delete(
         synchronize_session=False
     )
+    db.query(AuditLog).filter(AuditLog.actor_id == uid).delete(
+        synchronize_session=False
+    )
     db.query(User).filter(User.id == uid).delete(synchronize_session=False)
     db.commit()
 
@@ -185,6 +188,23 @@ def test_failed_logins_24h_counts_attributable_auth_failure(u, db, t):
     db.commit()
     f = _feats(db, u, t)
     assert f[F_FAILED_24H] == 1.0
+
+
+def test_failed_logins_24h_counts_only_past(u, db, t):
+    # failed_logins_24h นับจาก audit_logs (ยืนยันตัวตนไม่ผ่านจริง) — ไม่ใช่ decision
+    for at in [t["past"]] + [t["future"] + timedelta(minutes=i) for i in range(3)]:
+        db.add(
+            AuditLog(
+                actor_id=u.id,
+                action="stepup_totp_failed",
+                target_type="user",
+                target_id=u.id,
+                created_at=at,
+            )
+        )
+    db.commit()
+    f = _feats(db, u, t)
+    assert f[F_FAILED_24H] == 1.0, "นับเฉพาะความล้มเหลวในอดีต ของอนาคตต้องไม่ถูกนับ"
 
 
 def test_minutes_since_last_login_uses_past_not_future(u, db, t):
