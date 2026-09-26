@@ -67,3 +67,48 @@ def test_federated_gate_hard_block_wins():
         )
         is False
     )
+
+
+def test_passkey_primary_does_not_repeat_stepup_for_risk_challenge():
+    """Subsystem Passkey login ที่เพิ่งยืนยันแล้วไม่ต้องยืนยัน Passkey ซ้ำ."""
+    user = _FakeUser(effective_mfa_always=False)
+    assert (
+        mfa_policy.is_second_factor_required(
+            user,
+            actual_decision="challenge",
+            enforcing=True,
+            is_hard_block=False,
+            login_method="passkey",
+        )
+        is False
+    )
+
+
+def test_passkey_primary_does_not_repeat_stepup_for_always_2fa():
+    """Passkey primary satisfies Always-2FA in the subsystem flow too."""
+    admin = _FakeUser(effective_mfa_always=True)
+    assert (
+        mfa_policy.is_second_factor_required(
+            admin,
+            actual_decision="warn",
+            enforcing=False,
+            is_hard_block=False,
+            login_method="passkey",
+        )
+        is False
+    )
+
+
+def test_google_primary_still_requires_risk_stepup():
+    """Google primary ยังต้องยืนยันเพิ่มเมื่อ risk decision เป็น challenge."""
+    user = _FakeUser(effective_mfa_always=False)
+    assert (
+        mfa_policy.is_second_factor_required(
+            user,
+            actual_decision="challenge",
+            enforcing=True,
+            is_hard_block=False,
+            login_method="google",
+        )
+        is True
+    )
