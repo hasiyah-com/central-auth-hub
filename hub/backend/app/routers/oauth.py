@@ -654,6 +654,7 @@ async def _finalize_subsystem_login(
         actual_decision=actual_decision,
         enforcing=enforcing,
         is_hard_block=is_hard_block,
+        login_method=provider,
     )
 
     if is_hard_block:
