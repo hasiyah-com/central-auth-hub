@@ -36,10 +36,11 @@ login → [Layer 1 Rule] → ถ้า hard block → block ทันที
 ### Layer 1 — Rule Engine
 - **ข้อมูลนอก feature:** IP blacklist (ipsum), impossible travel (geo+เวลา), multi-account จาก IP เดียว
 - **feature ที่อ่าน:** `is_new_device` `is_new_country` `is_new_user_agent_family` `failed_logins_24h` `is_thailand`
-- **hard block ถ้า:** `failed_logins_24h ≥ 10` หรือ `login_count_24h ≥ 50` หรือ `country_change_count_30d ≥ 8` หรือ IP blacklist
+- **hard block ถ้า:** ความล้มเหลวหลังผ่านปัจจัยแรก (ส่วนหนึ่งของ `failed_logins_24h` ที่ต้องมี JWT/challenge) ≥ 10 หรือ `login_count_24h ≥ 50` หรือ `country_change_count_30d ≥ 8` หรือ IP blacklist
 - **Cross-subsystem risk propagation:** ระบบย่อย *อื่น* เพิ่งมี login เสี่ยง ≥ 0.6 ภายใน 30 นาที
   → escalate ระบบนี้ (+`recent_max_risk × 0.3`). ทำเป็น rule (inference-time) ไม่ใช่ ML feature
   → เลี่ยง feedback loop. ปรับค่าได้ที่ค่าคงที่ `CROSS_SUBSYSTEM_*` บนสุด `rule_engine.py`
+- **failed_logins_24h กับ lockout DoS (B85):** passkey login ที่ผิดผูกด้วยอีเมล ใครรู้อีเมลก็สร้างได้ → ส่วนนี้ให้แค่ challenge floor (เมื่อรวม ≥ 5) ไม่บวกคะแนนและไม่บล็อก · กฎคะแนน ≥ 3 / ≥ 5 และกฎบล็อก ≥ 10 ใช้เฉพาะความล้มเหลวหลังผ่านปัจจัยแรก · แยกตั้งแต่ 3 ครั้ง · ฟีเจอร์ในเวกเตอร์ยังนับทั้งหมด · `evaluate_rules(mode="current")` ต้องมี DB เมื่อใช้ค่านี้ (ไม่งั้น `RuleEvaluationError`) · ทำซ้ำผล freeze ใช้ `mode="legacy_replay"` และติดชื่อโหมดในผล
 
 ### Layer 2 — Behavior Profiling
 - ต้องมี history ≥ 5 session (ไม่งั้น cold start score = 0.20)

@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.models import LoginSession
+from app.services.feature_extraction import count_failed_auth
 from app.services.ip_blacklist import is_blacklisted
 
 # policy floor ranking (ใช้แปลง min action <-> อันดับ)
@@ -91,6 +92,15 @@ SCORE_RULES = [
     ("confirmed_incident_count", ">=", 1, 0.40, "challenge"),
 ]
 
+# failed_logins_24h ที่ถึงเกณฑ์นี้ (รวมส่วนที่ผูกด้วยอีเมล) → challenge floor เสมอ
+# เท่ากับเกณฑ์ challenge เดิมของ SCORE_RULES (>= 5)
+FAILED_EMAIL_FLOOR_MIN = 5
+# ต้องแยก provenance ตั้งแต่เกณฑ์ต่ำสุดของกฎ failed ใดๆ (>= 3 +0.20) — ไม่งั้นผู้รู้แค่อีเมล
+# ยังบวกคะแนนได้ที่ 3-4 ครั้ง
+FAILED_SPLIT_MIN = min(
+    t for f, _, t, *_ in SCORE_RULES + HARD_BLOCK_RULES if f == "failed_logins_24h"
+)
+
 # Multiple accounts from same IP
 MULTI_ACCOUNT_THRESHOLD = 5  # > 5 distinct users from same IP in 1 hour
 MULTI_ACCOUNT_SCORE = 0.25
@@ -114,6 +124,16 @@ class RuleResult:
     # policy floor — min action ที่บังคับแม้คะแนนรวมไม่ถึง threshold (deterministic
     # security event เช่น เครื่องใหม่/passkey ใหม่/สิทธิ์เพิ่งเปลี่ยน). None = ไม่บังคับ.
     min_action: str | None = None
+    # กฎชุดไหนที่ให้ผลนี้ — "current" (ระบบจริง) หรือ "legacy_replay" (ทำซ้ำผล freeze)
+    # ผลจาก legacy_replay ห้ามอ้างเป็นคะแนนของกฎปัจจุบัน
+    rule_mode: str = "current"
+
+
+class RuleEvaluationError(RuntimeError):
+    """ประเมินกฎปัจจุบันไม่ได้เพราะขาดข้อมูลที่กฎต้องใช้ (ไม่ตกไปใช้กฎเดิมแบบเงียบ)."""
+
+
+RULE_MODES = ("current", "legacy_replay")
 
 
 def evaluate_rules(
@@ -123,8 +143,43 @@ def evaluate_rules(
     ip: str | None,
     geo_country: str | None,
     subsystem_id=None,
+    *,
+    mode: str = "current",
 ) -> RuleResult:
     """Layer 1: ประเมินกฎตายตัว → hard block หรือ risk score.
+
+    mode:
+      - "current" (ค่าเริ่มต้น · ระบบจริง) — failed_logins_24h แยก provenance จาก audit_logs
+        (B85) · ถ้าต้องใช้แต่ db=None → RuleEvaluationError (ไม่ตกไปใช้กฎเดิมแบบเงียบ)
+      - "legacy_replay" — ทำซ้ำกฎ ณ freeze 2026-08-29 (นับความล้มเหลวทั้งหมดเป็นหลักฐาน
+        เดียวกัน) สำหรับสคริปต์ทดลอง/replay เท่านั้น · ผลติด rule_mode="legacy_replay"
+    """
+    if mode not in RULE_MODES:
+        raise ValueError(f"rule mode ไม่รู้จัก: {mode!r} (ใช้ได้: {RULE_MODES})")
+    result = _evaluate_rules(
+        features,
+        db,
+        user_id,
+        ip,
+        geo_country,
+        subsystem_id,
+        legacy=mode == "legacy_replay",
+    )
+    result.rule_mode = mode
+    return result
+
+
+def _evaluate_rules(
+    features: list[float],
+    db: Session,
+    user_id: str,
+    ip: str | None,
+    geo_country: str | None,
+    subsystem_id,
+    *,
+    legacy: bool,
+) -> RuleResult:
+    """ตัวประเมินจริงของ evaluate_rules (ดู docstring ที่นั่นเรื่องโหมด).
 
     subsystem_id: ระบบย่อยที่กำลัง login (ใช้ cross-subsystem risk propagation —
     ถ้าระบบอื่นเพิ่งเสี่ยง → escalate ระบบนี้). None = Hub-direct (ไม่ propagate)
@@ -148,9 +203,32 @@ def evaluate_rules(
                 reasons=[impossible],
             )
 
+    # ── failed_logins_24h: แยกตามว่าผู้โจมตีสร้างได้ด้วยอีเมลอย่างเดียวหรือไม่ (lockout DoS · B85) ──
+    # ฟีเจอร์ (เวกเตอร์ 23 ตัว) นับทั้งหมด · passkey login ที่ผิดใครรู้อีเมลก็สร้างได้ → ถ้าให้
+    # บวกคะแนน/บล็อก ผู้โจมตีจะดันคะแนนเจ้าของบัญชีจนถูกบล็อกได้ · กฎบล็อกและคะแนนจึงใช้
+    # เฉพาะความล้มเหลวหลังผ่านปัจจัยแรก (ต้องมี JWT หรือ challenge) ส่วนที่ผูกด้วยอีเมลให้แค่
+    # challenge floor — เจ้าของบัญชียังยืนยันตัวตนเพิ่มแล้วเข้าได้
+    failed_total = features[FEAT["failed_logins_24h"]]
+    failed_post = failed_total
+    if not legacy and failed_total >= FAILED_SPLIT_MIN:
+        if db is None:
+            raise RuleEvaluationError(
+                f"failed_logins_24h={failed_total:.0f} ต้องแยกความล้มเหลวหลังผ่านปัจจัยแรก"
+                " จาก audit_logs แต่ไม่มี db — กฎปัจจุบันประเมินไม่ได้ · ถ้าจะทำซ้ำผล freeze"
+                " ให้เรียก mode='legacy_replay' (และห้ามรายงานผลเป็นกฎปัจจุบัน)"
+            )
+        now = datetime.utcnow()
+        failed_post = float(
+            count_failed_auth(
+                db, user_id, now - timedelta(hours=24), now, post_factor_only=True
+            )
+        )
+
     # ── Hard Block rules (from features) ──
     for feat_name, op, threshold in HARD_BLOCK_RULES:
         value = features[FEAT[feat_name]]
+        if feat_name == "failed_logins_24h":
+            value = failed_post
         if op == ">=" and value >= threshold:
             return RuleResult(
                 blocked=True,
@@ -165,6 +243,8 @@ def evaluate_rules(
 
     for feat_name, op, threshold, weight, min_act in SCORE_RULES:
         value = features[FEAT[feat_name]]
+        if feat_name == "failed_logins_24h":
+            value = failed_post
         hit = (
             (op == ">=" and value >= threshold)
             or (op == "==" and value == threshold)
@@ -213,6 +293,17 @@ def evaluate_rules(
             reasons.append(
                 f"multi_account_ip={multi} > {MULTI_ACCOUNT_THRESHOLD} (+{MULTI_ACCOUNT_SCORE})"
             )
+
+    if (
+        not legacy
+        and failed_total >= FAILED_EMAIL_FLOOR_MIN
+        and failed_post < failed_total
+    ):
+        reasons.append(
+            f"failed_logins_24h={failed_total:.0f} (หลังผ่านปัจจัยแรก {failed_post:.0f}) "
+            "→ challenge floor ไม่บวกคะแนน"
+        )
+        floor_rank = max(floor_rank, _ACTION_RANK["challenge"])
 
     min_action = _RANK_ACTION.get(floor_rank)
     return RuleResult(

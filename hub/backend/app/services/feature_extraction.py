@@ -70,7 +70,9 @@ TRUSTED_DECISIONS = ("allow", "mfa_passed", "pass")
 # ไม่นับ LoginSession.decision block/would_block: ผลตัดสินของระบบเองจะกลายเป็นฟีเจอร์
 # ของการตัดสินครั้งถัดไป (วงป้อนกลับ) และ shadow would_block คือผู้ใช้ที่เข้าได้จริง
 #
-# ยืนยันตัวตนไม่ผ่านหลังรู้ตัวผู้ใช้แล้ว — ผูกด้วย actor_id
+# ยืนยันตัวตนไม่ผ่านหลังรู้ตัวผู้ใช้แล้ว — ผูกด้วย actor_id · ทุก action ต้องมี Hub JWT หรือ
+# challenge_id ที่ออกหลังผ่านปัจจัยแรกแล้วเท่านั้น (ผู้ที่รู้แค่อีเมลสร้างไม่ได้) → กฎบล็อก
+# >= 10 ของชั้นที่ 1 นับเฉพาะกลุ่มนี้ (กัน lockout DoS · ดู rule_engine)
 FAILED_AUTH_ACTOR_ACTIONS = (
     "passkey_stepup_failed",
     "risk_mfa_verify_failed",
@@ -79,7 +81,7 @@ FAILED_AUTH_ACTOR_ACTIONS = (
     "risk_force_enroll_otp_failed",
 )
 # passkey login ไม่ผ่านก่อนรู้ตัวผู้ใช้ (บันทึกด้วย actor_id NULL) — ผูกด้วย email ที่ถูกพยายามเข้า
-# (discoverable passkey ไม่มี email → ผูกบัญชีไม่ได้ จึงไม่นับ)
+# (discoverable passkey ไม่มี email → ผูกบัญชีไม่ได้ จึงไม่นับ) · endpoint เปิด ใครรู้อีเมลก็สร้างได้
 FAILED_AUTH_EMAIL_ACTIONS = (
     "passkey_login_failed",
     "oauth_passkey_login_failed",
@@ -226,6 +228,40 @@ def _device_signature(user_agent: str | None) -> str:
 
 
 # ============ Main extraction ============
+
+
+def count_failed_auth(
+    db: Session, user_id, since: datetime, until: datetime, *, post_factor_only=False
+) -> int:
+    """นับการยืนยันตัวตนที่ไม่ผ่านจริงของบัญชีนี้ใน [since, until) จาก audit_logs.
+
+    post_factor_only=True นับเฉพาะ FAILED_AUTH_ACTOR_ACTIONS (ต้องผ่านปัจจัยแรกก่อน) —
+    ใช้กับกฎบล็อกที่ผู้รู้แค่อีเมลต้องสร้างให้ถึงไม่ได้
+    """
+    attributed = [
+        (AuditLog.action.in_(FAILED_AUTH_ACTOR_ACTIONS))
+        & (AuditLog.actor_id == user_id)
+    ]
+    if not post_factor_only:
+        user_email = db.query(User.email).filter(User.id == user_id).scalar()
+        if user_email:
+            attributed.append(
+                (AuditLog.action.in_(FAILED_AUTH_EMAIL_ACTIONS))
+                & (
+                    func.lower(AuditLog.metadata_json["email"].as_string())
+                    == user_email.strip().lower()
+                )
+            )
+    return (
+        db.query(func.count(AuditLog.id))
+        .filter(
+            or_(*attributed),
+            AuditLog.created_at >= since,
+            AuditLog.created_at < until,  # point-in-time
+        )
+        .scalar()
+        or 0
+    )
 
 
 def extract_session_features(
@@ -381,29 +417,7 @@ def extract_session_features(
 
     # === Brute force ===
     # นับจาก audit_logs (ดู FAILED_AUTH_*_ACTIONS) — ไม่ใช่ผลตัดสินของระบบเอง
-    user_email = db.query(User.email).filter(User.id == user_id).scalar()
-    attributed = [
-        (AuditLog.action.in_(FAILED_AUTH_ACTOR_ACTIONS))
-        & (AuditLog.actor_id == user_id)
-    ]
-    if user_email:
-        attributed.append(
-            (AuditLog.action.in_(FAILED_AUTH_EMAIL_ACTIONS))
-            & (
-                func.lower(AuditLog.metadata_json["email"].as_string())
-                == user_email.strip().lower()
-            )
-        )
-    failed_24h = (
-        db.query(func.count(AuditLog.id))
-        .filter(
-            or_(*attributed),
-            AuditLog.created_at >= cutoff_24h,
-            AuditLog.created_at < now,  # point-in-time
-        )
-        .scalar()
-        or 0
-    )
+    failed_24h = count_failed_auth(db, user_id, cutoff_24h, now)
 
     # === Passkey / Device Trust (4) — has_passkey ตัดแล้ว (passkey_count>0 แทน) ===
     # cold start: ไม่มี passkey → ทุกตัว 0 (neutral)

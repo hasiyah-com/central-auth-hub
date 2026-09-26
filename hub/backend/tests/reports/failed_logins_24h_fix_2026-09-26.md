@@ -84,7 +84,7 @@ failed_24h = count(LoginSession where decision in ("block", "would_block") and c
 
 ## 6. ข้อจำกัดที่เหลือ
 
-1. **กฎ ≥ 10 = บล็อก คงเดิม** (ตามที่เจ้าของระบบเลือก) → ผู้ที่รู้ email ของเหยื่อสามารถลอง passkey ผิดโดยเจตนา 10 ครั้งเพื่อให้การเข้าสู่ระบบครั้งถัดไปของเจ้าของบัญชีถูกบล็อก (lockout DoS) · rate limit ต่อ IP ช่วยชะลอได้บางส่วน
+1. ~~**กฎ ≥ 10 = บล็อก คงเดิม**~~ → แก้แล้วใน commit ถัดไป (ข้อ 10) · (ตามที่เจ้าของระบบเลือก) → ผู้ที่รู้ email ของเหยื่อสามารถลอง passkey ผิดโดยเจตนา 10 ครั้งเพื่อให้การเข้าสู่ระบบครั้งถัดไปของเจ้าของบัญชีถูกบล็อก (lockout DoS) · rate limit ต่อ IP ช่วยชะลอได้บางส่วน
 2. ~~step-up OTP ทาง email ที่ไม่ผ่านยังไม่ถูกบันทึกใน audit~~ → แก้แล้วใน commit ถัดไป (ข้อ 9)
 3. IdP subject ไม่ตรงและกู้บัญชีไม่ผ่านยังไม่มีสัญญาณความเสี่ยงของตัวเอง
 4. โมเดล `iforest_v1.pkl` ฝึกจากข้อมูลที่ฟีเจอร์นี้มีความหมายตามตัวสร้างข้อมูล ไม่ใช่นิยามเดิมของระบบจริง → การแก้นี้ทำให้ระบบจริงใกล้การทดลองขึ้น แต่ยังไม่ได้วัดผลต่อคะแนน IForest (ตาม RBA freeze)
@@ -126,3 +126,89 @@ PYTHONPATH=. python scripts/measure_failed_logins_24h_2026-09-26.py
 | RED (ก่อนแก้) | 1 failed · 3 passed — ข้อ `otp_invalid` ไม่มีแถว audit |
 | GREEN | 4 passed |
 | ถอด `passkey.py` ที่แก้ออก (stash) แล้วรันซ้ำ | 1 failed — ยืนยันว่าเทสขึ้นกับการแก้จริง |
+
+## 10. commit ถัดไป: ปิด lockout DoS จากความล้มเหลวที่รู้อีเมลอย่างเดียว
+
+### 10.1 provenance ของ action ที่นับ (ตรวจจากโค้ด)
+
+| action | ต้องมีอะไรก่อน | ผู้รู้แค่อีเมลสร้างได้ |
+|---|---|---|
+| `passkey_login_failed` | ไม่มี (endpoint เปิด · 20/นาที/IP) | **ได้** |
+| `oauth_passkey_login_failed` | `hub_state` (ใครก็ขอจาก `/oauth/authorize` ได้) | **ได้** |
+| `passkey_stepup_failed` · `stepup_otp_failed` · `stepup_totp_failed` | Hub JWT (`get_current_user`) | ไม่ได้ |
+| `risk_mfa_verify_failed` · `risk_force_enroll_otp_failed` | `challenge_id` สุ่ม 32 ไบต์ ออกหลังผ่านปัจจัยแรก (Google/LINE callback · passkey login สำเร็จ · refresh token) | ไม่ได้ |
+
+`actor_id` เป็นเพียงการระบุบัญชี · หลักฐานว่าผ่านปัจจัยแรกคือเส้นทางในตาราง · ข้อจำกัด: ผู้ที่มี refresh token หรือบัญชี Google ของเหยื่ออยู่แล้วถือว่าบัญชีถูกยึด การบล็อกกรณีนั้นถูกต้อง
+
+### 10.2 ทำไมแก้แค่กฎ ≥ 10 ไม่พอ (วัดบน `_finalize_subsystem_login` จริง · โหมดบังคับใช้ · เจ้าของบัญชีมีประวัติ 20 วัน)
+
+- กฎคะแนน ≥ 3 (+0.20) และ ≥ 5 (+0.30) ยิงพร้อมกัน → ผู้โจมตีบวกคะแนนเจ้าของบัญชีได้ **+0.50**
+- เจ้าของบนเครื่องใหม่ (+0.30 +0.20) → **1.0 ≥ 0.85 บล็อกที่ finalizer** แม้กฎ ≥ 10 ถูกลดเป็น challenge แล้ว
+- พบ B86 ระหว่างวัด (+0.30 ทุก login เข้า subsystem) → แก้แยกใน commit `aa2b576`
+- L3 ไม่มีส่วน: `aggregate` รับ `monitoring_only()` · IForest/L3 ไม่เข้าคะแนนรวม
+
+### 10.3 การแก้ (`rule_engine.evaluate_rules` · ไม่แตะ aggregator · เวกเตอร์ 23 ตัวไม่เปลี่ยน)
+
+- `failed_post` = ความล้มเหลวหลังผ่านปัจจัยแรกใน 24 ชม. (`count_failed_auth(post_factor_only=True)` ใช้ร่วมกับฟีเจอร์)
+- กฎบล็อก ≥ 10 และกฎคะแนน ≥ 3 / ≥ 5 ใช้ `failed_post` · แยก provenance ตั้งแต่ 3 ครั้ง (`FAILED_SPLIT_MIN` = เกณฑ์ต่ำสุดของกฎ failed)
+- ถ้ารวมทั้งหมด ≥ 5 และมีส่วนที่ผูกด้วยอีเมล → **challenge floor ไม่บวกคะแนน**
+- กฎบล็อกอื่น (IP blacklist · impossible travel · login_count ≥ 50 · country_change ≥ 8) ไม่แตะ
+- query เพิ่มเฉพาะเมื่อฟีเจอร์ ≥ 3 · ใช้เวลาปัจจุบัน (เหมือนกฎ multi-account IP) → replay ย้อนหลังด้วยกฎปัจจุบันไม่ตรงเวลาในกฎนี้
+
+**โหมดของ rule engine (แยกให้ชัด ไม่ตกไปกฎเดิมแบบเงียบ):**
+
+| โหมด | ใช้เมื่อ | พฤติกรรม |
+|---|---|---|
+| `mode="current"` (ค่าเริ่มต้น · ระบบจริง) | ทุกเส้นทาง login และงานวัดผลรอบใหม่ (รวม L3 parity) | แยก provenance จาก audit_logs · ถ้าฟีเจอร์ ≥ 3 แต่ไม่มี DB → `RuleEvaluationError` บอกสาเหตุ |
+| `mode="legacy_replay"` | ทำซ้ำผล freeze เดิมเท่านั้น | กฎ ณ tag `rba-freeze-2026-08-29` ตรงทุกช่อง · ผลติด `rule_mode="legacy_replay"` · **ห้ามอ้างเป็นคะแนนของกฎปัจจุบัน** |
+
+`RuleResult.rule_mode` ติดทุกเส้นทางที่คืนผล (รวม early return ของ blacklist / impossible travel / hard block) · โหมดที่ไม่รู้จัก → `ValueError`
+
+ผลต่อสคริปต์ทดลองเดิม (`ml-service/scripts/exp_*`, `eval_*` เรียก `evaluate_rules(db=None)`): ถ้าเจอเวกเตอร์ที่ `failed_logins_24h ≥ 3` จะหยุดพร้อม error จนกว่าผู้รันจะเลือกโหมด · ไม่ได้แก้สคริปต์เหล่านี้ (เป็นหลักฐานของ freeze) · การทำซ้ำผล freeze ต้องส่ง `mode="legacy_replay"` อย่างชัดเจนและติดชื่อโหมดในผล
+
+### 10.4 เทส `tests/test_failed_login_lockout_dos.py` (16 ข้อ · helper ร่วม `tests/finalize_env.py`)
+
+| กรณี | คาด | ผล |
+|---|---|---|
+| ไม่มีโจมตี + เครื่องเดิม | ได้ code ตรง | ผ่าน |
+| ไม่มีโจมตี + เครื่องใหม่ | challenge < 0.85 · ใช้ TOTP แล้วได้ code | ผ่าน |
+| อีเมลอย่างเดียว 12 ครั้ง + เครื่องเดิม | challenge · ไม่มีคะแนนจากกฎ failed · ใช้ challenge ได้จริง | ผ่าน |
+| อีเมลอย่างเดียว 12 ครั้ง + เครื่องใหม่ | เหมือนข้างบน | ผ่าน |
+| หลังผ่านปัจจัยแรก 12 ครั้ง | 403 | ผ่าน |
+| อีเมลอย่างเดียว + login_count ≥ 50 | 403 | ผ่าน |
+| อีเมลอย่างเดียว + IP blacklist | 403 | ผ่าน |
+| คะแนนทุกชั้นก่อน/หลังโจมตี 12 ครั้งเท่ากัน (เครื่องเดิม · เครื่องใหม่) | rule/behavior/iforest/total เท่าเดิม · ไม่ block | ผ่าน |
+| อีเมลอย่างเดียว 4 ครั้ง (ใต้ floor) | คะแนนเท่าเดิม · ไม่มี +0.2 | ผ่าน |
+| `current` + `db=None` + failed 3 / 6 / 12 | `RuleEvaluationError` (ไม่แอบใช้กฎเดิม) | ผ่าน |
+| `current` + `db=None` + failed 2 | ประเมินได้ · `rule_mode="current"` | ผ่าน |
+| `legacy_replay` เทียบ golden 611 เวกเตอร์จากซอร์สที่ tag freeze | ตรงทุกช่อง (blocked/score/reasons/min_action) · ติดชื่อโหมด | ผ่าน |
+| โหมดไม่รู้จัก | `ValueError` | ผ่าน |
+
+golden: `tests/data/rule_engine_legacy_golden_2026-08-29.json` สร้างโดย `scripts/make_rule_engine_legacy_golden_2026-09-26.py` จากซอร์ส `rule_engine.py` ที่ tag (ยืนยันแล้วว่าเหมือน HEAD ก่อนแก้ทุกไบต์) · sha256 ของซอร์ส (16 หลักแรก) `a905bfc3 96d742b5` · ตัวสร้างพิมพ์ค่าเต็มทุกครั้ง · 363 บล็อก · 243 challenge floor · 162 มีคะแนนจากกฎ failed
+
+| RED | ผล |
+|---|---|
+| บนโค้ด `aa2b576` (ก่อนแก้) | 2 ข้อที่โจมตีล้ม — 403 risk 1.000 |
+| บนการแก้เฉพาะกฎ ≥ 10 | 2 ข้อล้ม — มีคะแนน failed +0.3/+0.2 · เครื่องใหม่ 403 risk 1.000 |
+| บนการแก้รอบแรก (แยก provenance เมื่อ ≥ 5) | อีเมลอย่างเดียว 4 ครั้งยังได้ +0.2 → **พบช่องที่เหลือ** แก้ด้วย `FAILED_SPLIT_MIN` |
+
+mutation: กฎบล็อกใช้ค่ารวม → 4 ล้ม · กฎคะแนนใช้ค่ารวม → 4 ล้ม · ตัด challenge floor → 2 ล้ม · `db=None` ตกไปกฎเดิมแบบเงียบ → 3 ล้ม · `legacy_replay` ยังแยก provenance → 1 ล้ม
+
+`tests/test_e2e_rba.py::test_e2e_rba_hard_block_failed_logins` เดิมใช้เวกเตอร์สังเคราะห์ `failed=12` โดยไม่มีหลักฐาน → ปรับให้ใส่ความล้มเหลวหลังผ่านปัจจัยแรกจริง 12 แถว (ทดสอบกฎใหม่ตรงความหมาย)
+
+**ชุดเทสเต็ม** (ฐานข้อมูลสำเนาใหม่ · ยกเว้น 2 ไฟล์ที่ต้องใช้ Dorm/Library): **933 passed · 0 failed · 13 skipped**
+
+ข้อสังเกตการรัน: รันชุดเต็มซ้ำบนสำเนาเดียวกันหลายรอบทำให้ student ในสำเนาถูกเปลี่ยนสถานะจนหมด (เทส lifecycle) → skip เพิ่มเป็น 54 · สำเนาใหม่กลับเป็น 13 ·
+ระหว่างรอบพบ `test_concurrent_requests_agree` (timeout เดิม) และ `test_activity.py::test_active_vs_history_disjoint` ล้มครั้งเดียว — ข้อหลังรันเดี่ยวผ่าน 3/3 และ endpoint ตอบ 200 ครบคีย์ · ไม่ล้มในรอบสุดท้าย
+
+### 10.5 ผลต่อผลตัดสินที่ freeze ไว้
+
+- ตัวเลขที่ freeze ทำซ้ำได้ผ่าน `mode="legacy_replay"` เท่านั้น และต้องติดชื่อโหมด
+- ระบบจริง: ความล้มเหลวแบบรู้อีเมลอย่างเดียวไม่บวกคะแนนและไม่บล็อกอีก (ให้ challenge แทน) · ความล้มเหลวหลังผ่านปัจจัยแรกให้ผลเหมือนเดิม
+- ตระกูล `failed_spike` ในการทดลองจำลองความล้มเหลวที่ไม่แยก provenance → ผลเดิมเป็นกฎ legacy · การวัดรอบใหม่ (รวม L3 parity) ต้องใช้ `mode="current"` พร้อมข้อมูล audit ที่แยกประเภท
+
+### 10.6 ขอบเขตของข้อสรุป
+
+เทสเส้นทางที่ตรวจข้างต้นผ่านแล้ว และ**ปิด DoS จากอีเมลอย่างเดียวในกรณีที่ทดสอบ** (subsystem flow ผ่าน `_finalize_subsystem_login` · ผู้ใช้มี TOTP · เครื่องเดิม/เครื่องใหม่) ·
+**ยังไม่ใช่การรับรองทุกเส้นทาง** — เช่น Google hub-direct callback · ผู้ใช้ที่ไม่มีปัจจัยที่สอง (grace/force-enroll) · shadow mode ถูกตรวจด้วยเทสเดิมเท่านั้น ·
+**ยังไม่อนุญาตให้ deploy**
