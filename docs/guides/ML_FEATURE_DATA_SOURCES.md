@@ -127,7 +127,7 @@ Version 2.1 · 2026-06-18 · สถานะ: ชุด 23 features (ตัด 2
 ### 11. failed_logins_24h
 - **ข้อมูล:** `audit_logs` ในช่วง `[now-24h, now)`
 - **คำนวณ:** นับการยืนยันตัวตนที่ไม่ผ่านจริงของบัญชีนี้
-  - ผูกด้วย `actor_id`: `passkey_stepup_failed`, `risk_mfa_verify_failed`, `stepup_totp_failed`, `risk_force_enroll_otp_failed`
+  - ผูกด้วย `actor_id`: `passkey_stepup_failed`, `risk_mfa_verify_failed`, `stepup_totp_failed`, `stepup_otp_failed` (เฉพาะ OTP ผิด ไม่นับสถานะล็อก/หมดอายุ), `risk_force_enroll_otp_failed`
   - ผูกด้วย email ใน metadata (ไม่สนตัวพิมพ์): `passkey_login_failed`, `oauth_passkey_login_failed`
 - **ไม่นับ:** `block`/`would_block` ของระบบเอง (วงป้อนกลับ · shadow = ผู้ใช้เข้าได้จริง) · IdP subject ไม่ตรง · กู้บัญชีไม่ผ่าน · ถูกปฏิเสธสิทธิ์ · บัญชีถูกปิด · discoverable passkey ที่ไม่มี email
 - **เหตุผล:** ความพยายามที่ล้มเหลวซ้ำ = brute force [NIST SP 800-63B-4]

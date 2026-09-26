@@ -75,6 +75,7 @@ FAILED_AUTH_ACTOR_ACTIONS = (
     "passkey_stepup_failed",
     "risk_mfa_verify_failed",
     "stepup_totp_failed",
+    "stepup_otp_failed",
     "risk_force_enroll_otp_failed",
 )
 # passkey login ไม่ผ่านก่อนรู้ตัวผู้ใช้ (บันทึกด้วย actor_id NULL) — ผูกด้วย email ที่ถูกพยายามเข้า

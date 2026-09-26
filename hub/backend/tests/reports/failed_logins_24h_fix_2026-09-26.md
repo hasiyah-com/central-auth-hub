@@ -85,7 +85,7 @@ failed_24h = count(LoginSession where decision in ("block", "would_block") and c
 ## 6. ข้อจำกัดที่เหลือ
 
 1. **กฎ ≥ 10 = บล็อก คงเดิม** (ตามที่เจ้าของระบบเลือก) → ผู้ที่รู้ email ของเหยื่อสามารถลอง passkey ผิดโดยเจตนา 10 ครั้งเพื่อให้การเข้าสู่ระบบครั้งถัดไปของเจ้าของบัญชีถูกบล็อก (lockout DoS) · rate limit ต่อ IP ช่วยชะลอได้บางส่วน
-2. step-up OTP ทาง email (`/auth/stepup/otp/verify`) ที่ไม่ผ่านยังไม่ถูกบันทึกใน audit จึงไม่ถูกนับ
+2. ~~step-up OTP ทาง email ที่ไม่ผ่านยังไม่ถูกบันทึกใน audit~~ → แก้แล้วใน commit ถัดไป (ข้อ 9)
 3. IdP subject ไม่ตรงและกู้บัญชีไม่ผ่านยังไม่มีสัญญาณความเสี่ยงของตัวเอง
 4. โมเดล `iforest_v1.pkl` ฝึกจากข้อมูลที่ฟีเจอร์นี้มีความหมายตามตัวสร้างข้อมูล ไม่ใช่นิยามเดิมของระบบจริง → การแก้นี้ทำให้ระบบจริงใกล้การทดลองขึ้น แต่ยังไม่ได้วัดผลต่อคะแนน IForest (ตาม RBA freeze)
 
@@ -106,3 +106,23 @@ PYTHONPATH=. python scripts/measure_failed_logins_24h_2026-09-26.py
 
 - commit / push / merge — รอเจ้าของระบบ
 - deploy
+
+## 9. commit ถัดไป: audit ของ step-up OTP ทาง email
+
+**ปัญหา:** `/auth/stepup/otp/verify` ที่ OTP ผิดเพิ่มตัวนับใน Redis แล้ว `raise` ทันที ไม่มี audit event → ไม่ถูกนับใน `failed_logins_24h` และตรวจย้อนหลังไม่ได้ (B7)
+
+**แก้:** กรณี `otp_invalid` บันทึก `stepup_otp_failed` (actor_id = ผู้ใช้ · metadata `code`, `attempts`) ตามลำดับ `log_action` → `commit` → `raise` (B6) และเพิ่มใน `FAILED_AUTH_ACTOR_ACTIONS`
+
+| กรณี | บันทึก/นับ | เหตุผล |
+|---|---|---|
+| `otp_invalid` | นับ | ตรวจ OTP แล้วผิดจริง |
+| `otp_locked` | ไม่นับ | ปฏิเสธจากสถานะล็อกก่อนตรวจ OTP ใหม่ · นับจะเพิ่มความล้มเหลวซ้ำจากสถานะเดิม |
+| `otp_expired` | ไม่นับ | ไม่มี OTP ให้ตรวจ ไม่ใช่การเดาผิด |
+
+**เทส** `tests/test_stepup_otp_failed_audit.py` (ผ่าน HTTP จริงด้วย TestClient · ปิด rate limit ในเทส):
+
+| เทส | ผล |
+|---|---|
+| RED (ก่อนแก้) | 1 failed · 3 passed — ข้อ `otp_invalid` ไม่มีแถว audit |
+| GREEN | 4 passed |
+| ถอด `passkey.py` ที่แก้ออก (stash) แล้วรันซ้ำ | 1 failed — ยืนยันว่าเทสขึ้นกับการแก้จริง |

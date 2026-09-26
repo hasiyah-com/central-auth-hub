@@ -424,8 +424,9 @@
 - สาเหตุ: `login_sessions` ไม่มีคอลัมน์ความสำเร็จ จึงใช้ decision แทน · การทดลองนับ `login_successful == False` → ระบบที่วัดกับระบบที่ใช้จริงคนละความหมาย (B66)
 - แก้: นับจาก `audit_logs` ช่วง `[now-24h, now)` เฉพาะการยืนยันตัวตนที่ไม่ผ่าน และผูกกับบัญชีที่ถูกพยายามเข้า — `actor_id` สำหรับ step-up/OTP/TOTP · email ใน metadata สำหรับ passkey login · ไม่นับ block/would_block, IdP subject ไม่ตรง, กู้บัญชีไม่ผ่าน, ถูกปฏิเสธสิทธิ์, บัญชีถูกปิด, discoverable passkey ที่ไม่มี email
 - **กฎ:** ห้ามใช้ผลตัดสินของระบบเป็นฟีเจอร์ของการตัดสินครั้งถัดไป · ฟีเจอร์ "ล้มเหลว" ต้องมาจากเหตุการณ์ยืนยันตัวตนที่ล้มเหลวจริง และผูกกับบัญชีที่ถูกกระทบให้ถูก
-- **ข้อจำกัดที่เหลือ:** กฎ ≥ 10 = บล็อก คงเดิม → ผู้ที่รู้ email สามารถลอง passkey ผิดโดยเจตนาเพื่อให้เจ้าของบัญชีถูกบล็อกได้ (lockout DoS) · step-up OTP ทาง email ที่ไม่ผ่านยังไม่ถูกบันทึกใน audit จึงไม่ถูกนับ
-- **Verify:** `tests/test_failed_logins_24h.py` (7 tests · mutation ถูกจับ) · `test_feature_point_in_time.py::test_failed_logins_24h_excludes_future`
+- **ข้อจำกัดที่เหลือ:** กฎ ≥ 10 = บล็อก คงเดิม → ผู้ที่รู้ email สามารถลอง passkey ผิดโดยเจตนาเพื่อให้เจ้าของบัญชีถูกบล็อกได้ (lockout DoS)
+- เพิ่มเติม: step-up OTP ทาง email ที่ผิดบันทึกเป็น `stepup_otp_failed` แล้ว (นับเฉพาะ `otp_invalid` · `otp_locked` ไม่นับเพราะปฏิเสธจากสถานะล็อกก่อนตรวจ OTP · `otp_expired` ไม่มี OTP ให้ตรวจ)
+- **Verify:** `tests/test_failed_logins_24h.py` (7 tests · mutation ถูกจับ) · `tests/test_stepup_otp_failed_audit.py` (4 tests) · `test_feature_point_in_time.py::test_failed_logins_24h_excludes_future`
 
 ---
 
