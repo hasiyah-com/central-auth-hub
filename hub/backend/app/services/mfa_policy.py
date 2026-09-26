@@ -52,19 +52,19 @@ def is_second_factor_required(
     actual_decision: str,
     enforcing: bool,
     is_hard_block: bool,
+    login_method: str | None = None,
 ) -> bool:
     """ต้องยืนยัน factor ที่สองไหม — รวม risk-based + Always-2FA.
 
     - `is_hard_block` True → คืน False (block ชนะ ไม่ใช่ mfa; flow แยกจัดการ 403)
+    - primary ที่เป็น Passkey ผ่าน strong authentication แล้ว → ไม่ขอ factor เดิมซ้ำ
     - risk-based: enforce mode + decision ∈ {block, challenge} (เดิม — เงียบใน shadow)
     - Always-2FA: `user.effective_mfa_always` (user เปิดเอง หรือ admin) — **ทำงาน
       แม้ shadow mode** เพราะเป็นตัวเลือกของ user ไม่ใช่การ enforce ของ ML
-
-    หมายเหตุ: helper นี้ใช้ที่ flow ที่ primary เป็น federated/OAuth (Google callback,
-    subsystem OAuth). flow ที่ primary เป็น **passkey เอง** ไม่ต้องเรียก helper นี้ —
-    passkey = strong factor ผ่าน Always-2FA อยู่แล้ว (ดู `login_method_satisfies_2fa`).
     """
     if is_hard_block:
+        return False
+    if login_method_satisfies_2fa(login_method):
         return False
     risk_mfa = enforcing and actual_decision in ("block", "challenge")
     return bool(risk_mfa or user.effective_mfa_always)
