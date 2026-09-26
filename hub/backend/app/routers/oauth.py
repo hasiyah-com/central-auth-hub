@@ -2924,9 +2924,8 @@ input:focus-visible{{outline:2px solid var(--teal);outline-offset:2px}}
       </div>
 
       <div id="paneTicket" class="hide">
-        <label class="fld" for="reason">เหตุผล (อุปกรณ์หาย / เข้า email ไม่ได้ ฯลฯ)</label>
-        <input type="text" id="reason" placeholder="เช่น ทำโทรศัพท์ที่มี passkey หาย">
-        <button class="btn" id="btnTicket">ส่งคำขอให้ Admin</button>
+        <p class="hint">แนบหลักฐานยืนยันตัวตน และเลือกยืนยันอีเมลสำรองเพื่อรับลิงก์ได้</p>
+        <a class="btn" href="/auth/recovery/ticket" style="display:block;text-decoration:none;text-align:center">เปิดแบบฟอร์มคำขอกู้บัญชี</a>
       </div>
       <a class="back" id="backLink" href="javascript:history.back()">← กลับ</a>
 </div></div></div></section></div>
@@ -3113,15 +3112,7 @@ $('btnOtpVerify').addEventListener('click', async () => {{
   else {{ showErr(pickMsg(data, 'OTP ไม่ถูกต้อง')); $('btnOtpVerify').disabled=false; $('btnOtpVerify').textContent='ยืนยัน OTP'; }}
 }});
 
-$('btnTicket').addEventListener('click', async () => {{
-  clearErr();
-  if (!emailVal()) return showErr('กรุณากรอกอีเมล');
-  $('btnTicket').disabled = true; $('btnTicket').textContent = 'กำลังส่ง…';
-  const {{ok, data}} = await post('/auth/recovery/request', {{email:emailVal(), credential_type:'passkey', reason:($('reason').value||'').trim()}});
-  // opaque เสมอ (ไม่บอกว่า email มีจริงไหม) → ถือว่าส่งสำเร็จถ้า HTTP ok
-  if (ok) done(data.message || 'ส่งคำขอแล้ว — ผู้ดูแลระบบจะติดต่อยืนยันตัวตน');
-  else {{ showErr(pickMsg(data, 'ส่งคำขอไม่สำเร็จ')); $('btnTicket').disabled=false; $('btnTicket').textContent='ส่งคำขอให้ Admin'; }}
-}});
+
 </script>
 </body></html>"""
 
