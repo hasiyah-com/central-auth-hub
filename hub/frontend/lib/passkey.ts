@@ -612,6 +612,11 @@ export type RecoveryTicket = {
   email: string;
   credential_type: string | null;
   reason: string | null;
+  evidence_type: "student_card" | "citizen_id" | null;
+  has_evidence: boolean;
+  alternate_email: string | null;
+  alternate_email_verified: boolean;
+  delivery_status: "pending" | "status_page" | "alternate_email";
   recovery_level: "NORMAL" | "HIGH";
   status: string;
   created_at: string | null;
@@ -626,6 +631,12 @@ export async function adminListRecoveryTickets(
   return clientFetch(`/admin/recovery-tickets?status=${status}`);
 }
 
+export async function adminGetRecoveryEvidence(
+  ticketId: string
+): Promise<{ mime: string; data_url: string }> {
+  return clientFetch(`/admin/recovery-tickets/${ticketId}/evidence`);
+}
+
 export async function adminApproveTicket(
   ticketId: string,
   body: { evidence_type?: string; evidence_note?: string; remark?: string },
@@ -633,6 +644,8 @@ export async function adminApproveTicket(
 ): Promise<{
   approved?: boolean;
   relink_url?: string;
+  delivery?: "status_page" | "alternate_email";
+  email_sent?: boolean;
   awaiting_second_approval?: boolean;
   approvals: number;
   required?: number;
