@@ -401,3 +401,31 @@ Admin ตรวจพบกิจกรรมผิดปกติ — กรุ
         html=html,
         text_fallback=text,
     )
+
+
+def send_recovery_link_email(
+    to_email: str,
+    recovery_url: str,
+    expires_at: datetime,
+) -> bool:
+    """ส่ง one-time recovery link ไปยังอีเมลสำรองที่ผ่าน OTP แล้วเท่านั้น."""
+    expires_text = expires_at.strftime("%d/%m/%Y %H:%M UTC")
+    html = f"""<!doctype html><html lang="th"><body style="margin:0;background:#f8fafc;font-family:Arial,sans-serif;color:#0f172a">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="padding:36px 16px"><tr><td align="center">
+<table role="presentation" width="560" cellpadding="0" cellspacing="0" style="max-width:560px;background:#fff;border-radius:16px;overflow:hidden">
+<tr><td style="background:#081321;color:#fff;padding:28px 32px"><div style="font-size:11px;letter-spacing:.16em;color:#6ee7d2">CENTRAL AUTH HUB · RECOVERY</div><h1 style="font-size:22px;margin:7px 0 0">คำขอกู้บัญชีได้รับการอนุมัติ</h1></td></tr>
+<tr><td style="padding:28px 32px"><p style="line-height:1.65">ผู้ดูแลตรวจสอบหลักฐานและอนุมัติคำขอแล้ว กดปุ่มด้านล่างเพื่อเชื่อมบัญชี Google ใหม่</p>
+<p><a href="{recovery_url}" style="display:inline-block;background:#0f9f89;color:#fff;padding:13px 20px;border-radius:9px;text-decoration:none;font-weight:700">ดำเนินการกู้บัญชี</a></p>
+<div style="margin-top:20px;padding:13px;background:#fff7ed;border:1px solid #fed7aa;border-radius:9px;font-size:13px;color:#9a3412">ลิงก์ใช้ได้ครั้งเดียวและหมดอายุ {expires_text} หากไม่ได้เป็นผู้ส่งคำขอ อย่ากดลิงก์และติดต่อผู้ดูแลทันที</div>
+</td></tr></table></td></tr></table></body></html>"""
+    text = (
+        "คำขอกู้บัญชี Central Auth Hub ได้รับการอนุมัติ\n\n"
+        f"เปิดลิงก์นี้ภายใน {expires_text}:\n{recovery_url}\n\n"
+        "ลิงก์ใช้ได้ครั้งเดียว หากไม่ได้ส่งคำขอ อย่ากดลิงก์"
+    )
+    return _send_html_email(
+        to=to_email,
+        subject="[Central Auth Hub] คำขอกู้บัญชีได้รับการอนุมัติ",
+        html=html,
+        text_fallback=text,
+    )
