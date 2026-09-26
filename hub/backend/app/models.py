@@ -541,7 +541,19 @@ class RecoveryTicket(Base):
         String(20), nullable=False, server_default="pending", index=True
     )  # pending | approved | rejected | consumed | expired
     requested_ip = Column(INET, nullable=True)
-    link_token = Column(Text, nullable=True)  # change_google token (ออกตอน approve ครบ)
+    # Secret สำหรับกลับมาตรวจสถานะ เก็บเป็น Argon2 hash เท่านั้น
+    tracking_secret_hash = Column(Text, nullable=True)
+    # หลักฐานเข้ารหัสด้วย SECRET_ENCRYPTION_KEY; ไม่ส่งรวมใน list endpoint
+    evidence_type = Column(String(30), nullable=True)
+    evidence_mime = Column(String(50), nullable=True)
+    evidence_encrypted = Column(Text, nullable=True)
+    # ช่องทางส่งลิงก์สำรอง — ใช้ได้ต่อเมื่อผ่าน OTP แล้วเท่านั้น
+    alternate_email = Column(String(255), nullable=True)
+    alternate_email_verified = Column(Boolean, nullable=False, server_default="false")
+    delivery_status = Column(String(30), nullable=False, server_default="pending")
+    delivery_sent_at = Column(DateTime, nullable=True)
+    # change_google token เข้ารหัส (ไม่เก็บ plaintext)
+    link_token = Column(Text, nullable=True)
     token_expires_at = Column(DateTime, nullable=True)
     consumed_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
