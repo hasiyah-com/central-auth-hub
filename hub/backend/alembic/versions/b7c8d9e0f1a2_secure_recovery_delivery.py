@@ -1,7 +1,7 @@
 """secure recovery evidence, tracking and alternate delivery
 
 Revision ID: b7c8d9e0f1a2
-Revises: f6a7b8c9d0e1
+Revises: d4e5f6a7b8c9
 Create Date: 2026-09-27 02:45:00
 """
 
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 
 
 revision: str = "b7c8d9e0f1a2"  # pragma: allowlist secret
-down_revision: Union[str, None] = "f6a7b8c9d0e1"  # pragma: allowlist secret
+down_revision: Union[str, None] = "d4e5f6a7b8c9"  # pragma: allowlist secret
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
