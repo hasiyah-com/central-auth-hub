@@ -112,7 +112,22 @@
 //   const f = (id: string) =>
 //     form[id] || { evidence_type: "student_card", remark: "" };
 
-//   async function approve(t: RecoveryTicket) {
+//   async function viewEvidence(t: RecoveryTicket) {
+    try {
+      setBusy(t.id + "e");
+      const evidence = await adminGetRecoveryEvidence(t.id);
+      setEvidencePreview(evidence.data_url);
+    } catch (e) {
+      setMsg({
+        kind: "err",
+        text: (e as { detail?: string })?.detail || "เปิดหลักฐานไม่สำเร็จ",
+      });
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function approve(t: RecoveryTicket) {
 //     setBusy(t.id + "a");
 //     setMsg(null);
 //     try {
@@ -124,7 +139,12 @@
 //       if (r.relink_url) {
 //         setLink({ id: t.id, url: r.relink_url });
 //         setCopied(false);
-//         setMsg({ kind: "ok", text: "อนุมัติครบ — คัดลอกลิงก์ให้ผู้ใช้" });
+//         setMsg({
+          kind: "ok",
+          text: r.email_sent
+            ? "อนุมัติครบ — ส่งลิงก์ไปยังอีเมลสำรองที่ยืนยันแล้ว"
+            : "อนุมัติครบ — ผู้ใช้รับลิงก์จากหน้าติดตามคำขอได้",
+        });
 //       } else {
 //         setMsg({
 //           kind: "ok",
@@ -502,6 +522,7 @@ import {
   adminListRecoveryTickets,
   adminApproveTicket,
   adminRejectTicket,
+  adminGetRecoveryEvidence,
   type RecoveryTicket,
 } from "@/lib/passkey";
 import "@/app/signal-room.css";
@@ -590,6 +611,7 @@ export default function RecoveryTicketsPage() {
   const [query, setQuery] = useState("");
   const [level, setLevel] = useState<LevelFilter>("all");
   const [openId, setOpenId] = useState<string | null>(null);
+  const [evidencePreview, setEvidencePreview] = useState<string | null>(null);
   // per-ticket evidence form
   const [form, setForm] = useState<
     Record<string, { evidence_type: string; remark: string }>
@@ -683,6 +705,24 @@ export default function RecoveryTicketsPage() {
       {verifying && (
         <div className="cx-verify-overlay">
           <div>กำลังยืนยันด้วย Passkey — ทำตามที่อุปกรณ์แจ้ง</div>
+        </div>
+      )}
+      {evidencePreview && (
+        <div className="cx-verify-overlay" onClick={() => setEvidencePreview(null)}>
+          <div style={{ maxWidth: 760, padding: 18 }}>
+            <img
+              src={evidencePreview}
+              alt="หลักฐานยืนยันตัวตน"
+              style={{ display: "block", maxWidth: "100%", maxHeight: "75vh" }}
+            />
+            <button
+              className="cx-panel-action"
+              style={{ marginTop: 12 }}
+              onClick={() => setEvidencePreview(null)}
+            >
+              ปิดหลักฐาน
+            </button>
+          </div>
         </div>
       )}
 
@@ -858,6 +898,18 @@ export default function RecoveryTicketsPage() {
                           <tr className="cx-recovery-expand">
                             <td colSpan={7}>
                               <div className="cx-evidence-form">
+                                <button
+                                  className="cx-panel-action"
+                                  onClick={() => viewEvidence(t)}
+                                  disabled={!t.has_evidence || busy === t.id + "e"}
+                                >
+                                  {busy === t.id + "e" ? "กำลังเปิด" : "ดูหลักฐานที่แนบ"}
+                                </button>
+                                <div className="cx-notif-sub">
+                                  {t.alternate_email_verified && t.alternate_email
+                                    ? `ส่งลิงก์ไป: ${t.alternate_email}`
+                                    : "รับลิงก์ผ่านหน้าติดตามคำขอ"}
+                                </div>
                                 <label>
                                   หลักฐานที่ตรวจ
                                   <select
