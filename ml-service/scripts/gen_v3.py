@@ -42,19 +42,40 @@ LC_SIZES = [50, 100, 500, 1000, 5000]
 DEV, FINAL = "dev", "final"
 
 
+def _episode_days(p: dict) -> int:
+    """V1 ใช้ 25 วันเหมือนเดิม; profile รุ่นใหม่เลือก cadence แบบ opt-in."""
+    return int(p.get("episode_days", EPISODE_DAYS))
+
+
+def _profile_for_episode(p: dict, ep_index: int, days: int) -> dict:
+    """เพิ่มอายุ state ข้าม episode เฉพาะ profile ที่ร้องขอ เพื่อคง V1 reproducibility."""
+    q = dict(p)
+    q["passkey"] = dict(p["passkey"])
+    if p.get("episode_age_carry", False):
+        elapsed = ep_index * days
+        q["perm_age"] = min(int(p["perm_age"]) + elapsed, 365)
+        if q["passkey"].get("count", 0):
+            q["passkey"]["age_days"] = min(
+                int(q["passkey"].get("age_days", 0)) + elapsed, 365
+            )
+            q["passkey"]["last_used_days"] = min(
+                int(q["passkey"].get("last_used_days", 0)) + elapsed, 365
+            )
+    return q
+
+
 def _episode(p: dict, ident: dict, rng, ep_index: int, n_events: int) -> list[dict]:
-    """1 episode — ใช้เครื่องมือของ V2 แต่จำกัดช่วงเวลาเป็น EPISODE_DAYS."""
-    saved_start, saved_days, saved_rows = BP.START, BP.DAYS, p.get("rows")
+    """1 episode — ใช้ cadence/age carry ของ profile เมื่อระบุ มิฉะนั้นคง V1 เดิม."""
+    saved_start, saved_days = BP.START, BP.DAYS
     BP.START = saved_start + timedelta(days=ep_index * EPISODE_STRIDE_DAYS)
-    BP.DAYS = EPISODE_DAYS
-    p = dict(p)
-    p["rows"] = n_events
+    days = _episode_days(p)
+    BP.DAYS = days
+    episode_profile = _profile_for_episode(p, ep_index, days)
+    episode_profile["rows"] = n_events
     try:
-        rows = BP.gen_normal(p, ident, "staggered", rng)
+        rows = BP.gen_normal(episode_profile, ident, "staggered", rng)
     finally:
         BP.START, BP.DAYS = saved_start, saved_days
-        if saved_rows is not None:
-            p["rows"] = saved_rows
     for r in rows:
         r["episode"] = ep_index
     return rows
@@ -98,10 +119,13 @@ def gen_attack_pack(
     ต้องวางบนปฏิทินของ **episode สุดท้าย** ไม่งั้น gap เทียบ history จะติดลบ
     (attack เกิดก่อน history) -> velocity rule ยิงมั่วจน recall = 100%
     """
-    src = p if variant == DEV else _tweak_for_final(p)
+    days = _episode_days(p)
+    src = _profile_for_episode(p, ep_index, days)
+    if variant == FINAL:
+        src = _tweak_for_final(src)
     saved_start, saved_days = BP.START, BP.DAYS
     BP.START = saved_start + timedelta(days=ep_index * EPISODE_STRIDE_DAYS)
-    BP.DAYS = EPISODE_DAYS
+    BP.DAYS = days
     try:
         rows = BP.gen_attacks(src, ident, rng)  # obvious 20 + context
         for _ in range(2):  # subtle 2 รอบ -> ~10 (5 family × 2)
@@ -122,9 +146,12 @@ def _camp_like_in_window(p, ident, rng, ep_index):
     """campaign-like normal บนปฏิทินของ episode สุดท้าย (label=0 แต่ต้องคำนวณฟีเจอร์แบบเดียวกัน)."""
     saved_start, saved_days = BP.START, BP.DAYS
     BP.START = saved_start + timedelta(days=ep_index * EPISODE_STRIDE_DAYS)
-    BP.DAYS = EPISODE_DAYS
+    days = _episode_days(p)
+    BP.DAYS = days
     try:
-        rows = BP.gen_campaign_like_normal(p, ident, rng)
+        rows = BP.gen_campaign_like_normal(
+            _profile_for_episode(p, ep_index, days), ident, rng
+        )
     finally:
         BP.START, BP.DAYS = saved_start, saved_days
     return [{**r, "row_kind": "attack"} for r in rows]

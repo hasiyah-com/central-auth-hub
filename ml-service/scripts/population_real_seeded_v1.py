@@ -165,6 +165,16 @@ def derive_prototypes(root: Path) -> tuple[list[dict], dict]:
     user_by_id = {str(r["id"]): r for _, r in users.iterrows()}
     global_weekend = _global_weekend_rate(sessions)
     end = sessions["created_at"].max()
+    rate_interval_count = 0
+    rate_span_days = 0.0
+    for _, rate_group in sessions.groupby("user_id", sort=False):
+        rate_ts = rate_group["created_at"].dropna().sort_values()
+        if len(rate_ts) > 1:
+            rate_interval_count += len(rate_ts) - 1
+            rate_span_days += max(
+                (rate_ts.iloc[-1] - rate_ts.iloc[0]).total_seconds() / 86400, 1.0
+            )
+    global_login_rate = rate_interval_count / max(rate_span_days, 1.0)
     protos = []
 
     for uid_value, g in sessions.groupby("user_id", sort=False):
@@ -190,6 +200,14 @@ def derive_prototypes(root: Path) -> tuple[list[dict], dict]:
         methods = _weights(g["login_method"]) or {"google": 1.0}
 
         gaps = ts.diff().dt.total_seconds().div(60).dropna()
+        span_days = (
+            max((ts.iloc[-1] - ts.iloc[0]).total_seconds() / 86400, 1.0)
+            if len(ts) > 1
+            else 1.0
+        )
+        observed_login_rate = (
+            max(len(ts) - 1, 0) + 10.0 * global_login_rate
+        ) / (span_days + 10.0)
         durations = (
             pd.to_datetime(g["logout_at"], errors="coerce", utc=True) - g["created_at"]
         ).dt.total_seconds().div(60)
@@ -241,6 +259,8 @@ def derive_prototypes(root: Path) -> tuple[list[dict], dict]:
                 "incidents": 0,
                 "mfa_always": mfa,
                 "observed_gap_median_min": float(gaps.median()) if len(gaps) else None,
+                # ใช้ภายใน population V2 เท่านั้น; V1 ไม่ส่ง field นี้ออก artifact
+                "observed_login_rate_per_day": float(observed_login_rate),
             }
         )
 
