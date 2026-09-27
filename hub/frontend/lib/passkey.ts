@@ -620,6 +620,10 @@ export type RecoveryTicket = {
   recovery_level: "NORMAL" | "HIGH";
   status: string;
   created_at: string | null;
+  latest_approval_at: string | null;
+  token_expires_at: string | null;
+  delivery_sent_at: string | null;
+  consumed_at: string | null;
   approvals: number;
   required: number;
   approvers: string[];
