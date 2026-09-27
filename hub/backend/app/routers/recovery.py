@@ -29,7 +29,7 @@ from app.services.secret_service import decrypt_secret, encrypt_secret, hash_sec
 log = logging.getLogger(__name__)
 router = APIRouter()
 
-_LINK_TTL = 1800
+_LINK_TTL = 86400  # 24 ชั่วโมง — ให้ผู้ใช้มีเวลาทำรายการโดยไม่ลดความเป็น one-time
 _ALT_OTP_TTL = 600
 _ALT_VERIFY_TTL = 900
 _ALT_MAX_ATTEMPTS = 5
@@ -327,6 +327,21 @@ def list_recovery_tickets(
                 "recovery_level": ticket.recovery_level,
                 "status": ticket.status,
                 "created_at": ticket.created_at.isoformat() if ticket.created_at else None,
+                "latest_approval_at": max(
+                    (row.approved_at for row in approvals if row.approved_at),
+                    default=None,
+                ).isoformat()
+                if approvals
+                else None,
+                "token_expires_at": ticket.token_expires_at.isoformat()
+                if ticket.token_expires_at
+                else None,
+                "delivery_sent_at": ticket.delivery_sent_at.isoformat()
+                if ticket.delivery_sent_at
+                else None,
+                "consumed_at": ticket.consumed_at.isoformat()
+                if ticket.consumed_at
+                else None,
                 "approvals": len(approvals),
                 "required": _REQUIRED.get(ticket.recovery_level, 1),
                 "approvers": [str(row.admin_id) for row in approvals],
@@ -537,7 +552,7 @@ def _ticket_page_html(nonce: str) -> str:
     .primary{background:var(--navy);color:#fff}.primary:hover{background:#132b43}.secondary{background:var(--soft);color:var(--mint-dark);border-color:#b9e8df}.ghost{background:#fff;color:var(--ink);border-color:var(--line)}button:disabled{opacity:.52;cursor:not-allowed}
     .notice{display:none;padding:12px 14px;border-radius:9px;margin-bottom:17px;font-size:13px}.notice.show{display:block}.notice.ok{background:#e8faf5;color:#087462;border:1px solid #b9eadf}.notice.err{background:#fff1f2;color:#ad1f3b;border:1px solid #fecdd3}
     .receipt{display:none}.receipt.show{display:block}.success-mark{width:50px;height:50px;border-radius:50%;display:grid;place-items:center;background:var(--soft);color:var(--mint-dark);font-size:24px;margin-bottom:13px}
-    .credential{border:1px solid var(--line);border-radius:11px;padding:14px 15px;margin-top:12px}.credential-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}.credential-head span{font-size:11px;font-weight:800;color:var(--muted);letter-spacing:.08em}.code{font:12px ui-monospace;word-break:break-all;color:var(--ink);background:#f7f9fc;padding:11px;border-radius:7px}.copy{padding:7px 10px;font-size:11px}
+    .secure-receipt{display:flex;align-items:center;gap:15px;border:1px solid #b8e5dd;border-radius:12px;padding:17px;margin-top:16px;background:linear-gradient(135deg,#f5fffd,#edf9f7)}.secret-icon{width:52px;height:52px;flex:0 0 auto;border-radius:12px;display:grid;place-items:center;background:var(--navy);color:#59dbc6;font:800 16px ui-monospace;letter-spacing:.14em}.secure-receipt b{display:block;font-size:14px}.secure-receipt span{display:block;color:var(--muted);font-size:12px;line-height:1.55;margin-top:4px}
     .warning{margin-top:15px;padding:12px 14px;background:#fff8e7;border:1px solid #f3d891;border-radius:9px;color:#7a5610;font-size:12px;line-height:1.55}
     .status-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}.status-actions{display:flex;justify-content:flex-end;margin-top:17px}.continue{display:none;margin-top:12px}.continue.show{display:inline-flex}
     .hidden{display:none!important}
@@ -556,7 +571,7 @@ def _ticket_page_html(nonce: str) -> str:
       <div class="steps">
         <div class="step"><i>01</i><div><b>ส่งหลักฐาน</b><span>บัตรนักศึกษาหรือบัตรประชาชน</span></div></div>
         <div class="step"><i>02</i><div><b>รอผู้ดูแลตรวจสอบ</b><span>บัญชีความเสี่ยงสูงต้องอนุมัติ 2 คน</span></div></div>
-        <div class="step"><i>03</i><div><b>รับลิงก์กู้บัญชี</b><span>ใช้ได้ครั้งเดียวภายใน 30 นาที</span></div></div>
+        <div class="step"><i>03</i><div><b>รับลิงก์กู้บัญชี</b><span>ใช้ได้ครั้งเดียวภายใน 24 ชั่วโมง</span></div></div>
       </div>
     </div>
     <div class="privacy">หลักฐานถูกเข้ารหัสและลบออกหลังการกู้บัญชีสำเร็จหรือคำขอถูกปฏิเสธ</div>
@@ -581,40 +596,38 @@ def _ticket_page_html(nonce: str) -> str:
         </div>
 
         <div id="receipt" class="receipt">
-          <div class="success-mark">✓</div><h3>ส่งคำขอเรียบร้อย</h3><p>เก็บข้อมูลสองรายการด้านล่างไว้สำหรับติดตามผล คุณสามารถปิดหน้านี้ได้</p>
-          <div class="credential"><div class="credential-head"><span>TICKET ID</span><button class="ghost copy" type="button" data-copy="ticketOut">คัดลอก</button></div><div id="ticketOut" class="code"></div></div>
-          <div class="credential"><div class="credential-head"><span>TRACKING SECRET</span><button class="ghost copy" type="button" data-copy="secretOut">คัดลอก</button></div><div id="secretOut" class="code"></div></div>
-          <div class="warning">รหัสติดตามจะแสดงเฉพาะหน้านี้ ระบบไม่สามารถแสดงรหัสเดิมให้ภายหลังได้</div>
-          <div class="actions"><button id="copyReceipt" class="secondary" type="button">คัดลอกทั้งสองรายการ</button><button id="goStatus" class="primary" type="button">ตรวจสอบสถานะ</button></div>
+          <div class="success-mark">✓</div><h3>ส่งคำขอเรียบร้อย</h3><p>ระบบซ่อน Ticket ID และรหัสติดตามไว้เพื่อความปลอดภัย กดคัดลอกหนึ่งครั้งแล้วเก็บไว้ในที่ปลอดภัย</p>
+          <div class="secure-receipt"><div class="secret-icon">••••</div><div><b>ข้อมูลติดตามคำขอพร้อมคัดลอก</b><span>ประกอบด้วย Ticket ID และ Tracking secret โดยจะไม่แสดงบนหน้าจอ</span></div></div>
+          <div class="warning">ข้อมูลนี้คัดลอกได้เฉพาะระหว่างที่หน้านี้ยังเปิดอยู่ ระบบไม่สามารถแสดงรหัสเดิมให้ภายหลังได้</div>
+          <div class="actions"><button id="copyReceipt" class="secondary" type="button">คัดลอกข้อมูลติดตาม</button><button id="goStatus" class="primary" type="button">ตรวจสอบสถานะ</button></div>
         </div>
       </div>
     </section>
 
     <section id="statusPane" class="card pane hidden">
       <div class="card-head"><h3>ติดตามคำขอ</h3><p>กรอก Ticket ID และรหัสติดตามที่ได้รับตอนส่งคำขอ</p></div>
-      <div class="body"><div class="status-grid"><div><label>Ticket ID</label><input id="ticketId" autocomplete="off"></div><div><label>รหัสติดตาม</label><input id="trackingSecret" autocomplete="off"></div></div><div class="status-actions"><button id="check" class="primary" type="button">ตรวจสอบสถานะ</button></div><div id="statusMsg" class="notice"></div><a id="continueLink" class="button primary continue">ดำเนินการกู้บัญชี</a></div>
+      <div class="body"><div><label>ข้อมูลติดตามคำขอ</label><textarea id="trackingBundle" autocomplete="off" spellcheck="false" placeholder="วางข้อมูลที่คัดลอกไว้ทั้งชุดที่นี่"></textarea><div class="hint">ข้อมูลประกอบด้วย Ticket ID และ Tracking secret ระบบจะแยกค่าให้อัตโนมัติ</div></div><div class="status-actions"><button id="check" class="primary" type="button">ตรวจสอบสถานะ</button></div><div id="statusMsg" class="notice"></div><a id="continueLink" class="button primary continue">ดำเนินการกู้บัญชี</a></div>
     </section>
   </div></main>
 </div>
 
 <script nonce="__NONCE__">
 const $=id=>document.getElementById(id);
-let verificationToken="", previewUrl="", otpCooldown=null;
+let verificationToken="", previewUrl="", otpCooldown=null, receiptTicket="", receiptSecret="";
 function note(id,text,ok){const e=$(id);e.textContent=text;e.className="notice show "+(ok?"ok":"err");e.scrollIntoView({behavior:"smooth",block:"nearest"})}
 async function post(url,body){const r=await fetch(url,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(typeof d.detail==="string"?d.detail:"ดำเนินการไม่สำเร็จ");return d}
 function showPane(id){document.querySelectorAll(".pane").forEach(x=>x.classList.toggle("hidden",x.id!==id));document.querySelectorAll(".tab").forEach(x=>x.classList.toggle("on",x.dataset.pane===id))}
 document.querySelectorAll(".tab").forEach(x=>x.addEventListener("click",()=>showPane(x.dataset.pane)));
 async function copyText(value,button){try{if(navigator.clipboard&&window.isSecureContext)await navigator.clipboard.writeText(value);else{const t=document.createElement("textarea");t.value=value;t.style.position="fixed";t.style.opacity="0";document.body.appendChild(t);t.select();if(!document.execCommand("copy"))throw new Error();t.remove()}const old=button.textContent;button.textContent="คัดลอกแล้ว";setTimeout(()=>button.textContent=old,1600)}catch{note("globalMsg","คัดลอกอัตโนมัติไม่ได้ กรุณาเลือกข้อความแล้วคัดลอกด้วยตนเอง",false)}}
-document.querySelectorAll("[data-copy]").forEach(b=>b.addEventListener("click",()=>copyText($(b.dataset.copy).textContent,b)));
 $("evidence").addEventListener("change",()=>{const f=$("evidence").files[0];if(previewUrl)URL.revokeObjectURL(previewUrl);if(!f){$("preview").classList.remove("show");return}previewUrl=URL.createObjectURL(f);$("previewImage").src=previewUrl;$("previewName").textContent=f.name+" · "+Math.ceil(f.size/1024)+" KB";$("preview").classList.add("show")});
 $("alternate").addEventListener("input",()=>{verificationToken="";$("verified").classList.remove("show")});
 $("sendOtp").addEventListener("click",async()=>{const b=$("sendOtp");try{b.disabled=true;b.textContent="กำลังส่ง…";const d=await post("/auth/recovery/alternate-email/start",{email:$("email").value.trim(),alternate_email:$("alternate").value.trim()});$("otpBox").classList.add("show");note("globalMsg",d.message||"ส่ง OTP แล้ว",true);let left=30;clearInterval(otpCooldown);otpCooldown=setInterval(()=>{left--;b.textContent=left>0?"ส่งใหม่ใน "+left+" วินาที":"ส่ง OTP อีกครั้ง";if(left<=0){clearInterval(otpCooldown);b.disabled=false}},1000)}catch(e){b.disabled=false;b.textContent="ส่ง OTP";note("globalMsg",e.message,false)}});
 $("verifyOtp").addEventListener("click",async()=>{const b=$("verifyOtp");try{b.disabled=true;b.textContent="กำลังตรวจ…";const d=await post("/auth/recovery/alternate-email/verify",{email:$("email").value.trim(),alternate_email:$("alternate").value.trim(),otp:$("otp").value.trim()});verificationToken=d.verification_token;$("verified").classList.add("show");$("alternate").readOnly=true;$("otpBox").classList.remove("show");note("globalMsg","ยืนยันอีเมลสำรองเรียบร้อย",true)}catch(e){note("globalMsg",e.message,false)}finally{b.disabled=false;b.textContent="ยืนยัน OTP"}});
 function readFile(f){return new Promise((ok,bad)=>{const r=new FileReader();r.onload=()=>ok(r.result);r.onerror=bad;r.readAsDataURL(f)})}
-$("submit").addEventListener("click",async()=>{const f=$("evidence").files[0],b=$("submit");if(!$("email").value.trim())return note("globalMsg","กรุณากรอกอีเมลบัญชี",false);if(!f)return note("globalMsg","กรุณาแนบรูปหลักฐาน",false);if(f.size>4*1024*1024)return note("globalMsg","รูปหลักฐานต้องไม่เกิน 4 MB",false);if(!$("reason").value.trim())return note("globalMsg","กรุณาระบุเหตุผล",false);if($("alternate").value.trim()&&!verificationToken)return note("globalMsg","กรุณายืนยันอีเมลสำรองด้วย OTP ก่อน",false);try{b.disabled=true;b.textContent="กำลังส่งคำขอ…";const d=await post("/auth/recovery/request",{email:$("email").value.trim(),credential_type:$("credential").value,reason:$("reason").value.trim(),evidence_type:$("evidenceType").value,evidence_mime:f.type,evidence_image:await readFile(f),alternate_email:$("alternate").value.trim()||null,alternate_verification_token:verificationToken||null});$("requestForm").classList.add("hidden");$("receipt").classList.add("show");$("ticketOut").textContent=d.ticket_id;$("secretOut").textContent=d.tracking_secret;$("ticketId").value=d.ticket_id;$("trackingSecret").value=d.tracking_secret;note("globalMsg",d.message,true)}catch(e){note("globalMsg",e.message,false);b.disabled=false;b.textContent="ส่งคำขอให้ผู้ดูแล"}});
-$("copyReceipt").addEventListener("click",()=>copyText("Ticket ID: "+$("ticketOut").textContent+String.fromCharCode(10)+"Tracking secret: "+$("secretOut").textContent,$("copyReceipt")));
+$("submit").addEventListener("click",async()=>{const f=$("evidence").files[0],b=$("submit");if(!$("email").value.trim())return note("globalMsg","กรุณากรอกอีเมลบัญชี",false);if(!f)return note("globalMsg","กรุณาแนบรูปหลักฐาน",false);if(f.size>4*1024*1024)return note("globalMsg","รูปหลักฐานต้องไม่เกิน 4 MB",false);if(!$("reason").value.trim())return note("globalMsg","กรุณาระบุเหตุผล",false);if($("alternate").value.trim()&&!verificationToken)return note("globalMsg","กรุณายืนยันอีเมลสำรองด้วย OTP ก่อน",false);try{b.disabled=true;b.textContent="กำลังส่งคำขอ…";const d=await post("/auth/recovery/request",{email:$("email").value.trim(),credential_type:$("credential").value,reason:$("reason").value.trim(),evidence_type:$("evidenceType").value,evidence_mime:f.type,evidence_image:await readFile(f),alternate_email:$("alternate").value.trim()||null,alternate_verification_token:verificationToken||null});receiptTicket=d.ticket_id;receiptSecret=d.tracking_secret;$("requestForm").classList.add("hidden");$("receipt").classList.add("show");note("globalMsg",d.message,true)}catch(e){note("globalMsg",e.message,false);b.disabled=false;b.textContent="ส่งคำขอให้ผู้ดูแล"}});
+$("copyReceipt").addEventListener("click",()=>copyText("Ticket ID: "+receiptTicket+String.fromCharCode(10)+"Tracking secret: "+receiptSecret,$("copyReceipt")));
 $("goStatus").addEventListener("click",()=>showPane("statusPane"));
-$("check").addEventListener("click",async()=>{const b=$("check");try{b.disabled=true;b.textContent="กำลังตรวจ…";const d=await post("/auth/recovery/status",{ticket_id:$("ticketId").value.trim(),tracking_secret:$("trackingSecret").value.trim()});note("statusMsg",d.message,true);const a=$("continueLink");if(d.relink_url){a.href=d.relink_url;a.classList.add("show")}else a.classList.remove("show")}catch(e){note("statusMsg",e.message,false)}finally{b.disabled=false;b.textContent="ตรวจสอบสถานะ"}});
+$("check").addEventListener("click",async()=>{const b=$("check"),lines=$("trackingBundle").value.split(String.fromCharCode(10)).map(x=>x.trim()).filter(Boolean),ticket=(lines.find(x=>x.toLowerCase().startsWith("ticket id:"))||"").split(":").slice(1).join(":").trim(),secret=(lines.find(x=>x.toLowerCase().startsWith("tracking secret:"))||"").split(":").slice(1).join(":").trim();if(!ticket||!secret)return note("statusMsg","กรุณาวางข้อมูลติดตามทั้งชุดที่คัดลอกไว้",false);try{b.disabled=true;b.textContent="กำลังตรวจ…";const d=await post("/auth/recovery/status",{ticket_id:ticket,tracking_secret:secret});note("statusMsg",d.message,true);const a=$("continueLink");if(d.relink_url){a.href=d.relink_url;a.classList.add("show")}else a.classList.remove("show")}catch(e){note("statusMsg",e.message,false)}finally{b.disabled=false;b.textContent="ตรวจสอบสถานะ"}});
 </script>
 </body>
 </html>"""
