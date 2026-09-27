@@ -633,8 +633,26 @@ export async function adminListRecoveryTickets(
 
 export async function adminGetRecoveryEvidence(
   ticketId: string
-): Promise<{ mime: string; data_url: string }> {
-  return clientFetch(`/admin/recovery-tickets/${ticketId}/evidence`);
+): Promise<{ mime: string; objectUrl: string }> {
+  const res = await fetch(
+    `/api/proxy/admin/recovery-tickets/${encodeURIComponent(ticketId)}/evidence`,
+    { credentials: "include", cache: "no-store" }
+  );
+  if (!res.ok) {
+    let detail = "เปิดหลักฐานไม่สำเร็จ";
+    try {
+      const body = await res.json();
+      if (typeof body.detail === "string") detail = body.detail;
+    } catch {
+      // binary endpoint may return an empty/non-JSON error response
+    }
+    throw { status: res.status, detail } as ApiError;
+  }
+  const blob = await res.blob();
+  if (!blob.type.startsWith("image/")) {
+    throw { status: 500, detail: "ไฟล์หลักฐานไม่ใช่รูปภาพ" } as ApiError;
+  }
+  return { mime: blob.type, objectUrl: URL.createObjectURL(blob) };
 }
 
 export async function adminApproveTicket(

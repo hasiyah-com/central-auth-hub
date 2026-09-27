@@ -9,7 +9,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, Response
 from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import func
 from sqlalchemy.orm import Session
@@ -122,30 +122,36 @@ def recovery_ticket_page(request: Request):
 
 @router.post("/auth/recovery/alternate-email/start")
 @limiter.limit("5/hour")
-def alternate_email_start(
-    request: Request,
-    body: AlternateEmailBody,
-    db: Session = Depends(get_db),
-):
+def alternate_email_start(request: Request, body: AlternateEmailBody):
     email = body.email.strip().lower()
     alternate = body.alternate_email.strip().lower()
-    user = db.query(User).filter(func.lower(User.email) == email).first()
-    if user is not None and alternate != email:
-        otp = mfa_service.generate_otp()
-        redis_client.setex(
-            _alt_key("alt-otp", email, alternate),
-            _ALT_OTP_TTL,
-            json.dumps({"hash": mfa_service.hash_otp(otp), "attempts": 0}),
+    if alternate == email:
+        raise HTTPException(status_code=422, detail="อีเมลสำรองต้องไม่ซ้ำอีเมลบัญชี")
+
+    # ส่งไปยังอีเมลสำรองโดยไม่ตรวจว่าบัญชีหลักมีอยู่หรือไม่ เพื่อไม่เปิดช่อง
+    # account enumeration และไม่แจ้งว่าส่งสำเร็จเมื่อ SMTP ใช้งานไม่ได้
+    otp = mfa_service.generate_otp()
+    try:
+        delivered = mfa_service.send_otp_email(
+            alternate,
+            otp,
+            datetime.utcnow() + timedelta(seconds=_ALT_OTP_TTL),
         )
-        try:
-            mfa_service.send_otp_email(
-                alternate,
-                otp,
-                datetime.utcnow() + timedelta(seconds=_ALT_OTP_TTL),
-            )
-        except Exception as exc:
-            log.warning("recovery alternate email OTP failed: %r", exc)
-    return {"sent": True, "message": "หากข้อมูลถูกต้อง ระบบได้ส่ง OTP แล้ว"}
+    except Exception as exc:
+        log.exception("recovery alternate email OTP failed: %r", exc)
+        delivered = False
+    if not delivered:
+        raise HTTPException(
+            status_code=503,
+            detail="ระบบอีเมลยังไม่พร้อมใช้งาน กรุณาลองใหม่หรือติดต่อผู้ดูแล",
+        )
+
+    redis_client.setex(
+        _alt_key("alt-otp", email, alternate),
+        _ALT_OTP_TTL,
+        json.dumps({"hash": mfa_service.hash_otp(otp), "attempts": 0}),
+    )
+    return {"sent": True, "message": "ส่ง OTP ไปยังอีเมลสำรองแล้ว"}
 
 
 @router.post("/auth/recovery/alternate-email/verify")
@@ -341,7 +347,9 @@ def get_recovery_evidence(
         raise HTTPException(status_code=404, detail="ไม่พบหลักฐาน")
     try:
         payload = decrypt_secret(ticket.evidence_encrypted)
+        evidence = base64.b64decode(payload, validate=True)
     except Exception:
+        log.exception("cannot decrypt recovery evidence ticket=%s", ticket.id)
         raise HTTPException(status_code=500, detail="ไม่สามารถอ่านหลักฐานได้")
     log_action(
         db,
@@ -353,7 +361,20 @@ def get_recovery_evidence(
         metadata={"ticket_id": str(ticket.id)},
     )
     db.commit()
-    return {"mime": ticket.evidence_mime, "data_url": f"data:{ticket.evidence_mime};base64,{payload}"}
+    extension = {
+        "image/jpeg": "jpg",
+        "image/png": "png",
+        "image/webp": "webp",
+    }.get(ticket.evidence_mime, "bin")
+    return Response(
+        content=evidence,
+        media_type=ticket.evidence_mime,
+        headers={
+            "Cache-Control": "no-store, private",
+            "Content-Disposition": f'inline; filename="recovery-evidence-{ticket.id}.{extension}"',
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
 
 
 @router.post(
@@ -484,46 +505,117 @@ def reject_recovery_ticket(
 
 
 def _ticket_page_html(nonce: str) -> str:
-    return f"""<!doctype html><html lang="th"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>คำขอกู้บัญชี · Central Auth Hub</title>
-<style nonce="{nonce}">
-:root{{--ink:#0f172a;--muted:#64748b;--line:#dbe3ee;--mint:#0f9f89;--navy:#081321;--bg:#f3f6fa}}
-*{{box-sizing:border-box}}body{{margin:0;background:var(--bg);font-family:Sarabun,system-ui,sans-serif;color:var(--ink)}}
-.top{{background:var(--navy);color:#fff;padding:22px 5vw;display:flex;justify-content:space-between}}.top span{{font:12px ui-monospace;color:#6ee7d2}}
-.wrap{{max-width:920px;margin:36px auto;padding:0 18px}}.card{{background:#fff;border:1px solid var(--line);border-radius:18px;overflow:hidden;box-shadow:0 14px 40px #0f172a12}}
-.head,.body{{padding:26px 30px}}.head{{border-bottom:1px solid var(--line)}}h1{{margin:0 0 7px;font-size:25px}}p{{color:var(--muted);line-height:1.65}}
-.grid{{display:grid;grid-template-columns:1fr 1fr;gap:18px}}.full{{grid-column:1/-1}}label{{display:block;font-size:12px;font-weight:700;margin-bottom:7px}}
-input,select,textarea{{width:100%;border:1px solid var(--line);border-radius:10px;padding:12px 13px;font:14px inherit}}textarea{{min-height:82px}}
-.row{{display:flex;gap:10px;align-items:center}}.row input{{flex:1}}button,.btn{{border:0;border-radius:10px;padding:12px 17px;font-weight:700;cursor:pointer;text-decoration:none}}
-.primary{{background:var(--navy);color:#fff}}.secondary{{background:#e7f8f4;color:#087462}}button:disabled{{opacity:.5}}
-.notice{{padding:12px 14px;border-radius:10px;margin:15px 0;display:none;font-size:13px}}.notice.show{{display:block}}.ok{{background:#e8faf5;color:#087462}}.err{{background:#fff1f2;color:#be123c}}
-.secret{{font:13px ui-monospace;word-break:break-all;background:#f8fafc;border:1px dashed #a7b3c4;padding:12px;border-radius:9px;margin:8px 0 14px}}
-.divider{{height:1px;background:var(--line);margin:28px 0}}.status{{display:grid;grid-template-columns:1fr 1fr auto;gap:10px;align-items:end}}.hint{{font-size:11px;color:var(--muted);margin-top:6px}}
-@media(max-width:700px){{.grid,.status{{grid-template-columns:1fr}}.full{{grid-column:auto}}.head,.body{{padding:21px}}}}
-</style></head><body><header class="top"><b>Central Auth Hub</b><span>ACCOUNT RECOVERY</span></header>
-<main class="wrap"><section class="card"><header class="head"><h1>ส่งคำขอกู้บัญชี</h1><p>แนบหลักฐานให้ผู้ดูแลตรวจสอบ อีเมลสำรองไม่บังคับ แต่ต้องยืนยัน OTP ก่อนใช้รับลิงก์</p></header>
-<div class="body"><div id="msg" class="notice"></div><div class="grid" id="form">
-<div><label>อีเมลบัญชีมหาวิทยาลัย</label><input id="email" type="email" autocomplete="username"></div>
-<div><label>Credential ที่เข้าไม่ได้</label><select id="credential"><option value="PASSKEY">Passkey</option><option value="TOTP">Authenticator</option><option value="BOTH">ทั้งสองอย่าง</option></select></div>
-<div><label>ประเภทหลักฐาน</label><select id="evidenceType"><option value="student_card">บัตรนักศึกษา/บุคลากร</option><option value="citizen_id">บัตรประชาชน</option></select></div>
-<div><label>รูปหลักฐาน (ไม่เกิน 4 MB)</label><input id="evidence" type="file" accept="image/jpeg,image/png,image/webp"></div>
-<div class="full"><label>เหตุผล</label><textarea id="reason" placeholder="อธิบายอุปกรณ์หรือช่องทางที่สูญหาย"></textarea></div>
-<div class="full"><label>อีเมลสำรอง (ไม่บังคับ)</label><div class="row"><input id="alternate" type="email"><button id="sendOtp" class="secondary">ส่ง OTP</button></div><div class="hint">หากไม่กรอก ให้กลับมาตรวจสถานะด้วย Ticket ID และรหัสติดตาม</div></div>
-<div class="full row" id="otpRow" style="display:none"><input id="otp" inputmode="numeric" maxlength="6" placeholder="OTP 6 หลัก"><button id="verifyOtp" class="secondary">ยืนยันอีเมล</button></div>
-<div class="full"><button id="submit" class="primary">ส่งคำขอ</button></div></div>
-<div id="receipt" style="display:none"><p><b>ส่งคำขอแล้ว</b> ปิดหน้านี้ได้ แต่โปรดเก็บข้อมูลทั้งสองรายการ</p><label>Ticket ID</label><div id="ticketOut" class="secret"></div><label>รหัสติดตาม</label><div id="secretOut" class="secret"></div><button id="copyReceipt" class="secondary">คัดลอกข้อมูล</button></div>
-<div class="divider"></div><h2 style="font-size:18px">ตรวจสอบสถานะคำขอ</h2><p>กลับมาตรวจภายหลังได้ ไม่ต้องเปิดหน้านี้ค้าง</p>
-<div class="status"><div><label>Ticket ID</label><input id="ticketId"></div><div><label>รหัสติดตาม</label><input id="trackingSecret"></div><button id="check" class="secondary">ตรวจสอบ</button></div>
-<div id="statusMsg" class="notice"></div><a id="continueLink" class="btn primary" style="display:none;margin-top:12px">ดำเนินการกู้บัญชี</a>
-</div></section></main><script nonce="{nonce}">
-const $=id=>document.getElementById(id);let verificationToken='';
-function note(id,text,ok){{const e=$(id);e.textContent=text;e.className='notice show '+(ok?'ok':'err')}}
-async function post(url,body){{const r=await fetch(url,{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify(body)}});const d=await r.json().catch(()=>({{}}));if(!r.ok)throw new Error(typeof d.detail==='string'?d.detail:'ดำเนินการไม่สำเร็จ');return d}}
-$('sendOtp').onclick=async()=>{{try{{await post('/auth/recovery/alternate-email/start',{{email:$('email').value,alternate_email:$('alternate').value}});$('otpRow').style.display='flex';note('msg','ส่ง OTP แล้ว กรุณาตรวจสอบอีเมลสำรอง',true)}}catch(e){{note('msg',e.message,false)}}}};
-$('verifyOtp').onclick=async()=>{{try{{const d=await post('/auth/recovery/alternate-email/verify',{{email:$('email').value,alternate_email:$('alternate').value,otp:$('otp').value}});verificationToken=d.verification_token;note('msg','ยืนยันอีเมลสำรองเรียบร้อย',true)}}catch(e){{note('msg',e.message,false)}}}};
-function readFile(f){{return new Promise((ok,bad)=>{{const r=new FileReader();r.onload=()=>ok(r.result);r.onerror=bad;r.readAsDataURL(f)}})}}
-$('submit').onclick=async()=>{{const f=$('evidence').files[0];if(!f)return note('msg','กรุณาแนบรูปหลักฐาน',false);try{{$('submit').disabled=true;const d=await post('/auth/recovery/request',{{email:$('email').value,credential_type:$('credential').value,reason:$('reason').value,evidence_type:$('evidenceType').value,evidence_mime:f.type,evidence_image:await readFile(f),alternate_email:$('alternate').value||null,alternate_verification_token:verificationToken||null}});$('form').style.display='none';$('receipt').style.display='block';$('ticketOut').textContent=d.ticket_id;$('secretOut').textContent=d.tracking_secret;$('ticketId').value=d.ticket_id;$('trackingSecret').value=d.tracking_secret;note('msg',d.message,true)}}catch(e){{note('msg',e.message,false);$('submit').disabled=false}}}};
-$('copyReceipt').onclick=()=>navigator.clipboard.writeText('Ticket ID: '+$('ticketOut').textContent+'\nรหัสติดตาม: '+$('secretOut').textContent);
-$('check').onclick=async()=>{{try{{const d=await post('/auth/recovery/status',{{ticket_id:$('ticketId').value,tracking_secret:$('trackingSecret').value}});note('statusMsg',d.message,true);const a=$('continueLink');if(d.relink_url){{a.href=d.relink_url;a.style.display='inline-block'}}else a.style.display='none'}}catch(e){{note('statusMsg',e.message,false)}}}};
-</script></body></html>"""
+    page = """<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>กู้บัญชี · Central Auth Hub</title>
+  <style nonce="__NONCE__">
+    :root{--navy:#081321;--panel:#101f31;--ink:#132033;--muted:#697a91;--line:#dce4ee;--bg:#f2f6fa;--mint:#10ad91;--mint-dark:#087765;--soft:#eaf9f6;--danger:#c73d55}
+    *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font-family:Sarabun,"Noto Sans Thai",system-ui,sans-serif}
+    button,input,select,textarea{font:inherit}.shell{min-height:100vh;display:grid;grid-template-columns:minmax(280px,380px) minmax(0,1fr)}
+    .side{background:linear-gradient(160deg,var(--navy),#0c2530);color:#fff;padding:42px;display:flex;flex-direction:column;justify-content:space-between}
+    .brand{display:flex;gap:12px;align-items:center}.brand-mark{width:42px;height:42px;border:1px solid #2dd4bf;display:grid;place-items:center;color:#58e5d1;font:700 18px ui-monospace}
+    .brand b{display:block;font-size:17px}.brand small{color:#8fa7bd;letter-spacing:.16em;font:10px ui-monospace}
+    .side-copy{max-width:300px}.eyebrow{color:#52dbc7;letter-spacing:.15em;font:11px ui-monospace;text-transform:uppercase}
+    .side h1{font-size:36px;line-height:1.18;margin:13px 0}.side p{color:#b9c8d6;line-height:1.7;font-size:14px}
+    .steps{display:grid;gap:18px;margin-top:30px}.step{display:grid;grid-template-columns:34px 1fr;gap:12px;align-items:start}.step i{width:34px;height:34px;border:1px solid #355064;display:grid;place-items:center;font:12px ui-monospace;font-style:normal;color:#74e5d2}.step b{font-size:14px}.step span{display:block;color:#8399ad;font-size:12px;margin-top:3px}
+    .privacy{padding-top:22px;border-top:1px solid #284052;color:#8fa7bd;font-size:11px;line-height:1.65}
+    .main{padding:38px clamp(20px,5vw,76px);overflow:auto}.main-inner{max-width:900px;margin:auto}
+    .topline{display:flex;justify-content:space-between;align-items:center;margin-bottom:22px}.topline h2{font-size:25px;margin:5px 0 0}.secure{border:1px solid #9eddd2;color:var(--mint-dark);padding:8px 11px;font:11px ui-monospace;letter-spacing:.08em;background:#f7fffd}
+    .tabs{display:flex;border-bottom:1px solid var(--line);margin-bottom:18px}.tab{border:0;background:transparent;padding:12px 4px;margin-right:26px;color:var(--muted);cursor:pointer;border-bottom:2px solid transparent;font-weight:700}.tab.on{color:var(--ink);border-color:var(--mint)}
+    .card{background:#fff;border:1px solid var(--line);border-radius:16px;box-shadow:0 12px 34px rgba(15,23,42,.06);overflow:hidden}.card-head{padding:21px 24px;border-bottom:1px solid var(--line)}.card-head h3{margin:0;font-size:18px}.card-head p{margin:6px 0 0;color:var(--muted);font-size:13px}
+    .body{padding:24px}.grid{display:grid;grid-template-columns:1fr 1fr;gap:18px}.full{grid-column:1/-1}
+    label{display:block;font-size:12px;font-weight:800;margin-bottom:7px}.required{color:var(--danger)}
+    input,select,textarea{width:100%;border:1px solid #cfd9e5;border-radius:9px;padding:12px 13px;color:var(--ink);background:#fff;outline:none;transition:.15s}
+    input:focus,select:focus,textarea:focus{border-color:var(--mint);box-shadow:0 0 0 3px rgba(16,173,145,.12)}textarea{resize:vertical;min-height:88px}
+    .upload{border:1px dashed #aab9ca;border-radius:11px;padding:14px;background:#f9fbfd}.preview{display:none;align-items:center;gap:12px;margin-top:12px}.preview.show{display:flex}.preview img{width:68px;height:52px;object-fit:cover;border-radius:7px;border:1px solid var(--line)}.preview span{font-size:12px;color:var(--muted);word-break:break-all}
+    .email-row{display:grid;grid-template-columns:1fr auto;gap:9px}.otp-box{display:none;grid-template-columns:1fr auto;gap:9px;margin-top:10px}.otp-box.show{display:grid}.verified{color:var(--mint-dark);font-size:12px;font-weight:700;margin-top:8px;display:none}.verified.show{display:block}
+    .hint{font-size:11px;color:var(--muted);margin-top:7px}.actions{display:flex;justify-content:flex-end;gap:10px;padding-top:5px}
+    button,.button{border:1px solid transparent;border-radius:9px;padding:11px 16px;font-weight:800;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;gap:7px}
+    .primary{background:var(--navy);color:#fff}.primary:hover{background:#132b43}.secondary{background:var(--soft);color:var(--mint-dark);border-color:#b9e8df}.ghost{background:#fff;color:var(--ink);border-color:var(--line)}button:disabled{opacity:.52;cursor:not-allowed}
+    .notice{display:none;padding:12px 14px;border-radius:9px;margin-bottom:17px;font-size:13px}.notice.show{display:block}.notice.ok{background:#e8faf5;color:#087462;border:1px solid #b9eadf}.notice.err{background:#fff1f2;color:#ad1f3b;border:1px solid #fecdd3}
+    .receipt{display:none}.receipt.show{display:block}.success-mark{width:50px;height:50px;border-radius:50%;display:grid;place-items:center;background:var(--soft);color:var(--mint-dark);font-size:24px;margin-bottom:13px}
+    .credential{border:1px solid var(--line);border-radius:11px;padding:14px 15px;margin-top:12px}.credential-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}.credential-head span{font-size:11px;font-weight:800;color:var(--muted);letter-spacing:.08em}.code{font:12px ui-monospace;word-break:break-all;color:var(--ink);background:#f7f9fc;padding:11px;border-radius:7px}.copy{padding:7px 10px;font-size:11px}
+    .warning{margin-top:15px;padding:12px 14px;background:#fff8e7;border:1px solid #f3d891;border-radius:9px;color:#7a5610;font-size:12px;line-height:1.55}
+    .status-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}.status-actions{display:flex;justify-content:flex-end;margin-top:17px}.continue{display:none;margin-top:12px}.continue.show{display:inline-flex}
+    .hidden{display:none!important}
+    @media(max-width:800px){.shell{grid-template-columns:1fr}.side{padding:25px}.side-copy{max-width:none}.side h1{font-size:27px}.steps{grid-template-columns:repeat(3,1fr)}.step{grid-template-columns:28px 1fr}.step i{width:28px;height:28px}.privacy{display:none}.main{padding:24px 16px}}
+    @media(max-width:600px){.grid,.status-grid{grid-template-columns:1fr}.full{grid-column:auto}.steps{grid-template-columns:1fr}.topline{align-items:flex-start}.secure{font-size:9px}.body{padding:18px}.email-row,.otp-box{grid-template-columns:1fr}.actions{flex-direction:column}.actions button{width:100%}}
+  </style>
+</head>
+<body>
+<div class="shell">
+  <aside class="side">
+    <div class="brand"><div class="brand-mark">H</div><div><b>Central Auth Hub</b><small>IDENTITY CONTROL</small></div></div>
+    <div class="side-copy">
+      <div class="eyebrow">Account recovery</div>
+      <h1>กู้บัญชีอย่างปลอดภัย</h1>
+      <p>ยืนยันตัวตนด้วยหลักฐาน จากนั้นติดตามผลด้วย Ticket ID โดยไม่ต้องเปิดหน้านี้ค้างไว้</p>
+      <div class="steps">
+        <div class="step"><i>01</i><div><b>ส่งหลักฐาน</b><span>บัตรนักศึกษาหรือบัตรประชาชน</span></div></div>
+        <div class="step"><i>02</i><div><b>รอผู้ดูแลตรวจสอบ</b><span>บัญชีความเสี่ยงสูงต้องอนุมัติ 2 คน</span></div></div>
+        <div class="step"><i>03</i><div><b>รับลิงก์กู้บัญชี</b><span>ใช้ได้ครั้งเดียวภายใน 30 นาที</span></div></div>
+      </div>
+    </div>
+    <div class="privacy">หลักฐานถูกเข้ารหัสและลบออกหลังการกู้บัญชีสำเร็จหรือคำขอถูกปฏิเสธ</div>
+  </aside>
+
+  <main class="main"><div class="main-inner">
+    <div class="topline"><div><div class="eyebrow">Recovery center</div><h2>คำขอกู้บัญชี</h2></div><div class="secure">● SECURE SESSION</div></div>
+    <div class="tabs"><button class="tab on" data-pane="requestPane">ส่งคำขอใหม่</button><button class="tab" data-pane="statusPane">ตรวจสอบสถานะ</button></div>
+    <div id="globalMsg" class="notice"></div>
+
+    <section id="requestPane" class="card pane">
+      <div class="card-head"><h3>ข้อมูลสำหรับตรวจสอบตัวตน</h3><p>ช่องที่มีเครื่องหมาย * จำเป็นต้องกรอก</p></div>
+      <div class="body">
+        <div id="requestForm" class="grid">
+          <div><label>อีเมลบัญชี <span class="required">*</span></label><input id="email" type="email" autocomplete="username" placeholder="name@uni.ac.th"></div>
+          <div><label>ช่องทางที่เข้าไม่ได้ <span class="required">*</span></label><select id="credential"><option value="PASSKEY">Passkey</option><option value="TOTP">Authenticator</option><option value="BOTH">ทั้ง Passkey และ Authenticator</option></select></div>
+          <div><label>ประเภทหลักฐาน <span class="required">*</span></label><select id="evidenceType"><option value="student_card">บัตรนักศึกษา/บุคลากร</option><option value="citizen_id">บัตรประชาชน</option></select></div>
+          <div><label>รูปหลักฐาน <span class="required">*</span></label><div class="upload"><input id="evidence" type="file" accept="image/jpeg,image/png,image/webp"><div id="preview" class="preview"><img id="previewImage" alt="ตัวอย่างหลักฐาน"><span id="previewName"></span></div><div class="hint">JPG, PNG หรือ WEBP ขนาดไม่เกิน 4 MB</div></div></div>
+          <div class="full"><label>เหตุผล <span class="required">*</span></label><textarea id="reason" placeholder="อธิบายว่าอุปกรณ์หรือช่องทางใดสูญหาย และเกิดขึ้นเมื่อใด"></textarea></div>
+          <div class="full"><label>อีเมลสำรองสำหรับรับลิงก์ (ไม่บังคับ)</label><div class="email-row"><input id="alternate" type="email" placeholder="alternate@email.com"><button id="sendOtp" class="secondary" type="button">ส่ง OTP</button></div><div class="hint">หากไม่ระบุ คุณสามารถรับลิงก์จากหน้าตรวจสอบสถานะด้วย Ticket ID</div><div id="otpBox" class="otp-box"><input id="otp" inputmode="numeric" maxlength="6" placeholder="กรอก OTP 6 หลัก"><button id="verifyOtp" class="secondary" type="button">ยืนยัน OTP</button></div><div id="verified" class="verified">✓ ยืนยันอีเมลสำรองแล้ว</div></div>
+          <div class="full actions"><button id="submit" class="primary" type="button">ส่งคำขอให้ผู้ดูแล</button></div>
+        </div>
+
+        <div id="receipt" class="receipt">
+          <div class="success-mark">✓</div><h3>ส่งคำขอเรียบร้อย</h3><p>เก็บข้อมูลสองรายการด้านล่างไว้สำหรับติดตามผล คุณสามารถปิดหน้านี้ได้</p>
+          <div class="credential"><div class="credential-head"><span>TICKET ID</span><button class="ghost copy" type="button" data-copy="ticketOut">คัดลอก</button></div><div id="ticketOut" class="code"></div></div>
+          <div class="credential"><div class="credential-head"><span>TRACKING SECRET</span><button class="ghost copy" type="button" data-copy="secretOut">คัดลอก</button></div><div id="secretOut" class="code"></div></div>
+          <div class="warning">รหัสติดตามจะแสดงเฉพาะหน้านี้ ระบบไม่สามารถแสดงรหัสเดิมให้ภายหลังได้</div>
+          <div class="actions"><button id="copyReceipt" class="secondary" type="button">คัดลอกทั้งสองรายการ</button><button id="goStatus" class="primary" type="button">ตรวจสอบสถานะ</button></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="statusPane" class="card pane hidden">
+      <div class="card-head"><h3>ติดตามคำขอ</h3><p>กรอก Ticket ID และรหัสติดตามที่ได้รับตอนส่งคำขอ</p></div>
+      <div class="body"><div class="status-grid"><div><label>Ticket ID</label><input id="ticketId" autocomplete="off"></div><div><label>รหัสติดตาม</label><input id="trackingSecret" autocomplete="off"></div></div><div class="status-actions"><button id="check" class="primary" type="button">ตรวจสอบสถานะ</button></div><div id="statusMsg" class="notice"></div><a id="continueLink" class="button primary continue">ดำเนินการกู้บัญชี</a></div>
+    </section>
+  </div></main>
+</div>
+
+<script nonce="__NONCE__">
+const $=id=>document.getElementById(id);
+let verificationToken="", previewUrl="", otpCooldown=null;
+function note(id,text,ok){const e=$(id);e.textContent=text;e.className="notice show "+(ok?"ok":"err");e.scrollIntoView({behavior:"smooth",block:"nearest"})}
+async function post(url,body){const r=await fetch(url,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(typeof d.detail==="string"?d.detail:"ดำเนินการไม่สำเร็จ");return d}
+function showPane(id){document.querySelectorAll(".pane").forEach(x=>x.classList.toggle("hidden",x.id!==id));document.querySelectorAll(".tab").forEach(x=>x.classList.toggle("on",x.dataset.pane===id))}
+document.querySelectorAll(".tab").forEach(x=>x.addEventListener("click",()=>showPane(x.dataset.pane)));
+async function copyText(value,button){try{if(navigator.clipboard&&window.isSecureContext)await navigator.clipboard.writeText(value);else{const t=document.createElement("textarea");t.value=value;t.style.position="fixed";t.style.opacity="0";document.body.appendChild(t);t.select();if(!document.execCommand("copy"))throw new Error();t.remove()}const old=button.textContent;button.textContent="คัดลอกแล้ว";setTimeout(()=>button.textContent=old,1600)}catch{note("globalMsg","คัดลอกอัตโนมัติไม่ได้ กรุณาเลือกข้อความแล้วคัดลอกด้วยตนเอง",false)}}
+document.querySelectorAll("[data-copy]").forEach(b=>b.addEventListener("click",()=>copyText($(b.dataset.copy).textContent,b)));
+$("evidence").addEventListener("change",()=>{const f=$("evidence").files[0];if(previewUrl)URL.revokeObjectURL(previewUrl);if(!f){$("preview").classList.remove("show");return}previewUrl=URL.createObjectURL(f);$("previewImage").src=previewUrl;$("previewName").textContent=f.name+" · "+Math.ceil(f.size/1024)+" KB";$("preview").classList.add("show")});
+$("alternate").addEventListener("input",()=>{verificationToken="";$("verified").classList.remove("show")});
+$("sendOtp").addEventListener("click",async()=>{const b=$("sendOtp");try{b.disabled=true;b.textContent="กำลังส่ง…";const d=await post("/auth/recovery/alternate-email/start",{email:$("email").value.trim(),alternate_email:$("alternate").value.trim()});$("otpBox").classList.add("show");note("globalMsg",d.message||"ส่ง OTP แล้ว",true);let left=30;clearInterval(otpCooldown);otpCooldown=setInterval(()=>{left--;b.textContent=left>0?"ส่งใหม่ใน "+left+" วินาที":"ส่ง OTP อีกครั้ง";if(left<=0){clearInterval(otpCooldown);b.disabled=false}},1000)}catch(e){b.disabled=false;b.textContent="ส่ง OTP";note("globalMsg",e.message,false)}});
+$("verifyOtp").addEventListener("click",async()=>{const b=$("verifyOtp");try{b.disabled=true;b.textContent="กำลังตรวจ…";const d=await post("/auth/recovery/alternate-email/verify",{email:$("email").value.trim(),alternate_email:$("alternate").value.trim(),otp:$("otp").value.trim()});verificationToken=d.verification_token;$("verified").classList.add("show");$("alternate").readOnly=true;$("otpBox").classList.remove("show");note("globalMsg","ยืนยันอีเมลสำรองเรียบร้อย",true)}catch(e){note("globalMsg",e.message,false)}finally{b.disabled=false;b.textContent="ยืนยัน OTP"}});
+function readFile(f){return new Promise((ok,bad)=>{const r=new FileReader();r.onload=()=>ok(r.result);r.onerror=bad;r.readAsDataURL(f)})}
+$("submit").addEventListener("click",async()=>{const f=$("evidence").files[0],b=$("submit");if(!$("email").value.trim())return note("globalMsg","กรุณากรอกอีเมลบัญชี",false);if(!f)return note("globalMsg","กรุณาแนบรูปหลักฐาน",false);if(f.size>4*1024*1024)return note("globalMsg","รูปหลักฐานต้องไม่เกิน 4 MB",false);if(!$("reason").value.trim())return note("globalMsg","กรุณาระบุเหตุผล",false);if($("alternate").value.trim()&&!verificationToken)return note("globalMsg","กรุณายืนยันอีเมลสำรองด้วย OTP ก่อน",false);try{b.disabled=true;b.textContent="กำลังส่งคำขอ…";const d=await post("/auth/recovery/request",{email:$("email").value.trim(),credential_type:$("credential").value,reason:$("reason").value.trim(),evidence_type:$("evidenceType").value,evidence_mime:f.type,evidence_image:await readFile(f),alternate_email:$("alternate").value.trim()||null,alternate_verification_token:verificationToken||null});$("requestForm").classList.add("hidden");$("receipt").classList.add("show");$("ticketOut").textContent=d.ticket_id;$("secretOut").textContent=d.tracking_secret;$("ticketId").value=d.ticket_id;$("trackingSecret").value=d.tracking_secret;note("globalMsg",d.message,true)}catch(e){note("globalMsg",e.message,false);b.disabled=false;b.textContent="ส่งคำขอให้ผู้ดูแล"}});
+$("copyReceipt").addEventListener("click",()=>copyText("Ticket ID: "+$("ticketOut").textContent+"\nTracking secret: "+$("secretOut").textContent,$("copyReceipt")));
+$("goStatus").addEventListener("click",()=>showPane("statusPane"));
+$("check").addEventListener("click",async()=>{const b=$("check");try{b.disabled=true;b.textContent="กำลังตรวจ…";const d=await post("/auth/recovery/status",{ticket_id:$("ticketId").value.trim(),tracking_secret:$("trackingSecret").value.trim()});note("statusMsg",d.message,true);const a=$("continueLink");if(d.relink_url){a.href=d.relink_url;a.classList.add("show")}else a.classList.remove("show")}catch(e){note("statusMsg",e.message,false)}finally{b.disabled=false;b.textContent="ตรวจสอบสถานะ"}});
+</script>
+</body>
+</html>"""
+    return page.replace("__NONCE__", nonce)

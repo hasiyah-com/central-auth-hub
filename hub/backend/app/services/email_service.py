@@ -39,7 +39,14 @@ def _send_html_email(to: str, subject: str, html: str, text_fallback: str) -> bo
 
     msg = MIMEMultipart("alternative")
     msg["Subject"] = subject
-    msg["From"] = settings.email_from or settings.smtp_user
+    configured_from = (settings.email_from or "").strip()
+    # ค่า placeholder .local ใช้ส่งผ่าน Gmail/SMTP จริงไม่ได้ ให้ fallback
+    # เป็นบัญชีที่ authenticate กับ SMTP จนกว่าจะตั้ง verified sender
+    msg["From"] = (
+        settings.smtp_user
+        if not configured_from or configured_from.lower().endswith("@hub.local")
+        else configured_from
+    )
     msg["To"] = to
     msg.attach(MIMEText(text_fallback, "plain", "utf-8"))
     msg.attach(MIMEText(html, "html", "utf-8"))
