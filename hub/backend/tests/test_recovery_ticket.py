@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import base64
 import uuid
+from datetime import datetime, timezone
+from urllib.parse import parse_qs, urlparse
 
 import pyotp
 import pytest
@@ -19,6 +21,8 @@ from app.models import (
 from app.services import mfa_service, stepup_cache, totp_service
 from app.services.secret_service import encrypt_secret
 from app.services.jwt_service import create_access_token
+from app.redis_client import redis_client
+from app.routers.account_link import _restore_recovery_token
 
 
 def _mk_user(db, *, is_admin=False) -> User:
@@ -157,7 +161,10 @@ def test_alternate_email_otp_confirms_real_delivery(client, monkeypatch):
 def test_recovery_page_has_clipboard_fallback(client):
     response = client.get("/auth/recovery/ticket")
     assert response.status_code == 200
-    assert 'data-copy="ticketOut"' in response.text
+    assert 'id="ticketOut"' not in response.text
+    assert 'id="secretOut"' not in response.text
+    assert "ข้อมูลติดตามคำขอพร้อมคัดลอก" in response.text
+    assert response.text.count('id="copyReceipt"') == 1
     assert 'document.execCommand("copy")' in response.text
     assert "String.fromCharCode(10)" in response.text
     assert 'textContent+"\\nTracking secret:' not in response.text
@@ -222,6 +229,18 @@ def test_approve_normal_issues_link(client, victim, admin_user, auth_headers, db
         t = db.query(RecoveryTicket).filter(RecoveryTicket.id == tid).first()
         db.refresh(t)
         assert t.status == "approved" and t.link_token
+        expires = t.token_expires_at
+        if expires.tzinfo is None:
+            expires = expires.replace(tzinfo=timezone.utc)
+        remaining = (expires - datetime.now(timezone.utc)).total_seconds()
+        assert 86300 <= remaining <= 86400
+
+        # A deploy/Redis restart must not invalidate a still-valid recovery link.
+        link_token = parse_qs(urlparse(r.json()["relink_url"]).query)["t"][0]
+        redis_client.delete(f"change_google:{link_token}")
+        assert _restore_recovery_token(db, link_token) is True
+        assert redis_client.ttl(f"change_google:{link_token}") > 86300
+        redis_client.delete(f"change_google:{link_token}")
     finally:
         stepup_cache.clear(str(admin_user.id), jti)
 

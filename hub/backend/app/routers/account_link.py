@@ -181,6 +181,60 @@ def _mint_change_token(
     return token, start_url
 
 
+def _restore_recovery_token(db: Session, token: str) -> bool:
+    """Restore an approved recovery token after Redis restart/deploy.
+
+    Recovery links are durable for their advertised lifetime: the encrypted token and
+    expiry live in Postgres, while Redis remains the fast one-time-use gate.  Only
+    RECOVERY tickets can be restored; normal self-service tokens stay ephemeral.
+    """
+    from app.models import RecoveryTicket
+    from app.services.secret_service import decrypt_secret
+
+    now = datetime.now(timezone.utc)
+    rows = (
+        db.query(RecoveryTicket)
+        .filter(
+            RecoveryTicket.status == "approved",
+            RecoveryTicket.link_token.isnot(None),
+            RecoveryTicket.token_expires_at.isnot(None),
+        )
+        .order_by(RecoveryTicket.created_at.desc())
+        .limit(200)
+        .all()
+    )
+    for ticket in rows:
+        expires = ticket.token_expires_at
+        if expires and expires.tzinfo is None:
+            expires = expires.replace(tzinfo=timezone.utc)
+        if not expires or expires <= now:
+            continue
+        try:
+            saved = decrypt_secret(ticket.link_token)
+        except Exception:
+            log.warning("cannot decrypt recovery link token ticket=%s", ticket.id)
+            continue
+        if not secrets.compare_digest(saved, token):
+            continue
+        ttl = max(1, int((expires - now).total_seconds()))
+        redis_client.setex(
+            f"{_CHANGE_PREFIX}:{token}",
+            ttl,
+            json.dumps(
+                {
+                    "user_id": str(ticket.user_id),
+                    "source": "RECOVERY",
+                    "jti": None,
+                    "ip": None,
+                    "ticket_id": str(ticket.id),
+                    "at": now.isoformat(),
+                }
+            ),
+        )
+        return True
+    return False
+
+
 # ─────────────────────────────────────────────────────────────
 # Core apply logic (testable — แยกจาก OAuth plumbing)
 # ─────────────────────────────────────────────────────────────
@@ -313,8 +367,13 @@ def change_google_start(
 
 
 @router.get("/change-google/redirect")
-async def change_google_redirect(request: Request, t: str = ""):
-    if not t or not redis_client.exists(f"{_CHANGE_PREFIX}:{t}"):
+async def change_google_redirect(
+    request: Request, t: str = "", db: Session = Depends(get_db)
+):
+    token_exists = bool(t and redis_client.exists(f"{_CHANGE_PREFIX}:{t}"))
+    if t and not token_exists:
+        token_exists = _restore_recovery_token(db, t)
+    if not token_exists:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="ลิงก์หมดอายุหรือไม่ถูกต้อง — เริ่มใหม่จากหน้าบัญชี",

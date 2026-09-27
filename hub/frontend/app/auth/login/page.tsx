@@ -38,11 +38,15 @@ export default function LoginPage() {
         kind: "ok",
         text: "เปลี่ยนบัญชี Google สำเร็จ — เข้าสู่ระบบด้วยบัญชีใหม่",
       });
-    } else if ((q.get("error") || "").startsWith("change_google")) {
+    } else if (q.get("error") === "change_google_expired") {
       setNotice({
         kind: "err",
-        text: "เปลี่ยนบัญชี Google ไม่สำเร็จ — ลิงก์อาจหมดอายุ หรือบัญชีนั้นถูกใช้แล้ว กรุณาลองใหม่",
+        text: "ลิงก์กู้บัญชีหมดอายุหรือถูกใช้แล้ว กรุณาตรวจสอบสถานะคำขอหรือติดต่อผู้ดูแล",
       });
+    } else if (["change_google_sub_taken", "change_google_email_taken"].includes(q.get("error") || "")) {
+      setNotice({ kind: "err", text: "บัญชี Google นี้เชื่อมกับผู้ใช้อื่นอยู่ กรุณาเลือกบัญชีอื่น" });
+    } else if ((q.get("error") || "").startsWith("change_google")) {
+      setNotice({ kind: "err", text: "เปลี่ยนบัญชี Google ไม่สำเร็จ กรุณาลองเปิดลิงก์อีกครั้งหรือติดต่อผู้ดูแล" });
     }
   }, []);
 
