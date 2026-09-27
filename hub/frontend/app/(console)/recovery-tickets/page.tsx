@@ -20,6 +20,7 @@ const EVIDENCE = [
 ];
 
 type LevelFilter = "all" | "HIGH" | "NORMAL";
+type TicketView = "pending" | "history";
 
 /* ── ไอคอนเส้น (โปรเจกต์ไม่ได้ติดตั้ง lucide) ─────────────────────────── */
 function RIcon({ children, size = 14 }: { children: ReactNode; size?: number }) {
@@ -95,6 +96,7 @@ export default function RecoveryTicketsPage() {
   const [copied, setCopied] = useState(false);
   const [query, setQuery] = useState("");
   const [level, setLevel] = useState<LevelFilter>("all");
+  const [view, setView] = useState<TicketView>("pending");
   const [openId, setOpenId] = useState<string | null>(null);
   const [evidencePreview, setEvidencePreview] = useState<string | null>(null);
   // per-ticket evidence form
@@ -104,7 +106,7 @@ export default function RecoveryTicketsPage() {
 
   const load = useCallback(() => {
     setLoading(true);
-    adminListRecoveryTickets("pending")
+    adminListRecoveryTickets("")
       .then((d) => setItems(d.items))
       .catch((e) => setMsg({ kind: "err", text: e?.detail || "โหลดไม่สำเร็จ" }))
       .finally(() => setLoading(false));
@@ -186,17 +188,20 @@ export default function RecoveryTicketsPage() {
   }
 
   const kpis = useMemo(() => {
-    const high = items.filter((t) => t.recovery_level === "HIGH").length;
-    const normal = items.length - high;
-    const waiting = items.filter(
+    const pendingItems = items.filter((t) => t.status === "pending");
+    const high = pendingItems.filter((t) => t.recovery_level === "HIGH").length;
+    const normal = pendingItems.length - high;
+    const waiting = pendingItems.filter(
       (t) => t.recovery_level === "HIGH" && t.approvals < t.required
     ).length;
-    return { pending: items.length, high, normal, waiting };
+    return { pending: pendingItems.length, high, normal, waiting };
   }, [items]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     return items.filter((t) => {
+      if (view === "pending" && t.status !== "pending") return false;
+      if (view === "history" && t.status === "pending") return false;
       if (level !== "all" && t.recovery_level !== level) return false;
       if (!q) return true;
       return (
@@ -206,7 +211,7 @@ export default function RecoveryTicketsPage() {
         (t.credential_type || "").toLowerCase().includes(q)
       );
     });
-  }, [items, query, level]);
+  }, [items, query, level, view]);
 
   return (
     <div className="sc">
@@ -316,13 +321,22 @@ export default function RecoveryTicketsPage() {
           <header>
             <div>
               <span className="mono">account recovery triage</span>
-              <h2>คำขอกู้บัญชีที่รอตรวจสอบ</h2>
+              <h2>{view === "pending" ? "คำขอกู้บัญชีที่รอตรวจสอบ" : "ประวัติการพิจารณาคำขอ"}</h2>
             </div>
             <span className="cx-chip warn">
               <IconKey />
               STEP-UP REQUIRED
             </span>
           </header>
+
+          <div className="rt-view-tabs" role="tablist" aria-label="สถานะคำขอ">
+            <button className={view === "pending" ? "on" : ""} onClick={() => setView("pending")}>
+              รอตรวจสอบ <b>{kpis.pending}</b>
+            </button>
+            <button className={view === "history" ? "on" : ""} onClick={() => setView("history")}>
+              ประวัติ <b>{items.length - kpis.pending}</b>
+            </button>
+          </div>
 
           <div className="cx-toolbar">
             <label>
@@ -375,7 +389,7 @@ export default function RecoveryTicketsPage() {
                     <th>Reason</th>
                     <th style={{ width: 96 }}>Level</th>
                     <th style={{ width: 150 }}>Requested</th>
-                    <th style={{ width: 96 }}>Signals</th>
+                    <th style={{ width: 110 }}>{view === "pending" ? "Signals" : "Status"}</th>
                     <th style={{ width: 120, textAlign: "right" }}>Actions</th>
                   </tr>
                 </thead>
@@ -408,7 +422,9 @@ export default function RecoveryTicketsPage() {
                             {fmtTime(t.created_at)}
                           </td>
                           <td className="mono">
-                            {t.approvals}/{t.required}
+                            {view === "pending" ? `${t.approvals}/${t.required}` : (
+                              <span className={`rt-status ${t.status}`}>{t.status}</span>
+                            )}
                           </td>
                           <td>
                             <div
@@ -417,17 +433,17 @@ export default function RecoveryTicketsPage() {
                                 justifyContent: "flex-end",
                               }}
                             >
-                              <button
-                                className="cx-panel-action"
-                                onClick={() => setOpenId(open ? null : t.id)}
-                              >
-                                {open ? "ปิด" : "ตรวจสอบ"}
-                                <IconChevron />
-                              </button>
+                              {view === "pending" ? <button
+                                  className="cx-panel-action"
+                                  onClick={() => setOpenId(open ? null : t.id)}
+                                >
+                                  {open ? "ปิด" : "ตรวจสอบ"}
+                                  <IconChevron />
+                                </button> : <span className="rt-history-time">{fmtTime(t.consumed_at || t.latest_approval_at || t.delivery_sent_at || t.created_at)}</span>}
                             </div>
                           </td>
                         </tr>
-                        {open && (
+                        {view === "pending" && open && (
                           <tr className="cx-recovery-expand">
                             <td colSpan={7}>
                               <div className="rt-review">
@@ -440,72 +456,32 @@ export default function RecoveryTicketsPage() {
                                     {t.alternate_email_verified ? "EMAIL VERIFIED" : "STATUS PAGE"}
                                   </span>
                                 </div>
-                                <div className="cx-evidence-form">
-                                <button
-                                  className="cx-panel-action"
-                                  onClick={() => viewEvidence(t)}
-                                  disabled={!t.has_evidence || busy === t.id + "e"}
-                                >
-                                  {busy === t.id + "e" ? "กำลังเปิด" : "ดูหลักฐานที่แนบ"}
-                                </button>
-                                <div className="cx-notif-sub">
-                                  {t.alternate_email_verified && t.alternate_email
-                                    ? `ส่งลิงก์ไป: ${t.alternate_email}`
-                                    : "รับลิงก์ผ่านหน้าติดตามคำขอ"}
-                                </div>
-                                <label>
-                                  หลักฐานที่ตรวจ
-                                  <select
-                                    value={f(t.id).evidence_type}
-                                    onChange={(e) =>
-                                      setForm((s) => ({
-                                        ...s,
-                                        [t.id]: {
-                                          ...f(t.id),
-                                          evidence_type: e.target.value,
-                                        },
-                                      }))
-                                    }
-                                  >
-                                    {EVIDENCE.map((ev) => (
-                                      <option key={ev.v} value={ev.v}>
-                                        {ev.label}
-                                      </option>
-                                    ))}
-                                  </select>
-                                </label>
-                                <input
-                                  value={f(t.id).remark}
-                                  onChange={(e) =>
-                                    setForm((s) => ({
-                                      ...s,
-                                      [t.id]: {
-                                        ...f(t.id),
-                                        remark: e.target.value,
-                                      },
-                                    }))
-                                  }
-                                  placeholder="หมายเหตุ (เช่น เลขบัตร, ผู้ตรวจ)"
-                                  aria-label="หมายเหตุการตรวจ"
-                                />
-                                <button
-                                  className="cx-approve"
-                                  onClick={() => approve(t)}
-                                  disabled={busy === t.id + "a"}
-                                >
-                                  {busy === t.id + "a"
-                                    ? "กำลังบันทึก"
-                                    : t.required > t.approvals + 1
-                                      ? "อนุมัติ (1/2)"
-                                      : "อนุมัติ → ออกลิงก์"}
-                                </button>
-                                <button
-                                  className="cx-reject"
-                                  onClick={() => reject(t)}
-                                  disabled={busy === t.id + "r"}
-                                >
-                                  ปฏิเสธ
-                                </button>
+                                <div className="rt-review-body">
+                                  <section className="rt-evidence-card">
+                                    <div className="rt-section-title"><span className="mono">01 · EVIDENCE</span><b>ข้อมูลที่ผู้ใช้ส่งมา</b></div>
+                                    <dl>
+                                      <div><dt>เหตุผล</dt><dd>{t.reason || "ไม่ระบุ"}</dd></div>
+                                      <div><dt>ช่องทางที่เข้าไม่ได้</dt><dd>{t.credential_type || "—"}</dd></div>
+                                      <div><dt>ประเภทหลักฐาน</dt><dd>{EVIDENCE.find((ev) => ev.v === t.evidence_type)?.label || t.evidence_type || "—"}</dd></div>
+                                      <div><dt>รับลิงก์ทาง</dt><dd>{t.alternate_email_verified && t.alternate_email ? t.alternate_email : "หน้าติดตามคำขอ"}</dd></div>
+                                    </dl>
+                                    <button className="cx-panel-action rt-evidence-button" onClick={() => viewEvidence(t)} disabled={!t.has_evidence || busy === t.id + "e"}>
+                                      {busy === t.id + "e" ? "กำลังเปิด" : "เปิดดูรูปหลักฐาน"}
+                                    </button>
+                                  </section>
+                                  <section className="rt-decision-card">
+                                    <div className="rt-section-title"><span className="mono">02 · DECISION</span><b>บันทึกผลการตรวจสอบ</b></div>
+                                    <label>หลักฐานที่ตรวจ<select value={f(t.id).evidence_type} onChange={(e) => setForm((s) => ({...s,[t.id]: {...f(t.id), evidence_type: e.target.value}}))}>
+                                      {EVIDENCE.map((ev) => <option key={ev.v} value={ev.v}>{ev.label}</option>)}
+                                    </select></label>
+                                    <label>หมายเหตุ<input value={f(t.id).remark} onChange={(e) => setForm((s) => ({...s,[t.id]: {...f(t.id), remark: e.target.value}}))} placeholder="รายละเอียดที่ตรวจสอบหรือชื่อผู้ตรวจ" /></label>
+                                    <div className="rt-decision-actions">
+                                      <button className="cx-reject" onClick={() => reject(t)} disabled={busy === t.id + "r"}>ปฏิเสธ</button>
+                                      <button className="cx-approve" onClick={() => approve(t)} disabled={busy === t.id + "a"}>
+                                        {busy === t.id + "a" ? "กำลังบันทึก" : t.required > t.approvals + 1 ? "อนุมัติ (1/2)" : "อนุมัติและออกลิงก์"}
+                                      </button>
+                                    </div>
+                                  </section>
                                 </div>
                               </div>
                             </td>
@@ -557,7 +533,7 @@ export default function RecoveryTicketsPage() {
             </header>
             {link ? (
               <div className="cx-recovery-secret">
-                <small>ใช้ครั้งเดียว · 30 นาที — ส่งให้ผู้ใช้เปิดเอง</small>
+                <small>ใช้ครั้งเดียว · 24 ชั่วโมง — ส่งให้ผู้ใช้เปิดเอง</small>
                 <code>{link.url}</code>
                 <button
                   onClick={() => {
