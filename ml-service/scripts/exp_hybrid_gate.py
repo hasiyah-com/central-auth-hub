@@ -42,6 +42,8 @@ from sklearn.ensemble import IsolationForest
 ML = Path(__file__).resolve().parent
 if str(ML) not in sys.path:
     sys.path.insert(0, str(ML))
+if str(ML.parent) not in sys.path:
+    sys.path.append(str(ML.parent))
 
 import exp_lc_v3 as E3  # noqa: E402
 import build_profiles_v2 as BP  # noqa: E402
@@ -58,6 +60,7 @@ from hybrid_experiment import tune as TU  # noqa: E402
 from app.security.behavior_profiling import evaluate_behavior  # noqa: E402
 from app.security.policy_gate import evaluate_policy  # noqa: E402
 from app.security.rule_engine import evaluate_rules  # noqa: E402
+from point_scoring import score_with_model, scores_with_model  # noqa: E402
 
 ARTIFACTS = ML.parent / "data" / "hybrid_experiment"
 FROZEN = ARTIFACTS / "frozen_config.json"
@@ -84,7 +87,7 @@ def fit_point_model(train_vectors: list) -> IsolationForest | None:
 def point_score(model, vec) -> float | None:
     if model is None:
         return None
-    return float(-model.score_samples(np.asarray([vec], dtype=float))[0])
+    return score_with_model(model, vec)
 
 
 def point_scores(model, vecs) -> list[float | None]:
@@ -98,8 +101,7 @@ def point_scores(model, vecs) -> list[float | None]:
         return [None] * len(vecs)
     if not vecs:
         return []
-    arr = -model.score_samples(np.asarray(vecs, dtype=float))
-    return [float(x) for x in arr]
+    return scores_with_model(model, vecs)
 
 
 def fit_sequence_model(u: DS.UserSplit, size: int, raw_user: dict):
