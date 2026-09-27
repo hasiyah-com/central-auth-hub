@@ -16,7 +16,7 @@ from app.models import (
     User,
     UserTotpCredential,
 )
-from app.services import stepup_cache, totp_service
+from app.services import mfa_service, stepup_cache, totp_service
 from app.services.secret_service import encrypt_secret
 from app.services.jwt_service import create_access_token
 
@@ -126,6 +126,66 @@ def test_request_returns_tracking_credential_and_status(client, victim):
     )
     assert status.status_code == 200
     assert status.json()["status"] == "pending"
+
+
+def test_alternate_email_otp_reports_delivery_failure(client, monkeypatch):
+    monkeypatch.setattr(mfa_service, "send_otp_email", lambda *_args, **_kwargs: False)
+    response = client.post(
+        "/auth/recovery/alternate-email/start",
+        json={"email": "owner@uni.ac.th", "alternate_email": "backup@example.com"},
+    )
+    assert response.status_code == 503
+    assert "ระบบอีเมลยังไม่พร้อมใช้งาน" in response.json()["detail"]
+
+
+def test_alternate_email_otp_confirms_real_delivery(client, monkeypatch):
+    sent_to = []
+    monkeypatch.setattr(
+        mfa_service,
+        "send_otp_email",
+        lambda email, *_args, **_kwargs: sent_to.append(email) or True,
+    )
+    response = client.post(
+        "/auth/recovery/alternate-email/start",
+        json={"email": "owner@uni.ac.th", "alternate_email": "backup@example.com"},
+    )
+    assert response.status_code == 200
+    assert response.json()["sent"] is True
+    assert sent_to == ["backup@example.com"]
+
+
+def test_recovery_page_has_clipboard_fallback(client):
+    response = client.get("/auth/recovery/ticket")
+    assert response.status_code == 200
+    assert 'data-copy="ticketOut"' in response.text
+    assert 'document.execCommand("copy")' in response.text
+
+
+def test_admin_can_view_recovery_evidence_as_image(
+    client, victim, admin_user, auth_headers, db
+):
+    ticket = RecoveryTicket(
+        user_id=victim.id,
+        email=victim.email,
+        recovery_level="NORMAL",
+        status="pending",
+        evidence_type="student_card",
+        evidence_mime="image/png",
+        evidence_encrypted=encrypt_secret(_PNG),
+    )
+    db.add(ticket)
+    db.commit()
+    db.refresh(ticket)
+    token, _ = create_access_token(admin_user)
+
+    response = client.get(
+        f"/admin/recovery-tickets/{ticket.id}/evidence",
+        headers=auth_headers(token),
+    )
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("image/png")
+    assert response.headers["cache-control"] == "no-store, private"
+    assert response.content == base64.b64decode(_PNG)
 
 
 # ── admin approve — NORMAL (1) ──
