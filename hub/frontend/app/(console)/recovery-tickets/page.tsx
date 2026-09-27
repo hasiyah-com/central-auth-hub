@@ -11,6 +11,7 @@ import {
 } from "@/lib/passkey";
 import "@/app/signal-room.css";
 import "@/app/signal-console.css";
+import "./recovery-tickets.css";
 
 const EVIDENCE = [
   { v: "student_card", label: "บัตรนักศึกษา" },
@@ -118,7 +119,10 @@ export default function RecoveryTicketsPage() {
     try {
       setBusy(t.id + "e");
       const evidence = await adminGetRecoveryEvidence(t.id);
-      setEvidencePreview(evidence.data_url);
+      setEvidencePreview((previous) => {
+        if (previous) URL.revokeObjectURL(previous);
+        return evidence.objectUrl;
+      });
     } catch (e) {
       setMsg({
         kind: "err",
@@ -212,20 +216,45 @@ export default function RecoveryTicketsPage() {
         </div>
       )}
       {evidencePreview && (
-        <div className="cx-verify-overlay" onClick={() => setEvidencePreview(null)}>
-          <div style={{ maxWidth: 760, padding: 18 }}>
-            <img
-              src={evidencePreview}
-              alt="หลักฐานยืนยันตัวตน"
-              style={{ display: "block", maxWidth: "100%", maxHeight: "75vh" }}
-            />
-            <button
-              className="cx-panel-action"
-              style={{ marginTop: 12 }}
-              onClick={() => setEvidencePreview(null)}
-            >
-              ปิดหลักฐาน
-            </button>
+        <div
+          className="rt-modal"
+          role="dialog"
+          aria-modal="true"
+          aria-label="หลักฐานยืนยันตัวตน"
+          onClick={() => {
+            URL.revokeObjectURL(evidencePreview);
+            setEvidencePreview(null);
+          }}
+        >
+          <div className="rt-modal-card" onClick={(event) => event.stopPropagation()}>
+            <header>
+              <div>
+                <span className="mono">IDENTITY EVIDENCE</span>
+                <h2>หลักฐานยืนยันตัวตน</h2>
+              </div>
+              <button
+                className="rt-close"
+                aria-label="ปิด"
+                onClick={() => {
+                  URL.revokeObjectURL(evidencePreview);
+                  setEvidencePreview(null);
+                }}
+              >
+                ×
+              </button>
+            </header>
+            <div className="rt-image-stage">
+              <img src={evidencePreview} alt="หลักฐานยืนยันตัวตนที่ผู้ใช้แนบ" />
+            </div>
+            <footer>
+              <span>ข้อมูลอ่อนไหว · ห้ามบันทึกหรือส่งต่อโดยไม่จำเป็น</span>
+              <button
+                className="cx-panel-action"
+                onClick={() => window.open(evidencePreview, "_blank", "noopener,noreferrer")}
+              >
+                เปิดรูปเต็ม
+              </button>
+            </footer>
           </div>
         </div>
       )}
@@ -401,7 +430,17 @@ export default function RecoveryTicketsPage() {
                         {open && (
                           <tr className="cx-recovery-expand">
                             <td colSpan={7}>
-                              <div className="cx-evidence-form">
+                              <div className="rt-review">
+                                <div className="rt-review-head">
+                                  <div>
+                                    <span className="mono">REVIEW TICKET</span>
+                                    <strong>{t.email}</strong>
+                                  </div>
+                                  <span className={`rt-delivery ${t.alternate_email_verified ? "email" : "status"}`}>
+                                    {t.alternate_email_verified ? "EMAIL VERIFIED" : "STATUS PAGE"}
+                                  </span>
+                                </div>
+                                <div className="cx-evidence-form">
                                 <button
                                   className="cx-panel-action"
                                   onClick={() => viewEvidence(t)}
@@ -467,6 +506,7 @@ export default function RecoveryTicketsPage() {
                                 >
                                   ปฏิเสธ
                                 </button>
+                                </div>
                               </div>
                             </td>
                           </tr>
