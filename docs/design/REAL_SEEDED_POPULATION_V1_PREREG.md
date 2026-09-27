@@ -37,6 +37,10 @@ Authentication Systems* (2023), arXiv:2301.01505.
 | ประวัติที่ทดสอบ | 5, 10, 20, 50, 100, 200, 500, 1,000, 2,000 |
 | ฟีเจอร์ | 23 ตัวเดิม ตาม `app.features.FEATURE_NAMES` |
 | sequence window | 5 เหตุการณ์ ตาม production |
+| candidate config | E: L1 + L2 + point-all + sequence |
+| comparator | B: L1 + L2 (ไม่มี L3) |
+| fusion | max + corroboration, `gamma = 0.35` |
+| thresholds | warn `0.50`, challenge `0.70`, block `0.85` |
 
 สร้างแต่ละโปรไฟล์โดย bootstrap โปรไฟล์จริงหนึ่งรายการ แล้ว perturb เฉพาะค่ารวม:
 ช่วงเวลา login, สัดส่วนวันหยุด, จำนวน/สัดส่วนอุปกรณ์, ระบบย่อย, cadence,
@@ -95,6 +99,8 @@ detection ของงานนี้
 ## 6. กติกาหลังเห็นผล
 
 - validation ไม่ผ่านข้อใดข้อหนึ่ง ให้หยุดและคง holdout ไว้ปิด
+- ค่า fusion และ thresholds ด้านบนเป็นค่า default ของ production ที่ตรึงก่อนรัน
+  รอบนี้ ไม่ทำ grid search ซ้ำบนผลชุดเดียวกับที่ใช้ตัดสิน history sufficiency
 - ห้ามเปลี่ยน threshold หรือรูปแบบ anomaly แล้วรันซ้ำด้วยชื่อ population เดิม
 - การแก้ต้องสร้าง population/version/seed ชุดใหม่
 - ผลจากข้อมูลสังเคราะห์ใช้ตัดสินความพร้อมสำหรับ shadow เท่านั้น จนกว่าจะมี expert
