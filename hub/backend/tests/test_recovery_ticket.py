@@ -159,6 +159,8 @@ def test_recovery_page_has_clipboard_fallback(client):
     assert response.status_code == 200
     assert 'data-copy="ticketOut"' in response.text
     assert 'document.execCommand("copy")' in response.text
+    assert "String.fromCharCode(10)" in response.text
+    assert 'textContent+"\\nTracking secret:' not in response.text
 
 
 def test_admin_can_view_recovery_evidence_as_image(
