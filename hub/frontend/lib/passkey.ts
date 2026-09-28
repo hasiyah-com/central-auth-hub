@@ -267,8 +267,6 @@ export interface GrantableSubsystem {
 export interface UserDetailInfo {
   id: string;
   email: string;
-  request_kind: "account_recovery" | "blocked_account_appeal";
-  user_status: string | null;
   full_name: string | null;
   user_type: string | null;
   status: string | null;
@@ -612,6 +610,8 @@ export async function adminGetUserCredentials(
 export type RecoveryTicket = {
   id: string;
   email: string;
+  request_kind: "account_recovery" | "blocked_account_appeal";
+  user_status: string | null;
   credential_type: string | null;
   reason: string | null;
   evidence_type: "student_card" | "citizen_id" | null;
