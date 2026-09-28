@@ -176,7 +176,7 @@ export default function LoginPage() {
           {policy.google && <><div className="login-divider"><span>หรือ</span></div><a href={`${HUB_URL}/auth/google/login`} className="google-button"><span className="google-g">G</span><span>เข้าสู่ระบบด้วย Google Workspace</span><b aria-hidden="true">→</b></a></>}
 
           <div className="login-help">
-            {policy.passkey && passkeySupported && <a href="/auth/passkey/recover">ใช้ Passkey ไม่ได้หรือกู้คืนบัญชี</a>}
+            <a href={`${HUB_URL}/auth/recovery/ticket`}>กู้บัญชีหรือขอทบทวนการบล็อก</a>
             <span>·</span><a href={`${HUB_URL}/auth/credentials/setup`}>เพิ่มวิธียืนยันตัวตน</a>
           </div>
           <div className="policy-stamp"><LineIcon size={14}><path d="M12 3 20 6v5c0 5-3 8-8 10-5-2-8-5-8-10V6l8-3Z"/><path d="m8 12 2.5 2.5L16 9"/></LineIcon><span>Auth policy loaded</span><code className="mono">passkey:{policy.passkey ? "on" : "off"} · google:{policy.google ? "on" : "off"}</code></div>
