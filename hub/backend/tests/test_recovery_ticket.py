@@ -23,6 +23,7 @@ from app.services.secret_service import encrypt_secret
 from app.services.jwt_service import create_access_token
 from app.redis_client import redis_client
 from app.routers.account_link import _restore_recovery_token
+from app.routers import recovery as recovery_router
 
 
 def _mk_user(db, *, is_admin=False) -> User:
@@ -168,6 +169,56 @@ def test_recovery_page_has_clipboard_fallback(client):
     assert 'document.execCommand("copy")' in response.text
     assert "String.fromCharCode(10)" in response.text
     assert 'textContent+"\\nTracking secret:' not in response.text
+    assert 'value="blocked_account_appeal"' in response.text
+    assert 'get("topic")' in response.text
+
+
+def test_blocked_account_appeal_alerts_and_reactivates(
+    client, victim, admin_user, auth_headers, db, monkeypatch
+):
+    victim.status = "suspended"
+    db.commit()
+    alerts = []
+    monkeypatch.setattr(
+        recovery_router,
+        "send_alert",
+        lambda **kwargs: alerts.append(kwargs) or True,
+    )
+
+    payload = _request_payload(victim.email)
+    payload.update(
+        request_kind="blocked_account_appeal",
+        credential_type=None,
+        reason="บัญชีถูกระงับโดยไม่ทราบสาเหตุ",
+    )
+    created = client.post("/auth/recovery/request", json=payload)
+    assert created.status_code == 200
+    ticket = (
+        db.query(RecoveryTicket)
+        .filter(RecoveryTicket.user_id == victim.id)
+        .order_by(RecoveryTicket.created_at.desc())
+        .first()
+    )
+    assert ticket.request_kind == "blocked_account_appeal"
+    assert alerts[0]["kind"] == "recovery.blocked_account_appeal_requested"
+
+    token, jti = create_access_token(admin_user)
+    stepup_cache.set_granted(str(admin_user.id), jti, "passkey")
+    try:
+        approved = client.post(
+            f"/admin/recovery-tickets/{ticket.id}/approve",
+            headers=auth_headers(token),
+            json={"evidence_type": "student_card", "remark": "identity verified"},
+        )
+        assert approved.status_code == 200
+        assert approved.json()["account_unblocked"] is True
+        db.refresh(victim)
+        db.refresh(ticket)
+        assert victim.status == "active"
+        assert ticket.status == "approved"
+        assert alerts[-1]["kind"] == "recovery.blocked_account_appeal_approved"
+    finally:
+        stepup_cache.clear(str(admin_user.id), jti)
 
 
 def test_admin_can_view_recovery_evidence_as_image(

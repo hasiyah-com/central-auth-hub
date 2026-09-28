@@ -84,6 +84,12 @@ function fmtTime(iso: string | null): string {
   });
 }
 
+function topicLabel(kind: RecoveryTicket["request_kind"]): string {
+  return kind === "blocked_account_appeal"
+    ? "ทบทวนการบล็อก"
+    : "กู้บัญชี";
+}
+
 export default function RecoveryTicketsPage() {
   const [items, setItems] = useState<RecoveryTicket[]>([]);
   const [loading, setLoading] = useState(true);
@@ -144,7 +150,10 @@ export default function RecoveryTicketsPage() {
         { evidence_type: f(t.id).evidence_type, remark: f(t.id).remark },
         setVerifying
       );
-      if (r.relink_url) {
+      if (r.account_unblocked) {
+        setLink(null);
+        setMsg({ kind: "ok", text: "อนุมัติแล้ว — เปิดใช้งานบัญชีเรียบร้อย" });
+      } else if (r.relink_url) {
         setLink({ id: t.id, url: r.relink_url });
         setCopied(false);
         setMsg({
@@ -208,6 +217,7 @@ export default function RecoveryTicketsPage() {
         t.email.toLowerCase().includes(q) ||
         t.id.toLowerCase().includes(q) ||
         (t.reason || "").toLowerCase().includes(q) ||
+        topicLabel(t.request_kind).includes(q) ||
         (t.credential_type || "").toLowerCase().includes(q)
       );
     });
@@ -384,7 +394,7 @@ export default function RecoveryTicketsPage() {
               <table>
                 <thead>
                   <tr>
-                    <th style={{ width: 110 }}>Ticket</th>
+                    <th style={{ width: 150 }}>หัวข้อคำขอ</th>
                     <th>User email</th>
                     <th>Reason</th>
                     <th style={{ width: 96 }}>Level</th>
@@ -399,7 +409,7 @@ export default function RecoveryTicketsPage() {
                     return (
                       <FragmentRow key={t.id}>
                         <tr>
-                          <td className="mono">{t.id.slice(0, 8)}</td>
+                          <td><span className={`rt-topic ${t.request_kind === "blocked_account_appeal" ? "blocked" : "recovery"}`}>{topicLabel(t.request_kind)}</span></td>
                           <td>{t.email}</td>
                           <td>
                             {t.reason || "ไม่ระบุเหตุผล"}
@@ -460,8 +470,9 @@ export default function RecoveryTicketsPage() {
                                   <section className="rt-evidence-card">
                                     <div className="rt-section-title"><span className="mono">01 · EVIDENCE</span><b>ข้อมูลที่ผู้ใช้ส่งมา</b></div>
                                     <dl>
+                                      <div><dt>หัวข้อคำขอ</dt><dd>{topicLabel(t.request_kind)}</dd></div>
                                       <div><dt>เหตุผล</dt><dd>{t.reason || "ไม่ระบุ"}</dd></div>
-                                      <div><dt>ช่องทางที่เข้าไม่ได้</dt><dd>{t.credential_type || "—"}</dd></div>
+                                      <div><dt>{t.request_kind === "blocked_account_appeal" ? "สถานะบัญชีปัจจุบัน" : "ช่องทางที่เข้าไม่ได้"}</dt><dd>{t.request_kind === "blocked_account_appeal" ? (t.user_status || "—") : (t.credential_type || "—")}</dd></div>
                                       <div><dt>ประเภทหลักฐาน</dt><dd>{EVIDENCE.find((ev) => ev.v === t.evidence_type)?.label || t.evidence_type || "—"}</dd></div>
                                       <div><dt>รับลิงก์ทาง</dt><dd>{t.alternate_email_verified && t.alternate_email ? t.alternate_email : "หน้าติดตามคำขอ"}</dd></div>
                                     </dl>
@@ -478,7 +489,7 @@ export default function RecoveryTicketsPage() {
                                     <div className="rt-decision-actions">
                                       <button className="cx-reject" onClick={() => reject(t)} disabled={busy === t.id + "r"}>ปฏิเสธ</button>
                                       <button className="cx-approve" onClick={() => approve(t)} disabled={busy === t.id + "a"}>
-                                        {busy === t.id + "a" ? "กำลังบันทึก" : t.required > t.approvals + 1 ? "อนุมัติ (1/2)" : "อนุมัติและออกลิงก์"}
+                                        {busy === t.id + "a" ? "กำลังบันทึก" : t.required > t.approvals + 1 ? "อนุมัติ (1/2)" : t.request_kind === "blocked_account_appeal" ? "อนุมัติและเปิดบัญชี" : "อนุมัติและออกลิงก์"}
                                       </button>
                                     </div>
                                   </section>

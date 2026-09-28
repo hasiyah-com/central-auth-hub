@@ -199,6 +199,8 @@
 .rt-status.approved,.rt-status.consumed { border-color: #9fded2; background: #edfbf8; color: #087765; }
 .rt-status.rejected,.rt-status.expired { border-color: #f0b7c1; background: #fff2f4; color: #a52b42; }
 .rt-history-time { color: #718399; font: 9px ui-monospace, monospace; white-space: nowrap; }
+.rt-topic { display: inline-flex; align-items: center; padding: 6px 9px; border: 1px solid #a8ded5; background: #edfbf8; color: #087765; font-size: 10px; font-weight: 700; white-space: nowrap; }
+.rt-topic.blocked { border-color: #efc27a; background: #fff8e8; color: #8a5a0a; }
 
 @media (max-width: 1180px) {
   .rt-review-body { grid-template-columns: 1fr; }

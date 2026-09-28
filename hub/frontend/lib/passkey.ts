@@ -610,6 +610,8 @@ export async function adminGetUserCredentials(
 export type RecoveryTicket = {
   id: string;
   email: string;
+  request_kind: "account_recovery" | "blocked_account_appeal";
+  user_status: string | null;
   credential_type: string | null;
   reason: string | null;
   evidence_type: "student_card" | "citizen_id" | null;
@@ -665,6 +667,7 @@ export async function adminApproveTicket(
   onVerifying?: (a: boolean) => void
 ): Promise<{
   approved?: boolean;
+  account_unblocked?: boolean;
   relink_url?: string;
   delivery?: "status_page" | "alternate_email";
   email_sent?: boolean;

@@ -14,6 +14,7 @@ from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.database import get_db
 from app.deps import get_client_ip, require_hub_admin
 from app.models import RecoveryTicket, RecoveryTicketApproval, User
@@ -22,6 +23,7 @@ from app.redis_client import redis_client
 from app.routers.account_link import _mint_change_token
 from app.services import mfa_service
 from app.services.audit_service import log_action
+from app.services.alert_service import send_alert
 from app.services.critical_action_policy import gate as _stepup_gate
 from app.services.email_service import send_recovery_link_email
 from app.services.secret_service import decrypt_secret, encrypt_secret, hash_secret, verify_secret
@@ -37,6 +39,7 @@ _MAX_EVIDENCE_BYTES = 4 * 1024 * 1024
 _REQUIRED = {"NORMAL": 1, "HIGH": 2}
 _ALLOWED_EVIDENCE = {"student_card", "citizen_id"}
 _ALLOWED_MIME = {"image/jpeg", "image/png", "image/webp"}
+_ALLOWED_REQUEST_KINDS = {"account_recovery", "blocked_account_appeal"}
 
 
 class AlternateEmailBody(BaseModel):
@@ -50,6 +53,7 @@ class AlternateEmailVerifyBody(AlternateEmailBody):
 
 class RecoveryRequestBody(BaseModel):
     email: EmailStr = Field(..., max_length=255)
+    request_kind: str = Field("account_recovery", max_length=32)
     credential_type: str | None = Field(None, max_length=20)
     reason: str | None = Field(None, max_length=1000)
     evidence_type: str = Field(..., max_length=30)
@@ -189,6 +193,8 @@ def recovery_request(
     body: RecoveryRequestBody,
     db: Session = Depends(get_db),
 ):
+    if body.request_kind not in _ALLOWED_REQUEST_KINDS:
+        raise HTTPException(status_code=422, detail="หัวข้อคำขอไม่ถูกต้อง")
     if body.evidence_type not in _ALLOWED_EVIDENCE:
         raise HTTPException(status_code=422, detail="เลือกบัตรนักศึกษาหรือบัตรประชาชน")
     evidence = _decode_evidence(body.evidence_image, body.evidence_mime)
@@ -212,6 +218,7 @@ def recovery_request(
             id=uuid.UUID(public_ticket_id),
             user_id=user.id,
             email=email,
+            request_kind=body.request_kind,
             credential_type=body.credential_type,
             reason=body.reason,
             recovery_level="HIGH" if user.is_hub_admin else "NORMAL",
@@ -235,12 +242,38 @@ def recovery_request(
             ip=get_client_ip(request),
             metadata={
                 "ticket_id": public_ticket_id,
+                "request_kind": body.request_kind,
                 "credential_type": body.credential_type,
                 "evidence_type": body.evidence_type,
                 "alternate_email_verified": alternate_verified,
             },
         )
         db.commit()
+        try:
+            send_alert(
+                severity="warning",
+                kind=(
+                    "recovery.blocked_account_appeal_requested"
+                    if body.request_kind == "blocked_account_appeal"
+                    else "recovery.account_recovery_requested"
+                ),
+                key=public_ticket_id,
+                title=(
+                    f"ขอทบทวนการบล็อกบัญชี: {email}"
+                    if body.request_kind == "blocked_account_appeal"
+                    else f"คำขอกู้บัญชีใหม่: {email}"
+                ),
+                detail={
+                    "email": email,
+                    "request_kind": body.request_kind,
+                    "user_status": user.status,
+                    "recovery_level": ticket.recovery_level,
+                    "reason": body.reason,
+                    "review_url": f"{settings.admin_frontend_url}/recovery-tickets",
+                },
+            )
+        except Exception as exc:
+            log.warning("recovery request alert failed: %r", exc)
     return {
         "submitted": True,
         "ticket_id": public_ticket_id,
@@ -274,6 +307,9 @@ def recovery_status(request: Request, body: RecoveryStatusBody, db: Session = De
         "message": messages.get(ticket.status, "กำลังดำเนินการ"),
         "delivery": ticket.delivery_status,
     }
+    if ticket.request_kind == "blocked_account_appeal" and ticket.status == "approved":
+        result["message"] = "คำขอได้รับการอนุมัติแล้ว บัญชีสามารถเข้าสู่ระบบได้"
+        return result
     if ticket.status == "approved":
         expires = ticket.token_expires_at
         if expires and expires.tzinfo is None:
@@ -284,8 +320,6 @@ def recovery_status(request: Request, body: RecoveryStatusBody, db: Session = De
             result.update(status="expired", message=messages["expired"])
         elif ticket.link_token:
             try:
-                from app.config import settings
-
                 token = decrypt_secret(ticket.link_token)
                 result["relink_url"] = (
                     f"{settings.hub_base_url}/auth/account/change-google/redirect?t={token}"
@@ -317,6 +351,12 @@ def list_recovery_tickets(
             {
                 "id": str(ticket.id),
                 "email": ticket.email,
+                "request_kind": ticket.request_kind,
+                "user_status": (
+                    db.query(User.status).filter(User.id == ticket.user_id).scalar()
+                    if ticket.user_id
+                    else None
+                ),
                 "credential_type": ticket.credential_type,
                 "reason": ticket.reason,
                 "evidence_type": ticket.evidence_type,
@@ -460,6 +500,58 @@ def approve_recovery_ticket(
             "required": required,
         }
 
+    if ticket.request_kind == "blocked_account_appeal":
+        appealed_user = db.query(User).filter(User.id == ticket.user_id).first()
+        if not appealed_user:
+            raise HTTPException(status_code=404, detail="ไม่พบบัญชีผู้ใช้")
+        if appealed_user.status == "deleted":
+            raise HTTPException(
+                status_code=409,
+                detail="บัญชีถูกลบ ไม่สามารถเปิดใช้งานผ่านคำขอทบทวนได้",
+            )
+        previous_status = appealed_user.status
+        appealed_user.status = "active"
+        ticket.status = "approved"
+        ticket.delivery_status = "status_page"
+        ticket.evidence_encrypted = None
+        log_action(
+            db,
+            actor_id=admin.id,
+            action="blocked_account_appeal_approved",
+            target_type="user",
+            target_id=appealed_user.id,
+            ip=get_client_ip(request),
+            metadata={
+                "ticket_id": str(ticket.id),
+                "previous_status": previous_status,
+                "new_status": "active",
+            },
+        )
+        db.commit()
+        try:
+            send_alert(
+                severity="warning",
+                kind="recovery.blocked_account_appeal_approved",
+                key=str(ticket.id),
+                title=f"อนุมัติเปิดใช้งานบัญชี: {ticket.email}",
+                detail={
+                    "email": ticket.email,
+                    "previous_status": previous_status,
+                    "new_status": "active",
+                    "approved_by": admin.email,
+                    "approvals": approvals,
+                },
+            )
+        except Exception as exc:
+            log.warning("blocked appeal approval alert failed: %r", exc)
+        return {
+            "approved": True,
+            "account_unblocked": True,
+            "approvals": approvals,
+            "delivery": ticket.delivery_status,
+            "email_sent": False,
+        }
+
     token, relink_url = _mint_change_token(
         str(ticket.user_id),
         source="RECOVERY",
@@ -480,6 +572,22 @@ def approve_recovery_ticket(
             ticket.delivery_status = "alternate_email"
             ticket.delivery_sent_at = datetime.now(timezone.utc)
     db.commit()
+    try:
+        send_alert(
+            severity="warning",
+            kind="recovery.account_recovery_approved",
+            key=str(ticket.id),
+            title=f"อนุมัติคำขอกู้บัญชี: {ticket.email}",
+            detail={
+                "email": ticket.email,
+                "delivery": ticket.delivery_status,
+                "approved_by": admin.email,
+                "approvals": approvals,
+                "link_expires_at": ticket.token_expires_at.isoformat(),
+            },
+        )
+    except Exception as exc:
+        log.warning("recovery approval alert failed: %r", exc)
     return {
         "approved": True,
         "relink_url": relink_url,
@@ -516,6 +624,24 @@ def reject_recovery_ticket(
         metadata={"ticket_id": str(ticket.id)},
     )
     db.commit()
+    try:
+        send_alert(
+            severity="warning",
+            kind=(
+                "recovery.blocked_account_appeal_rejected"
+                if ticket.request_kind == "blocked_account_appeal"
+                else "recovery.account_recovery_rejected"
+            ),
+            key=str(ticket.id),
+            title=f"ปฏิเสธคำขอ: {ticket.email}",
+            detail={
+                "email": ticket.email,
+                "request_kind": ticket.request_kind,
+                "rejected_by": admin.email,
+            },
+        )
+    except Exception as exc:
+        log.warning("recovery rejection alert failed: %r", exc)
     return {"rejected": True}
 
 
@@ -525,7 +651,7 @@ def _ticket_page_html(nonce: str) -> str:
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>กู้บัญชี · Central Auth Hub</title>
+  <title>ศูนย์ช่วยเหลือบัญชี · Central Auth Hub</title>
   <style nonce="__NONCE__">
     :root{--navy:#081321;--panel:#101f31;--ink:#132033;--muted:#697a91;--line:#dce4ee;--bg:#f2f6fa;--mint:#10ad91;--mint-dark:#087765;--soft:#eaf9f6;--danger:#c73d55}
     *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font-family:Sarabun,"Noto Sans Thai",system-ui,sans-serif}
@@ -565,20 +691,20 @@ def _ticket_page_html(nonce: str) -> str:
   <aside class="side">
     <div class="brand"><div class="brand-mark">H</div><div><b>Central Auth Hub</b><small>IDENTITY CONTROL</small></div></div>
     <div class="side-copy">
-      <div class="eyebrow">Account recovery</div>
-      <h1>กู้บัญชีอย่างปลอดภัย</h1>
-      <p>ยืนยันตัวตนด้วยหลักฐาน จากนั้นติดตามผลด้วย Ticket ID โดยไม่ต้องเปิดหน้านี้ค้างไว้</p>
+      <div class="eyebrow">Account help center</div>
+      <h1>ขอความช่วยเหลือบัญชี</h1>
+      <p>ใช้หน้าเดียวสำหรับกู้บัญชีหรือขอทบทวนการบล็อก พร้อมติดตามผลได้โดยไม่ต้องเปิดหน้านี้ค้างไว้</p>
       <div class="steps">
         <div class="step"><i>01</i><div><b>ส่งหลักฐาน</b><span>บัตรนักศึกษาหรือบัตรประชาชน</span></div></div>
         <div class="step"><i>02</i><div><b>รอผู้ดูแลตรวจสอบ</b><span>บัญชีความเสี่ยงสูงต้องอนุมัติ 2 คน</span></div></div>
-        <div class="step"><i>03</i><div><b>รับลิงก์กู้บัญชี</b><span>ใช้ได้ครั้งเดียวภายใน 24 ชั่วโมง</span></div></div>
+        <div class="step"><i>03</i><div><b>รับผลการตรวจสอบ</b><span>กู้บัญชีหรือเปิดใช้งานบัญชีตามหัวข้อ</span></div></div>
       </div>
     </div>
     <div class="privacy">หลักฐานถูกเข้ารหัสและลบออกหลังการกู้บัญชีสำเร็จหรือคำขอถูกปฏิเสธ</div>
   </aside>
 
   <main class="main"><div class="main-inner">
-    <div class="topline"><div><div class="eyebrow">Recovery center</div><h2>คำขอกู้บัญชี</h2></div><div class="secure">● SECURE SESSION</div></div>
+    <div class="topline"><div><div class="eyebrow">Account help center</div><h2>ส่งคำขอช่วยเหลือบัญชี</h2></div><div class="secure">● SECURE SESSION</div></div>
     <div class="tabs"><button class="tab on" data-pane="requestPane">ส่งคำขอใหม่</button><button class="tab" data-pane="statusPane">ตรวจสอบสถานะ</button></div>
     <div id="globalMsg" class="notice"></div>
 
@@ -586,11 +712,12 @@ def _ticket_page_html(nonce: str) -> str:
       <div class="card-head"><h3>ข้อมูลสำหรับตรวจสอบตัวตน</h3><p>ช่องที่มีเครื่องหมาย * จำเป็นต้องกรอก</p></div>
       <div class="body">
         <div id="requestForm" class="grid">
+          <div class="full"><label>หัวข้อคำขอ <span class="required">*</span></label><select id="requestKind"><option value="account_recovery">กู้บัญชี / เข้าใช้งานไม่ได้</option><option value="blocked_account_appeal">ขอทบทวนการบล็อกบัญชี</option></select><div id="topicHint" class="hint">สำหรับผู้ที่ไม่มี Passkey หรือ Authenticator ที่ใช้งานได้</div></div>
           <div><label>อีเมลบัญชี <span class="required">*</span></label><input id="email" type="email" autocomplete="username" placeholder="name@uni.ac.th"></div>
-          <div><label>ช่องทางที่เข้าไม่ได้ <span class="required">*</span></label><select id="credential"><option value="PASSKEY">Passkey</option><option value="TOTP">Authenticator</option><option value="BOTH">ทั้ง Passkey และ Authenticator</option></select></div>
+          <div id="credentialField"><label>ช่องทางที่เข้าไม่ได้ <span class="required">*</span></label><select id="credential"><option value="PASSKEY">Passkey</option><option value="TOTP">Authenticator</option><option value="BOTH">ทั้ง Passkey และ Authenticator</option></select></div>
           <div><label>ประเภทหลักฐาน <span class="required">*</span></label><select id="evidenceType"><option value="student_card">บัตรนักศึกษา/บุคลากร</option><option value="citizen_id">บัตรประชาชน</option></select></div>
           <div><label>รูปหลักฐาน <span class="required">*</span></label><div class="upload"><input id="evidence" type="file" accept="image/jpeg,image/png,image/webp"><div id="preview" class="preview"><img id="previewImage" alt="ตัวอย่างหลักฐาน"><span id="previewName"></span></div><div class="hint">JPG, PNG หรือ WEBP ขนาดไม่เกิน 4 MB</div></div></div>
-          <div class="full"><label>เหตุผล <span class="required">*</span></label><textarea id="reason" placeholder="อธิบายว่าอุปกรณ์หรือช่องทางใดสูญหาย และเกิดขึ้นเมื่อใด"></textarea></div>
+          <div class="full"><label>รายละเอียดคำขอ <span class="required">*</span></label><textarea id="reason" placeholder="อธิบายปัญหาและเหตุการณ์ที่เกิดขึ้นให้ผู้ดูแลตรวจสอบ"></textarea></div>
           <div class="full"><label>อีเมลสำรองสำหรับรับลิงก์ (ไม่บังคับ)</label><div class="email-row"><input id="alternate" type="email" placeholder="alternate@email.com"><button id="sendOtp" class="secondary" type="button">ส่ง OTP</button></div><div class="hint">หากไม่ระบุ คุณสามารถรับลิงก์จากหน้าตรวจสอบสถานะด้วย Ticket ID</div><div id="otpBox" class="otp-box"><input id="otp" inputmode="numeric" maxlength="6" placeholder="กรอก OTP 6 หลัก"><button id="verifyOtp" class="secondary" type="button">ยืนยัน OTP</button></div><div id="verified" class="verified">✓ ยืนยันอีเมลสำรองแล้ว</div></div>
           <div class="full actions"><button id="submit" class="primary" type="button">ส่งคำขอให้ผู้ดูแล</button></div>
         </div>
@@ -618,13 +745,15 @@ function note(id,text,ok){const e=$(id);e.textContent=text;e.className="notice s
 async function post(url,body){const r=await fetch(url,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});const d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(typeof d.detail==="string"?d.detail:"ดำเนินการไม่สำเร็จ");return d}
 function showPane(id){document.querySelectorAll(".pane").forEach(x=>x.classList.toggle("hidden",x.id!==id));document.querySelectorAll(".tab").forEach(x=>x.classList.toggle("on",x.dataset.pane===id))}
 document.querySelectorAll(".tab").forEach(x=>x.addEventListener("click",()=>showPane(x.dataset.pane)));
+function syncTopic(){const blocked=$("requestKind").value==="blocked_account_appeal";$("credentialField").classList.toggle("hidden",blocked);$("topicHint").textContent=blocked?"สำหรับบัญชีที่ถูกระงับหรือถูกระบบปฏิเสธการเข้าใช้งาน ผู้ดูแลจะตรวจหลักฐานก่อนเปิดใช้งาน":"สำหรับผู้ที่ไม่มี Passkey หรือ Authenticator ที่ใช้งานได้";$("reason").placeholder=blocked?"อธิบายเหตุผลที่คิดว่าบัญชีถูกบล็อกโดยผิดพลาด และเหตุการณ์ล่าสุด":"อธิบายว่าอุปกรณ์หรือช่องทางใดสูญหาย และเกิดขึ้นเมื่อใด"}
+$("requestKind").addEventListener("change",syncTopic);const initialTopic=new URLSearchParams(location.search).get("topic");if(initialTopic==="blocked_account")$("requestKind").value="blocked_account_appeal";syncTopic();
 async function copyText(value,button){try{if(navigator.clipboard&&window.isSecureContext)await navigator.clipboard.writeText(value);else{const t=document.createElement("textarea");t.value=value;t.style.position="fixed";t.style.opacity="0";document.body.appendChild(t);t.select();if(!document.execCommand("copy"))throw new Error();t.remove()}const old=button.textContent;button.textContent="คัดลอกแล้ว";setTimeout(()=>button.textContent=old,1600)}catch{note("globalMsg","คัดลอกอัตโนมัติไม่ได้ กรุณาเลือกข้อความแล้วคัดลอกด้วยตนเอง",false)}}
 $("evidence").addEventListener("change",()=>{const f=$("evidence").files[0];if(previewUrl)URL.revokeObjectURL(previewUrl);if(!f){$("preview").classList.remove("show");return}previewUrl=URL.createObjectURL(f);$("previewImage").src=previewUrl;$("previewName").textContent=f.name+" · "+Math.ceil(f.size/1024)+" KB";$("preview").classList.add("show")});
 $("alternate").addEventListener("input",()=>{verificationToken="";$("verified").classList.remove("show")});
 $("sendOtp").addEventListener("click",async()=>{const b=$("sendOtp");try{b.disabled=true;b.textContent="กำลังส่ง…";const d=await post("/auth/recovery/alternate-email/start",{email:$("email").value.trim(),alternate_email:$("alternate").value.trim()});$("otpBox").classList.add("show");note("globalMsg",d.message||"ส่ง OTP แล้ว",true);let left=30;clearInterval(otpCooldown);otpCooldown=setInterval(()=>{left--;b.textContent=left>0?"ส่งใหม่ใน "+left+" วินาที":"ส่ง OTP อีกครั้ง";if(left<=0){clearInterval(otpCooldown);b.disabled=false}},1000)}catch(e){b.disabled=false;b.textContent="ส่ง OTP";note("globalMsg",e.message,false)}});
 $("verifyOtp").addEventListener("click",async()=>{const b=$("verifyOtp");try{b.disabled=true;b.textContent="กำลังตรวจ…";const d=await post("/auth/recovery/alternate-email/verify",{email:$("email").value.trim(),alternate_email:$("alternate").value.trim(),otp:$("otp").value.trim()});verificationToken=d.verification_token;$("verified").classList.add("show");$("alternate").readOnly=true;$("otpBox").classList.remove("show");note("globalMsg","ยืนยันอีเมลสำรองเรียบร้อย",true)}catch(e){note("globalMsg",e.message,false)}finally{b.disabled=false;b.textContent="ยืนยัน OTP"}});
 function readFile(f){return new Promise((ok,bad)=>{const r=new FileReader();r.onload=()=>ok(r.result);r.onerror=bad;r.readAsDataURL(f)})}
-$("submit").addEventListener("click",async()=>{const f=$("evidence").files[0],b=$("submit");if(!$("email").value.trim())return note("globalMsg","กรุณากรอกอีเมลบัญชี",false);if(!f)return note("globalMsg","กรุณาแนบรูปหลักฐาน",false);if(f.size>4*1024*1024)return note("globalMsg","รูปหลักฐานต้องไม่เกิน 4 MB",false);if(!$("reason").value.trim())return note("globalMsg","กรุณาระบุเหตุผล",false);if($("alternate").value.trim()&&!verificationToken)return note("globalMsg","กรุณายืนยันอีเมลสำรองด้วย OTP ก่อน",false);try{b.disabled=true;b.textContent="กำลังส่งคำขอ…";const d=await post("/auth/recovery/request",{email:$("email").value.trim(),credential_type:$("credential").value,reason:$("reason").value.trim(),evidence_type:$("evidenceType").value,evidence_mime:f.type,evidence_image:await readFile(f),alternate_email:$("alternate").value.trim()||null,alternate_verification_token:verificationToken||null});receiptTicket=d.ticket_id;receiptSecret=d.tracking_secret;$("requestForm").classList.add("hidden");$("receipt").classList.add("show");note("globalMsg",d.message,true)}catch(e){note("globalMsg",e.message,false);b.disabled=false;b.textContent="ส่งคำขอให้ผู้ดูแล"}});
+$("submit").addEventListener("click",async()=>{const f=$("evidence").files[0],b=$("submit");if(!$("email").value.trim())return note("globalMsg","กรุณากรอกอีเมลบัญชี",false);if(!f)return note("globalMsg","กรุณาแนบรูปหลักฐาน",false);if(f.size>4*1024*1024)return note("globalMsg","รูปหลักฐานต้องไม่เกิน 4 MB",false);if(!$("reason").value.trim())return note("globalMsg","กรุณาระบุเหตุผล",false);if($("alternate").value.trim()&&!verificationToken)return note("globalMsg","กรุณายืนยันอีเมลสำรองด้วย OTP ก่อน",false);try{b.disabled=true;b.textContent="กำลังส่งคำขอ…";const d=await post("/auth/recovery/request",{email:$("email").value.trim(),request_kind:$("requestKind").value,credential_type:$("requestKind").value==="account_recovery"?$("credential").value:null,reason:$("reason").value.trim(),evidence_type:$("evidenceType").value,evidence_mime:f.type,evidence_image:await readFile(f),alternate_email:$("alternate").value.trim()||null,alternate_verification_token:verificationToken||null});receiptTicket=d.ticket_id;receiptSecret=d.tracking_secret;$("requestForm").classList.add("hidden");$("receipt").classList.add("show");note("globalMsg",d.message,true)}catch(e){note("globalMsg",e.message,false);b.disabled=false;b.textContent="ส่งคำขอให้ผู้ดูแล"}});
 $("copyReceipt").addEventListener("click",()=>copyText("Ticket ID: "+receiptTicket+String.fromCharCode(10)+"Tracking secret: "+receiptSecret,$("copyReceipt")));
 $("goStatus").addEventListener("click",()=>showPane("statusPane"));
 $("check").addEventListener("click",async()=>{const b=$("check"),lines=$("trackingBundle").value.split(String.fromCharCode(10)).map(x=>x.trim()).filter(Boolean),ticket=(lines.find(x=>x.toLowerCase().startsWith("ticket id:"))||"").split(":").slice(1).join(":").trim(),secret=(lines.find(x=>x.toLowerCase().startsWith("tracking secret:"))||"").split(":").slice(1).join(":").trim();if(!ticket||!secret)return note("statusMsg","กรุณาวางข้อมูลติดตามทั้งชุดที่คัดลอกไว้",false);try{b.disabled=true;b.textContent="กำลังตรวจ…";const d=await post("/auth/recovery/status",{ticket_id:ticket,tracking_secret:secret});note("statusMsg",d.message,true);const a=$("continueLink");if(d.relink_url){a.href=d.relink_url;a.classList.add("show")}else a.classList.remove("show")}catch(e){note("statusMsg",e.message,false)}finally{b.disabled=false;b.textContent="ตรวจสอบสถานะ"}});
