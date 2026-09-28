@@ -40,7 +40,7 @@ from datetime import datetime, timedelta
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
-from app.models import LoginSession
+from app.models import AuditLog, LoginSession
 
 # ต้องมี history อย่างน้อยกี่ session ก่อนคำนวณ personalized features
 MIN_HISTORY_FOR_PERSONALIZATION = 5
@@ -65,6 +65,26 @@ MIN_HISTORY_FOR_PERSONALIZATION = 5
 # impossible_travel, login_count_24h, failed_logins_24h, concurrent) — attacker ที่
 # login 5 ประเทศแล้วโดน would_block ทุกครั้ง จะถูกกรองจนนับได้ 0 = ดูปลอดภัยขึ้น (ผิดทาง)
 TRUSTED_DECISIONS = ("allow", "mfa_passed", "pass")
+
+# เหตุการณ์ที่ยืนยันได้ว่า authenticator ถูกปฏิเสธจริง และผูกกลับมาที่ user ได้
+# ผ่าน actor_id หรือ target_id ใน audit log. ห้ามใช้ LoginSession.decision แทน:
+# block/would_block คือผลของ risk policy หลังยืนยันตัวตนแล้ว ไม่ใช่ credential failure.
+#
+# ไม่รวม unknown-email/discoverable failure ที่ระบุ user ไม่ได้โดยตั้งใจ เพื่อไม่เดา
+# ตัวตนจากข้อมูล opaque และไม่ทำลาย anti-enumeration ของเส้นทาง Passkey.
+AUTH_FAILURE_ACTIONS = frozenset(
+    {
+        "hub_login_failed_inactive",
+        "hub_login_failed_google_sub_mismatch",
+        "hub_login_failed_line_sub_mismatch",
+        "oauth_login_failed_inactive",
+        "oauth_login_failed_google_sub_mismatch",
+        "oauth_passkey_login_failed",
+        "passkey_login_failed",
+        "risk_mfa_verify_failed",
+        "stepup_totp_failed",
+    }
+)
 
 # concurrent_session_count window = JWT TTL (jwt_access_token_expire_minutes=60)
 # กัน session ที่หมดอายุแต่ไม่มี logout_at นับเป็น "active" ตลอดกาล
@@ -359,13 +379,16 @@ def extract_session_features(
     )
 
     # === Brute force ===
+    # นับ authentication failures จริงจาก audit trail ที่ผูกกับผู้ใช้ได้เท่านั้น.
+    # LoginSession มีเฉพาะการ login ที่ไปถึงขั้นสร้าง session; decision=block/would_block
+    # เป็นผลของ RBA จึงห้ามนำมาใช้แทน failed credential (จะเกิด feedback loop).
     failed_24h = (
-        db.query(func.count(LoginSession.id))
+        db.query(func.count(AuditLog.id))
         .filter(
-            LoginSession.user_id == user_id,
-            LoginSession.decision.in_(["block", "would_block"]),
-            LoginSession.created_at >= cutoff_24h,
-            LoginSession.created_at < now,  # point-in-time
+            or_(AuditLog.actor_id == user_id, AuditLog.target_id == user_id),
+            AuditLog.action.in_(AUTH_FAILURE_ACTIONS),
+            AuditLog.created_at >= cutoff_24h,
+            AuditLog.created_at < now,  # point-in-time
         )
         .scalar()
         or 0

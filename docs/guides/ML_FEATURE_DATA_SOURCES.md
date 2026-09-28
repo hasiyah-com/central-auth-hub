@@ -34,7 +34,7 @@ Version 2.1 · 2026-06-18 · สถานะ: ชุด 23 features (ตัด 2
 | 8 | is_new_user_agent_family | Device | `login_sessions.user_agent` (history) | เดิม |
 | 9 | log_minutes_since_last_login | Velocity | `login_sessions.created_at` (ล่าสุด) | เดิม |
 | 10 | login_count_24h | Velocity | `login_sessions` (24h count) | เดิม |
-| 11 | failed_logins_24h | Brute | `login_sessions.decision` (24h) | เดิม |
+| 11 | failed_logins_24h | Brute | `audit_logs.action` ที่ผูกกับ user (24h) | แก้นิยาม |
 | 12 | passkey_count | Passkey | `passkey_credentials` | เดิม |
 | 13 | passkey_age_days | Passkey | `passkey_credentials.created_at` | เดิม |
 | 14 | new_passkey_recently_added | Passkey | `passkey_credentials.created_at` | เดิม |
@@ -125,8 +125,10 @@ Version 2.1 · 2026-06-18 · สถานะ: ชุด 23 features (ตัด 2
 ## หมวด Brute Force
 
 ### 11. failed_logins_24h
-- **ข้อมูล:** `login_sessions.decision` (24h)
-- **คำนวณ:** count ที่ `decision IN ('block','would_block')` ใน 24 ชม.
+- **ข้อมูล:** `audit_logs.action` ของ authentication failure ที่ระบุ user ได้ (24h)
+- **คำนวณ:** count เฉพาะ authenticator failure ที่ `actor_id` หรือ `target_id` ตรงกับ user
+- **ไม่รวม:** `block`/`would_block` จาก RBA และ business-policy denial เพราะเป็นผลตัดสิน
+  หลังประเมินความเสี่ยง ไม่ใช่หลักฐานว่าผู้ใช้พิสูจน์ตัวตนล้มเหลว
 - **เหตุผล:** ความพยายามที่ล้มเหลวซ้ำ = brute force [NIST SP 800-63B-4]
 
 ---

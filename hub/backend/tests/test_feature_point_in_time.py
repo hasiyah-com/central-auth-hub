@@ -24,7 +24,7 @@ from datetime import datetime, timedelta
 
 import pytest
 
-from app.models import AccessList, LoginSession, PasskeyCredential, User
+from app.models import AccessList, AuditLog, LoginSession, PasskeyCredential, User
 from app.services.feature_extraction import extract_session_features
 
 # index ตาม rule_engine.FEAT (ดู docs/references.md §6)
@@ -89,6 +89,9 @@ def _add_session(
 
 
 def _purge(db, uid):
+    db.query(AuditLog).filter(
+        (AuditLog.actor_id == uid) | (AuditLog.target_id == uid)
+    ).delete(synchronize_session=False)
     db.query(LoginSession).filter(LoginSession.user_id == uid).delete(
         synchronize_session=False
     )
@@ -142,13 +145,46 @@ def test_login_count_24h_excludes_future(u, db, t):
 
 
 def test_failed_logins_24h_excludes_future(u, db, t):
-    _add_session(db, u, created_at=t["past"], decision="pass")
-    for i in range(3):
-        _add_session(
-            db, u, created_at=t["future"] + timedelta(minutes=i), decision="block"
+    # RBA block เป็นผลประเมินความเสี่ยง ไม่ใช่ authentication failure จึงไม่นับ
+    _add_session(db, u, created_at=t["past"], decision="block")
+    # failure จริงในอนาคตต้องไม่รั่วเข้าการประเมินย้อนหลัง
+    db.add(
+        AuditLog(
+            actor_id=u.id,
+            action="risk_mfa_verify_failed",
+            target_type="user",
+            target_id=u.id,
+            created_at=t["future"],
         )
+    )
+    db.commit()
     f = _feats(db, u, t)
-    assert f[F_FAILED_24H] == 0.0, "block ในอนาคตต้องไม่ถูกนับ"
+    assert f[F_FAILED_24H] == 0.0, "block ไม่ใช่ failure และ audit ในอนาคตต้องไม่ถูกนับ"
+
+
+def test_failed_logins_24h_counts_attributable_auth_failure(u, db, t):
+    db.add(
+        AuditLog(
+            actor_id=u.id,
+            action="risk_mfa_verify_failed",
+            target_type="user",
+            target_id=u.id,
+            created_at=t["past"],
+        )
+    )
+    # business-policy denial ไม่ใช่การพิสูจน์ authenticator ล้มเหลว
+    db.add(
+        AuditLog(
+            actor_id=u.id,
+            action="oauth_login_failed_access_policy",
+            target_type="user",
+            target_id=u.id,
+            created_at=t["past"] + timedelta(minutes=1),
+        )
+    )
+    db.commit()
+    f = _feats(db, u, t)
+    assert f[F_FAILED_24H] == 1.0
 
 
 def test_minutes_since_last_login_uses_past_not_future(u, db, t):

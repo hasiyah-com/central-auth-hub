@@ -20,7 +20,6 @@ SHAP convention (สำคัญ — มี sign flip):
 """
 
 import logging
-import math
 from pathlib import Path
 from typing import Any
 
@@ -28,6 +27,7 @@ import joblib
 import numpy as np
 
 from app.features import FEATURE_NAMES
+from point_scoring import scores_with_model
 
 log = logging.getLogger(__name__)
 
@@ -101,12 +101,16 @@ def predict_score(features: list[float]) -> float:
       raw = 0 (borderline) -> score = 0.5
       raw < 0 (anomaly)  -> score > 0.5
     """
-    model = load_model()
-    X = np.array([features], dtype=float)
-    raw = float(model.decision_function(X)[0])
-    # scaled sigmoid: เน้นกราฟชันแถวๆ 0 ทำให้ score แยกชัดขึ้น
-    score = 1.0 / (1.0 + math.exp(raw * 5.0))
-    return max(0.0, min(1.0, score))
+    return score_with_model(load_model(), features)
+
+
+def score_with_model(model, features: list[float]) -> float:
+    """ให้คะแนน estimator ที่ส่งเข้ามาด้วยสูตรเดียวกับ production.
+
+    จุดเข้าใช้นี้ทำให้ experiment ตรวจ parity กับ artifact ตัวเดียวกันได้ โดยไม่
+    ต้องแก้ global model cache หรือคัดลอกสูตร sigmoid ไปไว้อีกไฟล์หนึ่ง
+    """
+    return scores_with_model(model, [features])[0]
 
 
 def predict_with_explanation(
