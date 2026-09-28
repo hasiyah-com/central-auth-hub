@@ -259,6 +259,7 @@ def _build_telegram_text(
     lines.append(f"_เวลา {_escape_md_v2(local_time)}_")
     return "\n".join(lines)
 
+
 def _send_telegram(
     severity: Severity,
     kind: str,
@@ -288,9 +289,16 @@ def _send_telegram(
                     r.status_code,
                     r.text[:200],
                 )
-                plain = (
-                    f"{_SEVERITY_EMOJI[severity]} [{severity.upper()}] {kind}\n{title}"
-                )
+                if kind == "ml.high_risk":
+                    plain = (
+                        f"{_SEVERITY_EMOJI[severity]} แจ้งเตือนความปลอดภัย "
+                        f"— ระดับ{_SEVERITY_THAI[severity]}\n{title}"
+                    )
+                else:
+                    plain = (
+                        f"{_SEVERITY_EMOJI[severity]} "
+                        f"[{severity.upper()}] {kind}\n{title}"
+                    )
                 if detail:
                     plain += "\n\n" + "\n".join(
                         f"  {k}: {v}" for k, v in detail.items()
