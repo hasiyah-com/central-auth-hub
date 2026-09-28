@@ -1,4 +1,4 @@
-"""Config A–F — แต่ละตัวเรียก **เส้นทาง production จริง** ห้ามมีสำเนา logic.
+"""Config A–G — แต่ละตัวเรียก **เส้นทาง production จริง** ห้ามมีสำเนา logic.
 
 ที่มา (B66): harness เดิม (`exp_final_gate.py`) มี `_decide()` ที่คัดลอกเกณฑ์
 การตัดสินมาไว้เอง และเรียก `aggregate(rule, beh, NEUTRAL)` ซึ่งต่างจากที่
@@ -15,6 +15,7 @@ production เรียกจริง -> วัดคนละระบบก�
     B vs D   คุณค่าของ sequence
     B vs E   คุณค่ารวมของ L3
     E vs F   ผลของวิธี fusion (max+corroboration vs weighted sum)
+    E vs G   max ของสองมุมมองเทียบกับ consensus ของสองมุมมอง
 """
 
 from __future__ import annotations
@@ -34,6 +35,7 @@ LAYER_ANOMALY = "anomaly"
 # มุมมองของ L3 ที่แต่ละ config เปิดใช้
 VIEW_POINT = "point"
 VIEW_SEQUENCE = "sequence"
+VIEW_CONSENSUS = "consensus"
 
 
 @dataclass
@@ -61,12 +63,17 @@ def _anomaly_evidence(l3: L3Scores, views: tuple[str, ...], calibrate_fn) -> Evi
     `calibrate_fn(layer, raw) -> float` ฉีดเข้ามาเพื่อให้ใช้ ECDF ของ split ปัจจุบัน
     ไม่ใช่ตาราง production (ซึ่งอาจยังไม่มี หรือมาจากรอบอื่น)
     """
+    consensus = VIEW_CONSENSUS in views
     parts: list[tuple[str, float, float]] = []
-    if VIEW_POINT in views and l3.point_raw is not None:
+    if (VIEW_POINT in views or consensus) and l3.point_raw is not None:
         parts.append(
             ("point", calibrate_fn("anomaly_point", l3.point_raw), l3.point_raw)
         )
-    if VIEW_SEQUENCE in views and l3.sequence_eligible and l3.sequence_raw is not None:
+    if (
+        (VIEW_SEQUENCE in views or consensus)
+        and l3.sequence_eligible
+        and l3.sequence_raw is not None
+    ):
         parts.append(
             (
                 "sequence",
@@ -76,6 +83,23 @@ def _anomaly_evidence(l3: L3Scores, views: tuple[str, ...], calibrate_fn) -> Evi
         )
     if not parts:
         return abstain(LAYER_ANOMALY, "no_eligible_view")
+    if consensus:
+        by_view = {view: (cal, raw) for view, cal, raw in parts}
+        if VIEW_POINT not in by_view or VIEW_SEQUENCE not in by_view:
+            return abstain(LAYER_ANOMALY, "consensus_view_missing")
+        # ต้องให้ทั้งสองมุมมองเห็นร่วมกัน จึงใช้หลักฐานของมุมที่อ่อนกว่า
+        limiting_view, (cal, raw) = min(by_view.items(), key=lambda item: item[1][0])
+        return Evidence(
+            layer=LAYER_ANOMALY,
+            evidence_score=cal,
+            raw_score=raw,
+            reasons=["l3_consensus", f"limiting_{limiting_view}"],
+            detail={
+                "view": VIEW_CONSENSUS,
+                "limiting_view": limiting_view,
+                "views": {v: round(c, 4) for v, c, _ in parts},
+            },
+        )
     view, cal, raw = max(parts, key=lambda p: p[1])
     return Evidence(
         layer=LAYER_ANOMALY,
@@ -135,9 +159,15 @@ CONFIGS: dict[str, ExpConfig] = {
         (VIEW_POINT, VIEW_SEQUENCE),
         "weighted_sum",
     ),
+    "G": ExpConfig(
+        "G",
+        "B + L3 point/sequence consensus",
+        "สองมุมมองต้องเห็นร่วมกันช่วย precision หรือไม่",
+        (VIEW_CONSENSUS,),
+    ),
 }
 
-ORDER = ["A", "B", "C", "D", "E", "F"]
+ORDER = ["A", "B", "C", "D", "E", "F", "G"]
 
 # คู่เปรียบเทียบที่ต้องรายงาน — ถ้าไม่แยก A กับ B จะไม่รู้ว่าผลเปลี่ยนเพราะ L3
 # หรือเพราะเปลี่ยนวิธีรวมคะแนน
@@ -147,4 +177,5 @@ COMPARISONS = [
     ("B", "D", "คุณค่าของ sequence"),
     ("B", "E", "คุณค่ารวมของ L3"),
     ("E", "F", "ผลของวิธี fusion"),
+    ("E", "G", "ผลของการบังคับ L3 consensus"),
 ]

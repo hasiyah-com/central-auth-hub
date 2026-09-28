@@ -9,6 +9,7 @@ if str(SCRIPTS) not in sys.path:
 
 import population_real_seeded_v1 as P  # noqa: E402
 import population_real_seeded_v2 as P2  # noqa: E402
+import population_real_seeded_v3 as P3  # noqa: E402
 import gen_v3 as G3  # noqa: E402
 
 
@@ -111,3 +112,12 @@ def test_episode_cadence_and_age_carry_are_opt_in():
     assert carried["passkey"]["age_days"] == 230
     assert carried["passkey"]["last_used_days"] == 202
     assert original["passkey"]["age_days"] == 30
+
+
+def test_v3_population_has_new_seed_aliases_and_closed_split():
+    profiles = P3.generate_population(PROTOTYPES)
+    assert [x["alias"] for x in profiles] == [f"W{i:02d}" for i in range(1, 49)]
+    assert profiles != P2.generate_population(PROTOTYPES)
+    validation, holdout = P3.split_population(profiles)
+    assert len(validation) == 32 and len(holdout) == 16
+    assert not ({x["alias"] for x in validation} & {x["alias"] for x in holdout})
