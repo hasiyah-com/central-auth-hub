@@ -532,6 +532,9 @@ class RecoveryTicket(Base):
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=True, index=True
     )
     email = Column(String(255), nullable=False, index=True)  # ที่ user กรอกตอนยื่น
+    request_kind = Column(
+        String(32), nullable=False, server_default="account_recovery", index=True
+    )  # account_recovery | blocked_account_appeal
     credential_type = Column(String(20), nullable=True)  # PASSKEY | TOTP (factor ที่หาย)
     reason = Column(Text, nullable=True)
     recovery_level = Column(
