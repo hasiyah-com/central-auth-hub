@@ -233,7 +233,7 @@ def _build_telegram_text(
         ]
     else:
         lines = [
-            f"{emoji} *\\[{severity.upper()}\\]* \`{_escape_md_v2(kind)}\`",
+            f"{emoji} *\\[{severity.upper()}\\]* `{_escape_md_v2(kind)}`",
             f"*{_escape_md_v2(title)}*",
         ]
     if detail:
@@ -252,7 +252,7 @@ def _build_telegram_text(
                 )
             else:
                 lines.append(
-                    f"• *{_escape_md_v2(key)}:* \`{_escape_md_v2(value_text)}\`"
+                    f"• *{_escape_md_v2(key)}:* `{_escape_md_v2(value_text)}`"
                 )
     lines.append("")
     local_time = datetime.now(_BANGKOK_TZ).strftime("%d/%m/%Y %H:%M:%S น.")
