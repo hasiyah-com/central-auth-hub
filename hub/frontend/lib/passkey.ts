@@ -267,6 +267,8 @@ export interface GrantableSubsystem {
 export interface UserDetailInfo {
   id: string;
   email: string;
+  request_kind: "account_recovery" | "blocked_account_appeal";
+  user_status: string | null;
   full_name: string | null;
   user_type: string | null;
   status: string | null;
@@ -665,6 +667,7 @@ export async function adminApproveTicket(
   onVerifying?: (a: boolean) => void
 ): Promise<{
   approved?: boolean;
+  account_unblocked?: boolean;
   relink_url?: string;
   delivery?: "status_page" | "alternate_email";
   email_sent?: boolean;
