@@ -41,7 +41,9 @@ profile ของ L2 จึงต้องวัดแยก ไม่กล่�
 
 ## การประเมิน
 
-- สร้าง validation population/seed ใหม่; split 32/16, holdout ไม่เปิดก่อนผ่าน gate
+- population seed 800928, aliases `X01`–`X48`, validation/holdout 32/16;
+  data seeds 731, 732, 733; history 5, 10, 20, 50, 100, 200, 500, 1,000, 2,000;
+  holdout ไม่เปิดก่อนผ่าน gate
 - Train/Calibration normal-only; anomaly ใน Tuning ≤7%; history 5–2,000
 - Calibration normal-only แยก candidate, freeze threshold ก่อน Tuning
 - งบ cluster CI: warn ≤5%, challenge ≤1%, block ≤0.2%
