@@ -303,7 +303,10 @@ async def google_callback(request: Request, db: Session = Depends(get_db)):
                 "ip": client_ip,
             },
         )
-        raise HTTPException(status_code=403, detail=f"บัญชีถูก {user.status}")
+        return RedirectResponse(
+            f"{settings.hub_base_url}/auth/recovery/ticket?topic=blocked_account",
+            status_code=303,
+        )
 
     # *** นโยบาย: นักศึกษาเข้าระบบกลางโดยตรงไม่ได้ ***
     # (ยกเว้น setup_intent — ตั้ง credential อย่างเดียว ไม่ได้ JWT/console)
@@ -856,7 +859,10 @@ async def line_callback(request: Request, db: Session = Depends(get_db)):
                 "ip": client_ip,
             },
         )
-        raise HTTPException(status_code=403, detail=f"บัญชีถูก {user.status}")
+        return RedirectResponse(
+            f"{settings.hub_base_url}/auth/recovery/ticket?topic=blocked_account",
+            status_code=303,
+        )
 
     # *** นโยบาย: นักศึกษาเข้าระบบกลางโดยตรงไม่ได้ ***
     if user.user_type == "student":
