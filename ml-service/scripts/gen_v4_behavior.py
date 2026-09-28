@@ -23,7 +23,10 @@ def _as_of_state(row: dict, previous: dict | None) -> dict:
     """Age existing credentials from prior normal state; preserve a new passkey."""
     current = dict(row)
     newly_added = current["new_passkey_recently_added"] in (True, "True")
-    if previous is not None and not newly_added:
+    if previous is not None and not newly_added and int(previous["passkey_count"]) == 0:
+        current["passkey_age_days"] = 0
+        current["passkey_last_used_days"] = 0
+    elif previous is not None and not newly_added:
         days = max(
             0,
             (

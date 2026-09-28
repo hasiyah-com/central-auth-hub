@@ -3,6 +3,8 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+import numpy as np
+
 SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
 BACKEND = Path(__file__).resolve().parents[2] / "hub" / "backend"
 for path in (SCRIPTS, BACKEND):
@@ -11,11 +13,13 @@ for path in (SCRIPTS, BACKEND):
 
 import gen_v4_behavior as G4  # noqa: E402
 import population_real_seeded_v4 as P4  # noqa: E402
+import exp_real_seeded_validation_v4 as E4  # noqa: E402
 
 
 def test_existing_passkey_ages_from_previous_normal_state():
     prior = {
         "created_at": "2026-01-01 12:00:00",
+        "passkey_count": 1,
         "passkey_age_days": 201,
         "passkey_last_used_days": 3,
     }
@@ -41,6 +45,24 @@ def test_new_passkey_flag_survives_in_memory_generator():
     corrected = G4._as_of_state(new, {"created_at": "2026-01-01 12:00:00"})
     assert corrected["passkey_age_days"] == 0
     assert corrected["new_passkey_recently_added"] == "True"
+
+
+def test_account_without_passkey_never_gets_passkey_age():
+    current = {
+        "created_at": "2026-01-03 12:00:00",
+        "passkey_age_days": 0,
+        "passkey_last_used_days": 0,
+        "new_passkey_recently_added": False,
+    }
+    previous = {
+        "created_at": "2026-01-01 12:00:00",
+        "passkey_count": 0,
+        "passkey_age_days": 0,
+        "passkey_last_used_days": 0,
+    }
+    corrected = G4._as_of_state(current, previous)
+    assert corrected["passkey_age_days"] == 0
+    assert corrected["passkey_last_used_days"] == 0
 
 
 def test_v4_population_is_fresh_and_keeps_holdout_closed():
@@ -69,6 +91,7 @@ def test_campaign_uses_only_prior_phases_and_prior_normal(monkeypatch):
     normals = [
         {
             "created_at": when,
+            "passkey_count": 1,
             "passkey_age_days": 100,
             "passkey_last_used_days": 2,
             "device_signature": "synthetic-device",
@@ -89,3 +112,18 @@ def test_campaign_uses_only_prior_phases_and_prior_normal(monkeypatch):
     assert [v for _, v in vectors] == [[1], [2]]
     assert all("2026-01-01 11:00:00" not in earlier for _, earlier, _ in captured)
     assert captured[1][2] == ["2026-01-01 08:00:00", "2026-01-01 09:00:00"]
+
+
+def test_sequence_second_phase_uses_first_phase_not_future(monkeypatch):
+    monkeypatch.setattr(
+        E4.X.SEQL, "_resid", lambda vec, raw, profile, base: np.asarray(vec)
+    )
+    monkeypatch.setattr(
+        E4.X.SEQL, "_winfeat", lambda window: [x[0] for x in window]
+    )
+    monkeypatch.setattr(E4.X.E3, "_anom", lambda model, xs: [x[-2] for x in xs])
+    old_tail = [np.asarray([0.0])] * (E4.X.E3.W - 1)
+    scores = E4._rolling_sequence(
+        (object(), None, None, old_tail), [({}, [1.0]), ({}, [2.0])]
+    )
+    assert scores == [0.0, 1.0]
