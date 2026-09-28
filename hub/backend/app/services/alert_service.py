@@ -20,6 +20,7 @@ import json
 import logging
 from datetime import datetime, timezone
 from typing import Any, Literal
+from zoneinfo import ZoneInfo
 
 import httpx
 
@@ -38,6 +39,29 @@ _SEVERITY_COLOR = {
     "critical": "#dc2626",  # red
 }
 _SEVERITY_EMOJI = {"info": "ℹ️", "warning": "⚠️", "critical": "🚨"}
+_SEVERITY_THAI = {"info": "ข้อมูล", "warning": "เฝ้าระวัง", "critical": "วิกฤต"}
+_BANGKOK_TZ = ZoneInfo("Asia/Bangkok")
+_DECISION_THAI = {
+    "allow": "อนุญาตให้เข้าสู่ระบบ",
+    "pass": "อนุญาตให้เข้าสู่ระบบ",
+    "challenge": "ต้องยืนยันตัวตนเพิ่มเติม",
+    "mfa_required": "ต้องยืนยันตัวตนเพิ่มเติม",
+    "would_challenge": "ควรยืนยันตัวตนเพิ่มเติม (Shadow Mode — ยังไม่บังคับ)",
+    "block": "ปฏิเสธการเข้าสู่ระบบ",
+    "would_block": "ควรบล็อกการเข้าสู่ระบบ (Shadow Mode — ยังไม่บล็อกจริง)",
+}
+_REASON_THAI = {
+    "new_passkey_recently_added": "เพิ่งเพิ่ม Passkey ใหม่",
+    "permission_change_age": "มีการเปลี่ยนแปลงสิทธิ์เมื่อไม่นานมานี้",
+    "weekend_mismatch": "เข้าใช้งานในวันที่ไม่คุ้นเคย",
+    "hour_rarity": "เข้าใช้งานในช่วงเวลาที่ไม่คุ้นเคย",
+    "new_device": "ใช้อุปกรณ์ใหม่",
+    "is_new_device": "ใช้อุปกรณ์ใหม่",
+    "new_country": "เข้าใช้งานจากประเทศใหม่",
+    "impossible_travel": "ตำแหน่งการเข้าใช้งานเปลี่ยนเร็วผิดปกติ",
+    "failed_logins_24h": "มีการยืนยันตัวตนล้มเหลวหลายครั้ง",
+    "new_subsystem": "เข้าใช้งานระบบย่อยนี้เป็นครั้งแรก",
+}
 
 
 def _meets_min_severity(severity: str) -> bool:
@@ -200,27 +224,39 @@ def _build_telegram_text(
     title: str,
     detail: dict[str, Any] | None,
 ) -> str:
-    """สร้างข้อความ MarkdownV2 — โครงสร้าง header + fields + footer."""
+    """สร้างข้อความ MarkdownV2 ที่อ่านง่ายและนำไปดำเนินการต่อได้."""
     emoji = _SEVERITY_EMOJI[severity]
-    lines = [
-        f"{emoji} *\\[{severity.upper()}\\]* `{_escape_md_v2(kind)}`",
-        f"*{_escape_md_v2(title)}*",
-    ]
+    if kind == "ml.high_risk":
+        lines = [
+            f"{emoji} *แจ้งเตือนความปลอดภัย — ระดับ{_SEVERITY_THAI[severity]}*",
+            f"*{_escape_md_v2(title)}*",
+        ]
+    else:
+        lines = [
+            f"{emoji} *\\[{severity.upper()}\\]* `{_escape_md_v2(kind)}`",
+            f"*{_escape_md_v2(title)}*",
+        ]
     if detail:
-        lines.append("")  # blank line
-        for k, v in detail.items():
-            if isinstance(v, (dict, list)):
-                v_str = json.dumps(v, ensure_ascii=False)
+        lines.append("")
+        for key, value in detail.items():
+            if isinstance(value, (dict, list)):
+                value_text = json.dumps(value, ensure_ascii=False)
             else:
-                v_str = str(v)
-            # ตัด field ที่ยาวเกิน (Telegram limit text 4096 chars)
-            if len(v_str) > 300:
-                v_str = v_str[:297] + "..."
-            lines.append(f"• *{_escape_md_v2(k)}*: `{_escape_md_v2(v_str)}`")
+                value_text = str(value)
+            if len(value_text) > 300:
+                value_text = value_text[:297] + "..."
+            if value_text.startswith(("https://", "http://")):
+                safe_url = value_text.replace("\\", "\\\\").replace(")", "\\)")
+                lines.append(
+                    f"🔗 *{_escape_md_v2(key)}:* [เปิดแดชบอร์ด]({safe_url})"
+                )
+            else:
+                lines.append(
+                    f"• *{_escape_md_v2(key)}:* `{_escape_md_v2(value_text)}`"
+                )
     lines.append("")
-    lines.append(
-        f"_{_escape_md_v2(datetime.now(timezone.utc).isoformat(timespec='seconds'))}_"
-    )
+    local_time = datetime.now(_BANGKOK_TZ).strftime("%d/%m/%Y %H:%M:%S น.")
+    lines.append(f"_เวลา {_escape_md_v2(local_time)}_")
     return "\n".join(lines)
 
 
@@ -253,9 +289,16 @@ def _send_telegram(
                     r.status_code,
                     r.text[:200],
                 )
-                plain = (
-                    f"{_SEVERITY_EMOJI[severity]} [{severity.upper()}] {kind}\n{title}"
-                )
+                if kind == "ml.high_risk":
+                    plain = (
+                        f"{_SEVERITY_EMOJI[severity]} แจ้งเตือนความปลอดภัย "
+                        f"— ระดับ{_SEVERITY_THAI[severity]}\n{title}"
+                    )
+                else:
+                    plain = (
+                        f"{_SEVERITY_EMOJI[severity]} "
+                        f"[{severity.upper()}] {kind}\n{title}"
+                    )
                 if detail:
                     plain += "\n\n" + "\n".join(
                         f"  {k}: {v}" for k, v in detail.items()
@@ -363,6 +406,23 @@ def _send_email(
 # ─────────────────────────────────────────────────────────────
 
 
+def _humanize_risk_reason(reason: str) -> str:
+    """แปลงเหตุผลเชิงเทคนิคเป็นข้อความสั้นที่ผู้ดูแลเข้าใจได้."""
+    key = reason.split("(", 1)[0].split("=", 1)[0].strip()
+    return _REASON_THAI.get(key, reason)
+
+
+def _humanize_risk_reasons(reasons: list[str] | None) -> str:
+    if not reasons:
+        return "ไม่พบสาเหตุเด่น กรุณาเปิดแดชบอร์ดเพื่อตรวจสอบ"
+    readable = [_humanize_risk_reason(reason) for reason in reasons[:4]]
+    return " • ".join(readable)
+
+
+def _humanize_subsystem(where: str) -> str:
+    return where.replace("Hub-direct", "ระบบกลาง")
+
+
 def maybe_alert_ml_risk(
     user_email: str,
     user_id: str,
@@ -397,19 +457,22 @@ def maybe_alert_ml_risk(
         return  # ไม่ alert score ต่ำ
 
     where = subsystem_name or "Hub-direct (Admin Console)"
-    title = f"High-risk login: {user_email}"
+    risk_level = "สูงมาก" if severity == "critical" else "ควรเฝ้าระวัง"
+    title = "ตรวจพบการเข้าสู่ระบบความเสี่ยงสูง"
     detail = {
-        "user_id": user_id,
-        "email": user_email,
-        "subsystem": where,
-        "risk_score": round(risk_score, 3),
-        "decision": decision,
-        "ip": ip,
-        "geo_country": geo_country,
-        "breakdown": risk_breakdown,
-        "reasons": risk_reasons,
-        "dashboard": f"{settings.admin_frontend_url}/ml",
+        "ผู้ใช้": user_email,
+        "ระบบที่เข้าใช้งาน": _humanize_subsystem(where),
+        "คะแนนความเสี่ยง": f"{risk_score * 100:.0f}% ({risk_level})",
+        "ผลการประเมิน": _DECISION_THAI.get(decision, decision),
+        "สาเหตุหลัก": _humanize_risk_reasons(risk_reasons),
+        "IP": ip or "ไม่ทราบ",
     }
+    if geo_country:
+        detail["ประเทศ"] = geo_country
+    detail["สิ่งที่ควรทำ"] = (
+        "ตรวจสอบเหตุการณ์ในแดชบอร์ด หากไม่ใช่ผู้ใช้จริงให้ระงับบัญชี"
+    )
+    detail["ดูรายละเอียด"] = f"{settings.admin_frontend_url}/ml"
     try:
         send_alert(
             severity=severity,
