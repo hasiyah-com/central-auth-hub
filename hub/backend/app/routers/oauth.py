@@ -353,7 +353,10 @@ async def oauth_callback(
                 "ip": client_ip,
             },
         )
-        raise HTTPException(status_code=403, detail=f"บัญชีถูก {user.status}")
+        return RedirectResponse(
+            f"{settings.hub_base_url}/auth/recovery/ticket?topic=blocked_account",
+            status_code=303,
+        )
 
     # ผูก google_sub ครั้งแรก — ถ้ามีอยู่แล้วต้องตรงกัน (กัน account hijack)
     google_sub = userinfo["sub"]
@@ -956,7 +959,11 @@ async def oauth_passkey_finish(
             },
         )
         db.commit()
-        raise HTTPException(status_code=403, detail=f"บัญชีถูก {user.status}")
+        return {
+            "redirect_url": (
+                f"{settings.hub_base_url}/auth/recovery/ticket?topic=blocked_account"
+            )
+        }
 
     # 2. มอบให้ shared finalizer (เหมือน Google) → คืน callback URL
     callback_url = await _finalize_subsystem_login(
