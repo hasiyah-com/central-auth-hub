@@ -11,6 +11,7 @@ import type {
   ShapContribution,
 } from "../_types";
 import { DECISION_TONE, DEVICE_ICON, FEEDBACK_LABELS, featureLabelTh } from "../_types";
+import { formatShapFeatureValue, utcHourFromShap } from "@/lib/shapDisplay";
 
 type SessionData = Anomaly | (UserSession & { user_email?: string; user_id?: string; session_id?: string; subsystem_name?: string });
 
@@ -368,6 +369,7 @@ function ShapBreakdown({ items }: { items: ShapContribution[] }) {
   const COLLAPSED = 6;
   const [showAll, setShowAll] = useState(false);
   const shown = showAll ? items : items.slice(0, COLLAPSED);
+  const hourUtc = utcHourFromShap(items);
 
   return (
     <div className="mt-3 p-3 rounded-lg bg-amber-50/50 border border-amber-200">
@@ -391,7 +393,7 @@ function ShapBreakdown({ items }: { items: ShapContribution[] }) {
                 <span className="text-[11px] text-ink-700 truncate" title={it.feature}>
                   {featureLabelTh(it.feature)}
                   <span className="ml-1.5 font-mono text-ink-400">
-                    = {fmtFeatureValue(it.value)}
+                    = {formatShapFeatureValue(it.feature, it.value, hourUtc)}
                   </span>
                 </span>
                 <span
@@ -420,11 +422,6 @@ function ShapBreakdown({ items }: { items: ShapContribution[] }) {
       )}
     </div>
   );
-}
-
-/** Display feature values nicely: integers show no decimal, floats show 2dp. */
-function fmtFeatureValue(v: number): string {
-  return Number.isInteger(v) ? v.toString() : v.toFixed(2);
 }
 
 /** Parse a raw L1+2 reason string into structured parts so we can render it
