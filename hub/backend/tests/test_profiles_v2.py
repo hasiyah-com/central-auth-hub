@@ -18,14 +18,17 @@ from collections import Counter, defaultdict
 from datetime import datetime
 from pathlib import Path
 
-# host-only: ชุดนี้อ่าน ml-service/data ของ repo (ไม่ได้ mount เข้า container)
-# ใน docker (WORKDIR=/app) จึงไม่มี parents[3] -> skip ทั้งไฟล์แทนที่จะ error ตอน collect
+# host-only: ชุดนี้อ่านไฟล์ผลการทดลองใน ml-service/data ของ repo (gitignored)
+# ใน docker (WORKDIR=/app) ไม่มี parents[3] · ใน CI ไม่มีไฟล์ผล -> skip ทั้งไฟล์แทนที่จะ error
 _p = Path(__file__).resolve()
 ROOT = _p.parents[3] if len(_p.parents) > 3 else None
-if ROOT is None or not (ROOT / "ml-service" / "data").exists():
+_REQUIRED = ("attacks_v2.csv", "logins_v2.csv", "profiles_v2.json")
+if ROOT is None or not all(
+    (ROOT / "ml-service" / "data" / f).exists() for f in _REQUIRED
+):
     import pytest
 
-    pytest.skip("ต้องรันบน host (ใช้ ml-service/data ของ repo)", allow_module_level=True)
+    pytest.skip("ต้องรันบน host ที่มีไฟล์ผลทดลองใน ml-service/data", allow_module_level=True)
 DATA = ROOT / "ml-service" / "data"
 
 EXPECTED_ROWS = {

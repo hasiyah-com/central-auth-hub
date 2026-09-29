@@ -5,10 +5,13 @@ on:
     branches: [main]
     paths:
       - "hub/backend/**"
+      - "ml-service/**"
       - ".github/workflows/backend-ci.yml"
   pull_request:
     paths:
       - "hub/backend/**"
+      - "ml-service/**"
+      - ".github/workflows/backend-ci.yml"
 
 jobs:
   pytest:
@@ -43,8 +46,9 @@ jobs:
       SECRET_ENCRYPTION_KEY: ci-encryption-key-not-for-production-9876  # pragma: allowlist secret
       JWT_PRIVATE_KEY_PATH: ${{ github.workspace }}/hub/backend/keys/jwt_private.pem
       JWT_PUBLIC_KEY_PATH: ${{ github.workspace }}/hub/backend/keys/jwt_public.pem
-      # ML unreachable → ml_client fail-safe to pass (B21). GeoIP missing → neutral.
-      ML_SERVICE_URL: http://localhost:9999
+      # ml-service จริง (step "Start ml-service") — เทส L3 ต้องพิสูจน์เส้นทางสำเร็จ (B61)
+      # เทส fail-safe ชี้ URL ปลอมเองผ่าน monkeypatch · GeoIP missing → neutral
+      ML_SERVICE_URL: http://localhost:9000
       GEOIP_DB_PATH: /tmp/nonexistent.mmdb
       WEBAUTHN_RP_ID: localhost
       WEBAUTHN_ORIGINS: http://localhost:3000,http://localhost:8000
@@ -62,6 +66,18 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      - name: Start ml-service
+        working-directory: ml-service
+        run: |
+          docker build -q -t cah-ml-ci .
+          docker run -d --name ml --network host             -e REDIS_URL=redis://localhost:6379/0             -v "$PWD:/app" cah-ml-ci
+          for i in $(seq 1 60); do
+            curl -fsS http://localhost:9000/health && exit 0
+            sleep 2
+          done
+          docker logs ml
+          exit 1
+
       - name: Generate JWT RS256 keys
         run: |
           mkdir -p keys
@@ -72,6 +88,7 @@ jobs:
         run: |
           python -c "from app.database import Base, engine; import app.models; Base.metadata.create_all(engine)"
           echo y | python -m app.seeds.seed_users
+          python -m scripts.seed_ci_subsystems
 
       - name: Run pytest (exclude standalone scripts)
         run: |
