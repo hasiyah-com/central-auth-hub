@@ -1,0 +1,214 @@
+# แก้ `failed_logins_24h` ให้นับการยืนยันตัวตนที่ล้มเหลวจริง (B85) — 2026-09-26
+
+**branch:** `fix/failed-logins-24h` แยกจาก `origin/main` (04872af) · **ขอบเขต:** ฟีเจอร์ลำดับ 10 ของเวกเตอร์ 23 ตัว และกฎชั้นที่ 1 ที่อ่านฟีเจอร์นี้ (ตัวกฎไม่ได้แก้)
+**ที่มา:** ตรวจขั้น 2 ของแผนพัฒนา L3 (`l3_audit_step2_step6_2026-09-26.md` บน branch การทดลอง)
+
+## 1. บั๊ก
+
+```python
+failed_24h = count(LoginSession where decision in ("block", "would_block") and created_at in [now-24h, now))
+```
+
+- ผลตัดสินของระบบกลายเป็นฟีเจอร์ของการตัดสินครั้งถัดไป (วงป้อนกลับ) — ถูกเตือนเพิ่มเพราะเคยถูกเตือน
+- shadow `would_block` คือผู้ใช้ที่เข้าได้จริง แต่ถูกนับเป็น "ล้มเหลว"
+- การยืนยันตัวตนที่ล้มเหลวจริงใน `audit_logs` ไม่ถูกนับเลย
+- การทดลองนับ `login_successful == False` → ระบบที่วัดกับระบบที่ใช้จริงคนละความหมาย (B66)
+
+## 2. นิยามใหม่ (ตามที่เจ้าของระบบกำหนด)
+
+นับแถว `audit_logs` ในช่วง `[now-24h, now)` ที่ผูกกับบัญชีที่ถูกพยายามเข้า:
+
+| กลุ่ม | action | ผูกบัญชีด้วย |
+|---|---|---|
+| ยืนยันตัวตนไม่ผ่านหลังรู้ตัวผู้ใช้ | `passkey_stepup_failed` · `risk_mfa_verify_failed` · `stepup_totp_failed` · `risk_force_enroll_otp_failed` | `actor_id` |
+| passkey login ไม่ผ่าน (ยังไม่รู้ตัวผู้ใช้ · บันทึกด้วย actor_id NULL) | `passkey_login_failed` · `oauth_passkey_login_failed` | email ใน metadata (ไม่สนตัวพิมพ์) |
+
+**ไม่นับ:**
+
+| รายการ | เหตุผล |
+|---|---|
+| `block` / `would_block` | ผลตัดสินของระบบเอง ไม่ใช่การยืนยันตัวตนล้มเหลว |
+| IdP subject ไม่ตรง (`*_google_sub_mismatch`, `*_line_sub_mismatch`) · กู้บัญชีไม่ผ่าน (`passkey_recovery_failed`) | ความหมายและผู้ถูกกระทบต่างกัน → ควรเป็นสัญญาณความเสี่ยงแยกประเภท (ยังไม่ได้ทำ) |
+| ถูกปฏิเสธสิทธิ์ (`*_access_policy`) · บัญชีถูกปิด (`*_inactive`) | ไม่ใช่การยืนยันตัวตนล้มเหลว |
+| discoverable passkey ที่ไม่ผ่าน | ไม่มี email → ผูกบัญชีไม่ได้ |
+
+## 3. ไฟล์ที่แก้
+
+| ไฟล์ | การเปลี่ยนแปลง |
+|---|---|
+| `hub/backend/app/services/feature_extraction.py` | query ใหม่จาก `audit_logs` · ค่าคงที่ `FAILED_AUTH_ACTOR_ACTIONS` / `FAILED_AUTH_EMAIL_ACTIONS` พร้อมเหตุผลที่ไม่นับ · docstring point-in-time รวม AuditLog |
+| `hub/backend/tests/test_failed_logins_24h.py` (ใหม่) | 7 tests |
+| `hub/backend/tests/test_feature_point_in_time.py` | `test_failed_logins_24h_excludes_future` เดิมใส่ `block` ในอนาคต → หลังแก้จะผ่านโดยไม่ได้ทดสอบอะไร จึงเปลี่ยนเป็น audit อดีต 1 + อนาคต 3 คาด **1** |
+| `hub/backend/scripts/measure_failed_logins_24h_2026-09-26.py` (ใหม่) | วัดผลกระทบ (อ่านอย่างเดียว) |
+| `ml-service/app/features.py` · `docs/guides/ML_FEATURE_DATA_SOURCES.md` · `docs/guides/ML_EXPLAINED.md` | คำอธิบายนิยาม |
+| `docs/bugs-encountered.md` | B85 |
+
+## 4. เทส
+
+| เทส | ผล |
+|---|---|
+| `test_failed_logins_24h.py` บนโค้ดเดิม (RED) | 5 failed · 2 passed — ข้อแรก: would_block/block 12 แถว นับได้ **12** |
+| หลังแก้ (GREEN) + `test_feature_extraction.py` + `test_feature_point_in_time.py` | 36 passed |
+| mutation: ตัด `< now` | ถูกจับ 2 ข้อ |
+| mutation: เทียบ email แบบสนตัวพิมพ์ | ถูกจับ 1 ข้อ |
+| mutation: ตัดเงื่อนไข `actor_id IS NULL` ของกลุ่ม email | **รอด** → ไม่มีเส้นทางจริงที่บันทึก action กลุ่มนี้ด้วย actor อื่น จึงตัดเงื่อนไขนี้ออกจากโค้ดแทนการเขียนเทสกรณีที่เกิดไม่ได้ |
+| **ชุดเทสเต็มของ hub-backend ในคอนเทนเนอร์** (ยกเว้น 2 ไฟล์ด้านล่าง) | **909 passed · 0 failed** · 13 skipped |
+| `test_e2e_full_stack.py` · `test_l1_oidc.py` (สคริปต์ที่ `sys.exit` ตอน import) | ล้ม 2 และ 6 ข้อ — **เหมือนกันทุกบรรทัดกับ `origin/main`** · สาเหตุคือ stack Dorm/Library ไม่ได้เปิด (DNS ไม่พบ · `/oauth/authorize` ได้ 503 จาก health gate) ไม่เกี่ยวกับการแก้นี้ |
+
+`test_concurrent_requests_agree` ที่ล้มในรอบ `fix/l3-hub-direct` ผ่านในรอบนี้ (สอดคล้องกับบันทึกว่าไม่เสถียรตาม timeout)
+
+## 5. ผลกระทบต่อระดับกฎชั้นที่ 1 (ฐานข้อมูล dev · 1,910 session · อ่านอย่างเดียว)
+
+คำนวณทั้งค่าเดิมและค่าใหม่ที่ `now = session.created_at` ของแต่ละ session
+
+| ระดับของกฎ | นิยามเดิม | นิยามใหม่ |
+|---|---|---|
+| ≥ 10 บล็อก | 162 | **0** |
+| 5–9 บังคับยืนยันตัวตน | 378 | 9 |
+| 3–4 +0.20 | 298 | 7 |
+| < 3 ไม่มีผล | 1,072 | 1,894 |
+
+| การเปลี่ยนระดับ | จำนวน session |
+|---|---|
+| บล็อก → ไม่มีผล | 162 |
+| บังคับยืนยันตัวตน → ไม่มีผล | 378 |
+| +0.20 → ไม่มีผล | 298 |
+| ไม่มีผล → บังคับยืนยันตัวตน | 9 |
+| ไม่มีผล → +0.20 | 7 |
+
+- 838 session เคยได้โทษจากฟีเจอร์นี้เพราะวงป้อนกลับ — หายทั้งหมด
+- 16 session ที่ได้ระดับใหม่มาจากการยืนยันตัวตนที่ล้มเหลวจริงซึ่งนิยามเดิมมองไม่เห็น (3 บัญชี · ไม่ระบุตัวตน)
+- แถว audit ที่นับได้ทั้งฐานข้อมูล: `passkey_login_failed` 151 · `oauth_passkey_login_failed` 158 · `risk_force_enroll_otp_failed` 39 · `passkey_stepup_failed` 6
+- **ไม่ได้ replay ผลตัดสินรวม** เพราะกฎอื่นใน `evaluate_rules` อ้างเวลาปัจจุบัน (multi-account IP) จึงให้ผลย้อนหลังไม่ตรงเวลา · ตารางนี้คือส่วนที่ฟีเจอร์นี้ควบคุมโดยตรง (บล็อกทันที · บังคับขั้นต่ำ · คะแนน)
+- ฐานข้อมูล dev มีข้อมูลจากเทสและการสาธิตปน → ยืนยันกลไก ไม่ใช่อัตราของผู้ใช้จริง
+
+## 6. ข้อจำกัดที่เหลือ
+
+1. ~~**กฎ ≥ 10 = บล็อก คงเดิม**~~ → แก้แล้วใน commit ถัดไป (ข้อ 10) · (ตามที่เจ้าของระบบเลือก) → ผู้ที่รู้ email ของเหยื่อสามารถลอง passkey ผิดโดยเจตนา 10 ครั้งเพื่อให้การเข้าสู่ระบบครั้งถัดไปของเจ้าของบัญชีถูกบล็อก (lockout DoS) · rate limit ต่อ IP ช่วยชะลอได้บางส่วน
+2. ~~step-up OTP ทาง email ที่ไม่ผ่านยังไม่ถูกบันทึกใน audit~~ → แก้แล้วใน commit ถัดไป (ข้อ 9)
+3. IdP subject ไม่ตรงและกู้บัญชีไม่ผ่านยังไม่มีสัญญาณความเสี่ยงของตัวเอง
+4. โมเดล `iforest_v1.pkl` ฝึกจากข้อมูลที่ฟีเจอร์นี้มีความหมายตามตัวสร้างข้อมูล ไม่ใช่นิยามเดิมของระบบจริง → การแก้นี้ทำให้ระบบจริงใกล้การทดลองขึ้น แต่ยังไม่ได้วัดผลต่อคะแนน IForest (ตาม RBA freeze)
+
+## 7. สภาพแวดล้อมที่ใช้รัน
+
+ไม่แตะ stack ที่เปิดให้บริการ · สำเนา `hub_db` ด้วย `pg_dump` ไปฐานข้อมูลชั่วคราว `hub_failfix_test` · Redis DB 12 ที่ว่าง ·
+ml-service ชั่วคราว (`ml-failfix`) จากโค้ด branch นี้ · Hub ชั่วคราวใน container เทสเดียวกันที่ `127.0.0.1:8000` · ไฟล์ env ชั่วคราวตัดตัวแปร SMTP/Telegram/webhook ออก ·
+หลังรันลบฐานข้อมูลชั่วคราว ล้าง Redis DB 12 ลบคอนเทนเนอร์ ไฟล์ env และ worktree ฐานเทียบแล้ว
+
+```bash
+# เทสเฉพาะเรื่อง (ใน container ที่ชี้ฐานข้อมูลทดสอบ)
+pytest tests/test_failed_logins_24h.py tests/test_feature_extraction.py tests/test_feature_point_in_time.py -v
+# วัดผลกระทบ
+PYTHONPATH=. python scripts/measure_failed_logins_24h_2026-09-26.py
+```
+
+## 8. ยังไม่ได้ทำ
+
+- commit / push / merge — รอเจ้าของระบบ
+- deploy
+
+## 9. commit ถัดไป: audit ของ step-up OTP ทาง email
+
+**ปัญหา:** `/auth/stepup/otp/verify` ที่ OTP ผิดเพิ่มตัวนับใน Redis แล้ว `raise` ทันที ไม่มี audit event → ไม่ถูกนับใน `failed_logins_24h` และตรวจย้อนหลังไม่ได้ (B7)
+
+**แก้:** กรณี `otp_invalid` บันทึก `stepup_otp_failed` (actor_id = ผู้ใช้ · metadata `code`, `attempts`) ตามลำดับ `log_action` → `commit` → `raise` (B6) และเพิ่มใน `FAILED_AUTH_ACTOR_ACTIONS`
+
+| กรณี | บันทึก/นับ | เหตุผล |
+|---|---|---|
+| `otp_invalid` | นับ | ตรวจ OTP แล้วผิดจริง |
+| `otp_locked` | ไม่นับ | ปฏิเสธจากสถานะล็อกก่อนตรวจ OTP ใหม่ · นับจะเพิ่มความล้มเหลวซ้ำจากสถานะเดิม |
+| `otp_expired` | ไม่นับ | ไม่มี OTP ให้ตรวจ ไม่ใช่การเดาผิด |
+
+**เทส** `tests/test_stepup_otp_failed_audit.py` (ผ่าน HTTP จริงด้วย TestClient · ปิด rate limit ในเทส):
+
+| เทส | ผล |
+|---|---|
+| RED (ก่อนแก้) | 1 failed · 3 passed — ข้อ `otp_invalid` ไม่มีแถว audit |
+| GREEN | 4 passed |
+| ถอด `passkey.py` ที่แก้ออก (stash) แล้วรันซ้ำ | 1 failed — ยืนยันว่าเทสขึ้นกับการแก้จริง |
+
+## 10. commit ถัดไป: ปิด lockout DoS จากความล้มเหลวที่รู้อีเมลอย่างเดียว
+
+### 10.1 provenance ของ action ที่นับ (ตรวจจากโค้ด)
+
+| action | ต้องมีอะไรก่อน | ผู้รู้แค่อีเมลสร้างได้ |
+|---|---|---|
+| `passkey_login_failed` | ไม่มี (endpoint เปิด · 20/นาที/IP) | **ได้** |
+| `oauth_passkey_login_failed` | `hub_state` (ใครก็ขอจาก `/oauth/authorize` ได้) | **ได้** |
+| `passkey_stepup_failed` · `stepup_otp_failed` · `stepup_totp_failed` | Hub JWT (`get_current_user`) | ไม่ได้ |
+| `risk_mfa_verify_failed` · `risk_force_enroll_otp_failed` | `challenge_id` สุ่ม 32 ไบต์ ออกหลังผ่านปัจจัยแรก (Google/LINE callback · passkey login สำเร็จ · refresh token) | ไม่ได้ |
+
+`actor_id` เป็นเพียงการระบุบัญชี · หลักฐานว่าผ่านปัจจัยแรกคือเส้นทางในตาราง · ข้อจำกัด: ผู้ที่มี refresh token หรือบัญชี Google ของเหยื่ออยู่แล้วถือว่าบัญชีถูกยึด การบล็อกกรณีนั้นถูกต้อง
+
+### 10.2 ทำไมแก้แค่กฎ ≥ 10 ไม่พอ (วัดบน `_finalize_subsystem_login` จริง · โหมดบังคับใช้ · เจ้าของบัญชีมีประวัติ 20 วัน)
+
+- กฎคะแนน ≥ 3 (+0.20) และ ≥ 5 (+0.30) ยิงพร้อมกัน → ผู้โจมตีบวกคะแนนเจ้าของบัญชีได้ **+0.50**
+- เจ้าของบนเครื่องใหม่ (+0.30 +0.20) → **1.0 ≥ 0.85 บล็อกที่ finalizer** แม้กฎ ≥ 10 ถูกลดเป็น challenge แล้ว
+- พบ B86 ระหว่างวัด (+0.30 ทุก login เข้า subsystem) → แก้แยกใน commit `aa2b576`
+- L3 ไม่มีส่วน: `aggregate` รับ `monitoring_only()` · IForest/L3 ไม่เข้าคะแนนรวม
+
+### 10.3 การแก้ (`rule_engine.evaluate_rules` · ไม่แตะ aggregator · เวกเตอร์ 23 ตัวไม่เปลี่ยน)
+
+- `failed_post` = ความล้มเหลวหลังผ่านปัจจัยแรกใน 24 ชม. (`count_failed_auth(post_factor_only=True)` ใช้ร่วมกับฟีเจอร์)
+- กฎบล็อก ≥ 10 และกฎคะแนน ≥ 3 / ≥ 5 ใช้ `failed_post` · แยก provenance ตั้งแต่ 3 ครั้ง (`FAILED_SPLIT_MIN` = เกณฑ์ต่ำสุดของกฎ failed)
+- ถ้ารวมทั้งหมด ≥ 5 และมีส่วนที่ผูกด้วยอีเมล → **challenge floor ไม่บวกคะแนน**
+- กฎบล็อกอื่น (IP blacklist · impossible travel · login_count ≥ 50 · country_change ≥ 8) ไม่แตะ
+- query เพิ่มเฉพาะเมื่อฟีเจอร์ ≥ 3 · ใช้เวลาปัจจุบัน (เหมือนกฎ multi-account IP) → replay ย้อนหลังด้วยกฎปัจจุบันไม่ตรงเวลาในกฎนี้
+
+**โหมดของ rule engine (แยกให้ชัด ไม่ตกไปกฎเดิมแบบเงียบ):**
+
+| โหมด | ใช้เมื่อ | พฤติกรรม |
+|---|---|---|
+| `mode="current"` (ค่าเริ่มต้น · ระบบจริง) | ทุกเส้นทาง login และงานวัดผลรอบใหม่ (รวม L3 parity) | แยก provenance จาก audit_logs · ถ้าฟีเจอร์ ≥ 3 แต่ไม่มี DB → `RuleEvaluationError` บอกสาเหตุ |
+| `mode="legacy_replay"` | ทำซ้ำผล freeze เดิมเท่านั้น | กฎ ณ tag `rba-freeze-2026-08-29` ตรงทุกช่อง · ผลติด `rule_mode="legacy_replay"` · **ห้ามอ้างเป็นคะแนนของกฎปัจจุบัน** |
+
+`RuleResult.rule_mode` ติดทุกเส้นทางที่คืนผล (รวม early return ของ blacklist / impossible travel / hard block) · โหมดที่ไม่รู้จัก → `ValueError`
+
+ผลต่อสคริปต์ทดลองเดิม (`ml-service/scripts/exp_*`, `eval_*` เรียก `evaluate_rules(db=None)`): ถ้าเจอเวกเตอร์ที่ `failed_logins_24h ≥ 3` จะหยุดพร้อม error จนกว่าผู้รันจะเลือกโหมด · ไม่ได้แก้สคริปต์เหล่านี้ (เป็นหลักฐานของ freeze) · การทำซ้ำผล freeze ต้องส่ง `mode="legacy_replay"` อย่างชัดเจนและติดชื่อโหมดในผล
+
+### 10.4 เทส `tests/test_failed_login_lockout_dos.py` (16 ข้อ · helper ร่วม `tests/finalize_env.py`)
+
+| กรณี | คาด | ผล |
+|---|---|---|
+| ไม่มีโจมตี + เครื่องเดิม | ได้ code ตรง | ผ่าน |
+| ไม่มีโจมตี + เครื่องใหม่ | challenge < 0.85 · ใช้ TOTP แล้วได้ code | ผ่าน |
+| อีเมลอย่างเดียว 12 ครั้ง + เครื่องเดิม | challenge · ไม่มีคะแนนจากกฎ failed · ใช้ challenge ได้จริง | ผ่าน |
+| อีเมลอย่างเดียว 12 ครั้ง + เครื่องใหม่ | เหมือนข้างบน | ผ่าน |
+| หลังผ่านปัจจัยแรก 12 ครั้ง | 403 | ผ่าน |
+| อีเมลอย่างเดียว + login_count ≥ 50 | 403 | ผ่าน |
+| อีเมลอย่างเดียว + IP blacklist | 403 | ผ่าน |
+| คะแนนทุกชั้นก่อน/หลังโจมตี 12 ครั้งเท่ากัน (เครื่องเดิม · เครื่องใหม่) | rule/behavior/iforest/total เท่าเดิม · ไม่ block | ผ่าน |
+| อีเมลอย่างเดียว 4 ครั้ง (ใต้ floor) | คะแนนเท่าเดิม · ไม่มี +0.2 | ผ่าน |
+| `current` + `db=None` + failed 3 / 6 / 12 | `RuleEvaluationError` (ไม่แอบใช้กฎเดิม) | ผ่าน |
+| `current` + `db=None` + failed 2 | ประเมินได้ · `rule_mode="current"` | ผ่าน |
+| `legacy_replay` เทียบ golden 611 เวกเตอร์จากซอร์สที่ tag freeze | ตรงทุกช่อง (blocked/score/reasons/min_action) · ติดชื่อโหมด | ผ่าน |
+| โหมดไม่รู้จัก | `ValueError` | ผ่าน |
+
+golden: `tests/data/rule_engine_legacy_golden_2026-08-29.json` สร้างโดย `scripts/make_rule_engine_legacy_golden_2026-09-26.py` จากซอร์ส `rule_engine.py` ที่ tag (ยืนยันแล้วว่าเหมือน HEAD ก่อนแก้ทุกไบต์) · sha256 ของซอร์ส (16 หลักแรก) `a905bfc3 96d742b5` · ตัวสร้างพิมพ์ค่าเต็มทุกครั้ง · 363 บล็อก · 243 challenge floor · 162 มีคะแนนจากกฎ failed
+
+| RED | ผล |
+|---|---|
+| บนโค้ด `aa2b576` (ก่อนแก้) | 2 ข้อที่โจมตีล้ม — 403 risk 1.000 |
+| บนการแก้เฉพาะกฎ ≥ 10 | 2 ข้อล้ม — มีคะแนน failed +0.3/+0.2 · เครื่องใหม่ 403 risk 1.000 |
+| บนการแก้รอบแรก (แยก provenance เมื่อ ≥ 5) | อีเมลอย่างเดียว 4 ครั้งยังได้ +0.2 → **พบช่องที่เหลือ** แก้ด้วย `FAILED_SPLIT_MIN` |
+
+mutation: กฎบล็อกใช้ค่ารวม → 4 ล้ม · กฎคะแนนใช้ค่ารวม → 4 ล้ม · ตัด challenge floor → 2 ล้ม · `db=None` ตกไปกฎเดิมแบบเงียบ → 3 ล้ม · `legacy_replay` ยังแยก provenance → 1 ล้ม
+
+`tests/test_e2e_rba.py::test_e2e_rba_hard_block_failed_logins` เดิมใช้เวกเตอร์สังเคราะห์ `failed=12` โดยไม่มีหลักฐาน → ปรับให้ใส่ความล้มเหลวหลังผ่านปัจจัยแรกจริง 12 แถว (ทดสอบกฎใหม่ตรงความหมาย)
+
+**ชุดเทสเต็ม** (ฐานข้อมูลสำเนาใหม่ · ยกเว้น 2 ไฟล์ที่ต้องใช้ Dorm/Library): **933 passed · 0 failed · 13 skipped**
+
+ข้อสังเกตการรัน: รันชุดเต็มซ้ำบนสำเนาเดียวกันหลายรอบทำให้ student ในสำเนาถูกเปลี่ยนสถานะจนหมด (เทส lifecycle) → skip เพิ่มเป็น 54 · สำเนาใหม่กลับเป็น 13 ·
+ระหว่างรอบพบ `test_concurrent_requests_agree` (timeout เดิม) และ `test_activity.py::test_active_vs_history_disjoint` ล้มครั้งเดียว — ข้อหลังรันเดี่ยวผ่าน 3/3 และ endpoint ตอบ 200 ครบคีย์ · ไม่ล้มในรอบสุดท้าย
+
+### 10.5 ผลต่อผลตัดสินที่ freeze ไว้
+
+- ตัวเลขที่ freeze ทำซ้ำได้ผ่าน `mode="legacy_replay"` เท่านั้น และต้องติดชื่อโหมด
+- ระบบจริง: ความล้มเหลวแบบรู้อีเมลอย่างเดียวไม่บวกคะแนนและไม่บล็อกอีก (ให้ challenge แทน) · ความล้มเหลวหลังผ่านปัจจัยแรกให้ผลเหมือนเดิม
+- ตระกูล `failed_spike` ในการทดลองจำลองความล้มเหลวที่ไม่แยก provenance → ผลเดิมเป็นกฎ legacy · การวัดรอบใหม่ (รวม L3 parity) ต้องใช้ `mode="current"` พร้อมข้อมูล audit ที่แยกประเภท
+
+### 10.6 ขอบเขตของข้อสรุป
+
+เทสเส้นทางที่ตรวจข้างต้นผ่านแล้ว และ**ปิด DoS จากอีเมลอย่างเดียวในกรณีที่ทดสอบ** (subsystem flow ผ่าน `_finalize_subsystem_login` · ผู้ใช้มี TOTP · เครื่องเดิม/เครื่องใหม่) ·
+**ยังไม่ใช่การรับรองทุกเส้นทาง** — เช่น Google hub-direct callback · ผู้ใช้ที่ไม่มีปัจจัยที่สอง (grace/force-enroll) · shadow mode ถูกตรวจด้วยเทสเดิมเท่านั้น ·
+**ยังไม่อนุญาตให้ deploy**

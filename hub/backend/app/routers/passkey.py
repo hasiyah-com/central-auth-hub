@@ -1120,6 +1120,7 @@ async def login_discoverable_finish(
 PASSKEY_STEPUP_SUCCESS = "passkey_stepup_success"
 PASSKEY_STEPUP_FAILED = "passkey_stepup_failed"
 STEPUP_OTP_SUCCESS = "stepup_otp_success"
+STEPUP_OTP_FAILED = "stepup_otp_failed"
 
 _STEPUP_OTP_PREFIX = "stepup:otp"
 _STEPUP_OTP_TTL = 300
@@ -1283,6 +1284,18 @@ async def stepup_otp_verify(
         redis_client.setex(
             key, ttl if ttl and ttl > 0 else _STEPUP_OTP_TTL, _json.dumps(data)
         )
+        # นับใน failed_logins_24h (B85) — เฉพาะ otp_invalid: otp_locked ปฏิเสธจากสถานะ
+        # ล็อกก่อนตรวจ OTP (นับซ้ำ) · otp_expired ไม่มี OTP ให้ตรวจ
+        log_action(
+            db,
+            actor_id=user.id,
+            action=STEPUP_OTP_FAILED,
+            target_type="user",
+            target_id=user.id,
+            ip=get_client_ip(request),
+            metadata={"code": "otp_invalid", "attempts": data["attempts"]},
+        )
+        db.commit()
         raise HTTPException(
             status_code=400, detail={"code": "otp_invalid", "message": "OTP ไม่ถูกต้อง"}
         )
@@ -2196,11 +2209,13 @@ def _risk_stepup_html(
             label, weight = match.groups()
             reasons_rows.append(
                 f'<li><div class="reason-copy"><span>{_html.escape(label)}</span>'
-                f'<small>ค่าน้ำหนักความเสี่ยง</small></div>'
+                f"<small>ค่าน้ำหนักความเสี่ยง</small></div>"
                 f'<b class="weight">{_html.escape(weight)}</b></li>'
             )
         else:
-            reasons_rows.append(f'<li><div class="reason-copy">{_html.escape(text)}</div></li>')
+            reasons_rows.append(
+                f'<li><div class="reason-copy">{_html.escape(text)}</div></li>'
+            )
     reasons_html = "".join(reasons_rows)
     risk_badge = f'<b class="risk-badge">RISK {risk_score:.3f}</b>' if reasons else ""
     reasons_block = (
@@ -2214,7 +2229,7 @@ def _risk_stepup_html(
     )
     context_block = reasons_block or (
         '<div class="reasons"><div class="overline">ACCOUNT SECURITY</div>'
-        '<h2>ยืนยันตัวตนเพิ่มเติม</h2>'
+        "<h2>ยืนยันตัวตนเพิ่มเติม</h2>"
         '<p class="sub">ยืนยันด้วยวิธีที่ตั้งค่าไว้เพื่อดำเนินการต่ออย่างปลอดภัย</p></div>'
     )
     subtitle = (

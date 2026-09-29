@@ -94,7 +94,13 @@ async def evaluate_login_risk(
     decision = aggregate(rule_result, behavior_result, monitoring_only(), shadow_mode)
 
     # ── Layer 3 (แกน monitoring) — point view + sequence view รวมเป็นผลเดียว ──
-    l3 = await _evaluate_l3(user_id, features, profile, subsystem_id, decision.decision)
+    # B86: L3 residual สะสมประวัติด้วย subsystem_id ชนิดสตริงมาตลอด (count = 0 เสมอ) ·
+    # เปลี่ยนชนิดตรงนี้ = เปลี่ยนความหมายประวัติ L3 → งานแยกพร้อมเปลี่ยนคีย์/รุ่น (แบบ B84)
+    # จึงคงค่าเดิมไว้โดยเจตนา · ตรึงด้วย test_subsystem_id_type_b86 (ลบเมื่อแก้ L3)
+    l3_subsystem_id = str(subsystem_id) if subsystem_id is not None else None
+    l3 = await _evaluate_l3(
+        user_id, features, profile, l3_subsystem_id, decision.decision
+    )
     seq_contract = _sequence_contract(l3)
 
     if l3["is_anomaly"]:

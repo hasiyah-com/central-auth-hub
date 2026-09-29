@@ -21,7 +21,7 @@ import uuid
 import pytest
 
 from app.database import SessionLocal
-from app.models import User
+from app.models import AuditLog, User
 from app.security.risk_engine import evaluate_login_risk
 from app.security.rule_engine import FEAT
 
@@ -50,6 +50,9 @@ def fresh_user(db):
     db.add(u)
     db.commit()
     yield u
+    db.query(AuditLog).filter(AuditLog.actor_id == u.id).delete(
+        synchronize_session=False
+    )
     db.query(User).filter(User.id == u.id).delete()
     db.commit()
 
@@ -136,7 +139,26 @@ async def test_e2e_rba_anomaly_higher_than_normal(db, fresh_user):
 
 @pytest.mark.asyncio
 async def test_e2e_rba_hard_block_failed_logins(db, fresh_user):
-    """failed_logins_24h >= 10 → hard block ทันที (score 1.0, decision block)."""
+    """ความล้มเหลวหลังผ่านปัจจัยแรก >= 10 → hard block ทันที (score 1.0, decision block).
+
+    B85: กฎบล็อกนับเฉพาะความล้มเหลวที่ต้องมี JWT/challenge (ใส่ audit จริง 12 แถว) ·
+    กรณีผูกด้วยอีเมลอย่างเดียว (ต้องได้ challenge ไม่ใช่ block) อยู่ใน
+    test_failed_login_lockout_dos.py
+    """
+    from datetime import datetime, timedelta
+
+    now = datetime.utcnow()
+    for i in range(12):
+        db.add(
+            AuditLog(
+                actor_id=fresh_user.id,
+                action="stepup_totp_failed",
+                target_type="user",
+                target_id=fresh_user.id,
+                created_at=now - timedelta(minutes=10 + i),
+            )
+        )
+    db.commit()
     result = await _score(db, fresh_user, _features(failed_logins_24h=12.0))
     assert result["decision"] in ("block", "would_block")
     assert result["score"] == 1.0
