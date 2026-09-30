@@ -22,6 +22,9 @@ THRESHOLDS = {
     "warn": 0.5,
 }
 
+# block ต้องมีหลักฐาน — คะแนนรวมถึงเกณฑ์ block แต่ไม่มีกฎ hard block ยิง → challenge
+SCORE_BLOCK_CAPPED_REASON = "score_block_capped (ไม่มีหลักฐาน hard block → challenge)"
+
 # ลำดับความเข้มของ decision (ใช้บังคับ policy floor)
 _ACTION_ORDER = ["allow", "warn", "challenge", "block"]
 
@@ -69,8 +72,12 @@ def aggregate(
     total = min(total, 1.0)
 
     # Determine decision
-    if total >= THRESHOLDS["block"]:
-        raw_decision = "block"
+    # คะแนนถึงเกณฑ์ block แต่ไม่มีกฎ hard block ยิง (ถ้ายิงจะออกไปตั้งแต่ rule.blocked
+    # ด้านบน) → challenge: คะแนนรวมจากพฤติกรรม (ผิดเวลา ระบบย่อยใหม่ scope สูง)
+    # ไม่ใช่หลักฐานการโจมตี · คะแนนยังบันทึกตามจริง
+    score_block_capped = total >= THRESHOLDS["block"]
+    if score_block_capped:
+        raw_decision = "challenge"
     elif total >= THRESHOLDS["challenge"]:
         raw_decision = "challenge"
     elif total >= THRESHOLDS["warn"]:
@@ -97,7 +104,9 @@ def aggregate(
     return RiskDecision(
         total_score=total,
         decision=decision,
-        reasons=rule.reasons + behavior.reasons,
+        reasons=rule.reasons
+        + behavior.reasons
+        + ([SCORE_BLOCK_CAPPED_REASON] if score_block_capped else []),
         breakdown={
             "rule": round(rule.score, 4),
             "behavior": round(behavior.score, 4),

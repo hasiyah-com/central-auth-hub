@@ -443,8 +443,11 @@ def test_scope3_monitoring_requires_auth(client, path):
         (0.69, "warn"),
         (0.70, "challenge"),  # Step-up
         (0.84, "challenge"),
-        (0.85, "block"),  # Block
-        (1.00, "block"),
+        # คะแนนถึงเกณฑ์ block แต่ไม่มีหลักฐาน hard block → challenge
+        # (block เกิดจาก rule.blocked เท่านั้น — test_scope4_rule_hard_block_wins,
+        # tests/test_block_needs_evidence.py)
+        (0.85, "challenge"),
+        (1.00, "challenge"),
     ],
 )
 def test_scope4_decision_levels(total, expected):
