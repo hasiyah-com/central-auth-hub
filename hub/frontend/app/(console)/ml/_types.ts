@@ -22,6 +22,10 @@ export type RiskBreakdown = {
   iforest: number;
   iforest_raw: number;
   iforest_explanation?: ShapContribution[];
+  // ผลชั้นที่ 3 (monitoring) — ไม่มีใน session เก่า
+  l3?: { is_anomaly?: boolean; unique_to_l3?: boolean; monitoring_decision?: string };
+  // ตัวสำรองระดับ warn (ชั้นที่ 3 ยกเมื่อชั้นที่ 1+2 ตัดสิน allow) — ไม่มีใน session เก่า
+  l3_fallback?: { applied?: boolean; threshold?: number; user_type?: string | null };
 };
 
 export type Anomaly = {

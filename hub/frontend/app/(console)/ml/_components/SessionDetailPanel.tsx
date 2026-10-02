@@ -11,6 +11,7 @@ import type {
   ShapContribution,
 } from "../_types";
 import { DECISION_TONE, DEVICE_ICON, FEEDBACK_LABELS, featureLabelTh } from "../_types";
+import { classifyReason, l3Status } from "@/lib/riskDisplay";
 import { formatShapFeatureValue, utcHourFromShap } from "@/lib/shapDisplay";
 
 type SessionData = Anomaly | (UserSession & { user_email?: string; user_id?: string; session_id?: string; subsystem_name?: string });
@@ -114,9 +115,15 @@ export function SessionDetailPanel({ session, onFeedbackSaved, hideUserLink }: P
           <div className="mt-3 grid grid-cols-3 gap-2">
             <BreakdownBar label="Rule" value={bd.rule} max={1} color="bg-blue-500" />
             <BreakdownBar label="Behavior" value={bd.behavior} max={1} color="bg-purple-500" />
-            <BreakdownBar label="IForest" value={bd.iforest} max={0.4} color="bg-amber-500" />
+            <BreakdownBar
+              label="IForest · ไม่บวกคะแนนรวม"
+              value={bd.iforest_raw ?? bd.iforest}
+              max={1}
+              color="bg-amber-500"
+            />
           </div>
         )}
+        {bd && <L3StatusLine status={l3Status(bd)} />}
 
         {/* Reasons (Layer 1 + 2) — bar style matching SHAP for visual parity.
             Rules only fire when a signal is suspicious, so every bar here is
@@ -448,10 +455,7 @@ type ParsedReason = {
 };
 
 function parseReason(raw: string): ParsedReason {
-  const isHardBlock =
-    raw.includes("hard block") ||
-    raw.startsWith("ip_blacklisted") ||
-    raw.startsWith("impossible_travel");
+  const isHardBlock = classifyReason(raw) === "hard_block";
 
   // Pull off the trailing "(+0.XX)" weight if present
   const weightMatch = raw.match(/\(\+(\d+(?:\.\d+)?)\)\s*$/);
@@ -519,8 +523,10 @@ function parseReason(raw: string): ParsedReason {
  *  numeric weight — they render full width because they alone can decide
  *  the outcome.
  */
-function RuleBreakdown({ reasons }: { reasons: string[] }) {
-  const parsed = reasons.map(parseReason);
+export function RuleBreakdown({ reasons }: { reasons: string[] }) {
+  // score_block_capped / l3_fallback_warn ไม่ใช่คะแนนของกฎ → แสดงเป็นหมายเหตุ ไม่ใช่แท่งน้ำหนัก
+  const notes = reasons.filter((r) => ["capped", "l3_fallback"].includes(classifyReason(r)));
+  const parsed = reasons.filter((r) => !notes.includes(r)).map(parseReason);
   // Max weight in the list — used to normalize bar widths. Falls back to 0.4
   // (typical L1 weight) when no reason carries a number.
   const maxWeight = Math.max(
@@ -570,6 +576,29 @@ function RuleBreakdown({ reasons }: { reasons: string[] }) {
           );
         })}
       </div>
+      {notes.length > 0 && (
+        <div className="mt-2 space-y-0.5 text-[10px] text-ink-500">
+          {notes.map((n, i) => (
+            <div key={i}>
+              {classifyReason(n) === "capped"
+                ? "ลดระดับ: คะแนนถึงเกณฑ์ block แต่ไม่มีหลักฐาน hard block → challenge"
+                : "ตัวสำรองชั้นที่ 3: " + n.replace(/^l3_fallback_warn\s*/, "")}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
+}
+
+/** สถานะชั้นที่ 3 ใต้แถบคะแนน — บอกว่าชั้นที่ 3 ตรวจพบหรือไม่ และมีผลต่อการตัดสินหรือเปล่า */
+export function L3StatusLine({ status }: { status: { tone: string; text: string } }) {
+  if (status.tone === "quiet") return null;
+  const color =
+    status.tone === "fallback"
+      ? "text-amber-700"
+      : status.tone === "unique"
+        ? "text-amber-600"
+        : "text-ink-500";
+  return <div className={`mt-2 text-[11px] ${color}`}>{status.text}</div>;
 }
