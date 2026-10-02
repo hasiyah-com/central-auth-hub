@@ -130,10 +130,11 @@ async def evaluate_login_risk(
     breakdown = {
         **decision.breakdown,
         "iforest_raw": round(l3["point"]["anomaly_score"], 4),
+        # All login routers persist breakdown, including Hub Google/LINE.
+        # Keeping SHAP only in the top-level result loses it on those paths.
+        "iforest_explanation": l3["point"]["explanation"],
         "l3": {**_l3_summary(l3), "point_available": bool(l3["point"].get("available"))},
-        # Preserve the exact point-model input for all 23 dimensions. SHAP is
-        # deliberately disabled on the login path, so it cannot serve as a
-        # record of which features were evaluated.
+        # Preserve every input even when SHAP is unavailable.
         "l3_point_features": [
             {"feature": name, "value": round(float(features[index]), 4)}
             for name, index in sorted(FEAT.items(), key=lambda item: item[1])

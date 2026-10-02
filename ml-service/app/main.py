@@ -140,7 +140,7 @@ class ScoreData(BaseModel):
     anomaly_score: float
     decision: str
     thresholds: dict[str, float]
-    # SHAP top-k features (max 5) sorted by |contribution|.
+    # All 23 SHAP features sorted by |contribution|; the UI chooses top-N.
     # Empty list when SHAP is unavailable (e.g. shap pkg missing,
     # explainer init failed) — Hub treats this as fail-safe and shows
     # Layer 1+2 reasons only.
@@ -304,8 +304,8 @@ class L3EvaluateRequest(BaseModel):
     # ผลของ L1/L2/L4 ที่ตัดสินเสร็จแล้ว — ใช้ "วัด" unique_to_l3 เท่านั้น
     # L3 ไม่มีทางเขียนค่ากลับไปที่ฟิลด์นี้ (ดู l3_unified.evaluate)
     access_decision: str = Field(default="allow", max_length=32)
-    # SHAP เป็นข้อมูล debug ตั้งแต่ 1 ก.ย. 2569 (B67) จึงไม่คำนวณให้ฟรีบน login path
-    explain: bool = Field(default=False, description="คำนวณ SHAP ด้วย (debug)")
+    # Point SHAP is always returned; this flag enables sequence SHAP only.
+    explain: bool = Field(default=False, description="คำนวณ sequence SHAP ด้วย (debug)")
 
     @field_validator("residual")
     @classmethod
