@@ -464,6 +464,13 @@ export default function DashboardPage() {
   const decTotal = dec ? dec.allow + dec.watch + dec.block : 0;
   const activeSubs = map?.subsystems.filter((s) => s.status === "active") ?? [];
   const healthySubs = activeSubs.filter((s) => OK_STATUS.has((s.health || "").toLowerCase()));
+  // ระบบที่ health endpoint ยืนยันว่ากำลังออนไลน์ต้องเห็นก่อนเสมอ โดยคงลำดับชื่อเดิม
+  // ภายในกลุ่มเดียวกัน (Array.sort เป็น stable sort ใน runtime ที่รองรับโดย Next.js)
+  const displayedSubs = [...activeSubs].sort((a, b) => {
+    const aOnline = OK_STATUS.has((a.health || "").toLowerCase());
+    const bOnline = OK_STATUS.has((b.health || "").toLowerCase());
+    return Number(bOnline) - Number(aOnline);
+  });
 
   const k = act?.kpis;
   const successPct =
@@ -871,7 +878,7 @@ export default function DashboardPage() {
                     <span>LATENCY</span>
                   </div>
                   <div className="service-matrix">
-                    {activeSubs.map((s, i) => {
+                    {displayedSubs.map((s, i) => {
                       const pts = hist[s.id] ?? [];
                       const up = uptimePct(pts);
                       const path = sparkPath(pts);

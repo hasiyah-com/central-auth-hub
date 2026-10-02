@@ -444,7 +444,11 @@
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
-  scrollbar-gutter: stable;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.sr .dashboard-service-card .service-matrix::-webkit-scrollbar {
+  display: none;
 }
 .sr .dashboard-service-card .service-row {
   min-height: 72px;
