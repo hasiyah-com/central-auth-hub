@@ -27,16 +27,22 @@ export function Heartbeat({ intervalMs = 60000 }: { intervalMs?: number }) {
 
     ping(); // ครั้งแรกทันทีตอนเข้า console
     const timer = setInterval(ping, intervalMs);
+    const onIdleTimeout = () => {
+      stopped = true;
+      clearInterval(timer);
+    };
     // ping ทันทีเมื่อกลับมาโฟกัสแท็บ (กัน last_seen ค้างตอนสลับไปแท็บอื่นนาน)
     const onVisible = () => {
       if (document.visibilityState === "visible") ping();
     };
     document.addEventListener("visibilitychange", onVisible);
+    document.addEventListener("hub:idle-timeout", onIdleTimeout);
 
     return () => {
       stopped = true;
       clearInterval(timer);
       document.removeEventListener("visibilitychange", onVisible);
+      document.removeEventListener("hub:idle-timeout", onIdleTimeout);
     };
   }, [intervalMs]);
 
