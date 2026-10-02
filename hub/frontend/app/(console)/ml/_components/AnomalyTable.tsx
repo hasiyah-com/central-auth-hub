@@ -105,7 +105,7 @@ export function AnomalyTable<T extends BaseRow>({
               <th className="px-4 py-3 text-left text-[11px] font-bold text-ink-500 uppercase tracking-wider">
                 IP / Country
               </th>
-              <th className="px-4 py-3 text-left text-[11px] font-bold text-ink-500 uppercase tracking-wider w-[120px]">
+              <th className="px-3 py-3 text-left text-[11px] font-bold text-ink-500 uppercase tracking-wider w-[90px]">
                 Labels
               </th>
               {showFeedback && (
@@ -113,7 +113,7 @@ export function AnomalyTable<T extends BaseRow>({
                   Feedback
                 </th>
               )}
-              <th className="px-4 py-3 text-left text-[11px] font-bold text-ink-500 uppercase tracking-wider w-[180px]">
+              <th className="pl-2 pr-6 py-3 text-left text-[11px] font-bold text-ink-500 uppercase tracking-wider w-[190px]">
                 เวลา (Asia/Bangkok)
               </th>
             </tr>
@@ -157,7 +157,7 @@ export function AnomalyTable<T extends BaseRow>({
                   <td className="px-4 py-3 text-ink-700">
                     <IpCell row={row} />
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="px-3 py-3">
                     <LabelsCell row={row} />
                   </td>
                   {showFeedback && (
@@ -165,7 +165,7 @@ export function AnomalyTable<T extends BaseRow>({
                       <FeedbackCell row={row as unknown as UserSession} />
                     </td>
                   )}
-                  <td className="px-4 py-3">
+                  <td className="pl-2 pr-6 py-3">
                     <span className="font-mono text-[11px] text-ink-600 whitespace-nowrap">
                       {formatBangkok(row._displayAt)}
                     </span>
