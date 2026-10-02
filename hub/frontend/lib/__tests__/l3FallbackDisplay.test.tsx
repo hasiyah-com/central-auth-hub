@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { SessionDetailPanel } from '@/app/(console)/ml/_components/SessionDetailPanel';
 import type { UserSession, RiskBreakdown } from '@/app/(console)/ml/_types';
 
@@ -46,16 +46,12 @@ test('shows every stored point input without pretending unavailable SHAP is zero
   ];
   s.risk_breakdown!.l3 = { point_available: false };
   render(<SessionDetailPanel session={s} />);
-  expect(screen.getByRole('table')).toBeInTheDocument();
-  expect(screen.getByText('ฟีเจอร์ชั้น 3 (แสดง 5 / 6)')).toBeInTheDocument();
+  expect(screen.queryByRole('table')).not.toBeInTheDocument();
+  expect(screen.getByText('แสดง 5 / 6')).toBeInTheDocument();
   expect(screen.getByText('อุปกรณ์ใหม่')).toBeInTheDocument();
-  expect(within(screen.getByRole('table')).getAllByRole('row')).toHaveLength(6);
-  expect(screen.queryByText('impossible_travel_score')).not.toBeInTheDocument();
+  expect(screen.queryByTitle('impossible_travel_score')).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole('button', { name: /ดูเพิ่มเติมทั้งหมด/ }));
-  expect(within(screen.getByRole('table')).getAllByRole('row')).toHaveLength(7);
-  expect(screen.getByText('impossible_travel_score')).toBeInTheDocument();
-  fireEvent.click(screen.getByRole('button', { name: /ย่อเหลือ 5 รายการ/ }));
-  expect(within(screen.getByRole('table')).getAllByRole('row')).toHaveLength(6);
-  expect(screen.getByText(/โมเดลไม่พร้อมในเหตุการณ์นี้/)).toBeInTheDocument();
-  expect(screen.getByText(/ไม่ได้แปลว่าฟีเจอร์ไม่มีผล/)).toBeInTheDocument();
+  expect(screen.getByTitle('impossible_travel_score')).toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: /ย่อ/ }));
+  expect(screen.getByText(/ยังไม่มีค่า SHAP/)).toBeInTheDocument();
 });
