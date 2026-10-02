@@ -22,6 +22,15 @@ export type RiskBreakdown = {
   iforest: number;
   iforest_raw: number;
   iforest_explanation?: ShapContribution[];
+  l3?: {
+    fallback?: {
+      status: "warn" | "normal" | "skipped" | "abstain";
+      user_type: string | null;
+      percentile: number | null;
+      warn_percentile: number | null;
+      reason: string;
+    };
+  };
 };
 
 export type Anomaly = {
