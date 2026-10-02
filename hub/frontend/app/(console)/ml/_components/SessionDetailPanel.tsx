@@ -154,15 +154,8 @@ export function SessionDetailPanel({ session, onFeedbackSaved, hideUserLink }: P
             (newer ml-service versions with shap installed). Sign-convention:
             positive shap = pushed score TOWARD anomaly (red bar);
             negative = pushed toward normal (green bar). */}
-        {bd?.iforest_explanation && bd.iforest_explanation.length > 0 && (
-          <ShapBreakdown items={bd.iforest_explanation} />
-        )}
-        {bd?.l3_point_features && bd.l3_point_features.length > 0 && (
-          <PointFeatureTable
-            items={bd.l3_point_features}
-            explanation={bd.iforest_explanation || []}
-            available={bd.l3?.point_available}
-          />
+        {((bd?.iforest_explanation?.length ?? 0) > 0 || (bd?.l3_point_features?.length ?? 0) > 0) && (
+          <ShapBreakdown items={bd?.iforest_explanation || []} inputs={bd?.l3_point_features || []} />
         )}
       </div>
 
@@ -333,49 +326,6 @@ export function SessionDetailPanel({ session, onFeedbackSaved, hideUserLink }: P
   );
 }
 
-/** Raw inputs stay visible even when SHAP is unavailable or L3 abstains. */
-function PointFeatureTable({ items, explanation, available }: {
-  items: Array<{ feature: string; value: number }>;
-  explanation: ShapContribution[];
-  available?: boolean;
-}) {
-  const [showAll, setShowAll] = useState(false);
-  const byFeature = new Map(explanation.map((row) => [row.feature, row]));
-  const hourUtc = utcHourFromShap(items);
-  const ranked = explanation.length > 0
-    ? [...items].sort((a, b) => Math.abs(byFeature.get(b.feature)?.shap ?? 0) - Math.abs(byFeature.get(a.feature)?.shap ?? 0))
-    : items;
-  const shown = showAll ? ranked : ranked.slice(0, 5);
-  return (
-    <section className="mt-3 rounded-lg border border-ink-200 p-3" aria-label="ฟีเจอร์ชั้น 3 ทั้งหมด">
-      <h3 className="text-sm font-bold text-ink-800">ฟีเจอร์ชั้น 3 ({showAll ? `ทั้งหมด ${items.length}` : `${explanation.length ? "Top" : "แสดง"} ${Math.min(5, items.length)} / ${items.length}`})</h3>
-      <p className="mt-1 text-xs text-ink-500">
-        ค่าอินพุตที่ส่งให้โมเดล · คะแนน SHAP เป็นผลต่อโมเดลเฉพาะเมื่อคำนวณได้
-        {available === false && " · โมเดลไม่พร้อมในเหตุการณ์นี้"}
-      </p>
-      <div className="mt-2 overflow-x-auto">
-        <table className="w-full text-left text-xs">
-          <thead><tr className="border-b border-ink-200 text-ink-500"><th className="py-1.5 pr-2">ฟีเจอร์</th><th className="py-1.5 pr-2">ค่า</th><th className="py-1.5">SHAP</th></tr></thead>
-          <tbody>{shown.map((it) => {
-            const shap = byFeature.get(it.feature);
-            return <tr key={it.feature} className="border-b border-ink-100 align-top">
-              <td className="py-1.5 pr-2"><span className="font-medium">{featureLabelTh(it.feature)}</span><span className="block font-mono text-[10px] text-ink-400">{it.feature}</span></td>
-              <td className="py-1.5 pr-2 font-mono">{formatShapFeatureValue(it.feature, it.value, hourUtc)}</td>
-              <td className="py-1.5 font-mono">{shap ? `${shap.shap > 0 ? "+" : ""}${shap.shap.toFixed(3)}` : "—"}</td>
-            </tr>;
-          })}</tbody>
-        </table>
-      </div>
-      {items.length > 5 && (
-        <button type="button" onClick={() => setShowAll((value) => !value)} className="mt-2 text-xs font-medium text-amber-700 hover:underline">
-          {showAll ? "▲ ย่อเหลือ 5 รายการ" : `▼ ดูเพิ่มเติมทั้งหมด (${items.length} ฟีเจอร์)`}
-        </button>
-      )}
-      <p className="mt-2 text-xs text-ink-500">— หมายถึงไม่ได้คำนวณ SHAP; ไม่ได้แปลว่าฟีเจอร์ไม่มีผลหรือได้คะแนนศูนย์</p>
-    </section>
-  );
-}
-
 // ── Helper: Detail row ──
 
 function DetailRow({
@@ -436,12 +386,17 @@ function BreakdownBar({
  *    anomaly (positive shap) = rose-500 (this feature made score WORSE)
  *    normal  (negative shap) = emerald-500 (pushed score TOWARD normal)
  */
-function ShapBreakdown({ items }: { items: ShapContribution[] }) {
+function ShapBreakdown({ items, inputs }: { items: ShapContribution[]; inputs: Array<{ feature: string; value: number }> }) {
+  const byFeature = new Map(items.map((item) => [item.feature, item]));
+  const rows = inputs.length > 0
+    ? inputs.map((input) => ({ ...input, shap: byFeature.get(input.feature)?.shap, direction: byFeature.get(input.feature)?.direction }))
+    : items;
+  const ranked = [...rows].sort((a, b) => Math.abs(b.shap ?? 0) - Math.abs(a.shap ?? 0));
   const maxAbs = Math.max(...items.map((i) => Math.abs(i.shap)), 0.001);
   const COLLAPSED = 5;
   const [showAll, setShowAll] = useState(false);
-  const shown = showAll ? items : items.slice(0, COLLAPSED);
-  const hourUtc = utcHourFromShap(items);
+  const shown = showAll ? ranked : ranked.slice(0, COLLAPSED);
+  const hourUtc = utcHourFromShap(ranked);
 
   return (
     <div className="mt-3 p-3 rounded-lg bg-amber-50/50 border border-amber-200">
@@ -451,14 +406,16 @@ function ShapBreakdown({ items }: { items: ShapContribution[] }) {
           className="text-amber-500 font-normal normal-case tracking-normal"
           title="ทุก feature เรียงตาม |SHAP|. แดง = ดันไป anomaly, เขียว = ดันไป normal. (หน่วย SHAP = decision-function ไม่ใช่ 0-1)"
         >
-          {showAll ? `ทั้งหมด ${items.length}` : `top ${Math.min(COLLAPSED, items.length)} / ${items.length}`}
+          {showAll ? `ทั้งหมด ${ranked.length}` : `${items.length ? "top" : "แสดง"} ${Math.min(COLLAPSED, ranked.length)} / ${ranked.length}`}
         </span>
       </div>
+      {items.length === 0 && <p className="mb-2 text-[10px] text-ink-500">ยังไม่มีค่า SHAP · แสดงค่าอินพุตของโมเดล; — หมายถึงไม่ได้คำนวณคะแนนรายฟีเจอร์</p>}
       <div className="space-y-1.5">
         {shown.map((it, i) => {
-          const pct = Math.round((Math.abs(it.shap) / maxAbs) * 100);
+          const pct = Math.round((Math.abs(it.shap ?? 0) / maxAbs) * 100);
+          const hasShap = it.shap !== undefined;
           const isAnomaly = it.direction === "anomaly";
-          const bar = isAnomaly ? "bg-rose-500" : "bg-emerald-500";
+          const bar = !hasShap ? "bg-ink-200" : isAnomaly ? "bg-rose-500" : "bg-emerald-500";
           return (
             <div key={i}>
               <div className="flex items-baseline justify-between gap-2 mb-0.5">
@@ -470,11 +427,10 @@ function ShapBreakdown({ items }: { items: ShapContribution[] }) {
                 </span>
                 <span
                   className={`text-[10px] font-mono font-bold ${
-                    isAnomaly ? "text-rose-600" : "text-emerald-600"
+                    !hasShap ? "text-ink-400" : isAnomaly ? "text-rose-600" : "text-emerald-600"
                   }`}
                 >
-                  {isAnomaly ? "+" : ""}
-                  {it.shap.toFixed(3)}
+                  {hasShap ? `${isAnomaly ? "+" : ""}${it.shap!.toFixed(3)}` : "—"}
                 </span>
               </div>
               <div className="h-1.5 bg-ink-100 rounded-full overflow-hidden">
@@ -484,12 +440,12 @@ function ShapBreakdown({ items }: { items: ShapContribution[] }) {
           );
         })}
       </div>
-      {items.length > COLLAPSED && (
+      {ranked.length > COLLAPSED && (
         <button
           onClick={() => setShowAll((v) => !v)}
           className="mt-2 text-[11px] font-medium text-amber-700 hover:text-amber-900 hover:underline"
         >
-          {showAll ? "▲ ย่อ" : `▼ ดูทั้งหมด (${items.length} features)`}
+          {showAll ? "▲ ย่อ" : `▼ ดูเพิ่มเติมทั้งหมด (${ranked.length} features)`}
         </button>
       )}
     </div>
