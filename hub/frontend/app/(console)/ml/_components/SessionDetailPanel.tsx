@@ -116,7 +116,7 @@ export function SessionDetailPanel({ session, onFeedbackSaved, hideUserLink }: P
             <BreakdownBar label="Rule" value={bd.rule} max={1} color="bg-blue-500" />
             <BreakdownBar label="Behavior" value={bd.behavior} max={1} color="bg-purple-500" />
             <BreakdownBar
-              label="IForest · ไม่บวกคะแนนรวม"
+              label="IForest"
               value={bd.iforest_raw ?? bd.iforest}
               max={1}
               color="bg-amber-500"
@@ -365,8 +365,8 @@ function BreakdownBar({
   const pct = Math.round((value / max) * 100);
   return (
     <div>
-      <div className="flex items-baseline justify-between mb-1">
-        <span className="text-[10px] font-bold text-ink-500 uppercase">{label}</span>
+      <div className="flex min-h-4 items-baseline justify-between mb-1">
+        <span className="whitespace-nowrap text-[10px] font-bold text-ink-500 uppercase">{label}</span>
         <span className="text-xs font-mono font-bold text-ink-900">{value.toFixed(2)}</span>
       </div>
       <div className="h-1.5 bg-ink-100 rounded-full overflow-hidden">
