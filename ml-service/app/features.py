@@ -63,6 +63,7 @@ FEATURE_NAMES: list[str] = [
 ]
 
 FEATURE_COUNT = len(FEATURE_NAMES)
+FEATURE_CONTRACT = "rba-23-bangkok-v1"
 
 # Range validation per feature — ใช้กัน input ที่ผิดประเภท
 FEATURE_RANGES: dict[str, tuple[float, float]] = {

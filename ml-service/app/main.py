@@ -16,6 +16,7 @@ Endpoints:
 
 import os
 import uuid
+from typing import Literal
 from datetime import datetime, timezone
 
 from fastapi import FastAPI, HTTPException, Request
@@ -24,12 +25,13 @@ from pydantic import BaseModel, Field, field_validator
 
 from app import l3_unified as L3U
 from app import sequence as SEQ
-from app.features import FEATURE_COUNT, FEATURE_NAMES, FEATURE_RANGES
+from app.features import FEATURE_COUNT, FEATURE_NAMES, FEATURE_RANGES, FEATURE_CONTRACT
 from app.model import (
     explainer_status,
     load_model,
     model_loaded,
     predict_with_explanation,
+    FeatureContractMismatch,
 )
 
 # Threshold
@@ -50,7 +52,7 @@ def startup():
     try:
         load_model()
         print("✅ Model loaded")
-    except FileNotFoundError as e:
+    except (FileNotFoundError, FeatureContractMismatch) as e:
         print(f"⚠️  {e}")
 
 
@@ -101,6 +103,7 @@ async def http_error_handler(request: Request, exc: HTTPException):
 
 
 class ScoreRequest(BaseModel):
+    feature_contract: Literal["rba-23-bangkok-v1"]
     features: list[float] = Field(
         ...,
         description=f"ต้องมี {FEATURE_COUNT} ตัว เรียงตาม /v1/features-info",
@@ -218,7 +221,7 @@ def score(req: ScoreRequest, request: Request):
     try:
         # ส่ง SHAP ครบทุก feature (UI/dashboard เลือกแสดง top-N หรือทั้งหมดเอง)
         s, explanation = predict_with_explanation(req.features, top_k=FEATURE_COUNT)
-    except FileNotFoundError as e:
+    except (FileNotFoundError, FeatureContractMismatch) as e:
         raise HTTPException(status_code=503, detail=str(e))
 
     if s >= THRESHOLD_BLOCK:
@@ -241,6 +244,7 @@ def score(req: ScoreRequest, request: Request):
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "feature_count": FEATURE_COUNT,
             "explainer": explainer_status(),
+            "feature_contract": FEATURE_CONTRACT,
         },
     )
 
@@ -251,6 +255,7 @@ def score(req: ScoreRequest, request: Request):
 class SequenceRequest(BaseModel):
     """residual 6 มิติของ login ปัจจุบัน — hub คำนวณให้ (pure python ไม่ต้องใช้ numpy)."""
 
+    feature_contract: Literal["rba-23-bangkok-v1"]
     user_id: str = Field(..., min_length=1, max_length=128)
     residual: list[float] = Field(
         ..., description=f"ต้องมี {SEQ.DIMS} ค่า ตามลำดับใน sequence.py"
@@ -294,6 +299,7 @@ class L3EvaluateRequest(BaseModel):
     เกิดขึ้นที่เดียว และประหยัด round-trip บน login path
     """
 
+    feature_contract: Literal["rba-23-bangkok-v1"]
     user_id: str = Field(..., min_length=1, max_length=128)
     features: list[float] = Field(
         ..., min_length=FEATURE_COUNT, max_length=FEATURE_COUNT
@@ -331,6 +337,7 @@ def l3_evaluate(req: L3EvaluateRequest):
         req.access_decision,
         explain=req.explain,
     )
+    data["feature_contract"] = FEATURE_CONTRACT
     return {
         "data": data,
         "meta": {

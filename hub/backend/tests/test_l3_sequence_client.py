@@ -39,7 +39,7 @@ OK_PAYLOAD = {
     "eligibility": "warn",
     "shadow_decision": "would_warn",
     "n_history": 1500,
-    "model_version": "iforest-l3-seq-v1",
+    "model_version": "iforest-l3-seq-bangkok-v2",
 }
 
 

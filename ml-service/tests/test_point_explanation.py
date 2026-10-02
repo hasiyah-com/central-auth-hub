@@ -1,13 +1,21 @@
 from pathlib import Path
 
 import pytest
+import joblib
+import numpy as np
+from sklearn.ensemble import IsolationForest
 
 from app import l3_unified, model
 from app.features import FEATURE_NAMES
 
 
-def test_login_point_returns_all_real_shap_contributions(monkeypatch):
-    monkeypatch.setattr(model, "MODEL_PATH", Path(__file__).parents[1] / "models/iforest_v1.pkl")
+def test_login_point_returns_all_real_shap_contributions(monkeypatch, tmp_path):
+    forest = IsolationForest(n_estimators=10, random_state=42).fit(
+        np.random.default_rng(42).normal(size=(100, 23)))
+    forest.rba_feature_contract_ = model.FEATURE_CONTRACT
+    path = tmp_path / "bangkok.pkl"
+    joblib.dump(forest, path)
+    monkeypatch.setattr(model, "MODEL_PATH", path)
     monkeypatch.setattr(model, "_model", None)
     monkeypatch.setattr(model, "_model_sha256", None)
     monkeypatch.setattr(model, "_explainer", None)

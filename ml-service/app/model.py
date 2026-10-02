@@ -28,7 +28,7 @@ from typing import Any
 import joblib
 import numpy as np
 
-from app.features import FEATURE_NAMES
+from app.features import FEATURE_NAMES, FEATURE_CONTRACT
 from point_scoring import scores_with_model
 
 log = logging.getLogger(__name__)
@@ -37,6 +37,10 @@ MODEL_PATH = Path("/app/models/iforest_v1.pkl")
 
 _model = None
 _model_sha256: str | None = None
+
+
+class FeatureContractMismatch(ValueError):
+    """A UTC/unknown training artifact must not score Bangkok features."""
 
 
 def model_sha256() -> str | None:
@@ -54,13 +58,20 @@ def load_model():
         if not MODEL_PATH.exists():
             raise FileNotFoundError(f"ไม่พบ model ที่ {MODEL_PATH} — รัน train_model ก่อน")
         content = MODEL_PATH.read_bytes()
-        _model = joblib.load(BytesIO(content))
+        candidate = joblib.load(BytesIO(content))
+        if getattr(candidate, "rba_feature_contract_", None) != FEATURE_CONTRACT:
+            raise FeatureContractMismatch("retrain model with rba-23-bangkok-v1 data")
+        _model = candidate
         _model_sha256 = hashlib.sha256(content).hexdigest()
     return _model
 
 
 def model_loaded() -> bool:
-    return MODEL_PATH.exists()
+    try:
+        load_model()
+        return True
+    except (OSError, ValueError):
+        return False
 
 
 def _load_explainer():

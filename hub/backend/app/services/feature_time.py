@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
 BANGKOK = ZoneInfo("Asia/Bangkok")
+FEATURE_CONTRACT = "rba-23-bangkok-v1"
 
 
 def as_utc_naive(value: datetime) -> datetime:

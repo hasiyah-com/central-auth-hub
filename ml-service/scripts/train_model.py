@@ -26,6 +26,8 @@ from sklearn.metrics import (
     roc_curve,
 )
 from sklearn.model_selection import train_test_split
+from scripts.train_bangkok_model import read_dataset
+from app.features import FEATURE_CONTRACT
 
 DATA_PATH = Path("/app/data/sessions.csv")
 # Phase 2.2 — feedback loop: real labeled data (export จาก hub: export_labeled_data.py)
@@ -40,16 +42,8 @@ TEST_SIZE = 0.20
 
 
 def _read_csv(path: Path) -> tuple[list, list]:
-    X, y = [], []
-    with open(path, encoding="utf-8") as f:
-        reader = csv.reader(f)
-        next(reader)  # header
-        for row in reader:
-            if not row:
-                continue
-            X.append([float(v) for v in row[:-1]])
-            y.append(int(row[-1]))
-    return X, y
+    X, y, _ = read_dataset(path)
+    return X.tolist(), y.tolist()
 
 
 def load_data() -> tuple[np.ndarray, np.ndarray]:
@@ -157,6 +151,7 @@ def main():
         n_jobs=-1,
     )
     model.fit(X_train_normal)
+    model.rba_feature_contract_ = FEATURE_CONTRACT
 
     # ประเมิน TRAIN (sanity check — ดูว่า model fit ได้)
     train_pred = (model.predict(X_train) == -1).astype(int)
