@@ -28,7 +28,7 @@ import logging
 from app import sequence as SEQ
 from app.features import FEATURE_COUNT
 from app.model import explainer_status as point_explainer_status
-from app.model import predict_with_explanation
+from app.model import predict_with_explanation, model_sha256
 
 logger = logging.getLogger(__name__)
 
@@ -73,6 +73,7 @@ def _point_view(features: list[float]) -> dict:
         return {
             "available": True,
             "anomaly_score": round(float(score), 4),
+            "model_sha256": model_sha256(),
             "is_anomaly": float(score) >= POINT_ANOMALY,
             "explanation": explanation,
             "explainer": point_explainer_status(),

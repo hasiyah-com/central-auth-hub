@@ -20,6 +20,8 @@ SHAP convention (สำคัญ — มี sign flip):
 """
 
 import logging
+import hashlib
+from io import BytesIO
 from pathlib import Path
 from typing import Any
 
@@ -34,17 +36,26 @@ log = logging.getLogger(__name__)
 MODEL_PATH = Path("/app/models/iforest_v1.pkl")
 
 _model = None
+_model_sha256: str | None = None
+
+
+def model_sha256() -> str | None:
+    """Fingerprint of the exact model bytes loaded into memory."""
+    return _model_sha256
+
 _explainer: Any = None  # shap.TreeExplainer | None — typed Any to avoid import cost when SHAP unavailable
 _explainer_status: str = "uninitialized"  # "ready" | "unavailable" | "uninitialized"
 
 
 def load_model():
     """โหลด model — cache ไว้หลังโหลดครั้งแรก."""
-    global _model
+    global _model, _model_sha256
     if _model is None:
         if not MODEL_PATH.exists():
             raise FileNotFoundError(f"ไม่พบ model ที่ {MODEL_PATH} — รัน train_model ก่อน")
-        _model = joblib.load(MODEL_PATH)
+        content = MODEL_PATH.read_bytes()
+        _model = joblib.load(BytesIO(content))
+        _model_sha256 = hashlib.sha256(content).hexdigest()
     return _model
 
 
