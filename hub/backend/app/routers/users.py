@@ -16,9 +16,10 @@ from fastapi.responses import StreamingResponse
 from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Font, PatternFill
 from openpyxl.worksheet.datavalidation import DataValidation
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
-from sqlalchemy import func, or_
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, ValidationError
+from sqlalchemy import func, or_, text
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 
 from datetime import datetime
 
@@ -294,6 +295,178 @@ class UserUpdate(BaseModel):
     year_or_position: Optional[str] = Field(None, max_length=50)
     phone: Optional[str] = Field(None, max_length=20)
     status: Optional[str] = None
+
+
+# Full set of fields accepted by the single-user create form, plus initial status.
+_CREATE_COLUMNS = (
+    "email", "full_name", "user_type", "identifier", "faculty", "major",
+    "year_or_position", "phone", "status",
+)
+
+
+class UserImportApply(StatusImportFile):
+    # Hash of the exact file previewed; validated rows are re-read at apply time.
+    preview_digest: str
+
+
+def _read_create_file(encoded: str) -> list[tuple[int, dict]]:
+    if len(encoded) > ((_IMPORT_BYTES + 2) // 3) * 4 + 8:
+        raise HTTPException(status_code=422, detail="ไฟล์ใหญ่เกิน 1 MB")
+    try:
+        raw = base64.b64decode(encoded, validate=True)
+    except (binascii.Error, ValueError) as exc:
+        raise HTTPException(status_code=422, detail="ไฟล์ Excel ไม่ถูกต้อง") from exc
+    if len(raw) > _IMPORT_BYTES or not raw.startswith(b"PK"):
+        raise HTTPException(status_code=422, detail="รับเฉพาะ .xlsx ขนาดไม่เกิน 1 MB")
+    try:
+        book = load_workbook(BytesIO(raw), read_only=True, data_only=True)
+        try:
+            if "new_users" not in book.sheetnames:
+                raise ValueError("ไม่พบชีต new_users")
+            sheet = book["new_users"]
+            if sheet.max_row is not None and sheet.max_row > _IMPORT_LIMIT + 1:
+                raise ValueError("ไฟล์มีข้อมูลเกิน 500 แถว")
+            rows = sheet.iter_rows(min_row=1, max_col=len(_CREATE_COLUMNS),
+                                   max_row=_IMPORT_LIMIT + 2, values_only=True)
+            header = next(rows, None)
+            if not header or tuple(str(v or "").strip().lower() for v in header) != _CREATE_COLUMNS:
+                raise ValueError("หัวตารางไม่ตรงแม่แบบเพิ่มผู้ใช้")
+            entries = []
+            for line_no, values in enumerate(rows, start=2):
+                if all(value is None or str(value).strip() == "" for value in values):
+                    continue
+                if len(entries) >= _IMPORT_LIMIT:
+                    raise ValueError("ไฟล์มีข้อมูลเกิน 500 แถว")
+                item = {key: str(value).strip() if value is not None else ""
+                        for key, value in zip(_CREATE_COLUMNS, values)}
+                item["email"] = item["email"].lower()
+                item["user_type"] = item["user_type"].lower()
+                item["status"] = item["status"].lower() or "active"
+                entries.append((line_no, item))
+            if not entries:
+                raise ValueError("ยังไม่มีข้อมูลผู้ใช้ในไฟล์")
+            return entries
+        finally:
+            book.close()
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=422, detail=f"อ่านไฟล์ไม่ได้: {exc}") from exc
+
+
+def _validate_create_rows(rows, db: Session):
+    emails = [item["email"] for _, item in rows if item["email"]]
+    identifiers = [item["identifier"] for _, item in rows if item["identifier"]]
+    existing_email = {u.email.lower() for u in db.query(User).filter(func.lower(User.email).in_(emails)).all()}
+    existing_ids = {u.identifier for u in db.query(User).filter(User.identifier.in_(identifiers)).all()} if identifiers else set()
+    seen_email, seen_ids, valid, errors = set(), set(), [], []
+    for line, item in rows:
+        email, identifier = item["email"], item["identifier"]
+        try:
+            values = {key: item[key] or None for key in _CREATE_COLUMNS[:-1]}
+            values["full_name"] = item["full_name"]
+            values["user_type"] = item["user_type"]
+            user = UserCreate.model_validate(values)
+            if user.user_type not in _VALID_USER_TYPES:
+                raise ValueError("ประเภทผู้ใช้ไม่ถูกต้อง")
+            if item["status"] not in _VALID_STATUS:
+                raise ValueError("สถานะไม่ถูกต้อง")
+            if email in seen_email:
+                raise ValueError("อีเมลซ้ำในไฟล์")
+            if email in existing_email:
+                raise ValueError("อีเมลนี้มีอยู่แล้ว")
+            if identifier and (identifier in seen_ids or identifier in existing_ids):
+                raise ValueError("รหัสผู้ใช้ซ้ำ")
+            valid.append({"row": line, **user.model_dump(mode="json"), "status": item["status"]})
+        except (ValueError, ValidationError) as exc:
+            errors.append({"row": line, "email": email, "message": str(exc).splitlines()[0]})
+        seen_email.add(email)
+        if identifier:
+            seen_ids.add(identifier)
+    return valid, errors
+
+
+@router.get("/create-import/template")
+def create_import_template(admin: User = Depends(require_hub_admin)):
+    book = Workbook()
+    sheet = book.active
+    sheet.title = "new_users"
+    sheet.append(_CREATE_COLUMNS)
+    sheet.freeze_panes = "A2"
+    widths = (38, 32, 20, 22, 28, 28, 24, 20, 20)
+    for index, width in enumerate(widths, 1):
+        sheet.column_dimensions[chr(64 + index)].width = width
+    for cell in sheet[1]:
+        cell.font = Font(bold=True, color="FFFFFF")
+        cell.fill = PatternFill("solid", fgColor="18334A")
+    for column, values in (("C", "student,teacher,staff,admin"),
+                           ("I", "active,suspended,graduated,resigned,deleted")):
+        rule = DataValidation(type="list", formula1=f'"{values}"')
+        rule.showErrorMessage = True
+        sheet.add_data_validation(rule)
+        rule.add(f"{column}2:{column}{_IMPORT_LIMIT + 1}")
+    info = book.create_sheet("instructions")
+    for row in [
+        ("วิธีใช้", "หนึ่งคนต่อแถวในชีต new_users; ตรวจตัวอย่างก่อนยืนยัน"),
+        ("ต้องกรอก", "email, full_name, user_type"),
+        ("user_type", "student / teacher / staff / admin"),
+        ("สถานะ", "status เว้นว่าง = active"),
+        ("คอลัมน์อื่น", "identifier, faculty, major, year_or_position, phone เว้นว่างได้"),
+        ("รหัสผู้ใช้", "ตั้งรูปแบบคอลัมน์ identifier เป็นข้อความก่อนกรอกรหัสที่มีเลข 0 นำหน้า"),
+        ("จำนวนสูงสุด", f"{_IMPORT_LIMIT} คนต่อไฟล์; ขนาดไม่เกิน 1 MB"),
+    ]:
+        info.append(row)
+    info.column_dimensions["A"].width = 22
+    info.column_dimensions["B"].width = 90
+    output = BytesIO()
+    book.save(output)
+    output.seek(0)
+    return StreamingResponse(output,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": 'attachment; filename="new-users-template.xlsx"'})
+
+
+@router.post("/create-import/preview")
+def preview_create_import(payload: StatusImportFile,
+    admin: User = Depends(require_hub_admin), db: Session = Depends(get_db)):
+    import hashlib
+    rows = _read_create_file(payload.file_base64)
+    valid, errors = _validate_create_rows(rows, db)
+    digest = hashlib.sha256(base64.b64decode(payload.file_base64)).hexdigest()
+    return {"rows": valid, "errors": errors, "total": len(rows), "preview_digest": digest}
+
+
+@router.post("/create-import/apply", dependencies=[Depends(_stepup_gate("create_user"))])
+@limiter.limit(settings.rate_limit_admin_mutation)
+def apply_create_import(payload: UserImportApply, request: Request,
+    admin: User = Depends(require_hub_admin), db: Session = Depends(get_db)):
+    import hashlib
+    rows = _read_create_file(payload.file_base64)
+    if hashlib.sha256(base64.b64decode(payload.file_base64)).hexdigest() != payload.preview_digest:
+        raise HTTPException(status_code=409, detail="ไฟล์เปลี่ยนหลังตรวจตัวอย่าง กรุณาตรวจใหม่")
+    try:
+        # Serialize bulk creations so concurrent imports cannot duplicate identifiers.
+        db.execute(text("SELECT pg_advisory_xact_lock(318045)"))
+        valid, errors = _validate_create_rows(rows, db)
+        if errors:
+            raise HTTPException(status_code=409, detail={"code": "invalid_rows", "errors": errors})
+        for item in valid:
+            user = User(**{key: item[key] for key in _CREATE_COLUMNS},
+                        is_hub_admin=item["user_type"] == "admin")
+            db.add(user)
+            db.flush()
+            log_action(db, actor_id=admin.id, action="create_user",
+                       target_type="user", target_id=user.id, ip=get_client_ip(request),
+                       metadata={"email": user.email, "user_type": user.user_type,
+                                 "identifier": user.identifier, "source": "create_import"})
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="ข้อมูลซ้ำกับผู้ใช้ที่เพิ่งถูกเพิ่ม กรุณาตรวจไฟล์ใหม่") from exc
+    except Exception:
+        db.rollback()
+        raise
+    return {"created": len(valid)}
 
 
 # ============ Endpoints ============

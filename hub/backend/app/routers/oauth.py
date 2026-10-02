@@ -3341,6 +3341,7 @@ def _login_chooser_html(
 
   .spinner {{ width:16px; height:16px; border:2px solid rgba(4,34,28,.35);
               border-top-color:#04221c; border-radius:50%; animation:spin .7s linear infinite; }}
+  .btn .spinner {{ flex:0 0 16px; box-sizing:border-box; }}
   @keyframes spin {{ to{{transform:rotate(360deg)}} }}
 
   .foot {{ padding:15px 40px; border-top:1px solid var(--line); text-align:center;
