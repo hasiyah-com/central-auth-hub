@@ -134,6 +134,21 @@ export function SessionDetailPanel({ session, onFeedbackSaved, hideUserLink }: P
           <RuleBreakdown reasons={session.risk_reasons} />
         )}
 
+        {bd?.l3?.fallback && (
+          <div className="mt-3 text-sm text-ink-600">
+            <p className="font-semibold">
+              L3 ตัวสำรอง: {{ warn: "เตือน", normal: "ปกติ", skipped: "ไม่ใช้ — ชั้น 1+2 ตรวจพบแล้ว", abstain: "ข้อมูลอ้างอิงยังไม่พร้อม" }[bd.l3.fallback.status]}
+            </p>
+            {bd.l3.fallback.percentile != null && bd.l3.fallback.warn_percentile != null && (
+              <p>
+                กลุ่ม {bd.l3.fallback.user_type} · Percentile {(bd.l3.fallback.percentile * 100).toFixed(2)}
+                {" · เกณฑ์เตือน > "}{(bd.l3.fallback.warn_percentile * 100).toFixed(2)}
+              </p>
+            )}
+            <p>คำเตือนนี้ไม่เปลี่ยนผลอนุญาตเข้าใช้งาน</p>
+          </div>
+        )}
+
         {/* SHAP — Layer 3 (IForest) per-feature contributions.
             Only renders when the ML service actually returned an explanation
             (newer ml-service versions with shap installed). Sign-convention:

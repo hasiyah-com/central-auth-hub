@@ -11,6 +11,7 @@ Fail-safe ตาม B21: ml-service ล่ม/ช้า/ตอบผิดรู
 from __future__ import annotations
 
 import httpx
+import math
 
 from app.config import settings
 
@@ -163,6 +164,8 @@ def _coerce_unified(data: dict) -> dict:
 
     point = data.get("point") if isinstance(data.get("point"), dict) else {}
     seq = data.get("sequence") if isinstance(data.get("sequence"), dict) else {}
+    point_score = _num(point.get("anomaly_score"))
+    valid_point_score = not isinstance(point.get("anomaly_score"), bool) and point_score is not None and math.isfinite(point_score) and 0 <= point_score <= 1
     return {
         "monitoring_decision": mon if mon in _MONITORING_VALUES else "normal",
         "is_anomaly": data.get("is_anomaly") is True,
@@ -184,8 +187,9 @@ def _coerce_unified(data: dict) -> dict:
         else [],
         "model_attribution_caveat": _s("model_attribution_caveat"),
         "point": {
-            "available": point.get("available") is True,
-            "anomaly_score": _num(point.get("anomaly_score")) or 0.0,
+            "available": point.get("available") is True and valid_point_score,
+            "model_sha256": point.get("model_sha256") if isinstance(point.get("model_sha256"), str) else None,
+            "anomaly_score": point_score if valid_point_score else 0.0,
             "is_anomaly": point.get("is_anomaly") is True,
             "explanation": point.get("explanation")
             if isinstance(point.get("explanation"), list)
