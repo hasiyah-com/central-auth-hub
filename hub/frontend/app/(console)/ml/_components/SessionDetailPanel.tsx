@@ -157,6 +157,13 @@ export function SessionDetailPanel({ session, onFeedbackSaved, hideUserLink }: P
         {bd?.iforest_explanation && bd.iforest_explanation.length > 0 && (
           <ShapBreakdown items={bd.iforest_explanation} />
         )}
+        {bd?.l3_point_features && bd.l3_point_features.length > 0 && (
+          <PointFeatureTable
+            items={bd.l3_point_features}
+            explanation={bd.iforest_explanation || []}
+            available={bd.l3?.point_available}
+          />
+        )}
       </div>
 
       {/* ── 2. Detail grid ── */}
@@ -323,6 +330,39 @@ export function SessionDetailPanel({ session, onFeedbackSaved, hideUserLink }: P
         </div>
       )}
     </div>
+  );
+}
+
+/** Raw inputs stay visible even when SHAP is unavailable or L3 abstains. */
+function PointFeatureTable({ items, explanation, available }: {
+  items: Array<{ feature: string; value: number }>;
+  explanation: ShapContribution[];
+  available?: boolean;
+}) {
+  const byFeature = new Map(explanation.map((row) => [row.feature, row]));
+  const hourUtc = utcHourFromShap(items);
+  return (
+    <section className="mt-3 rounded-lg border border-ink-200 p-3" aria-label="ฟีเจอร์ชั้น 3 ทั้งหมด">
+      <h3 className="text-sm font-bold text-ink-800">ฟีเจอร์ชั้น 3 ทั้งหมด ({items.length})</h3>
+      <p className="mt-1 text-xs text-ink-500">
+        ค่าอินพุตที่ส่งให้โมเดล · คะแนน SHAP เป็นผลต่อโมเดลเฉพาะเมื่อคำนวณได้
+        {available === false && " · โมเดลไม่พร้อมในเหตุการณ์นี้"}
+      </p>
+      <div className="mt-2 overflow-x-auto">
+        <table className="w-full text-left text-xs">
+          <thead><tr className="border-b border-ink-200 text-ink-500"><th className="py-1.5 pr-2">ฟีเจอร์</th><th className="py-1.5 pr-2">ค่า</th><th className="py-1.5">SHAP</th></tr></thead>
+          <tbody>{items.map((it) => {
+            const shap = byFeature.get(it.feature);
+            return <tr key={it.feature} className="border-b border-ink-100 align-top">
+              <td className="py-1.5 pr-2"><span className="font-medium">{featureLabelTh(it.feature)}</span><span className="block font-mono text-[10px] text-ink-400">{it.feature}</span></td>
+              <td className="py-1.5 pr-2 font-mono">{formatShapFeatureValue(it.feature, it.value, hourUtc)}</td>
+              <td className="py-1.5 font-mono">{shap ? `${shap.shap > 0 ? "+" : ""}${shap.shap.toFixed(3)}` : "—"}</td>
+            </tr>;
+          })}</tbody>
+        </table>
+      </div>
+      <p className="mt-2 text-xs text-ink-500">— หมายถึงไม่ได้คำนวณ SHAP; ไม่ได้แปลว่าฟีเจอร์ไม่มีผลหรือได้คะแนนศูนย์</p>
+    </section>
   );
 }
 

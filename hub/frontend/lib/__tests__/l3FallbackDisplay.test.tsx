@@ -33,3 +33,19 @@ test('historic sessions without fallback still render', () => {
   render(<SessionDetailPanel session={session()} />);
   expect(screen.queryByText(/L3 ตัวสำรอง/)).not.toBeInTheDocument();
 });
+
+test('shows every stored point input without pretending unavailable SHAP is zero', () => {
+  const s = session();
+  s.risk_breakdown!.l3_point_features = [
+    { feature: 'hour_of_day', value: 20 },
+    { feature: 'day_of_week', value: 4 },
+    { feature: 'is_new_device', value: 1 },
+  ];
+  s.risk_breakdown!.l3 = { point_available: false };
+  render(<SessionDetailPanel session={s} />);
+  expect(screen.getByRole('table')).toBeInTheDocument();
+  expect(screen.getByText('ฟีเจอร์ชั้น 3 ทั้งหมด (3)')).toBeInTheDocument();
+  expect(screen.getByText('อุปกรณ์ใหม่')).toBeInTheDocument();
+  expect(screen.getByText(/โมเดลไม่พร้อมในเหตุการณ์นี้/)).toBeInTheDocument();
+  expect(screen.getByText(/ไม่ได้แปลว่าฟีเจอร์ไม่มีผล/)).toBeInTheDocument();
+});

@@ -185,6 +185,11 @@ async def test_production_engine_preserves_access_and_only_warns_for_allow(
     assert result["decision"] == baseline
     assert result["score"] == 0.2
     assert result["reasons"] == ["baseline"]
+    inputs = result["breakdown"]["l3_point_features"]
+    assert len(inputs) == 23
+    assert inputs[0] == {"feature": "hour_of_day", "value": 0.0}
+    assert inputs[-1] == {"feature": "impossible_travel_score", "value": 0.0}
+    assert result["breakdown"]["l3"]["point_available"] is True
     fallback = result["breakdown"]["l3"]["fallback"]
     assert fallback["status"] == ("warn" if baseline == "allow" else "skipped")
     assert result["monitoring_decision"] == (

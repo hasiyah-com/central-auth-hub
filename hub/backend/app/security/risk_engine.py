@@ -18,7 +18,7 @@ from app.security.behavior_profiling import evaluate_behavior, get_user_profile
 from app.security import l3_fallback
 from app.security.iforest_scorer import monitoring_only
 from app.security.risk_aggregator import aggregate
-from app.security.rule_engine import evaluate_rules
+from app.security.rule_engine import FEAT, evaluate_rules
 
 logger = logging.getLogger(__name__)
 
@@ -130,7 +130,14 @@ async def evaluate_login_risk(
     breakdown = {
         **decision.breakdown,
         "iforest_raw": round(l3["point"]["anomaly_score"], 4),
-        "l3": _l3_summary(l3),
+        "l3": {**_l3_summary(l3), "point_available": bool(l3["point"].get("available"))},
+        # Preserve the exact point-model input for all 23 dimensions. SHAP is
+        # deliberately disabled on the login path, so it cannot serve as a
+        # record of which features were evaluated.
+        "l3_point_features": [
+            {"feature": name, "value": round(float(features[index]), 4)}
+            for name, index in sorted(FEAT.items(), key=lambda item: item[1])
+        ],
     }
     # คงคีย์เดิมไว้ให้ replay script + ข้อมูลที่เก็บมาแล้วอ่านต่อได้ · ใส่เฉพาะตอนมีจริง
     # (ปิดแฟล็ก/L3 พัง -> ไม่ใส่ ไม่ใช่ใส่ contract เปล่า — ดู _sequence_contract)

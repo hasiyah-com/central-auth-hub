@@ -22,8 +22,11 @@ export type RiskBreakdown = {
   iforest: number;
   iforest_raw: number;
   iforest_explanation?: ShapContribution[];
+  /** All point-model inputs, ordered by the 23-feature contract; absent in older sessions. */
+  l3_point_features?: Array<{ feature: string; value: number }>;
   // ผลชั้นที่ 3 (monitoring) — ไม่มีใน session เก่า
   l3?: {
+    point_available?: boolean;
     is_anomaly?: boolean;
     unique_to_l3?: boolean;
     monitoring_decision?: string;
@@ -166,7 +169,7 @@ export const DEVICE_ICON: Record<string, string> = {
 };
 
 // Feature name → ป้ายภาษาไทย (อ่านง่ายใน SHAP/risk breakdown)
-// ครบ 21 features — ดู docs/guides/ML_FEATURE_DATA_SOURCES.md
+// ครบ 23 features — ดู docs/guides/ML_FEATURE_DATA_SOURCES.md
 export const FEATURE_LABEL_TH: Record<string, string> = {
   hour_of_day: "ชั่วโมงที่ล็อกอิน",
   day_of_week: "วันในสัปดาห์",
