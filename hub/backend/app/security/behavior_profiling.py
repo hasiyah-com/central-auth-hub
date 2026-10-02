@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from app.models import LoginSession
 from app.security.rule_engine import FEAT
+from app.services.feature_time import as_bangkok
 
 # Cold start: ถ้ามี history < MIN_SESSIONS ให้ score คงที่
 MIN_SESSIONS = 5
@@ -105,8 +106,8 @@ def get_user_profile(db: Session, user_id: str) -> dict | None:
     if len(sessions) < MIN_SESSIONS:
         return None
 
-    hours = [s.created_at.hour for s in sessions]
-    weekends = [1 if s.created_at.weekday() >= 5 else 0 for s in sessions]
+    hours = [as_bangkok(s.created_at).hour for s in sessions]
+    weekends = [1 if as_bangkok(s.created_at).weekday() >= 5 else 0 for s in sessions]
 
     # Mode ของ hour (เวลาที่ login บ่อยที่สุด)
     from statistics import mode as stats_mode
