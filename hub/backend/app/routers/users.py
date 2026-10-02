@@ -280,7 +280,7 @@ class UserCreate(BaseModel):
     faculty: Optional[str] = Field(None, max_length=100)
     major: Optional[str] = Field(None, max_length=100)
     year_or_position: Optional[str] = Field(None, max_length=50)
-    phone: Optional[str] = Field(None, max_length=20)
+    phone: Optional[str] = Field(None, max_length=10)
 
 
 class UserUpdate(BaseModel):
@@ -293,7 +293,7 @@ class UserUpdate(BaseModel):
     faculty: Optional[str] = Field(None, max_length=100)
     major: Optional[str] = Field(None, max_length=100)
     year_or_position: Optional[str] = Field(None, max_length=50)
-    phone: Optional[str] = Field(None, max_length=20)
+    phone: Optional[str] = Field(None, max_length=10)
     status: Optional[str] = None
 
 
@@ -413,6 +413,7 @@ def create_import_template(admin: User = Depends(require_hub_admin)):
         ("สถานะ", "status เว้นว่าง = active"),
         ("คอลัมน์อื่น", "identifier, faculty, major, year_or_position, phone เว้นว่างได้"),
         ("รหัสผู้ใช้", "ตั้งรูปแบบคอลัมน์ identifier เป็นข้อความก่อนกรอกรหัสที่มีเลข 0 นำหน้า"),
+        ("phone", "เบอร์โทรไม่เกิน 10 ตัวอักษร; เว้นว่างได้"),
         ("จำนวนสูงสุด", f"{_IMPORT_LIMIT} คนต่อไฟล์; ขนาดไม่เกิน 1 MB"),
     ]:
         info.append(row)
