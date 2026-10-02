@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.security.behavior_profiling import evaluate_behavior, get_user_profile
+from app.security import l3_fallback
 from app.security.iforest_scorer import monitoring_only
 from app.security.risk_aggregator import aggregate
 from app.security.rule_engine import evaluate_rules
@@ -129,19 +130,42 @@ async def evaluate_login_risk(
     if seq_contract is not None:
         breakdown["l3_sequence"] = seq_contract
 
+    # ── ชั้นที่ 3 เป็นตัวสำรองระดับ warn (เฉพาะเมื่อชั้นที่ 1+2 ตัดสิน allow) ──
+    # ยกได้ถึง warn เท่านั้น · ไม่เปลี่ยนคะแนน · L3 ล่ม/ไม่มีคะแนน = คงผลเดิม (fail-safe B21)
+    access_decision, access_reasons = decision.decision, list(decision.reasons)
+    if settings.l3_fallback_warn_enabled:
+        point = l3.get("point") or {}
+        usable = (
+            not l3.get("error") and point.get("available") and not point.get("error")
+        )
+        user_type = _user_type(db, user_id)
+        access_decision, fb_reason = l3_fallback.apply(
+            decision.decision,
+            point.get("anomaly_score") if usable else None,
+            user_type,
+            shadow_mode,
+        )
+        if fb_reason:
+            access_reasons.append(fb_reason)
+        breakdown["l3_fallback"] = {
+            "applied": fb_reason is not None,
+            "threshold": l3_fallback.threshold_for(user_type),
+            "user_type": user_type,
+        }
+
     logger.info(
         "[risk_engine] user=%s score=%.3f decision=%s monitoring=%s",
         user_id,
         decision.total_score,
-        decision.decision,
+        access_decision,
         l3["monitoring_decision"],
     )
 
     return {
-        # ── แกนที่ 1: access — L1/L2/L4 เท่านั้น ──
-        "decision": decision.decision,
+        # ── แกนที่ 1: access — L1/L2/L4 (+ L3 ตัวสำรองระดับ warn เมื่อเปิดแฟล็ก) ──
+        "decision": access_decision,
         "score": decision.total_score,
-        "reasons": decision.reasons,
+        "reasons": access_reasons,
         "breakdown": breakdown,
         # SHAP ของ point view (23 ฟีเจอร์) — คีย์เดิม UI/audit ใช้อยู่
         "iforest_explanation": l3["point"]["explanation"],
@@ -153,6 +177,19 @@ async def evaluate_login_risk(
         "l3_sequence": seq_contract,
         "l3": _l3_summary(l3),
     }
+
+
+def _user_type(db, user_id) -> str | None:
+    """ประเภทผู้ใช้สำหรับเกณฑ์ของตัวสำรอง · ไม่มี db/หาไม่เจอ = None (ใช้เกณฑ์ค่าเริ่มต้น)."""
+    if db is None:
+        return None
+    try:
+        from app.models import User
+
+        return db.query(User.user_type).filter(User.id == user_id).scalar()
+    except Exception as e:  # noqa: BLE001
+        logger.warning("[risk_engine] user_type lookup error: %s", e)
+        return None
 
 
 # ══════════════════════════════════════════════════════════════════════════════

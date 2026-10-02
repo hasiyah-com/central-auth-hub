@@ -18,6 +18,12 @@ sequence view แยกแกนแล้วจริง แต่ **point view 
 L3 **ห้ามแตะ** access_decision ทุกกรณี — รวมถึงห้ามทำ allow -> warn
 (การตรวจจับที่วัดไว้ในการทดลองไม่เปลี่ยน เปลี่ยนแค่ "บันทึกผลไว้ที่ field ไหน")
 
+ปรับข้อตกลง 2 ต.ค. 2026: ผู้ใช้อนุมัติให้ point view เป็น "ตัวสำรองระดับ warn" เมื่อ L1+L2 ตัดสิน allow
+(app/security/l3_fallback.py · หลักฐาน l3_fallback_result_2026-10-01 ที่ลงทะเบียนก่อนวัด) ·
+ข้อตกลงในไฟล์นี้ยังบังคับเต็มเมื่อปิดแฟล็ก `l3_fallback_warn_enabled` (เทสทุกตัวที่นี่ปิดไว้) ·
+เมื่อเปิด: ยกได้จาก allow เป็น warn เท่านั้น ไม่เปลี่ยนคะแนน และ sequence view ยังแตะไม่ได้ —
+บังคับใน tests/test_l3_fallback_warn.py
+
 Run: docker compose exec hub-backend pytest tests/test_l3_access_monitoring_split.py -v
 """
 
@@ -141,11 +147,19 @@ def test_contract_exposes_monitoring_not_access():
 
 
 # ── 4. risk_engine: เปิด L3 แล้ว access decision ต้องเหมือนตอนปิดเป๊ะ ───────
-async def _run(monkeypatch, *, l3_enabled: bool, fired: bool, point_score: float = 0.0):
+async def _run(
+    monkeypatch,
+    *,
+    l3_enabled: bool,
+    fired: bool,
+    point_score: float = 0.0,
+    fallback: bool = False,
+):
     from app.security import risk_engine
     from app.services import l3_sequence_client as CLI
 
     monkeypatch.setattr(settings, "l3_sequence_enabled", l3_enabled, raising=False)
+    monkeypatch.setattr(settings, "l3_fallback_warn_enabled", fallback, raising=False)
     monkeypatch.setattr(risk_engine, "get_user_profile", lambda db, uid: None)
 
     res = _result() if fired else _result(fired=False, tier="none")
