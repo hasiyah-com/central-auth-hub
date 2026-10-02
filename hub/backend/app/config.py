@@ -14,6 +14,8 @@ class Settings(BaseSettings):
 
     # App
     app_env: str = "development"
+    # Explicit calibration artifact enables monitoring-only L3 fallback.
+    l3_role_calibration_path: str = ""
     secret_key: str = "dev-secret-change-me"  # session middleware + HMAC
     # คีย์แยกสำหรับ encrypt client_secret ใน DB (ห้ามใช้ secret_key เดียวกัน)
     # ถ้าว่างใน development จะ fallback ไปใช้ secret_key พร้อม warning

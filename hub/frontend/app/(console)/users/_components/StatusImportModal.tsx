@@ -11,12 +11,21 @@ type PreviewRow = {
   current_status: string;
   new_status: string;
   changed: boolean;
+  full_name?: string;
+  user_type?: string;
+  identifier?: string | null;
+  faculty?: string | null;
+  major?: string | null;
+  year_or_position?: string | null;
+  phone?: string | null;
+  status?: string;
 };
 type Preview = {
   rows: PreviewRow[];
   errors: { row: number; email: string; message: string }[];
   total: number;
   changed: number;
+  preview_digest?: string;
 };
 
 function errorText(error: unknown): string {
@@ -34,6 +43,7 @@ export function StatusImportModal({ onClose, onSaved }: {
   onClose: () => void;
   onSaved: () => void;
 }) {
+  const [mode, setMode] = useState<"status" | "create">("status");
   const [filename, setFilename] = useState("");
   const [encoded, setEncoded] = useState("");
   const [preview, setPreview] = useState<Preview | null>(null);
@@ -42,17 +52,26 @@ export function StatusImportModal({ onClose, onSaved }: {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
+  function switchMode(next: "status" | "create") {
+    setMode(next);
+    setFilename("");
+    setEncoded("");
+    setPreview(null);
+    setError(null);
+    setSuccess(null);
+  }
+
   async function downloadTemplate() {
     setError(null);
     try {
-      const response = await fetch("/api/proxy/admin/users/status-import/template", {
+      const response = await fetch(`/api/proxy/admin/users/${mode === "create" ? "create-import" : "status-import"}/template`, {
         credentials: "include",
       });
       if (!response.ok) throw new Error("ดาวน์โหลดแม่แบบไม่สำเร็จ");
       const url = URL.createObjectURL(await response.blob());
       const link = document.createElement("a");
       link.href = url;
-      link.download = "user-status-template.xlsx";
+      link.download = mode === "create" ? "new-users-template.xlsx" : "user-status-template.xlsx";
       document.body.appendChild(link);
       link.click();
       link.remove();
@@ -81,7 +100,7 @@ export function StatusImportModal({ onClose, onSaved }: {
         binary += String.fromCharCode(...bytes.subarray(i, i + 8192));
       }
       const file_base64 = btoa(binary);
-      const result = await clientFetch<Preview>("/admin/users/status-import/preview", {
+      const result = await clientFetch<Preview>(`/admin/users/${mode === "create" ? "create-import" : "status-import"}/preview`, {
         method: "POST",
         body: JSON.stringify({ file_base64 }),
       });
@@ -95,25 +114,35 @@ export function StatusImportModal({ onClose, onSaved }: {
   }
 
   async function apply() {
-    if (!preview || preview.errors.length || !encoded || !preview.changed) return;
+    if (!preview || preview.errors.length || !encoded || (mode === "status" && !preview.changed)) return;
     setBusy(true);
     setError(null);
     try {
-      const expected_statuses = Object.fromEntries(
-        preview.rows.map((row) => [row.email, row.current_status])
-      );
-      const result = await runWithStepup(
-        () => clientFetch<{ changed: number; unchanged: number }>(
-          "/admin/users/status-import/apply",
-          {
+      if (mode === "create") {
+        const result = await runWithStepup(
+          () => clientFetch<{ created: number }>("/admin/users/create-import/apply", {
             method: "POST",
-            body: JSON.stringify({ file_base64: encoded, expected_statuses }),
+            body: JSON.stringify({ file_base64: encoded, preview_digest: preview.preview_digest }),
             stepupMode: "throw",
-          }
-        ),
-        setVerifying
-      );
-      setSuccess(`เปลี่ยนสถานะสำเร็จ ${result.changed} คน (คงเดิม ${result.unchanged} คน)`);
+          }), setVerifying
+        );
+        setSuccess(`เพิ่มผู้ใช้สำเร็จ ${result.created} คน`);
+      } else {
+        const expected_statuses = Object.fromEntries(
+          preview.rows.map((row) => [row.email, row.current_status])
+        );
+        const result = await runWithStepup(
+          () => clientFetch<{ changed: number; unchanged: number }>(
+            "/admin/users/status-import/apply",
+            {
+              method: "POST",
+              body: JSON.stringify({ file_base64: encoded, expected_statuses }),
+              stepupMode: "throw",
+            }
+          ), setVerifying
+        );
+        setSuccess(`เปลี่ยนสถานะสำเร็จ ${result.changed} คน (คงเดิม ${result.unchanged} คน)`);
+      }
       setPreview(null);
       setEncoded("");
       onSaved();
@@ -132,16 +161,28 @@ export function StatusImportModal({ onClose, onSaved }: {
         className="flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl bg-white shadow-2xl">
         <header className="flex items-start justify-between border-b border-slate-200 px-6 py-5">
           <div>
-            <h2 id="status-import-title" className="text-xl font-bold text-slate-900">Import / Export สถานะผู้ใช้</h2>
-            <p className="mt-1 text-sm text-slate-600">นำเข้าไฟล์ Excel เพื่อเปลี่ยนสถานะผู้ใช้หลายคนพร้อมกัน</p>
+            <h2 id="status-import-title" className="text-xl font-bold text-slate-900">Import / Export ผู้ใช้</h2>
+            <p className="mt-1 text-sm text-slate-600">เลือกเปลี่ยนสถานะเดิม หรือเพิ่มผู้ใช้ใหม่จากไฟล์ Excel</p>
           </div>
           <button type="button" onClick={onClose} disabled={busy || verifying}
             aria-label="ปิด" className="rounded-lg px-2 text-xl text-slate-500 hover:bg-slate-100 disabled:opacity-50">×</button>
         </header>
         <div className="space-y-5 overflow-y-auto px-6 py-5">
+          <div className="flex gap-2" role="group" aria-label="ประเภทการนำเข้า">
+            {([ ["status", "เปลี่ยนสถานะผู้ใช้"], ["create", "เพิ่มผู้ใช้ใหม่"] ] as const).map(([value, label]) => (
+              <button key={value} type="button" onClick={() => switchMode(value)} disabled={busy || verifying}
+                aria-pressed={mode === value}
+                className={`rounded-lg px-4 py-2 text-sm font-semibold ${mode === value ? "bg-slate-900 text-white" : "border border-slate-300 text-slate-800"}`}>
+                {label}
+              </button>
+            ))}
+          </div>
           <p className="text-sm text-slate-700">
-            1. ดาวน์โหลดแม่แบบ 2. กรอก <code>email</code> และ <code>new_status</code> ในชีต <code>status_updates</code>
-            3. เลือกไฟล์เพื่อตรวจสอบก่อนยืนยัน (สูงสุด 500 คน)
+            {mode === "create" ? (
+              <>1. ดาวน์โหลดแม่แบบ 2. กรอกชีต <code>new_users</code> โดยระบุ email, full_name, user_type และข้อมูลอื่นตามคอลัมน์ 3. เลือกไฟล์เพื่อตรวจสอบก่อนเพิ่ม (สูงสุด 500 คน)</>
+            ) : (
+              <>1. ดาวน์โหลดแม่แบบ 2. กรอก <code>email</code> และ <code>new_status</code> ในชีต <code>status_updates</code> 3. เลือกไฟล์เพื่อตรวจสอบก่อนยืนยัน (สูงสุด 500 คน)</>
+            )}
           </p>
           <button type="button" onClick={() => void downloadTemplate()}
             className="rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50">
@@ -149,7 +190,7 @@ export function StatusImportModal({ onClose, onSaved }: {
           </button>
           <label className="block text-sm font-semibold text-slate-800">
             เลือกไฟล์ .xlsx
-            <input type="file" accept=".xlsx" disabled={busy || verifying}
+            <input key={mode} type="file" accept=".xlsx" disabled={busy || verifying}
               onChange={(e) => { void selectFile(e.target.files?.[0]); }}
               className="mt-2 block w-full rounded-lg border border-slate-300 p-2 text-sm" />
           </label>
@@ -160,15 +201,29 @@ export function StatusImportModal({ onClose, onSaved }: {
           {preview && (
             <div className="space-y-3">
               <p className="text-sm font-semibold text-slate-900">
-                ตรวจพบ {preview.total} แถว · จะเปลี่ยน {preview.changed} คน · ข้อผิดพลาด {preview.errors.length} แถว
+                ตรวจพบ {preview.total} แถว · {mode === "create" ? `จะเพิ่ม ${preview.rows.length} คน` : `จะเปลี่ยน ${preview.changed} คน`} · ข้อผิดพลาด {preview.errors.length} แถว
               </p>
               {preview.errors.length > 0 && (
                 <div className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-800">
-                  <p className="font-semibold">กรุณาแก้ทุกแถวที่ผิดแล้วนำเข้าใหม่ ระบบยังไม่เปลี่ยนสถานะใคร</p>
+                  <p className="font-semibold">กรุณาแก้ทุกแถวที่ผิดแล้วนำเข้าใหม่ ระบบยังไม่บันทึกข้อมูล</p>
                   {preview.errors.map((item) => <p key={item.row}>แถว {item.row}: {item.email || "—"} — {item.message}</p>)}
                 </div>
               )}
-              {preview.rows.length > 0 && (
+              {mode === "create" ? (
+                preview.rows.length > 0 && <div className="max-h-72 overflow-auto rounded-lg border border-slate-200">
+                  <table className="min-w-max w-full text-left text-sm">
+                    <thead className="sticky top-0 bg-slate-100 text-slate-700"><tr>
+                      {(["แถว", "email", "full_name", "user_type", "identifier", "faculty", "major", "year_or_position", "phone", "status"] as const).map((col) =>
+                        <th className="p-2" key={col}>{col}</th>)}
+                    </tr></thead>
+                    <tbody>{preview.rows.map((item) => <tr className="border-t border-slate-100" key={item.row}>
+                      <td className="p-2">{item.row}</td>
+                      {(["email", "full_name", "user_type", "identifier", "faculty", "major", "year_or_position", "phone", "status"] as const).map((col) =>
+                        <td className="p-2" key={col}>{String(item[col] ?? "—")}</td>)}
+                    </tr>)}</tbody>
+                  </table>
+                </div>
+              ) : preview.rows.length > 0 && (
                 <div className="max-h-72 overflow-auto rounded-lg border border-slate-200">
                   <table className="w-full text-left text-sm">
                     <thead className="sticky top-0 bg-slate-100 text-slate-700">
@@ -185,7 +240,7 @@ export function StatusImportModal({ onClose, onSaved }: {
                   </table>
                 </div>
               )}
-              {preview.rows.some((r) => ["deleted", "graduated", "resigned"].includes(r.new_status) && r.changed) && (
+              {mode === "status" && preview.rows.some((r) => ["deleted", "graduated", "resigned"].includes(r.new_status) && r.changed) && (
                 <p className="rounded-lg bg-amber-50 p-3 text-sm text-amber-900">
                   สถานะ deleted, graduated และ resigned จะเพิกถอนสิทธิ์ระบบย่อยตามกติกาปัจจุบัน
                 </p>
@@ -197,9 +252,9 @@ export function StatusImportModal({ onClose, onSaved }: {
           <button type="button" onClick={onClose} disabled={busy || verifying}
             className="rounded-lg border border-slate-300 px-4 py-2 text-sm disabled:opacity-50">ปิด</button>
           <button type="button" onClick={() => void apply()}
-            disabled={busy || verifying || !preview || !!preview.errors.length || !preview.changed}
+            disabled={busy || verifying || !preview || !!preview.errors.length || (mode === "status" && !preview.changed)}
             className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white disabled:opacity-50">
-            ยืนยันการเปลี่ยนสถานะ
+            {mode === "create" ? "ยืนยันการเพิ่มผู้ใช้" : "ยืนยันการเปลี่ยนสถานะ"}
           </button>
         </footer>
       </section>

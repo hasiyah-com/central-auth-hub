@@ -103,6 +103,13 @@ async def evaluate_login_risk(
         user_id, features, profile, l3_subsystem_id, decision.decision
     )
     seq_contract = _sequence_contract(l3)
+    if settings.l3_role_calibration_path:
+        fallback = _role_percentile_fallback(db, user_id, decision.decision, l3)
+        l3["fallback"] = fallback
+        # Monitoring only: baseline access score, decision and reasons stay intact.
+        l3["monitoring_decision"] = (
+            "l3_investigate" if fallback["status"] == "warn" else "normal"
+        )
 
     if l3["is_anomaly"]:
         logger.info(
@@ -212,7 +219,31 @@ _L3_SUMMARY_KEYS = (
 
 def _l3_summary(l3: dict) -> dict:
     """ส่วนที่เก็บลง log/replay — ตัดผลดิบของแต่ละมุมมองออก (ยาวเกินจำเป็น)."""
-    return {k: l3[k] for k in _L3_SUMMARY_KEYS}
+    summary = {k: l3[k] for k in _L3_SUMMARY_KEYS}
+    if "fallback" in l3:
+        summary["fallback"] = l3["fallback"]
+    return summary
+
+
+def _role_percentile_fallback(db, user_id, baseline_decision, l3):
+    from app.security.l3_percentile_fallback import evaluate_file, _quiet
+
+    if baseline_decision != "allow":
+        return _quiet("skipped", "baseline_not_allow", None)
+    point = l3.get("point", {})
+    if l3.get("error") or not point.get("available") or point.get("error"):
+        return _quiet("abstain", "point_unavailable", None)
+    try:
+        from app.models import User
+
+        role = db.query(User.user_type).filter(User.id == user_id).scalar()
+        return evaluate_file(
+            settings.l3_role_calibration_path, baseline_decision, role,
+            point.get("anomaly_score"), point.get("model_sha256"),
+        )
+    except Exception:  # noqa: BLE001
+        logger.exception("L3 role fallback unavailable")
+        return _quiet("abstain", "role_lookup_unavailable", None)
 
 
 def _sequence_contract(l3: dict) -> dict | None:

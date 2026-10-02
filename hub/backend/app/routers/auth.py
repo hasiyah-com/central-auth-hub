@@ -1599,43 +1599,43 @@ def logout(
     from app.services import refresh_token_service
     from app.services.jwt_service import revoke_jti, verify_token
 
-    if body and body.refresh_token:
-        refresh_token_service.revoke_raw(body.refresh_token)
-
+    refresh = (
+        refresh_token_service.identify(body.refresh_token)
+        if body and body.refresh_token else None
+    )
     try:
         payload = verify_token(credentials.credentials)
     except Exception:
-        # token เสีย/หมดอายุ/revoke แล้ว → ถือว่า logout สำเร็จ (idempotent)
-        return {"status": "ok", "token_revoked": False}
+        # An authenticated refresh token can identify an expired access session.
+        payload = {}
 
     jti = payload.get("jti")
     revoked = revoke_jti(jti, int(payload["exp"])) if jti else False
-
-    # mark active hub-direct session ของ user นี้ + revoke refresh_id ที่ผูกไว้
-    # (เผื่อ client ไม่ได้ส่ง refresh_token มาใน body แต่ session รู้จักมันอยู่)
-    user_id = payload.get("sub")
+    user_id = payload.get("sub") or (refresh and refresh.get("user_id"))
     if user_id:
-        sess = (
-            db.query(LoginSession)
-            .filter(
-                LoginSession.user_id == user_id,
-                LoginSession.subsystem_id.is_(None),
-                LoginSession.logout_at.is_(None),
-            )
-            .order_by(LoginSession.created_at.desc())
-            .first()
+        query = db.query(LoginSession).filter(
+            LoginSession.user_id == user_id,
+            LoginSession.subsystem_id.is_(None),
+            LoginSession.logout_at.is_(None),
         )
+        if refresh and refresh.get("user_id") == user_id:
+            # Refresh rotation changes jti; session_id remains stable.
+            sess = query.filter(LoginSession.id == refresh["session_id"]).first()
+        elif jti:
+            sess = query.filter(LoginSession.jti == jti).first()
+        else:
+            sess = None
         if sess:
             sess.logout_at = _dt.utcnow()
+            if sess.jti and sess.jti != jti:
+                revoke_jti(sess.jti, int(_dt.utcnow().timestamp()) + settings.jwt_access_token_expire_minutes * 60)
             if sess.refresh_id:
                 refresh_token_service.revoke(sess.refresh_id)
+        if refresh and refresh.get("user_id") == user_id:
+            refresh_token_service.revoke(refresh["refresh_id"])
         log_action(
-            db,
-            actor_id=user_id,
-            action="hub_logout",
-            target_type="user",
-            target_id=user_id,
-            ip=get_client_ip(request),
+            db, actor_id=user_id, action="hub_logout", target_type="user",
+            target_id=user_id, ip=get_client_ip(request),
             metadata={"token_revoked": revoked},
         )
         db.commit()

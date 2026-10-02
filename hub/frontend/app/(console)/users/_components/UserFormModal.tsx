@@ -8,7 +8,7 @@
  * แล้วกลับมาหน้าเดิม. ที่นี่แค่ทำ request + แสดง error อื่น ๆ.
  */
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { clientFetch } from "@/lib/api";
 import { runWithStepup } from "@/lib/passkey";
 
@@ -65,6 +65,18 @@ export function UserFormModal({ mode, user, onClose, onSaved }: Props) {
     phone: user?.phone ?? "",
     status: user?.status ?? "active",
   });
+  const [choices, setChoices] = useState<{
+    faculties: string[]; majors_by_faculty: Record<string, string[]>;
+  }>({ faculties: [], majors_by_faculty: {} });
+  useEffect(() => {
+    let active = true;
+    clientFetch<{ faculties: string[]; majors_by_faculty: Record<string, string[]> }>("/admin/users/filter-options")
+      .then((result) => { if (active) setChoices({
+        faculties: result.faculties ?? [], majors_by_faculty: result.majors_by_faculty ?? {},
+      }); })
+      .catch(() => { /* custom entry remains available if suggestions fail */ });
+    return () => { active = false; };
+  }, []);
   const [saving, setSaving] = useState(false);
   const [verifying, setVerifying] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -76,6 +88,10 @@ export function UserFormModal({ mode, user, onClose, onSaved }: Props) {
     setError(null);
     if (!form.email || !form.full_name) {
       setError("กรอก email และชื่อ-สกุล");
+      return;
+    }
+    if (form.phone.length > 10) {
+      setError("เบอร์โทรต้องไม่เกิน 10 ตัวอักษร");
       return;
     }
     setSaving(true);
@@ -184,12 +200,14 @@ export function UserFormModal({ mode, user, onClose, onSaved }: Props) {
           </div>
 
           <div className="grid grid-cols-2 gap-3">
-            <Field label="คณะ">
-              <input value={form.faculty} onChange={set("faculty")} className={inputCls} />
-            </Field>
-            <Field label="สาขา / ตำแหน่ง">
-              <input value={form.major} onChange={set("major")} className={inputCls} />
-            </Field>
+            <OptionOrCustom label="คณะ" value={form.faculty} options={choices.faculties}
+              onChange={(value) => setForm((current) => ({
+                ...current, faculty: value,
+                major: current.faculty === value ? current.major : "",
+              }))} />
+            <OptionOrCustom key={form.faculty} label="สาขา / ตำแหน่ง" value={form.major}
+              options={choices.majors_by_faculty[form.faculty] ?? []}
+              onChange={(value) => setForm((current) => ({ ...current, major: value }))} />
           </div>
 
           <div className="grid grid-cols-2 gap-3">
@@ -197,7 +215,7 @@ export function UserFormModal({ mode, user, onClose, onSaved }: Props) {
               <input value={form.year_or_position} onChange={set("year_or_position")} className={inputCls} />
             </Field>
             <Field label="เบอร์โทร">
-              <input value={form.phone} onChange={set("phone")} className={inputCls} />
+              <input type="tel" maxLength={10} value={form.phone} onChange={set("phone")} className={inputCls} />
             </Field>
           </div>
 
@@ -267,5 +285,35 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
       <span className="block text-xs font-medium text-ink-500 mb-1">{label}</span>
       {children}
     </label>
+  );
+}
+
+function OptionOrCustom({ label, value, options, onChange }: {
+  label: string; value: string; options: string[]; onChange: (value: string) => void;
+}) {
+  const [custom, setCustom] = useState(false);
+  const isCustom = custom || (!!value && !options.includes(value));
+  return (
+    <div className="block">
+      <span className="mb-1 block text-xs font-medium text-ink-500">{label}</span>
+      {isCustom ? (
+        <div className="flex gap-2">
+          <input aria-label={`${label}ใหม่`} value={value} onChange={(event) => onChange(event.target.value)}
+            className={inputCls} placeholder={`พิมพ์${label}ใหม่`} />
+          <button type="button" onClick={() => { setCustom(false); onChange(""); }}
+            className="shrink-0 rounded-lg border border-ink-200 px-2 text-xs">เลือกที่มี</button>
+        </div>
+      ) : (
+        <select aria-label={label} value={value} className={inputCls}
+          onChange={(event) => {
+            if (event.target.value === "__new__") { setCustom(true); onChange(""); }
+            else onChange(event.target.value);
+          }}>
+          <option value="">— เลือกจากรายการ —</option>
+          {options.map((option) => <option key={option} value={option}>{option}</option>)}
+          <option value="__new__">+ พิมพ์ใหม่</option>
+        </select>
+      )}
+    </div>
   );
 }

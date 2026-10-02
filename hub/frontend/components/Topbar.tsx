@@ -13,7 +13,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { CommandPalette } from "@/components/CommandPalette";
 
 type Me = {
@@ -41,7 +41,6 @@ function openPalette() {
 export function Topbar({ title }: { title: string }) {
   const [me, setMe] = useState<Me | null>(null);
   const [notif, setNotif] = useState<NotifCount | null>(null);
-  const router = useRouter();
   const pathname = usePathname();
 
   useEffect(() => {
@@ -63,9 +62,23 @@ export function Topbar({ title }: { title: string }) {
     return () => clearInterval(t);
   }, [me]);
 
+  const [loggingOut, setLoggingOut] = useState(false);
+  const [logoutError, setLogoutError] = useState<string | null>(null);
   async function logout() {
-    await fetch("/api/set-token", { method: "DELETE", credentials: "include" });
-    router.push("/auth/login");
+    if (loggingOut) return;
+    setLoggingOut(true);
+    setLogoutError(null);
+    try {
+      const res = await fetch("/api/set-token", {
+        method: "DELETE", credentials: "include", signal: AbortSignal.timeout(8000),
+      });
+      if (!res.ok) throw new Error("logout failed");
+      // A full navigation discards authenticated router/cache state.
+      window.location.replace("/auth/login");
+    } catch {
+      setLogoutError("ออกจากระบบไม่สำเร็จ กรุณาลองอีกครั้ง");
+      setLoggingOut(false);
+    }
   }
 
   const identity = me?.full_name || me?.email || "?";
@@ -164,6 +177,7 @@ export function Topbar({ title }: { title: string }) {
                 {initial}
               </div>
               <button
+                disabled={loggingOut}
                 onClick={logout}
                 className="grid h-9 w-9 place-items-center rounded-lg text-ink-400 transition hover:bg-ink-50 hover:text-rose-600"
                 aria-label="ออกจากระบบ"
@@ -186,6 +200,7 @@ export function Topbar({ title }: { title: string }) {
           )}
         </div>
       </header>
+      {logoutError && <p role="alert" className="text-rose-700">{logoutError}</p>}
       <CommandPalette />
     </>
   );
