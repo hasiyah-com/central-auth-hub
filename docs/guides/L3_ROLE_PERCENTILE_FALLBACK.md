@@ -1,5 +1,16 @@
 # L3 percentile fallback from main
 
+> **ตัวสำรองชั้น 3 มีสองกลไก (ทำงานแยกกัน):**
+>
+> | | เปลี่ยนการตัดสินสิทธิ์ | เกณฑ์ | เปิดใช้ |
+> |---|---|---|---|
+> | **ตัวสำรองระดับ warn** (`app/security/l3_fallback.py` · `l3_fallback_warn`) | **ใช่** — ผลฐาน allow และคะแนน point ≥ เกณฑ์ → `warn` (shadow: `would_warn`) ยกได้ถึง warn เท่านั้น ไม่เปลี่ยนคะแนน | คะแนนดิบ 0.4606 ตั้งแยกตามประเภทผู้ใช้ได้ (ค่าเริ่มต้นเท่ากัน) · หลักฐาน `l3_fallback_result_2026-10-01` | เปิดเป็นค่าเริ่มต้น · ปิดด้วย `L3_FALLBACK_WARN_ENABLED=false` |
+> | **percentile ต่อประเภทผู้ใช้** (เอกสารนี้) | **ไม่** — monitoring-only | percentile จากไฟล์ calibration | ปิดจนกว่าตั้ง `L3_ROLE_CALIBRATION_PATH` |
+>
+> ข้อความ "never changes the access score, reasons, challenge, block or MFA" ด้านล่างใช้กับ**กลไก percentile
+> นี้เท่านั้น** · ตัวสำรองระดับ warn ไม่เปลี่ยนคะแนน เหตุผลของกฎ challenge หรือ block แต่เปลี่ยนผล allow เป็น warn
+> ได้ (ผลฐานที่ส่งให้กลไกนี้คือผลของชั้น 1+2 ก่อนยก) · ตัดสินเมื่อ 2026-10-02 (เลือกคงทั้งสองแบบ)
+
 L1+L2 remain responsible for access decisions. With a configured calibration
 artifact, L3 generates a monitoring warning only when the baseline decision is
 `allow`. It never changes the access score, reasons, challenge, block or MFA.

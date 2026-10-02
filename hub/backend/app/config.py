@@ -116,6 +116,11 @@ class Settings(BaseSettings):
     # (ดู hub/backend/tests/reports/l3_sequence_channel_2026-08-26.md)
     l3_sequence_enabled: bool = False
 
+    # ชั้นที่ 3 (point view) เป็นตัวสำรองระดับ warn เมื่อชั้นที่ 1+2 ตัดสิน allow
+    # (app/security/l3_fallback.py · หลักฐาน l3_fallback_result_2026-10-01) · ยกได้ถึง warn เท่านั้น
+    # ปิด = L3 กลับเป็นแกนเฝ้าระวังอย่างเดียวเหมือนเดิม
+    l3_fallback_warn_enabled: bool = True
+
     # timeout ของ L3 แยกจาก ml_timeout_seconds โดยตั้งใจ (B63):
     # L3 เป็นช่องเฝ้าระวัง ไม่ใช่ผู้ตัดสินสิทธิ์ -> ห้ามถ่วง login path เท่ากับ IForest หลัก
     # ถ้า ml-service ยัง fit โมเดลรายคนอยู่ (cache miss, ~0.4-0.9 วิ ที่ history 2000)

@@ -149,6 +149,9 @@ async def test_production_engine_preserves_access_and_only_warns_for_allow(
     p = tmp_path / "calibration.json"
     p.write_text(json.dumps(artifact()))
     monkeypatch.setattr(settings, "l3_role_calibration_path", str(p))
+    # ทดสอบกลไก percentile (monitoring-only) แยกจากตัวสำรองระดับ warn ที่ยกการตัดสิน
+    # (tests/test_l3_fallback_warn.py) — ปิดตัวหลังเพื่อให้เห็นว่ากลไกนี้เองไม่เปลี่ยน decision
+    monkeypatch.setattr(settings, "l3_fallback_warn_enabled", False)
     monkeypatch.setattr(
         E, "evaluate_rules", lambda *a, **kw: RuleResult(False, 0.0, [])
     )
