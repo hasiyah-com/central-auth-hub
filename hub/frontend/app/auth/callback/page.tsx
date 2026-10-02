@@ -71,6 +71,10 @@ function CallbackInner() {
           throw new Error(body.error || `set-token failed: ${setRes.status}`);
         }
 
+        // เริ่ม idle window ใหม่สำหรับ session ที่เพิ่ง login สำเร็จ ป้องกันค่า
+        // localStorage จาก session เก่าทำให้ผู้ใช้ถูก logout ทันทีหลังกลับเข้าระบบ.
+        window.localStorage.setItem("hub:last-user-activity", String(Date.now()));
+
         // 3) ลบ token ออกจาก URL (history hygiene)
         window.history.replaceState({}, "", "/auth/callback");
 
