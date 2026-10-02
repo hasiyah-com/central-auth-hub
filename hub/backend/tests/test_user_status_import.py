@@ -44,3 +44,50 @@ def test_import_preview_reports_duplicate_missing_and_self_lockout(db, admin_use
     _, valid, errors = _validate_status_rows(rows, db, admin_user)
     assert valid == []
     assert [error["row"] for error in errors] == [2, 3, 4]
+
+
+def _create_file(rows):
+    from app.routers.users import _CREATE_COLUMNS
+    book = Workbook()
+    book.active.title = "new_users"
+    book.active.append(_CREATE_COLUMNS)
+    for row in rows:
+        book.active.append(row)
+    output = BytesIO()
+    book.save(output)
+    return base64.b64encode(output.getvalue()).decode()
+
+
+def test_create_import_reads_full_template_and_defaults_status():
+    from app.routers.users import _read_create_file
+    encoded = _create_file([[" Person@Example.com ", "Test Person", "Student", "00123",
+                             "Engineering", "CS", "2", "0812345678", ""]])
+    rows = _read_create_file(encoded)
+    assert rows[0][1] == {
+        "email": "person@example.com", "full_name": "Test Person", "user_type": "student",
+        "identifier": "00123", "faculty": "Engineering", "major": "CS",
+        "year_or_position": "2", "phone": "0812345678", "status": "active",
+    }
+
+
+def test_create_import_rejects_existing_and_duplicate_rows(db, admin_user):
+    from app.routers.users import _read_create_file, _validate_create_rows
+    rows = _read_create_file(_create_file([
+        [admin_user.email, "Existing", "student", "", "", "", "", "", "active"],
+        ["new-bulk-test@example.com", "New", "student", "BULK-TEST-ID-2026", "", "", "", "", "active"],
+        ["new-bulk-test@example.com", "Duplicate", "student", "BULK-TEST-ID-2026", "", "", "", "", "active"],
+    ]))
+    valid, errors = _validate_create_rows(rows, db)
+    assert len(valid) == 1
+    assert [error["row"] for error in errors] == [2, 4]
+
+
+def test_create_import_rejects_invalid_type_and_required_fields(db):
+    from app.routers.users import _read_create_file, _validate_create_rows
+    rows = _read_create_file(_create_file([
+        ["no-name@example.com", "", "student", "", "", "", "", "", ""],
+        ["wrong-type@example.com", "Name", "visitor", "", "", "", "", "", "active"],
+    ]))
+    valid, errors = _validate_create_rows(rows, db)
+    assert not valid
+    assert [error["row"] for error in errors] == [2, 3]
