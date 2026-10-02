@@ -91,3 +91,19 @@ def test_create_import_rejects_invalid_type_and_required_fields(db):
     valid, errors = _validate_create_rows(rows, db)
     assert not valid
     assert [error["row"] for error in errors] == [2, 3]
+
+
+def test_create_user_phone_limit_applies_to_form_and_excel(db):
+    from pydantic import ValidationError
+    from app.routers.users import UserCreate, UserUpdate, _read_create_file, _validate_create_rows
+    fields = {"email": "new-phone-limit@example.com", "full_name": "Phone Limit", "user_type": "student"}
+    UserCreate(**fields, phone="0812345678")
+    for schema, data in ((UserCreate, {**fields, "phone": "08123456789"}),
+                         (UserUpdate, {"phone": "08123456789"})):
+        with pytest.raises(ValidationError):
+            schema(**data)
+    rows = _read_create_file(_create_file([
+        [fields["email"], fields["full_name"], "student", "", "", "", "", "08123456789", "active"]
+    ]))
+    valid, errors = _validate_create_rows(rows, db)
+    assert not valid and errors[0]["row"] == 2
