@@ -126,3 +126,17 @@ def test_search_combines_with_user_type_filter(client, auth_headers, admin_token
         client, auth_headers, admin_token, q="a", user_type="student", limit=200
     )
     assert all(u["user_type"] == "student" for u in rows)
+
+
+def test_filter_options_groups_majors_by_faculty(client, auth_headers, admin_token, db):
+    response = client.get("/admin/users/filter-options", headers=auth_headers(admin_token))
+    assert response.status_code == 200, response.text
+    options = response.json()
+    pairs = db.query(User.faculty, User.major).filter(
+        User.faculty.isnot(None), User.faculty != "",
+        User.major.isnot(None), User.major != "",
+    ).distinct().all()
+    expected = {}
+    for faculty, major in pairs:
+        expected.setdefault(faculty, set()).add(major)
+    assert {faculty: set(majors) for faculty, majors in options["majors_by_faculty"].items()} == expected
