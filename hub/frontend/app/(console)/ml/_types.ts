@@ -22,7 +22,12 @@ export type RiskBreakdown = {
   iforest: number;
   iforest_raw: number;
   iforest_explanation?: ShapContribution[];
+  // ผลชั้นที่ 3 (monitoring) — ไม่มีใน session เก่า
   l3?: {
+    is_anomaly?: boolean;
+    unique_to_l3?: boolean;
+    monitoring_decision?: string;
+    // ตัวสำรองแบบ percentile ต่อประเภทผู้ใช้ (monitoring-only · ต้องตั้ง L3_ROLE_CALIBRATION_PATH)
     fallback?: {
       status: "warn" | "normal" | "skipped" | "abstain";
       user_type: string | null;
@@ -31,6 +36,8 @@ export type RiskBreakdown = {
       reason: string;
     };
   };
+  // ตัวสำรองระดับ warn ที่ยกการตัดสิน (ชั้นที่ 3 ยกเมื่อชั้นที่ 1+2 ตัดสิน allow) — ไม่มีใน session เก่า
+  l3_fallback?: { applied?: boolean; threshold?: number; user_type?: string | null };
 };
 
 export type Anomaly = {
