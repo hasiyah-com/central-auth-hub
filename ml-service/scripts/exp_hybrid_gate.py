@@ -556,6 +556,68 @@ def cmd_prepare(args):
     return 0
 
 
+def cmd_tune_population(args):
+    """Separate validation report; never overwrite tune/freeze/final artifacts."""
+    from hybrid_experiment import population_tuning as PT
+
+    # Fail closed on corrupt provenance; the old permissive ledger loader is
+    # deliberately not used for selecting development populations.
+    reserved = set(range(101, 116)) | set(range(201, 206))
+    snapshot = (
+        ML.parents[1] / "hub/backend/tests/provenance/holdout_ledger_snapshot.json"
+    )
+    if not snapshot.exists():
+        raise ValueError("holdout provenance snapshot is missing")
+    for source in (snapshot, HOLDOUT_LEDGER):
+        if source.exists():
+            ledger = json.loads(source.read_text(encoding="utf-8"))
+            for entry in ledger.get("entries", ledger).values():
+                reserved.update(entry["seeds"])
+    seeds = PT.validate_seeds(args.seeds, reserved=reserved)
+    import math
+
+    if not math.isfinite(args.gamma) or not 0 <= args.gamma <= 1:
+        raise ValueError("gamma must be finite in [0, 1]")
+    sizes = args.sizes or SIZES
+    if len(set(sizes)) != len(sizes) or any(n <= 0 for n in sizes):
+        raise ValueError("sizes must be distinct positive integers")
+    if args.output.exists():
+        raise ValueError("output already exists; use a new report path")
+    # Report must not replace the existing candidate/freeze/ledger/final data.
+    if ARTIFACTS.resolve() in args.output.resolve().parents:
+        raise ValueError("population report must be outside existing gate artifacts")
+    keys = [(s, n) for s in seeds for n in sizes]
+    missing = [k for k in keys if not (CELLS / f"cell_s{k[0]}_n{k[1]}.pkl").exists()]
+    if missing:
+        print(
+            f"Prepare validation cells first: {len(missing)} missing; first={missing[:5]}"
+        )
+        return 1
+    cfg = CFG.CONFIGS[args.config]
+    records = {}
+    for key in keys:
+        cell = load_cell(*key)
+        if (cell["seed"], cell["size"]) != key or not cell["leakage"]["clean"]:
+            raise ValueError(f"invalid validation cell provenance: {key}")
+        records[key] = build_records(cell["ctxs"], cell["ecdf"], cfg, args.gamma)
+    result = PT.search(records, gamma=args.gamma)
+    result.update(
+        {
+            "config": args.config,
+            "git_commit": _git("rev-parse", "HEAD"),
+            "scoring_fingerprint": scoring_fingerprint(),
+            "split_fingerprint": split_fingerprint(seeds, sizes),
+        }
+    )
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    with args.output.open("x", encoding="utf-8") as f:
+        json.dump(result, f, ensure_ascii=False, indent=2, allow_nan=False)
+    print(
+        f"{result['status']}: {result['n_eligible']}/{result['n_candidates']} eligible; {args.output}"
+    )
+    return 0 if result["best"] else 1
+
+
 def cmd_tune(args):
     """กวาด gamma/threshold บน validation-tuning เท่านั้น — holdout ไม่ถูกเปิด.
 
@@ -1970,6 +2032,15 @@ def main():
     tn.add_argument("--sizes", type=int, nargs="*", default=None)
     tn.add_argument("--users", type=Path, default=DEFAULT_USERS)
     tn.set_defaults(func=cmd_tune)
+    pt = sub.add_parser(
+        "tune-population", help="validation-only tuning across >=20 populations"
+    )
+    pt.add_argument("--seeds", type=int, nargs="+", required=True)
+    pt.add_argument("--sizes", type=int, nargs="+", default=None)
+    pt.add_argument("--config", choices=("B", "C", "D", "E", "F"), default="B")
+    pt.add_argument("--gamma", type=float, default=1.0)
+    pt.add_argument("--output", type=Path, required=True)
+    pt.set_defaults(func=cmd_tune_population)
     fz = sub.add_parser("freeze", help="ตรึงค่าที่เลือกก่อนเปิด final holdout")
     fz.add_argument(
         "--parity-passed",
