@@ -69,7 +69,8 @@ def _point_view(features: list[float]) -> dict:
     if not features or len(features) != FEATURE_COUNT:
         return {**quiet, "error": "invalid_features"}
     try:
-        score, explanation = predict_with_explanation(features, top_k=TOP_K)
+        # Persist every contribution; the UI chooses top 5 or expands all 23.
+        score, explanation = predict_with_explanation(features, top_k=FEATURE_COUNT)
         return {
             "available": True,
             "anomaly_score": round(float(score), 4),

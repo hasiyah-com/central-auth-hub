@@ -78,6 +78,12 @@ jobs:
           docker logs ml
           exit 1
 
+      - name: Verify point model and full SHAP explanations
+        working-directory: ml-service
+        run: |
+          docker exec ml pip install pytest
+          docker exec -e PYTHONPATH=/app ml pytest tests -q
+
       - name: Generate JWT RS256 keys
         run: |
           mkdir -p keys

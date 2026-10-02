@@ -67,6 +67,38 @@ def _fake_unified(**over):
 
 
 @pytest.mark.asyncio
+async def test_point_shap_is_in_breakdown_for_every_login_router(monkeypatch):
+    from app.config import settings
+    from app.security import risk_engine
+    from app.security.rule_engine import FEAT
+
+    monkeypatch.setattr(settings, "l3_role_calibration_path", "")
+    monkeypatch.setattr(settings, "l3_fallback_warn_enabled", False)
+    monkeypatch.setattr(risk_engine, "get_user_profile", lambda db, uid: None)
+    features = [0.] * 23
+    features[FEAT["permission_change_age"]] = 365.
+    entries = [
+        {"feature": name, "value": features[index], "shap": .01, "direction": "anomaly"}
+        for name, index in sorted(FEAT.items(), key=lambda item: item[1])
+    ]
+    payload = _fake_unified()
+    payload["point"].update(available=True, anomaly_score=.57, explanation=entries)
+
+    async def fake_l3(*args):
+        return payload
+
+    monkeypatch.setattr(risk_engine, "_evaluate_l3", fake_l3)
+    out = await risk_engine.evaluate_login_risk(
+        features, "u1", ip=None, geo_country=None, db=None, subsystem_id=None
+    )
+    # Google/LINE persist this dict directly, without copying top-level SHAP.
+    assert out["breakdown"]["iforest_explanation"] == entries
+    assert len(out["breakdown"]["iforest_explanation"]) == 23
+    assert out["breakdown"]["iforest_raw"] == .57
+    assert out["iforest_explanation"] == entries
+
+
+@pytest.mark.asyncio
 async def test_risk_engine_puts_contract_in_breakdown(monkeypatch):
     """เมื่อเปิด L3 -> risk_breakdown ต้องมี l3_sequence (ไม่ต้องแก้ router)."""
     from app.config import settings
