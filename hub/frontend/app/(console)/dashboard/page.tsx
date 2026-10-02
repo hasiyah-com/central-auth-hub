@@ -688,7 +688,7 @@ export default function DashboardPage() {
           {/* ── traffic + service health ── grid ตามดีไซน์ (.security-overview-grid) */}
           <div className="security-overview-grid">
             {/* authentication traffic */}
-            <section className="card">
+            <section className="card dashboard-traffic-card">
               <div className="card-head chart-card-head">
                 <div>
                   <span className="overline">authentication traffic</span>
@@ -840,7 +840,7 @@ export default function DashboardPage() {
             </section>
 
             {/* service health matrix */}
-            <section className="subsystem-card">
+            <section className="subsystem-card dashboard-service-card">
               <div className="subsystem-head">
                 <div>
                   <span className="overline">service health matrix</span>
