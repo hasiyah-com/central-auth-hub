@@ -68,16 +68,17 @@ export async function DELETE() {
   const token = cookieStore.get(TOKEN_COOKIE)?.value;
   const refreshToken = cookieStore.get(REFRESH_TOKEN_COOKIE)?.value;
 
-  if (token) {
+  if (token || refreshToken) {
     try {
       await fetch(`${HUB_INTERNAL}/auth/logout`, {
         method: "POST",
         headers: {
           "content-type": "application/json",
-          authorization: `Bearer ${token}`,
+          authorization: `Bearer ${token || "expired"}`,
         },
         body: JSON.stringify({ refresh_token: refreshToken || null }),
         cache: "no-store",
+        signal: AbortSignal.timeout(5000),
       });
     } catch {
       // fail-safe — เคลียร์ cookie ฝั่ง client ต่อได้แม้เรียก backend ไม่ติด

@@ -141,3 +141,15 @@ def revoke_raw(raw_token: str) -> None:
         return
     refresh_id, _, _secret = raw_token.partition(".")
     revoke(refresh_id)
+
+
+def identify(raw_token: str) -> dict[str, str] | None:
+    """Authenticate a refresh token without rotating it (logout only)."""
+    refresh_id, sep, secret = raw_token.partition(".")
+    if not sep or not refresh_id or not secret:
+        return None
+    data = redis_client.hgetall(_redis_key(refresh_id))
+    stored = data.get("secret_hash", "")
+    if not stored or not hmac.compare_digest(stored, _hash_secret(secret)):
+        return None
+    return {**data, "refresh_id": refresh_id}

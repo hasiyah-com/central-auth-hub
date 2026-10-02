@@ -200,10 +200,19 @@ export default function ActivityPage() {
     return p.toString();
   }, [hours, q, decision, channel, subId]);
 
+  const requestId = useRef(0);
+  const pending = useRef<AbortController | null>(null);
   const load = useCallback(
     (markFresh: boolean) => {
-      clientFetch<ActivityResponse>(`/admin/activity?${qs()}`)
+      pending.current?.abort();
+      const controller = new AbortController();
+      pending.current = controller;
+      const id = ++requestId.current;
+      const timeout = setTimeout(() => controller.abort(), 6000);
+      clientFetch<ActivityResponse>(`/admin/activity?${qs()}`, { signal: controller.signal })
         .then((d) => {
+          if (id !== requestId.current) return;
+          if (!Array.isArray(d.active) || !Array.isArray(d.items) || !d.kpis || !Array.isArray(d.hourly)) throw new Error("invalid activity response");
           if (markFresh) {
             const fresh = new Set<string>();
             for (const it of d.items) {
@@ -220,7 +229,12 @@ export default function ActivityPage() {
           setLastUpdated(new Date());
           setError(null);
         })
-        .catch((e) => setError((e as { detail?: string })?.detail || "โหลดไม่สำเร็จ"));
+        .catch((e) => {
+          if (id !== requestId.current) return;
+          setData(null);
+          setError(typeof e?.detail === "string" ? e.detail : "โหลด Activity ไม่สำเร็จ กรุณารีเฟรชเพื่อลองอีกครั้ง");
+        })
+        .finally(() => clearTimeout(timeout));
     },
     [qs]
   );
@@ -228,7 +242,10 @@ export default function ActivityPage() {
   // โหลดเมื่อ filter เปลี่ยน (reset highlight baseline)
   useEffect(() => {
     seenIds.current = new Set();
+    setData(null);
+    setError(null);
     load(false);
+    return () => { ++requestId.current; pending.current?.abort(); };
   }, [load]);
 
   // auto-refresh
@@ -261,7 +278,7 @@ export default function ActivityPage() {
       <section className="cx-command">
         <div>
           <span>
-            <span className={`cx-dot${live ? "" : " warn"}`}>{live && <i />}</span>
+            <span className={`cx-dot${live && data && !error ? "" : " warn"}`}>{live && data && !error && <i />}</span>
             control surface
           </span>
           <h1>Activity</h1>
@@ -328,15 +345,15 @@ export default function ActivityPage() {
               <span>active users · realtime</span>
               <h2>Active Sessions</h2>
             </div>
-            <span className="cx-chip signal">
-              <span className="cx-dot">
-                <i />
+            <span className={`cx-chip ${data ? "signal" : "warn"}`}>
+              <span className={`cx-dot${data ? "" : " warn"}`}>
+                {data && <i />}
               </span>
-              {data?.active_count ?? 0} ONLINE
+              {data ? `${data.active_count} ONLINE` : "สถานะไม่ทราบ"}
             </span>
           </header>
           {!data ? (
-            <div className="px-5 py-8 text-center text-ink-400 text-sm">กำลังโหลด…</div>
+            <div className="px-5 py-8 text-center text-ink-400 text-sm">{error ? "ไม่สามารถตรวจสอบสถานะ session ได้" : "กำลังโหลด…"}</div>
           ) : data.active.length === 0 ? (
             <div className="px-5 py-8 text-center text-ink-400 text-sm">
               ไม่มี session ที่ใช้งานอยู่ตอนนี้
