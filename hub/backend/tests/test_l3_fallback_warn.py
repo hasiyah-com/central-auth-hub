@@ -143,3 +143,68 @@ async def test_l3_error_keeps_decision(monkeypatch):
     v[FEAT["permission_change_age"]] = 365.0
     out = await risk_engine.evaluate_login_risk(v, "u-fb", None, None, db=None)
     assert out["decision"] == "allow"
+
+
+# ── อยู่ร่วมกับ percentile fallback (monitoring-only · #27) ────────────────
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "baseline,expected",
+    [
+        ("allow", "warn"),
+        ("warn", "warn"),
+        ("challenge", "challenge"),
+        ("block", "block"),
+    ],
+)
+async def test_coexists_with_percentile_fallback(
+    monkeypatch, tmp_path, baseline, expected
+):
+    """เปิดทั้งสองกลไก: percentile ยังบันทึกสถานะ (monitoring) · ตัวสำรองระดับ warn ยกเฉพาะ allow."""
+    import json
+
+    from app.security import risk_engine as E
+    from app.security.behavior_profiling import BehaviorResult
+    from app.security.risk_aggregator import RiskDecision
+    from app.security.rule_engine import RuleResult
+    from app.services.l3_sequence_client import _unified_quiet
+    from tests.test_l3_percentile_fallback import HASH, artifact
+
+    cal = tmp_path / "calibration.json"
+    cal.write_text(json.dumps(artifact()))
+    monkeypatch.setattr(settings, "l3_role_calibration_path", str(cal))
+    monkeypatch.setattr(settings, "l3_fallback_warn_enabled", True, raising=False)
+    monkeypatch.setattr(
+        E, "evaluate_rules", lambda *a, **kw: RuleResult(False, 0.0, [])
+    )
+    monkeypatch.setattr(E, "get_user_profile", lambda *a: None)
+    monkeypatch.setattr(
+        E, "evaluate_behavior", lambda *a, **kw: BehaviorResult(0.0, [])
+    )
+    monkeypatch.setattr(
+        E, "aggregate", lambda *a: RiskDecision(0.2, baseline, ["baseline"], {})
+    )
+    monkeypatch.setattr(E, "_sequence_contract", lambda *a: None)
+
+    async def fake_l3(*a):
+        payload = _unified_quiet()
+        payload["point"].update(available=True, anomaly_score=0.9, model_sha256=HASH)
+        return payload
+
+    monkeypatch.setattr(E, "_evaluate_l3", fake_l3)
+
+    class DB:
+        def query(self, *a):
+            return self
+
+        def filter(self, *a):
+            return self
+
+        def scalar(self):
+            return "student"
+
+    out = await E.evaluate_login_risk([0] * 23, "user", None, None, DB())
+    assert out["decision"] == expected
+    assert out["score"] == 0.2, "ตัวสำรองต้องไม่เปลี่ยนคะแนน"
+    assert "fallback" in out["l3"], "percentile fallback ยังบันทึกสถานะตามเดิม"
