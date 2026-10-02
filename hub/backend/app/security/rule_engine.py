@@ -64,7 +64,9 @@ HARD_BLOCK_RULES = [
     ("country_change_count_30d", ">=", 8),
 ]
 
-# (feature, op, threshold, weight) — op รองรับ ">=", "==", "<="
+# (feature, op, threshold, weight, min_action, exclusive_group?)
+# op รองรับ ">=", "==", "<="; กฎใน exclusive_group เดียวกันเรียงระดับแรงก่อน
+# และให้คะแนนเฉพาะกฎแรกที่ตรง เพื่อไม่ให้ช่วงเกณฑ์ซ้อนกันถูกบวกคะแนนซ้ำ
 # floor = min action ที่บังคับเมื่อกฎนี้ยิง (deterministic security event) —
 #   "challenge" = ต้อง step-up เสมอ, None = แค่เพิ่มคะแนน (ปล่อยให้ aggregator ตัดสิน)
 SCORE_RULES = [
@@ -76,8 +78,8 @@ SCORE_RULES = [
     ("is_thailand", "==", 0, 0.10, None),
     ("impossible_travel_score", ">=", 0.5, 0.30, "challenge"),
     # ── Brute force ──
-    ("failed_logins_24h", ">=", 5, 0.30, "challenge"),
-    ("failed_logins_24h", ">=", 3, 0.20, None),  # graded: 3-4 ครั้ง = แค่คะแนน
+    ("failed_logins_24h", ">=", 5, 0.30, "challenge", "failed_login_tier"),
+    ("failed_logins_24h", ">=", 3, 0.20, None, "failed_login_tier"),  # 3-4 ครั้ง
     # ── Velocity / burst (B60: ฟีเจอร์ที่เดิมไม่มีชั้นไหนให้คะแนน) ──
     ("login_count_24h", ">=", 15, 0.20, None),
     # ── Session — concurrent + lateral movement ──
@@ -86,8 +88,8 @@ SCORE_RULES = [
     # ── Credential — passkey เพิ่งลงทะเบียน (takeover sign) ──
     ("new_passkey_recently_added", "==", 1, 0.30, "challenge"),
     # ── Privilege — สิทธิ์เพิ่งเปลี่ยน ──
-    ("permission_change_age", "<=", 1, 0.25, "challenge"),
-    ("permission_change_age", "<=", 7, 0.10, None),  # graded: 2-7 วัน = แค่คะแนน
+    ("permission_change_age", "<=", 1, 0.25, "challenge", "permission_change_tier"),
+    ("permission_change_age", "<=", 7, 0.10, None, "permission_change_tier"),  # 2-7 วัน
     # ── History — เคยมี incident จริง (ground-truth) ──
     ("confirmed_incident_count", ">=", 1, 0.40, "challenge"),
 ]
@@ -240,8 +242,14 @@ def _evaluate_rules(
     score = 0.0
     reasons: list[str] = []
     floor_rank = 0  # policy floor: 0=none 1=warn 2=challenge 3=block
+    matched_exclusive_groups: set[str] = set()
 
-    for feat_name, op, threshold, weight, min_act in SCORE_RULES:
+    for rule in SCORE_RULES:
+        feat_name, op, threshold, weight, min_act, *optional = rule
+        exclusive_group = optional[0] if optional else None
+        # legacy_replay ต้องคงผล frozen experiment เดิมที่เคยบวกช่วงซ้อนกันทุกบิต
+        if not legacy and exclusive_group in matched_exclusive_groups:
+            continue
         value = features[FEAT[feat_name]]
         if feat_name == "failed_logins_24h":
             value = failed_post
@@ -253,6 +261,8 @@ def _evaluate_rules(
         if hit:
             score += weight
             reasons.append(f"{feat_name} (+{weight})")
+            if not legacy and exclusive_group:
+                matched_exclusive_groups.add(exclusive_group)
             if min_act:
                 floor_rank = max(floor_rank, _ACTION_RANK[min_act])
 
