@@ -339,11 +339,16 @@ function PointFeatureTable({ items, explanation, available }: {
   explanation: ShapContribution[];
   available?: boolean;
 }) {
+  const [showAll, setShowAll] = useState(false);
   const byFeature = new Map(explanation.map((row) => [row.feature, row]));
   const hourUtc = utcHourFromShap(items);
+  const ranked = explanation.length > 0
+    ? [...items].sort((a, b) => Math.abs(byFeature.get(b.feature)?.shap ?? 0) - Math.abs(byFeature.get(a.feature)?.shap ?? 0))
+    : items;
+  const shown = showAll ? ranked : ranked.slice(0, 5);
   return (
     <section className="mt-3 rounded-lg border border-ink-200 p-3" aria-label="ฟีเจอร์ชั้น 3 ทั้งหมด">
-      <h3 className="text-sm font-bold text-ink-800">ฟีเจอร์ชั้น 3 ทั้งหมด ({items.length})</h3>
+      <h3 className="text-sm font-bold text-ink-800">ฟีเจอร์ชั้น 3 ({showAll ? `ทั้งหมด ${items.length}` : `${explanation.length ? "Top" : "แสดง"} ${Math.min(5, items.length)} / ${items.length}`})</h3>
       <p className="mt-1 text-xs text-ink-500">
         ค่าอินพุตที่ส่งให้โมเดล · คะแนน SHAP เป็นผลต่อโมเดลเฉพาะเมื่อคำนวณได้
         {available === false && " · โมเดลไม่พร้อมในเหตุการณ์นี้"}
@@ -351,7 +356,7 @@ function PointFeatureTable({ items, explanation, available }: {
       <div className="mt-2 overflow-x-auto">
         <table className="w-full text-left text-xs">
           <thead><tr className="border-b border-ink-200 text-ink-500"><th className="py-1.5 pr-2">ฟีเจอร์</th><th className="py-1.5 pr-2">ค่า</th><th className="py-1.5">SHAP</th></tr></thead>
-          <tbody>{items.map((it) => {
+          <tbody>{shown.map((it) => {
             const shap = byFeature.get(it.feature);
             return <tr key={it.feature} className="border-b border-ink-100 align-top">
               <td className="py-1.5 pr-2"><span className="font-medium">{featureLabelTh(it.feature)}</span><span className="block font-mono text-[10px] text-ink-400">{it.feature}</span></td>
@@ -361,6 +366,11 @@ function PointFeatureTable({ items, explanation, available }: {
           })}</tbody>
         </table>
       </div>
+      {items.length > 5 && (
+        <button type="button" onClick={() => setShowAll((value) => !value)} className="mt-2 text-xs font-medium text-amber-700 hover:underline">
+          {showAll ? "▲ ย่อเหลือ 5 รายการ" : `▼ ดูเพิ่มเติมทั้งหมด (${items.length} ฟีเจอร์)`}
+        </button>
+      )}
       <p className="mt-2 text-xs text-ink-500">— หมายถึงไม่ได้คำนวณ SHAP; ไม่ได้แปลว่าฟีเจอร์ไม่มีผลหรือได้คะแนนศูนย์</p>
     </section>
   );
@@ -428,7 +438,7 @@ function BreakdownBar({
  */
 function ShapBreakdown({ items }: { items: ShapContribution[] }) {
   const maxAbs = Math.max(...items.map((i) => Math.abs(i.shap)), 0.001);
-  const COLLAPSED = 6;
+  const COLLAPSED = 5;
   const [showAll, setShowAll] = useState(false);
   const shown = showAll ? items : items.slice(0, COLLAPSED);
   const hourUtc = utcHourFromShap(items);
