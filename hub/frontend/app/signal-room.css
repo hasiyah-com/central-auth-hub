@@ -428,6 +428,27 @@
   gap: 10px;
   margin-top: 10px;
 }
+
+/*
+ * Keep the overview row stable as subsystems are added.  Without an explicit
+ * row height, CSS Grid stretches the traffic card to the full height of the
+ * service list; chart-summary then moves to the bottom and leaves a growing
+ * blank area below the graph.  The service list owns the overflow instead.
+ */
+.sr .security-overview-grid > .dashboard-traffic-card,
+.sr .security-overview-grid > .dashboard-service-card {
+  height: 340px;
+  min-height: 0;
+}
+.sr .dashboard-service-card .service-matrix {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+.sr .dashboard-service-card .service-row {
+  min-height: 72px;
+}
 .sr .main-grid {
   display: grid;
   grid-template-columns: minmax(0, 1.7fr) minmax(315px, 0.72fr);
@@ -1484,6 +1505,13 @@
   .sr .analytics-grid,
   .sr .lower-grid {
     grid-template-columns: minmax(0, 1fr);
+  }
+  .sr .security-overview-grid > .dashboard-traffic-card {
+    height: auto;
+  }
+  .sr .security-overview-grid > .dashboard-service-card {
+    height: auto;
+    max-height: 412px;
   }
 }
 @media (max-width: 640px) {
