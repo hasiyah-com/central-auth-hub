@@ -576,9 +576,22 @@ def user_filter_options(
         )
         return [row[0] for row in rows]
 
+    pairs = (
+        db.query(User.faculty, User.major)
+        .filter(User.faculty.isnot(None), User.faculty != "",
+                User.major.isnot(None), User.major != "")
+        .distinct()
+        .order_by(User.faculty, User.major)
+        .all()
+    )
+    majors_by_faculty: dict[str, list[str]] = {}
+    for faculty, major in pairs:
+        majors_by_faculty.setdefault(faculty, []).append(major)
+
     return {
         "faculties": values_for(User.faculty),
         "majors": values_for(User.major),
+        "majors_by_faculty": majors_by_faculty,
         "positions": values_for(User.year_or_position),
         "statuses": values_for(User.status),
     }

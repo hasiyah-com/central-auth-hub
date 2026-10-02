@@ -65,11 +65,15 @@ export function UserFormModal({ mode, user, onClose, onSaved }: Props) {
     phone: user?.phone ?? "",
     status: user?.status ?? "active",
   });
-  const [choices, setChoices] = useState<{ faculties: string[]; majors: string[] }>({ faculties: [], majors: [] });
+  const [choices, setChoices] = useState<{
+    faculties: string[]; majors_by_faculty: Record<string, string[]>;
+  }>({ faculties: [], majors_by_faculty: {} });
   useEffect(() => {
     let active = true;
-    clientFetch<{ faculties: string[]; majors: string[] }>("/admin/users/filter-options")
-      .then((result) => { if (active) setChoices(result); })
+    clientFetch<{ faculties: string[]; majors_by_faculty: Record<string, string[]> }>("/admin/users/filter-options")
+      .then((result) => { if (active) setChoices({
+        faculties: result.faculties ?? [], majors_by_faculty: result.majors_by_faculty ?? {},
+      }); })
       .catch(() => { /* custom entry remains available if suggestions fail */ });
     return () => { active = false; };
   }, []);
@@ -197,8 +201,12 @@ export function UserFormModal({ mode, user, onClose, onSaved }: Props) {
 
           <div className="grid grid-cols-2 gap-3">
             <OptionOrCustom label="คณะ" value={form.faculty} options={choices.faculties}
-              onChange={(value) => setForm((current) => ({ ...current, faculty: value }))} />
-            <OptionOrCustom label="สาขา / ตำแหน่ง" value={form.major} options={choices.majors}
+              onChange={(value) => setForm((current) => ({
+                ...current, faculty: value,
+                major: current.faculty === value ? current.major : "",
+              }))} />
+            <OptionOrCustom key={form.faculty} label="สาขา / ตำแหน่ง" value={form.major}
+              options={choices.majors_by_faculty[form.faculty] ?? []}
               onChange={(value) => setForm((current) => ({ ...current, major: value }))} />
           </div>
 
