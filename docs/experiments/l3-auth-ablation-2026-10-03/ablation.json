@@ -1,0 +1,2962 @@
+{
+  "scope": "offline ablation; no authority or production changes",
+  "dataset": {
+    "contract": "l3-auth-context-v2",
+    "base_feature_contract": "rba-23-bangkok-v1",
+    "feature_names": [
+      "hour_of_day",
+      "day_of_week",
+      "hours_from_typical_login_time",
+      "is_thailand",
+      "is_new_country",
+      "country_change_count_30d",
+      "is_new_device",
+      "is_new_user_agent_family",
+      "log_minutes_since_last_login",
+      "login_count_24h",
+      "failed_logins_24h",
+      "passkey_count",
+      "passkey_age_days",
+      "new_passkey_recently_added",
+      "passkey_last_used_days",
+      "concurrent_session_count",
+      "active_subsystem_count",
+      "weekday_usage_score",
+      "scope_sensitivity_score",
+      "ever_changed_permission",
+      "permission_change_age",
+      "confirmed_incident_count",
+      "impossible_travel_score",
+      "recovery_observed",
+      "recovery_log1p_hours",
+      "factor_reset_observed",
+      "factor_reset_log1p_hours",
+      "auth_method_known",
+      "auth_phishing_resistant",
+      "prior_auth_observed",
+      "prior_passkey_rate",
+      "auth_method_departure",
+      "aaguid_known",
+      "prior_aaguid_observed",
+      "aaguid_novel",
+      "language_known",
+      "prior_language_observed",
+      "language_novel"
+    ],
+    "dataset_sha256": "769322ef6de43b7c8d26f3dff0a09c97a247493aba881ada657f8ff0c2cd159f",
+    "source": "controlled_synthetic_only",
+    "base_data_sha256": "2f774d3831b52731364237bbd11c136c859e9983452d033d787a65b2bded62d9",
+    "seed": 42,
+    "users": 300,
+    "normal": 12000,
+    "attack": 2400,
+    "benign_change_rates": {
+      "new_aaguid_when_passkey": 0.05,
+      "new_language": 0.08,
+      "recent_recovery_when_observed": 0.15,
+      "recent_reset_when_observed": 0.15
+    },
+    "limitations": [
+      "attack labels defined by scenario injection, not real evidence",
+      "new-context attacks intentionally share legacy normal feature distributions",
+      "some weak scenarios overlap benign behavior; scenario names do not imply observable attack proof",
+      "L1/L2 is actual feature-only code on a simulated profile, not the full DB production path",
+      "prevalence is synthetic; PR-AUC must not be interpreted as production precision"
+    ]
+  },
+  "runtime": {
+    "python": "3.12.14",
+    "sklearn": "1.5.2",
+    "numpy": "2.1.3"
+  },
+  "seed": 42,
+  "split": {
+    "train": {
+      "rows": 8640,
+      "users": 180
+    },
+    "calibration": {
+      "rows": 2880,
+      "users": 60
+    },
+    "test": {
+      "rows": 2880,
+      "users": 60
+    }
+  },
+  "split_sha256": "bc9d93baaf9d6fdff85190839225a498b0deccd559bd37ecb12881772bca8e55",
+  "targets": {
+    "warn_fpr": 0.01,
+    "hypothetical_challenge_fpr": 0.001
+  },
+  "results": {
+    "baseline_23": {
+      "features": [
+        "hour_of_day",
+        "day_of_week",
+        "hours_from_typical_login_time",
+        "is_thailand",
+        "is_new_country",
+        "country_change_count_30d",
+        "is_new_device",
+        "is_new_user_agent_family",
+        "log_minutes_since_last_login",
+        "login_count_24h",
+        "failed_logins_24h",
+        "passkey_count",
+        "passkey_age_days",
+        "new_passkey_recently_added",
+        "passkey_last_used_days",
+        "concurrent_session_count",
+        "active_subsystem_count",
+        "weekday_usage_score",
+        "scope_sensitivity_score",
+        "ever_changed_permission",
+        "permission_change_age",
+        "confirmed_incident_count",
+        "impossible_travel_score"
+      ],
+      "feature_count": 23,
+      "warn_threshold": 0.5188728121080547,
+      "hypothetical_challenge_threshold": 0.5758977819914178,
+      "warn": {
+        "normal": 2400,
+        "attack": 480,
+        "fpr": 0.01,
+        "recall": 0.04791666666666667
+      },
+      "hypothetical_challenge": {
+        "normal": 2400,
+        "attack": 480,
+        "fpr": 0.0004166666666666667,
+        "recall": 0.0020833333333333333
+      },
+      "roc_auc": 0.5802812500000001,
+      "pr_auc_average_precision": 0.25658284944693005,
+      "roc_recall_at_test_fpr_le_1pct": 0.052083333333333336,
+      "roc_recall_at_test_fpr_le_0_1pct": 0.004166666666666667,
+      "additional_attacks_after_l1_l2_allow": 1,
+      "attacks_l1_l2_allow": 212,
+      "conditional_allow": {
+        "normal": 1648,
+        "attack": 212,
+        "fpr": 0.0,
+        "recall": 0.0047169811320754715
+      },
+      "by_family": {
+        "burst": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.03333333333333333
+        },
+        "combined_context": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.016666666666666666
+        },
+        "foreign": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.0
+        },
+        "language_change": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.016666666666666666
+        },
+        "method_departure": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.016666666666666666
+        },
+        "new_authenticator": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.0
+        },
+        "new_device": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.2833333333333333
+        },
+        "normal": {
+          "normal": 2400,
+          "attack": 0,
+          "fpr": 0.01,
+          "recall": null
+        },
+        "recovery_takeover": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.016666666666666666
+        }
+      },
+      "by_history": {
+        "cold_start": {
+          "normal": 400,
+          "attack": 80,
+          "fpr": 0.005,
+          "recall": 0.075
+        },
+        "established": {
+          "normal": 2000,
+          "attack": 400,
+          "fpr": 0.011,
+          "recall": 0.0425
+        }
+      },
+      "single_row_model_p95_ms": 2.6927191995127937,
+      "latency_scope": "model-only, warm local CPU; excludes extraction, DB, Redis, HTTP",
+      "threshold_note": "normal calibration only; achieved test FPR may differ due ties/sample variation",
+      "roc_note": "test ROC points are descriptive, never used as deployed thresholds"
+    },
+    "plus_recovery_reset": {
+      "features": [
+        "hour_of_day",
+        "day_of_week",
+        "hours_from_typical_login_time",
+        "is_thailand",
+        "is_new_country",
+        "country_change_count_30d",
+        "is_new_device",
+        "is_new_user_agent_family",
+        "log_minutes_since_last_login",
+        "login_count_24h",
+        "failed_logins_24h",
+        "passkey_count",
+        "passkey_age_days",
+        "new_passkey_recently_added",
+        "passkey_last_used_days",
+        "concurrent_session_count",
+        "active_subsystem_count",
+        "weekday_usage_score",
+        "scope_sensitivity_score",
+        "ever_changed_permission",
+        "permission_change_age",
+        "confirmed_incident_count",
+        "impossible_travel_score",
+        "recovery_observed",
+        "recovery_log1p_hours",
+        "factor_reset_observed",
+        "factor_reset_log1p_hours"
+      ],
+      "feature_count": 27,
+      "warn_threshold": 0.5239129701658264,
+      "hypothetical_challenge_threshold": 0.5656084016741039,
+      "warn": {
+        "normal": 2400,
+        "attack": 480,
+        "fpr": 0.0075,
+        "recall": 0.0625
+      },
+      "hypothetical_challenge": {
+        "normal": 2400,
+        "attack": 480,
+        "fpr": 0.0008333333333333334,
+        "recall": 0.010416666666666666
+      },
+      "roc_auc": 0.6189157986111111,
+      "pr_auc_average_precision": 0.2866954529126212,
+      "roc_recall_at_test_fpr_le_1pct": 0.08541666666666667,
+      "roc_recall_at_test_fpr_le_0_1pct": 0.010416666666666666,
+      "additional_attacks_after_l1_l2_allow": 1,
+      "attacks_l1_l2_allow": 212,
+      "conditional_allow": {
+        "normal": 1648,
+        "attack": 212,
+        "fpr": 0.0,
+        "recall": 0.0047169811320754715
+      },
+      "by_family": {
+        "burst": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.03333333333333333
+        },
+        "combined_context": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.016666666666666666
+        },
+        "foreign": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.0
+        },
+        "language_change": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.016666666666666666
+        },
+        "method_departure": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.016666666666666666
+        },
+        "new_authenticator": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.016666666666666666
+        },
+        "new_device": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.38333333333333336
+        },
+        "normal": {
+          "normal": 2400,
+          "attack": 0,
+          "fpr": 0.0075,
+          "recall": null
+        },
+        "recovery_takeover": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.016666666666666666
+        }
+      },
+      "by_history": {
+        "cold_start": {
+          "normal": 400,
+          "attack": 80,
+          "fpr": 0.0025,
+          "recall": 0.0625
+        },
+        "established": {
+          "normal": 2000,
+          "attack": 400,
+          "fpr": 0.0085,
+          "recall": 0.0625
+        }
+      },
+      "single_row_model_p95_ms": 2.644361499551451,
+      "latency_scope": "model-only, warm local CPU; excludes extraction, DB, Redis, HTTP",
+      "threshold_note": "normal calibration only; achieved test FPR may differ due ties/sample variation",
+      "roc_note": "test ROC points are descriptive, never used as deployed thresholds"
+    },
+    "plus_auth_method": {
+      "features": [
+        "hour_of_day",
+        "day_of_week",
+        "hours_from_typical_login_time",
+        "is_thailand",
+        "is_new_country",
+        "country_change_count_30d",
+        "is_new_device",
+        "is_new_user_agent_family",
+        "log_minutes_since_last_login",
+        "login_count_24h",
+        "failed_logins_24h",
+        "passkey_count",
+        "passkey_age_days",
+        "new_passkey_recently_added",
+        "passkey_last_used_days",
+        "concurrent_session_count",
+        "active_subsystem_count",
+        "weekday_usage_score",
+        "scope_sensitivity_score",
+        "ever_changed_permission",
+        "permission_change_age",
+        "confirmed_incident_count",
+        "impossible_travel_score",
+        "auth_method_known",
+        "auth_phishing_resistant",
+        "prior_auth_observed",
+        "prior_passkey_rate",
+        "auth_method_departure"
+      ],
+      "feature_count": 28,
+      "warn_threshold": 0.5228170146025124,
+      "hypothetical_challenge_threshold": 0.5499841695997063,
+      "warn": {
+        "normal": 2400,
+        "attack": 480,
+        "fpr": 0.007916666666666667,
+        "recall": 0.05416666666666667
+      },
+      "hypothetical_challenge": {
+        "normal": 2400,
+        "attack": 480,
+        "fpr": 0.0025,
+        "recall": 0.014583333333333334
+      },
+      "roc_auc": 0.6054157986111112,
+      "pr_auc_average_precision": 0.27961287097370235,
+      "roc_recall_at_test_fpr_le_1pct": 0.075,
+      "roc_recall_at_test_fpr_le_0_1pct": 0.010416666666666666,
+      "additional_attacks_after_l1_l2_allow": 0,
+      "attacks_l1_l2_allow": 212,
+      "conditional_allow": {
+        "normal": 1648,
+        "attack": 212,
+        "fpr": 0.0,
+        "recall": 0.0
+      },
+      "by_family": {
+        "burst": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.016666666666666666
+        },
+        "combined_context": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.0
+        },
+        "foreign": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.0
+        },
+        "language_change": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.016666666666666666
+        },
+        "method_departure": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.016666666666666666
+        },
+        "new_authenticator": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.0
+        },
+        "new_device": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.38333333333333336
+        },
+        "normal": {
+          "normal": 2400,
+          "attack": 0,
+          "fpr": 0.007916666666666667,
+          "recall": null
+        },
+        "recovery_takeover": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.0
+        }
+      },
+      "by_history": {
+        "cold_start": {
+          "normal": 400,
+          "attack": 80,
+          "fpr": 0.01,
+          "recall": 0.1125
+        },
+        "established": {
+          "normal": 2000,
+          "attack": 400,
+          "fpr": 0.0075,
+          "recall": 0.0425
+        }
+      },
+      "single_row_model_p95_ms": 3.033397900071577,
+      "latency_scope": "model-only, warm local CPU; excludes extraction, DB, Redis, HTTP",
+      "threshold_note": "normal calibration only; achieved test FPR may differ due ties/sample variation",
+      "roc_note": "test ROC points are descriptive, never used as deployed thresholds"
+    },
+    "plus_aaguid": {
+      "features": [
+        "hour_of_day",
+        "day_of_week",
+        "hours_from_typical_login_time",
+        "is_thailand",
+        "is_new_country",
+        "country_change_count_30d",
+        "is_new_device",
+        "is_new_user_agent_family",
+        "log_minutes_since_last_login",
+        "login_count_24h",
+        "failed_logins_24h",
+        "passkey_count",
+        "passkey_age_days",
+        "new_passkey_recently_added",
+        "passkey_last_used_days",
+        "concurrent_session_count",
+        "active_subsystem_count",
+        "weekday_usage_score",
+        "scope_sensitivity_score",
+        "ever_changed_permission",
+        "permission_change_age",
+        "confirmed_incident_count",
+        "impossible_travel_score",
+        "aaguid_known",
+        "prior_aaguid_observed",
+        "aaguid_novel"
+      ],
+      "feature_count": 26,
+      "warn_threshold": 0.5144158075538277,
+      "hypothetical_challenge_threshold": 0.573074681464335,
+      "warn": {
+        "normal": 2400,
+        "attack": 480,
+        "fpr": 0.015,
+        "recall": 0.06666666666666667
+      },
+      "hypothetical_challenge": {
+        "normal": 2400,
+        "attack": 480,
+        "fpr": 0.0008333333333333334,
+        "recall": 0.008333333333333333
+      },
+      "roc_auc": 0.6121575520833333,
+      "pr_auc_average_precision": 0.27829458687036035,
+      "roc_recall_at_test_fpr_le_1pct": 0.05625,
+      "roc_recall_at_test_fpr_le_0_1pct": 0.008333333333333333,
+      "additional_attacks_after_l1_l2_allow": 0,
+      "attacks_l1_l2_allow": 212,
+      "conditional_allow": {
+        "normal": 1648,
+        "attack": 212,
+        "fpr": 0.003033980582524272,
+        "recall": 0.0
+      },
+      "by_family": {
+        "burst": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.016666666666666666
+        },
+        "combined_context": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.0
+        },
+        "foreign": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.0
+        },
+        "language_change": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.016666666666666666
+        },
+        "method_departure": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.0
+        },
+        "new_authenticator": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.05
+        },
+        "new_device": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.45
+        },
+        "normal": {
+          "normal": 2400,
+          "attack": 0,
+          "fpr": 0.015,
+          "recall": null
+        },
+        "recovery_takeover": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.0
+        }
+      },
+      "by_history": {
+        "cold_start": {
+          "normal": 400,
+          "attack": 80,
+          "fpr": 0.035,
+          "recall": 0.125
+        },
+        "established": {
+          "normal": 2000,
+          "attack": 400,
+          "fpr": 0.011,
+          "recall": 0.055
+        }
+      },
+      "single_row_model_p95_ms": 2.325717099483881,
+      "latency_scope": "model-only, warm local CPU; excludes extraction, DB, Redis, HTTP",
+      "threshold_note": "normal calibration only; achieved test FPR may differ due ties/sample variation",
+      "roc_note": "test ROC points are descriptive, never used as deployed thresholds"
+    },
+    "plus_language": {
+      "features": [
+        "hour_of_day",
+        "day_of_week",
+        "hours_from_typical_login_time",
+        "is_thailand",
+        "is_new_country",
+        "country_change_count_30d",
+        "is_new_device",
+        "is_new_user_agent_family",
+        "log_minutes_since_last_login",
+        "login_count_24h",
+        "failed_logins_24h",
+        "passkey_count",
+        "passkey_age_days",
+        "new_passkey_recently_added",
+        "passkey_last_used_days",
+        "concurrent_session_count",
+        "active_subsystem_count",
+        "weekday_usage_score",
+        "scope_sensitivity_score",
+        "ever_changed_permission",
+        "permission_change_age",
+        "confirmed_incident_count",
+        "impossible_travel_score",
+        "language_known",
+        "prior_language_observed",
+        "language_novel"
+      ],
+      "feature_count": 26,
+      "warn_threshold": 0.5160577801147822,
+      "hypothetical_challenge_threshold": 0.552131246954501,
+      "warn": {
+        "normal": 2400,
+        "attack": 480,
+        "fpr": 0.01,
+        "recall": 0.05625
+      },
+      "hypothetical_challenge": {
+        "normal": 2400,
+        "attack": 480,
+        "fpr": 0.00125,
+        "recall": 0.01875
+      },
+      "roc_auc": 0.6027326388888888,
+      "pr_auc_average_precision": 0.27331629424619974,
+      "roc_recall_at_test_fpr_le_1pct": 0.05625,
+      "roc_recall_at_test_fpr_le_0_1pct": 0.0125,
+      "additional_attacks_after_l1_l2_allow": 3,
+      "attacks_l1_l2_allow": 212,
+      "conditional_allow": {
+        "normal": 1648,
+        "attack": 212,
+        "fpr": 0.0024271844660194173,
+        "recall": 0.014150943396226415
+      },
+      "by_family": {
+        "burst": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.03333333333333333
+        },
+        "combined_context": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.0
+        },
+        "foreign": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.0
+        },
+        "language_change": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.05
+        },
+        "method_departure": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.03333333333333333
+        },
+        "new_authenticator": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.016666666666666666
+        },
+        "new_device": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.31666666666666665
+        },
+        "normal": {
+          "normal": 2400,
+          "attack": 0,
+          "fpr": 0.01,
+          "recall": null
+        },
+        "recovery_takeover": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.0
+        }
+      },
+      "by_history": {
+        "cold_start": {
+          "normal": 400,
+          "attack": 80,
+          "fpr": 0.0075,
+          "recall": 0.1
+        },
+        "established": {
+          "normal": 2000,
+          "attack": 400,
+          "fpr": 0.0105,
+          "recall": 0.0475
+        }
+      },
+      "single_row_model_p95_ms": 2.1408180497019202,
+      "latency_scope": "model-only, warm local CPU; excludes extraction, DB, Redis, HTTP",
+      "threshold_note": "normal calibration only; achieved test FPR may differ due ties/sample variation",
+      "roc_note": "test ROC points are descriptive, never used as deployed thresholds"
+    },
+    "all_38": {
+      "features": [
+        "hour_of_day",
+        "day_of_week",
+        "hours_from_typical_login_time",
+        "is_thailand",
+        "is_new_country",
+        "country_change_count_30d",
+        "is_new_device",
+        "is_new_user_agent_family",
+        "log_minutes_since_last_login",
+        "login_count_24h",
+        "failed_logins_24h",
+        "passkey_count",
+        "passkey_age_days",
+        "new_passkey_recently_added",
+        "passkey_last_used_days",
+        "concurrent_session_count",
+        "active_subsystem_count",
+        "weekday_usage_score",
+        "scope_sensitivity_score",
+        "ever_changed_permission",
+        "permission_change_age",
+        "confirmed_incident_count",
+        "impossible_travel_score",
+        "recovery_observed",
+        "recovery_log1p_hours",
+        "factor_reset_observed",
+        "factor_reset_log1p_hours",
+        "auth_method_known",
+        "auth_phishing_resistant",
+        "prior_auth_observed",
+        "prior_passkey_rate",
+        "auth_method_departure",
+        "aaguid_known",
+        "prior_aaguid_observed",
+        "aaguid_novel",
+        "language_known",
+        "prior_language_observed",
+        "language_novel"
+      ],
+      "feature_count": 38,
+      "warn_threshold": 0.5161653547391362,
+      "hypothetical_challenge_threshold": 0.5466452716284003,
+      "warn": {
+        "normal": 2400,
+        "attack": 480,
+        "fpr": 0.009166666666666667,
+        "recall": 0.04583333333333333
+      },
+      "hypothetical_challenge": {
+        "normal": 2400,
+        "attack": 480,
+        "fpr": 0.0004166666666666667,
+        "recall": 0.010416666666666666
+      },
+      "roc_auc": 0.6764605034722222,
+      "pr_auc_average_precision": 0.3045498161697351,
+      "roc_recall_at_test_fpr_le_1pct": 0.04791666666666667,
+      "roc_recall_at_test_fpr_le_0_1pct": 0.016666666666666666,
+      "additional_attacks_after_l1_l2_allow": 2,
+      "attacks_l1_l2_allow": 212,
+      "conditional_allow": {
+        "normal": 1648,
+        "attack": 212,
+        "fpr": 0.003033980582524272,
+        "recall": 0.009433962264150943
+      },
+      "by_family": {
+        "burst": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.016666666666666666
+        },
+        "combined_context": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.016666666666666666
+        },
+        "foreign": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.0
+        },
+        "language_change": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.016666666666666666
+        },
+        "method_departure": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.016666666666666666
+        },
+        "new_authenticator": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.05
+        },
+        "new_device": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.23333333333333334
+        },
+        "normal": {
+          "normal": 2400,
+          "attack": 0,
+          "fpr": 0.009166666666666667,
+          "recall": null
+        },
+        "recovery_takeover": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.016666666666666666
+        }
+      },
+      "by_history": {
+        "cold_start": {
+          "normal": 400,
+          "attack": 80,
+          "fpr": 0.03,
+          "recall": 0.1375
+        },
+        "established": {
+          "normal": 2000,
+          "attack": 400,
+          "fpr": 0.005,
+          "recall": 0.0275
+        }
+      },
+      "single_row_model_p95_ms": 2.1552238003096136,
+      "latency_scope": "model-only, warm local CPU; excludes extraction, DB, Redis, HTTP",
+      "threshold_note": "normal calibration only; achieved test FPR may differ due ties/sample variation",
+      "roc_note": "test ROC points are descriptive, never used as deployed thresholds"
+    },
+    "new_only_15": {
+      "features": [
+        "recovery_observed",
+        "recovery_log1p_hours",
+        "factor_reset_observed",
+        "factor_reset_log1p_hours",
+        "auth_method_known",
+        "auth_phishing_resistant",
+        "prior_auth_observed",
+        "prior_passkey_rate",
+        "auth_method_departure",
+        "aaguid_known",
+        "prior_aaguid_observed",
+        "aaguid_novel",
+        "language_known",
+        "prior_language_observed",
+        "language_novel"
+      ],
+      "feature_count": 15,
+      "warn_threshold": 0.5055385302650236,
+      "hypothetical_challenge_threshold": 0.5347953989273772,
+      "warn": {
+        "normal": 2400,
+        "attack": 480,
+        "fpr": 0.01375,
+        "recall": 0.09791666666666667
+      },
+      "hypothetical_challenge": {
+        "normal": 2400,
+        "attack": 480,
+        "fpr": 0.00125,
+        "recall": 0.010416666666666666
+      },
+      "roc_auc": 0.7152230902777778,
+      "pr_auc_average_precision": 0.3622220789050057,
+      "roc_recall_at_test_fpr_le_1pct": 0.07708333333333334,
+      "roc_recall_at_test_fpr_le_0_1pct": 0.010416666666666666,
+      "additional_attacks_after_l1_l2_allow": 35,
+      "attacks_l1_l2_allow": 212,
+      "conditional_allow": {
+        "normal": 1648,
+        "attack": 212,
+        "fpr": 0.01516990291262136,
+        "recall": 0.1650943396226415
+      },
+      "by_family": {
+        "burst": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.0
+        },
+        "combined_context": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.4
+        },
+        "foreign": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.0
+        },
+        "language_change": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.03333333333333333
+        },
+        "method_departure": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.03333333333333333
+        },
+        "new_authenticator": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.11666666666666667
+        },
+        "new_device": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.016666666666666666
+        },
+        "normal": {
+          "normal": 2400,
+          "attack": 0,
+          "fpr": 0.01375,
+          "recall": null
+        },
+        "recovery_takeover": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.18333333333333332
+        }
+      },
+      "by_history": {
+        "cold_start": {
+          "normal": 400,
+          "attack": 80,
+          "fpr": 0.045,
+          "recall": 0.25
+        },
+        "established": {
+          "normal": 2000,
+          "attack": 400,
+          "fpr": 0.0075,
+          "recall": 0.0675
+        }
+      },
+      "single_row_model_p95_ms": 1.640290350132999,
+      "latency_scope": "model-only, warm local CPU; excludes extraction, DB, Redis, HTTP",
+      "threshold_note": "normal calibration only; achieved test FPR may differ due ties/sample variation",
+      "roc_note": "test ROC points are descriptive, never used as deployed thresholds"
+    },
+    "single_recovery_observed": {
+      "features": [
+        "hour_of_day",
+        "day_of_week",
+        "hours_from_typical_login_time",
+        "is_thailand",
+        "is_new_country",
+        "country_change_count_30d",
+        "is_new_device",
+        "is_new_user_agent_family",
+        "log_minutes_since_last_login",
+        "login_count_24h",
+        "failed_logins_24h",
+        "passkey_count",
+        "passkey_age_days",
+        "new_passkey_recently_added",
+        "passkey_last_used_days",
+        "concurrent_session_count",
+        "active_subsystem_count",
+        "weekday_usage_score",
+        "scope_sensitivity_score",
+        "ever_changed_permission",
+        "permission_change_age",
+        "confirmed_incident_count",
+        "impossible_travel_score",
+        "recovery_observed"
+      ],
+      "feature_count": 24,
+      "warn_threshold": 0.521078971580888,
+      "hypothetical_challenge_threshold": 0.5670520319534078,
+      "warn": {
+        "normal": 2400,
+        "attack": 480,
+        "fpr": 0.009583333333333333,
+        "recall": 0.06458333333333334
+      },
+      "hypothetical_challenge": {
+        "normal": 2400,
+        "attack": 480,
+        "fpr": 0.00125,
+        "recall": 0.00625
+      },
+      "roc_auc": 0.5976458333333333,
+      "pr_auc_average_precision": 0.2754991945678148,
+      "roc_recall_at_test_fpr_le_1pct": 0.07083333333333333,
+      "roc_recall_at_test_fpr_le_0_1pct": 0.00625,
+      "additional_attacks_after_l1_l2_allow": 1,
+      "attacks_l1_l2_allow": 212,
+      "conditional_allow": {
+        "normal": 1648,
+        "attack": 212,
+        "fpr": 0.0006067961165048543,
+        "recall": 0.0047169811320754715
+      },
+      "by_family": {
+        "burst": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.06666666666666667
+        },
+        "combined_context": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.0
+        },
+        "foreign": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.0
+        },
+        "language_change": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.016666666666666666
+        },
+        "method_departure": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.016666666666666666
+        },
+        "new_authenticator": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.0
+        },
+        "new_device": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.4
+        },
+        "normal": {
+          "normal": 2400,
+          "attack": 0,
+          "fpr": 0.009583333333333333,
+          "recall": null
+        },
+        "recovery_takeover": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.016666666666666666
+        }
+      },
+      "by_history": {
+        "cold_start": {
+          "normal": 400,
+          "attack": 80,
+          "fpr": 0.0025,
+          "recall": 0.075
+        },
+        "established": {
+          "normal": 2000,
+          "attack": 400,
+          "fpr": 0.011,
+          "recall": 0.0625
+        }
+      },
+      "single_row_model_p95_ms": 1.4574301499123976,
+      "latency_scope": "model-only, warm local CPU; excludes extraction, DB, Redis, HTTP",
+      "threshold_note": "normal calibration only; achieved test FPR may differ due ties/sample variation",
+      "roc_note": "test ROC points are descriptive, never used as deployed thresholds"
+    },
+    "single_recovery_log1p_hours": {
+      "features": [
+        "hour_of_day",
+        "day_of_week",
+        "hours_from_typical_login_time",
+        "is_thailand",
+        "is_new_country",
+        "country_change_count_30d",
+        "is_new_device",
+        "is_new_user_agent_family",
+        "log_minutes_since_last_login",
+        "login_count_24h",
+        "failed_logins_24h",
+        "passkey_count",
+        "passkey_age_days",
+        "new_passkey_recently_added",
+        "passkey_last_used_days",
+        "concurrent_session_count",
+        "active_subsystem_count",
+        "weekday_usage_score",
+        "scope_sensitivity_score",
+        "ever_changed_permission",
+        "permission_change_age",
+        "confirmed_incident_count",
+        "impossible_travel_score",
+        "recovery_log1p_hours"
+      ],
+      "feature_count": 24,
+      "warn_threshold": 0.5212587339658146,
+      "hypothetical_challenge_threshold": 0.5686142641194978,
+      "warn": {
+        "normal": 2400,
+        "attack": 480,
+        "fpr": 0.0075,
+        "recall": 0.0625
+      },
+      "hypothetical_challenge": {
+        "normal": 2400,
+        "attack": 480,
+        "fpr": 0.00125,
+        "recall": 0.00625
+      },
+      "roc_auc": 0.5790173611111111,
+      "pr_auc_average_precision": 0.27367136045598306,
+      "roc_recall_at_test_fpr_le_1pct": 0.08333333333333333,
+      "roc_recall_at_test_fpr_le_0_1pct": 0.00625,
+      "additional_attacks_after_l1_l2_allow": 1,
+      "attacks_l1_l2_allow": 212,
+      "conditional_allow": {
+        "normal": 1648,
+        "attack": 212,
+        "fpr": 0.0,
+        "recall": 0.0047169811320754715
+      },
+      "by_family": {
+        "burst": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.06666666666666667
+        },
+        "combined_context": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.0
+        },
+        "foreign": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.0
+        },
+        "language_change": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.0
+        },
+        "method_departure": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.016666666666666666
+        },
+        "new_authenticator": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.0
+        },
+        "new_device": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.4166666666666667
+        },
+        "normal": {
+          "normal": 2400,
+          "attack": 0,
+          "fpr": 0.0075,
+          "recall": null
+        },
+        "recovery_takeover": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.0
+        }
+      },
+      "by_history": {
+        "cold_start": {
+          "normal": 400,
+          "attack": 80,
+          "fpr": 0.005,
+          "recall": 0.0625
+        },
+        "established": {
+          "normal": 2000,
+          "attack": 400,
+          "fpr": 0.008,
+          "recall": 0.0625
+        }
+      },
+      "single_row_model_p95_ms": 1.737843999671895,
+      "latency_scope": "model-only, warm local CPU; excludes extraction, DB, Redis, HTTP",
+      "threshold_note": "normal calibration only; achieved test FPR may differ due ties/sample variation",
+      "roc_note": "test ROC points are descriptive, never used as deployed thresholds"
+    },
+    "single_factor_reset_observed": {
+      "features": [
+        "hour_of_day",
+        "day_of_week",
+        "hours_from_typical_login_time",
+        "is_thailand",
+        "is_new_country",
+        "country_change_count_30d",
+        "is_new_device",
+        "is_new_user_agent_family",
+        "log_minutes_since_last_login",
+        "login_count_24h",
+        "failed_logins_24h",
+        "passkey_count",
+        "passkey_age_days",
+        "new_passkey_recently_added",
+        "passkey_last_used_days",
+        "concurrent_session_count",
+        "active_subsystem_count",
+        "weekday_usage_score",
+        "scope_sensitivity_score",
+        "ever_changed_permission",
+        "permission_change_age",
+        "confirmed_incident_count",
+        "impossible_travel_score",
+        "factor_reset_observed"
+      ],
+      "feature_count": 24,
+      "warn_threshold": 0.5230361172578776,
+      "hypothetical_challenge_threshold": 0.5698819020569017,
+      "warn": {
+        "normal": 2400,
+        "attack": 480,
+        "fpr": 0.007916666666666667,
+        "recall": 0.07708333333333334
+      },
+      "hypothetical_challenge": {
+        "normal": 2400,
+        "attack": 480,
+        "fpr": 0.0016666666666666668,
+        "recall": 0.010416666666666666
+      },
+      "roc_auc": 0.6090078125,
+      "pr_auc_average_precision": 0.28873092153948965,
+      "roc_recall_at_test_fpr_le_1pct": 0.08541666666666667,
+      "roc_recall_at_test_fpr_le_0_1pct": 0.008333333333333333,
+      "additional_attacks_after_l1_l2_allow": 1,
+      "attacks_l1_l2_allow": 212,
+      "conditional_allow": {
+        "normal": 1648,
+        "attack": 212,
+        "fpr": 0.0,
+        "recall": 0.0047169811320754715
+      },
+      "by_family": {
+        "burst": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.05
+        },
+        "combined_context": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.0
+        },
+        "foreign": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.0
+        },
+        "language_change": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.016666666666666666
+        },
+        "method_departure": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.016666666666666666
+        },
+        "new_authenticator": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.0
+        },
+        "new_device": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.5166666666666667
+        },
+        "normal": {
+          "normal": 2400,
+          "attack": 0,
+          "fpr": 0.007916666666666667,
+          "recall": null
+        },
+        "recovery_takeover": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.016666666666666666
+        }
+      },
+      "by_history": {
+        "cold_start": {
+          "normal": 400,
+          "attack": 80,
+          "fpr": 0.005,
+          "recall": 0.075
+        },
+        "established": {
+          "normal": 2000,
+          "attack": 400,
+          "fpr": 0.0085,
+          "recall": 0.0775
+        }
+      },
+      "single_row_model_p95_ms": 1.5333638492847967,
+      "latency_scope": "model-only, warm local CPU; excludes extraction, DB, Redis, HTTP",
+      "threshold_note": "normal calibration only; achieved test FPR may differ due ties/sample variation",
+      "roc_note": "test ROC points are descriptive, never used as deployed thresholds"
+    },
+    "single_factor_reset_log1p_hours": {
+      "features": [
+        "hour_of_day",
+        "day_of_week",
+        "hours_from_typical_login_time",
+        "is_thailand",
+        "is_new_country",
+        "country_change_count_30d",
+        "is_new_device",
+        "is_new_user_agent_family",
+        "log_minutes_since_last_login",
+        "login_count_24h",
+        "failed_logins_24h",
+        "passkey_count",
+        "passkey_age_days",
+        "new_passkey_recently_added",
+        "passkey_last_used_days",
+        "concurrent_session_count",
+        "active_subsystem_count",
+        "weekday_usage_score",
+        "scope_sensitivity_score",
+        "ever_changed_permission",
+        "permission_change_age",
+        "confirmed_incident_count",
+        "impossible_travel_score",
+        "factor_reset_log1p_hours"
+      ],
+      "feature_count": 24,
+      "warn_threshold": 0.5267833599405098,
+      "hypothetical_challenge_threshold": 0.5743444908931057,
+      "warn": {
+        "normal": 2400,
+        "attack": 480,
+        "fpr": 0.00875,
+        "recall": 0.075
+      },
+      "hypothetical_challenge": {
+        "normal": 2400,
+        "attack": 480,
+        "fpr": 0.0016666666666666668,
+        "recall": 0.010416666666666666
+      },
+      "roc_auc": 0.5754991319444445,
+      "pr_auc_average_precision": 0.2689652718481711,
+      "roc_recall_at_test_fpr_le_1pct": 0.07708333333333334,
+      "roc_recall_at_test_fpr_le_0_1pct": 0.00625,
+      "additional_attacks_after_l1_l2_allow": 1,
+      "attacks_l1_l2_allow": 212,
+      "conditional_allow": {
+        "normal": 1648,
+        "attack": 212,
+        "fpr": 0.0,
+        "recall": 0.0047169811320754715
+      },
+      "by_family": {
+        "burst": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.05
+        },
+        "combined_context": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.0
+        },
+        "foreign": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.0
+        },
+        "language_change": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.016666666666666666
+        },
+        "method_departure": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.016666666666666666
+        },
+        "new_authenticator": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.0
+        },
+        "new_device": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.5166666666666667
+        },
+        "normal": {
+          "normal": 2400,
+          "attack": 0,
+          "fpr": 0.00875,
+          "recall": null
+        },
+        "recovery_takeover": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.0
+        }
+      },
+      "by_history": {
+        "cold_start": {
+          "normal": 400,
+          "attack": 80,
+          "fpr": 0.0025,
+          "recall": 0.0875
+        },
+        "established": {
+          "normal": 2000,
+          "attack": 400,
+          "fpr": 0.01,
+          "recall": 0.0725
+        }
+      },
+      "single_row_model_p95_ms": 1.7360000002554443,
+      "latency_scope": "model-only, warm local CPU; excludes extraction, DB, Redis, HTTP",
+      "threshold_note": "normal calibration only; achieved test FPR may differ due ties/sample variation",
+      "roc_note": "test ROC points are descriptive, never used as deployed thresholds"
+    },
+    "single_auth_method_known": {
+      "features": [
+        "hour_of_day",
+        "day_of_week",
+        "hours_from_typical_login_time",
+        "is_thailand",
+        "is_new_country",
+        "country_change_count_30d",
+        "is_new_device",
+        "is_new_user_agent_family",
+        "log_minutes_since_last_login",
+        "login_count_24h",
+        "failed_logins_24h",
+        "passkey_count",
+        "passkey_age_days",
+        "new_passkey_recently_added",
+        "passkey_last_used_days",
+        "concurrent_session_count",
+        "active_subsystem_count",
+        "weekday_usage_score",
+        "scope_sensitivity_score",
+        "ever_changed_permission",
+        "permission_change_age",
+        "confirmed_incident_count",
+        "impossible_travel_score",
+        "auth_method_known"
+      ],
+      "feature_count": 24,
+      "warn_threshold": 0.5323068964108295,
+      "hypothetical_challenge_threshold": 0.5739536786762753,
+      "warn": {
+        "normal": 2400,
+        "attack": 480,
+        "fpr": 0.005416666666666667,
+        "recall": 0.03958333333333333
+      },
+      "hypothetical_challenge": {
+        "normal": 2400,
+        "attack": 480,
+        "fpr": 0.0,
+        "recall": 0.0020833333333333333
+      },
+      "roc_auc": 0.5834288194444445,
+      "pr_auc_average_precision": 0.2765870431989013,
+      "roc_recall_at_test_fpr_le_1pct": 0.08541666666666667,
+      "roc_recall_at_test_fpr_le_0_1pct": 0.010416666666666666,
+      "additional_attacks_after_l1_l2_allow": 1,
+      "attacks_l1_l2_allow": 212,
+      "conditional_allow": {
+        "normal": 1648,
+        "attack": 212,
+        "fpr": 0.0,
+        "recall": 0.0047169811320754715
+      },
+      "by_family": {
+        "burst": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.016666666666666666
+        },
+        "combined_context": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.0
+        },
+        "foreign": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.0
+        },
+        "language_change": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.0
+        },
+        "method_departure": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.016666666666666666
+        },
+        "new_authenticator": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.0
+        },
+        "new_device": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.2833333333333333
+        },
+        "normal": {
+          "normal": 2400,
+          "attack": 0,
+          "fpr": 0.005416666666666667,
+          "recall": null
+        },
+        "recovery_takeover": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.0
+        }
+      },
+      "by_history": {
+        "cold_start": {
+          "normal": 400,
+          "attack": 80,
+          "fpr": 0.0,
+          "recall": 0.05
+        },
+        "established": {
+          "normal": 2000,
+          "attack": 400,
+          "fpr": 0.0065,
+          "recall": 0.0375
+        }
+      },
+      "single_row_model_p95_ms": 1.8163750004532624,
+      "latency_scope": "model-only, warm local CPU; excludes extraction, DB, Redis, HTTP",
+      "threshold_note": "normal calibration only; achieved test FPR may differ due ties/sample variation",
+      "roc_note": "test ROC points are descriptive, never used as deployed thresholds"
+    },
+    "single_auth_phishing_resistant": {
+      "features": [
+        "hour_of_day",
+        "day_of_week",
+        "hours_from_typical_login_time",
+        "is_thailand",
+        "is_new_country",
+        "country_change_count_30d",
+        "is_new_device",
+        "is_new_user_agent_family",
+        "log_minutes_since_last_login",
+        "login_count_24h",
+        "failed_logins_24h",
+        "passkey_count",
+        "passkey_age_days",
+        "new_passkey_recently_added",
+        "passkey_last_used_days",
+        "concurrent_session_count",
+        "active_subsystem_count",
+        "weekday_usage_score",
+        "scope_sensitivity_score",
+        "ever_changed_permission",
+        "permission_change_age",
+        "confirmed_incident_count",
+        "impossible_travel_score",
+        "auth_phishing_resistant"
+      ],
+      "feature_count": 24,
+      "warn_threshold": 0.5229793981133782,
+      "hypothetical_challenge_threshold": 0.5829348590321457,
+      "warn": {
+        "normal": 2400,
+        "attack": 480,
+        "fpr": 0.00875,
+        "recall": 0.08541666666666667
+      },
+      "hypothetical_challenge": {
+        "normal": 2400,
+        "attack": 480,
+        "fpr": 0.0004166666666666667,
+        "recall": 0.004166666666666667
+      },
+      "roc_auc": 0.5869587673611112,
+      "pr_auc_average_precision": 0.2785165303737971,
+      "roc_recall_at_test_fpr_le_1pct": 0.0875,
+      "roc_recall_at_test_fpr_le_0_1pct": 0.0125,
+      "additional_attacks_after_l1_l2_allow": 1,
+      "attacks_l1_l2_allow": 212,
+      "conditional_allow": {
+        "normal": 1648,
+        "attack": 212,
+        "fpr": 0.0,
+        "recall": 0.0047169811320754715
+      },
+      "by_family": {
+        "burst": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.05
+        },
+        "combined_context": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.0
+        },
+        "foreign": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.0
+        },
+        "language_change": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.016666666666666666
+        },
+        "method_departure": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.016666666666666666
+        },
+        "new_authenticator": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.0
+        },
+        "new_device": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.5833333333333334
+        },
+        "normal": {
+          "normal": 2400,
+          "attack": 0,
+          "fpr": 0.00875,
+          "recall": null
+        },
+        "recovery_takeover": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.016666666666666666
+        }
+      },
+      "by_history": {
+        "cold_start": {
+          "normal": 400,
+          "attack": 80,
+          "fpr": 0.005,
+          "recall": 0.0875
+        },
+        "established": {
+          "normal": 2000,
+          "attack": 400,
+          "fpr": 0.0095,
+          "recall": 0.085
+        }
+      },
+      "single_row_model_p95_ms": 1.6940008511483027,
+      "latency_scope": "model-only, warm local CPU; excludes extraction, DB, Redis, HTTP",
+      "threshold_note": "normal calibration only; achieved test FPR may differ due ties/sample variation",
+      "roc_note": "test ROC points are descriptive, never used as deployed thresholds"
+    },
+    "single_prior_auth_observed": {
+      "features": [
+        "hour_of_day",
+        "day_of_week",
+        "hours_from_typical_login_time",
+        "is_thailand",
+        "is_new_country",
+        "country_change_count_30d",
+        "is_new_device",
+        "is_new_user_agent_family",
+        "log_minutes_since_last_login",
+        "login_count_24h",
+        "failed_logins_24h",
+        "passkey_count",
+        "passkey_age_days",
+        "new_passkey_recently_added",
+        "passkey_last_used_days",
+        "concurrent_session_count",
+        "active_subsystem_count",
+        "weekday_usage_score",
+        "scope_sensitivity_score",
+        "ever_changed_permission",
+        "permission_change_age",
+        "confirmed_incident_count",
+        "impossible_travel_score",
+        "prior_auth_observed"
+      ],
+      "feature_count": 24,
+      "warn_threshold": 0.5183245133160717,
+      "hypothetical_challenge_threshold": 0.577504957259754,
+      "warn": {
+        "normal": 2400,
+        "attack": 480,
+        "fpr": 0.01,
+        "recall": 0.08125
+      },
+      "hypothetical_challenge": {
+        "normal": 2400,
+        "attack": 480,
+        "fpr": 0.0004166666666666667,
+        "recall": 0.008333333333333333
+      },
+      "roc_auc": 0.5789782986111112,
+      "pr_auc_average_precision": 0.27363056655436213,
+      "roc_recall_at_test_fpr_le_1pct": 0.08125,
+      "roc_recall_at_test_fpr_le_0_1pct": 0.014583333333333334,
+      "additional_attacks_after_l1_l2_allow": 1,
+      "attacks_l1_l2_allow": 212,
+      "conditional_allow": {
+        "normal": 1648,
+        "attack": 212,
+        "fpr": 0.0,
+        "recall": 0.0047169811320754715
+      },
+      "by_family": {
+        "burst": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.03333333333333333
+        },
+        "combined_context": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.0
+        },
+        "foreign": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.0
+        },
+        "language_change": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.016666666666666666
+        },
+        "method_departure": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.03333333333333333
+        },
+        "new_authenticator": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.0
+        },
+        "new_device": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.5666666666666667
+        },
+        "normal": {
+          "normal": 2400,
+          "attack": 0,
+          "fpr": 0.01,
+          "recall": null
+        },
+        "recovery_takeover": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.0
+        }
+      },
+      "by_history": {
+        "cold_start": {
+          "normal": 400,
+          "attack": 80,
+          "fpr": 0.0175,
+          "recall": 0.1375
+        },
+        "established": {
+          "normal": 2000,
+          "attack": 400,
+          "fpr": 0.0085,
+          "recall": 0.07
+        }
+      },
+      "single_row_model_p95_ms": 2.0090854995942204,
+      "latency_scope": "model-only, warm local CPU; excludes extraction, DB, Redis, HTTP",
+      "threshold_note": "normal calibration only; achieved test FPR may differ due ties/sample variation",
+      "roc_note": "test ROC points are descriptive, never used as deployed thresholds"
+    },
+    "single_prior_passkey_rate": {
+      "features": [
+        "hour_of_day",
+        "day_of_week",
+        "hours_from_typical_login_time",
+        "is_thailand",
+        "is_new_country",
+        "country_change_count_30d",
+        "is_new_device",
+        "is_new_user_agent_family",
+        "log_minutes_since_last_login",
+        "login_count_24h",
+        "failed_logins_24h",
+        "passkey_count",
+        "passkey_age_days",
+        "new_passkey_recently_added",
+        "passkey_last_used_days",
+        "concurrent_session_count",
+        "active_subsystem_count",
+        "weekday_usage_score",
+        "scope_sensitivity_score",
+        "ever_changed_permission",
+        "permission_change_age",
+        "confirmed_incident_count",
+        "impossible_travel_score",
+        "prior_passkey_rate"
+      ],
+      "feature_count": 24,
+      "warn_threshold": 0.5177679651307651,
+      "hypothetical_challenge_threshold": 0.5693842640872964,
+      "warn": {
+        "normal": 2400,
+        "attack": 480,
+        "fpr": 0.010416666666666666,
+        "recall": 0.075
+      },
+      "hypothetical_challenge": {
+        "normal": 2400,
+        "attack": 480,
+        "fpr": 0.0008333333333333334,
+        "recall": 0.00625
+      },
+      "roc_auc": 0.5855833333333333,
+      "pr_auc_average_precision": 0.27388589403285346,
+      "roc_recall_at_test_fpr_le_1pct": 0.075,
+      "roc_recall_at_test_fpr_le_0_1pct": 0.014583333333333334,
+      "additional_attacks_after_l1_l2_allow": 1,
+      "attacks_l1_l2_allow": 212,
+      "conditional_allow": {
+        "normal": 1648,
+        "attack": 212,
+        "fpr": 0.0006067961165048543,
+        "recall": 0.0047169811320754715
+      },
+      "by_family": {
+        "burst": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.06666666666666667
+        },
+        "combined_context": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.0
+        },
+        "foreign": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.0
+        },
+        "language_change": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.016666666666666666
+        },
+        "method_departure": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.016666666666666666
+        },
+        "new_authenticator": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.0
+        },
+        "new_device": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.5
+        },
+        "normal": {
+          "normal": 2400,
+          "attack": 0,
+          "fpr": 0.010416666666666666,
+          "recall": null
+        },
+        "recovery_takeover": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.0
+        }
+      },
+      "by_history": {
+        "cold_start": {
+          "normal": 400,
+          "attack": 80,
+          "fpr": 0.005,
+          "recall": 0.0625
+        },
+        "established": {
+          "normal": 2000,
+          "attack": 400,
+          "fpr": 0.0115,
+          "recall": 0.0775
+        }
+      },
+      "single_row_model_p95_ms": 1.7860334998658798,
+      "latency_scope": "model-only, warm local CPU; excludes extraction, DB, Redis, HTTP",
+      "threshold_note": "normal calibration only; achieved test FPR may differ due ties/sample variation",
+      "roc_note": "test ROC points are descriptive, never used as deployed thresholds"
+    },
+    "single_auth_method_departure": {
+      "features": [
+        "hour_of_day",
+        "day_of_week",
+        "hours_from_typical_login_time",
+        "is_thailand",
+        "is_new_country",
+        "country_change_count_30d",
+        "is_new_device",
+        "is_new_user_agent_family",
+        "log_minutes_since_last_login",
+        "login_count_24h",
+        "failed_logins_24h",
+        "passkey_count",
+        "passkey_age_days",
+        "new_passkey_recently_added",
+        "passkey_last_used_days",
+        "concurrent_session_count",
+        "active_subsystem_count",
+        "weekday_usage_score",
+        "scope_sensitivity_score",
+        "ever_changed_permission",
+        "permission_change_age",
+        "confirmed_incident_count",
+        "impossible_travel_score",
+        "auth_method_departure"
+      ],
+      "feature_count": 24,
+      "warn_threshold": 0.5237700436253244,
+      "hypothetical_challenge_threshold": 0.5647543018940427,
+      "warn": {
+        "normal": 2400,
+        "attack": 480,
+        "fpr": 0.00625,
+        "recall": 0.06875
+      },
+      "hypothetical_challenge": {
+        "normal": 2400,
+        "attack": 480,
+        "fpr": 0.00125,
+        "recall": 0.008333333333333333
+      },
+      "roc_auc": 0.6083602430555556,
+      "pr_auc_average_precision": 0.289320894077414,
+      "roc_recall_at_test_fpr_le_1pct": 0.08125,
+      "roc_recall_at_test_fpr_le_0_1pct": 0.008333333333333333,
+      "additional_attacks_after_l1_l2_allow": 2,
+      "attacks_l1_l2_allow": 212,
+      "conditional_allow": {
+        "normal": 1648,
+        "attack": 212,
+        "fpr": 0.0,
+        "recall": 0.009433962264150943
+      },
+      "by_family": {
+        "burst": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.05
+        },
+        "combined_context": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.0
+        },
+        "foreign": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.0
+        },
+        "language_change": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.016666666666666666
+        },
+        "method_departure": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.08333333333333333
+        },
+        "new_authenticator": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.0
+        },
+        "new_device": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.4
+        },
+        "normal": {
+          "normal": 2400,
+          "attack": 0,
+          "fpr": 0.00625,
+          "recall": null
+        },
+        "recovery_takeover": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.0
+        }
+      },
+      "by_history": {
+        "cold_start": {
+          "normal": 400,
+          "attack": 80,
+          "fpr": 0.0025,
+          "recall": 0.0625
+        },
+        "established": {
+          "normal": 2000,
+          "attack": 400,
+          "fpr": 0.007,
+          "recall": 0.07
+        }
+      },
+      "single_row_model_p95_ms": 2.5695746506244177,
+      "latency_scope": "model-only, warm local CPU; excludes extraction, DB, Redis, HTTP",
+      "threshold_note": "normal calibration only; achieved test FPR may differ due ties/sample variation",
+      "roc_note": "test ROC points are descriptive, never used as deployed thresholds"
+    },
+    "single_aaguid_known": {
+      "features": [
+        "hour_of_day",
+        "day_of_week",
+        "hours_from_typical_login_time",
+        "is_thailand",
+        "is_new_country",
+        "country_change_count_30d",
+        "is_new_device",
+        "is_new_user_agent_family",
+        "log_minutes_since_last_login",
+        "login_count_24h",
+        "failed_logins_24h",
+        "passkey_count",
+        "passkey_age_days",
+        "new_passkey_recently_added",
+        "passkey_last_used_days",
+        "concurrent_session_count",
+        "active_subsystem_count",
+        "weekday_usage_score",
+        "scope_sensitivity_score",
+        "ever_changed_permission",
+        "permission_change_age",
+        "confirmed_incident_count",
+        "impossible_travel_score",
+        "aaguid_known"
+      ],
+      "feature_count": 24,
+      "warn_threshold": 0.5229793981133782,
+      "hypothetical_challenge_threshold": 0.5829348590321457,
+      "warn": {
+        "normal": 2400,
+        "attack": 480,
+        "fpr": 0.00875,
+        "recall": 0.08541666666666667
+      },
+      "hypothetical_challenge": {
+        "normal": 2400,
+        "attack": 480,
+        "fpr": 0.0004166666666666667,
+        "recall": 0.004166666666666667
+      },
+      "roc_auc": 0.5869587673611112,
+      "pr_auc_average_precision": 0.2785165303737971,
+      "roc_recall_at_test_fpr_le_1pct": 0.0875,
+      "roc_recall_at_test_fpr_le_0_1pct": 0.0125,
+      "additional_attacks_after_l1_l2_allow": 1,
+      "attacks_l1_l2_allow": 212,
+      "conditional_allow": {
+        "normal": 1648,
+        "attack": 212,
+        "fpr": 0.0,
+        "recall": 0.0047169811320754715
+      },
+      "by_family": {
+        "burst": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.05
+        },
+        "combined_context": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.0
+        },
+        "foreign": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.0
+        },
+        "language_change": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.016666666666666666
+        },
+        "method_departure": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.016666666666666666
+        },
+        "new_authenticator": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.0
+        },
+        "new_device": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.5833333333333334
+        },
+        "normal": {
+          "normal": 2400,
+          "attack": 0,
+          "fpr": 0.00875,
+          "recall": null
+        },
+        "recovery_takeover": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.016666666666666666
+        }
+      },
+      "by_history": {
+        "cold_start": {
+          "normal": 400,
+          "attack": 80,
+          "fpr": 0.005,
+          "recall": 0.0875
+        },
+        "established": {
+          "normal": 2000,
+          "attack": 400,
+          "fpr": 0.0095,
+          "recall": 0.085
+        }
+      },
+      "single_row_model_p95_ms": 1.4744724505362683,
+      "latency_scope": "model-only, warm local CPU; excludes extraction, DB, Redis, HTTP",
+      "threshold_note": "normal calibration only; achieved test FPR may differ due ties/sample variation",
+      "roc_note": "test ROC points are descriptive, never used as deployed thresholds"
+    },
+    "single_prior_aaguid_observed": {
+      "features": [
+        "hour_of_day",
+        "day_of_week",
+        "hours_from_typical_login_time",
+        "is_thailand",
+        "is_new_country",
+        "country_change_count_30d",
+        "is_new_device",
+        "is_new_user_agent_family",
+        "log_minutes_since_last_login",
+        "login_count_24h",
+        "failed_logins_24h",
+        "passkey_count",
+        "passkey_age_days",
+        "new_passkey_recently_added",
+        "passkey_last_used_days",
+        "concurrent_session_count",
+        "active_subsystem_count",
+        "weekday_usage_score",
+        "scope_sensitivity_score",
+        "ever_changed_permission",
+        "permission_change_age",
+        "confirmed_incident_count",
+        "impossible_travel_score",
+        "prior_aaguid_observed"
+      ],
+      "feature_count": 24,
+      "warn_threshold": 0.5183245133160717,
+      "hypothetical_challenge_threshold": 0.577504957259754,
+      "warn": {
+        "normal": 2400,
+        "attack": 480,
+        "fpr": 0.01,
+        "recall": 0.08125
+      },
+      "hypothetical_challenge": {
+        "normal": 2400,
+        "attack": 480,
+        "fpr": 0.0004166666666666667,
+        "recall": 0.008333333333333333
+      },
+      "roc_auc": 0.5789782986111112,
+      "pr_auc_average_precision": 0.27363056655436213,
+      "roc_recall_at_test_fpr_le_1pct": 0.08125,
+      "roc_recall_at_test_fpr_le_0_1pct": 0.014583333333333334,
+      "additional_attacks_after_l1_l2_allow": 1,
+      "attacks_l1_l2_allow": 212,
+      "conditional_allow": {
+        "normal": 1648,
+        "attack": 212,
+        "fpr": 0.0,
+        "recall": 0.0047169811320754715
+      },
+      "by_family": {
+        "burst": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.03333333333333333
+        },
+        "combined_context": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.0
+        },
+        "foreign": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.0
+        },
+        "language_change": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.016666666666666666
+        },
+        "method_departure": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.03333333333333333
+        },
+        "new_authenticator": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.0
+        },
+        "new_device": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.5666666666666667
+        },
+        "normal": {
+          "normal": 2400,
+          "attack": 0,
+          "fpr": 0.01,
+          "recall": null
+        },
+        "recovery_takeover": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.0
+        }
+      },
+      "by_history": {
+        "cold_start": {
+          "normal": 400,
+          "attack": 80,
+          "fpr": 0.0175,
+          "recall": 0.1375
+        },
+        "established": {
+          "normal": 2000,
+          "attack": 400,
+          "fpr": 0.0085,
+          "recall": 0.07
+        }
+      },
+      "single_row_model_p95_ms": 1.9967512999755848,
+      "latency_scope": "model-only, warm local CPU; excludes extraction, DB, Redis, HTTP",
+      "threshold_note": "normal calibration only; achieved test FPR may differ due ties/sample variation",
+      "roc_note": "test ROC points are descriptive, never used as deployed thresholds"
+    },
+    "single_aaguid_novel": {
+      "features": [
+        "hour_of_day",
+        "day_of_week",
+        "hours_from_typical_login_time",
+        "is_thailand",
+        "is_new_country",
+        "country_change_count_30d",
+        "is_new_device",
+        "is_new_user_agent_family",
+        "log_minutes_since_last_login",
+        "login_count_24h",
+        "failed_logins_24h",
+        "passkey_count",
+        "passkey_age_days",
+        "new_passkey_recently_added",
+        "passkey_last_used_days",
+        "concurrent_session_count",
+        "active_subsystem_count",
+        "weekday_usage_score",
+        "scope_sensitivity_score",
+        "ever_changed_permission",
+        "permission_change_age",
+        "confirmed_incident_count",
+        "impossible_travel_score",
+        "aaguid_novel"
+      ],
+      "feature_count": 24,
+      "warn_threshold": 0.5259310194932764,
+      "hypothetical_challenge_threshold": 0.5738162733140905,
+      "warn": {
+        "normal": 2400,
+        "attack": 480,
+        "fpr": 0.01,
+        "recall": 0.06875
+      },
+      "hypothetical_challenge": {
+        "normal": 2400,
+        "attack": 480,
+        "fpr": 0.00125,
+        "recall": 0.008333333333333333
+      },
+      "roc_auc": 0.6212612847222222,
+      "pr_auc_average_precision": 0.2978469307407028,
+      "roc_recall_at_test_fpr_le_1pct": 0.075,
+      "roc_recall_at_test_fpr_le_0_1pct": 0.0020833333333333333,
+      "additional_attacks_after_l1_l2_allow": 2,
+      "attacks_l1_l2_allow": 212,
+      "conditional_allow": {
+        "normal": 1648,
+        "attack": 212,
+        "fpr": 0.0012135922330097086,
+        "recall": 0.009433962264150943
+      },
+      "by_family": {
+        "burst": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.016666666666666666
+        },
+        "combined_context": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.0
+        },
+        "foreign": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.0
+        },
+        "language_change": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.016666666666666666
+        },
+        "method_departure": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.016666666666666666
+        },
+        "new_authenticator": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.06666666666666667
+        },
+        "new_device": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.43333333333333335
+        },
+        "normal": {
+          "normal": 2400,
+          "attack": 0,
+          "fpr": 0.01,
+          "recall": null
+        },
+        "recovery_takeover": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.0
+        }
+      },
+      "by_history": {
+        "cold_start": {
+          "normal": 400,
+          "attack": 80,
+          "fpr": 0.005,
+          "recall": 0.0625
+        },
+        "established": {
+          "normal": 2000,
+          "attack": 400,
+          "fpr": 0.011,
+          "recall": 0.07
+        }
+      },
+      "single_row_model_p95_ms": 1.4988454004196683,
+      "latency_scope": "model-only, warm local CPU; excludes extraction, DB, Redis, HTTP",
+      "threshold_note": "normal calibration only; achieved test FPR may differ due ties/sample variation",
+      "roc_note": "test ROC points are descriptive, never used as deployed thresholds"
+    },
+    "single_language_known": {
+      "features": [
+        "hour_of_day",
+        "day_of_week",
+        "hours_from_typical_login_time",
+        "is_thailand",
+        "is_new_country",
+        "country_change_count_30d",
+        "is_new_device",
+        "is_new_user_agent_family",
+        "log_minutes_since_last_login",
+        "login_count_24h",
+        "failed_logins_24h",
+        "passkey_count",
+        "passkey_age_days",
+        "new_passkey_recently_added",
+        "passkey_last_used_days",
+        "concurrent_session_count",
+        "active_subsystem_count",
+        "weekday_usage_score",
+        "scope_sensitivity_score",
+        "ever_changed_permission",
+        "permission_change_age",
+        "confirmed_incident_count",
+        "impossible_travel_score",
+        "language_known"
+      ],
+      "feature_count": 24,
+      "warn_threshold": 0.5323068964108295,
+      "hypothetical_challenge_threshold": 0.5739536786762753,
+      "warn": {
+        "normal": 2400,
+        "attack": 480,
+        "fpr": 0.005416666666666667,
+        "recall": 0.03958333333333333
+      },
+      "hypothetical_challenge": {
+        "normal": 2400,
+        "attack": 480,
+        "fpr": 0.0,
+        "recall": 0.0020833333333333333
+      },
+      "roc_auc": 0.5834288194444445,
+      "pr_auc_average_precision": 0.2765870431989013,
+      "roc_recall_at_test_fpr_le_1pct": 0.08541666666666667,
+      "roc_recall_at_test_fpr_le_0_1pct": 0.010416666666666666,
+      "additional_attacks_after_l1_l2_allow": 1,
+      "attacks_l1_l2_allow": 212,
+      "conditional_allow": {
+        "normal": 1648,
+        "attack": 212,
+        "fpr": 0.0,
+        "recall": 0.0047169811320754715
+      },
+      "by_family": {
+        "burst": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.016666666666666666
+        },
+        "combined_context": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.0
+        },
+        "foreign": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.0
+        },
+        "language_change": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.0
+        },
+        "method_departure": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.016666666666666666
+        },
+        "new_authenticator": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.0
+        },
+        "new_device": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.2833333333333333
+        },
+        "normal": {
+          "normal": 2400,
+          "attack": 0,
+          "fpr": 0.005416666666666667,
+          "recall": null
+        },
+        "recovery_takeover": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.0
+        }
+      },
+      "by_history": {
+        "cold_start": {
+          "normal": 400,
+          "attack": 80,
+          "fpr": 0.0,
+          "recall": 0.05
+        },
+        "established": {
+          "normal": 2000,
+          "attack": 400,
+          "fpr": 0.0065,
+          "recall": 0.0375
+        }
+      },
+      "single_row_model_p95_ms": 1.734347300225636,
+      "latency_scope": "model-only, warm local CPU; excludes extraction, DB, Redis, HTTP",
+      "threshold_note": "normal calibration only; achieved test FPR may differ due ties/sample variation",
+      "roc_note": "test ROC points are descriptive, never used as deployed thresholds"
+    },
+    "single_prior_language_observed": {
+      "features": [
+        "hour_of_day",
+        "day_of_week",
+        "hours_from_typical_login_time",
+        "is_thailand",
+        "is_new_country",
+        "country_change_count_30d",
+        "is_new_device",
+        "is_new_user_agent_family",
+        "log_minutes_since_last_login",
+        "login_count_24h",
+        "failed_logins_24h",
+        "passkey_count",
+        "passkey_age_days",
+        "new_passkey_recently_added",
+        "passkey_last_used_days",
+        "concurrent_session_count",
+        "active_subsystem_count",
+        "weekday_usage_score",
+        "scope_sensitivity_score",
+        "ever_changed_permission",
+        "permission_change_age",
+        "confirmed_incident_count",
+        "impossible_travel_score",
+        "prior_language_observed"
+      ],
+      "feature_count": 24,
+      "warn_threshold": 0.5183245133160717,
+      "hypothetical_challenge_threshold": 0.577504957259754,
+      "warn": {
+        "normal": 2400,
+        "attack": 480,
+        "fpr": 0.01,
+        "recall": 0.08125
+      },
+      "hypothetical_challenge": {
+        "normal": 2400,
+        "attack": 480,
+        "fpr": 0.0004166666666666667,
+        "recall": 0.008333333333333333
+      },
+      "roc_auc": 0.5789782986111112,
+      "pr_auc_average_precision": 0.27363056655436213,
+      "roc_recall_at_test_fpr_le_1pct": 0.08125,
+      "roc_recall_at_test_fpr_le_0_1pct": 0.014583333333333334,
+      "additional_attacks_after_l1_l2_allow": 1,
+      "attacks_l1_l2_allow": 212,
+      "conditional_allow": {
+        "normal": 1648,
+        "attack": 212,
+        "fpr": 0.0,
+        "recall": 0.0047169811320754715
+      },
+      "by_family": {
+        "burst": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.03333333333333333
+        },
+        "combined_context": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.0
+        },
+        "foreign": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.0
+        },
+        "language_change": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.016666666666666666
+        },
+        "method_departure": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.03333333333333333
+        },
+        "new_authenticator": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.0
+        },
+        "new_device": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.5666666666666667
+        },
+        "normal": {
+          "normal": 2400,
+          "attack": 0,
+          "fpr": 0.01,
+          "recall": null
+        },
+        "recovery_takeover": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.0
+        }
+      },
+      "by_history": {
+        "cold_start": {
+          "normal": 400,
+          "attack": 80,
+          "fpr": 0.0175,
+          "recall": 0.1375
+        },
+        "established": {
+          "normal": 2000,
+          "attack": 400,
+          "fpr": 0.0085,
+          "recall": 0.07
+        }
+      },
+      "single_row_model_p95_ms": 1.8192322995673749,
+      "latency_scope": "model-only, warm local CPU; excludes extraction, DB, Redis, HTTP",
+      "threshold_note": "normal calibration only; achieved test FPR may differ due ties/sample variation",
+      "roc_note": "test ROC points are descriptive, never used as deployed thresholds"
+    },
+    "single_language_novel": {
+      "features": [
+        "hour_of_day",
+        "day_of_week",
+        "hours_from_typical_login_time",
+        "is_thailand",
+        "is_new_country",
+        "country_change_count_30d",
+        "is_new_device",
+        "is_new_user_agent_family",
+        "log_minutes_since_last_login",
+        "login_count_24h",
+        "failed_logins_24h",
+        "passkey_count",
+        "passkey_age_days",
+        "new_passkey_recently_added",
+        "passkey_last_used_days",
+        "concurrent_session_count",
+        "active_subsystem_count",
+        "weekday_usage_score",
+        "scope_sensitivity_score",
+        "ever_changed_permission",
+        "permission_change_age",
+        "confirmed_incident_count",
+        "impossible_travel_score",
+        "language_novel"
+      ],
+      "feature_count": 24,
+      "warn_threshold": 0.5229888221233918,
+      "hypothetical_challenge_threshold": 0.5719721583365955,
+      "warn": {
+        "normal": 2400,
+        "attack": 480,
+        "fpr": 0.00875,
+        "recall": 0.075
+      },
+      "hypothetical_challenge": {
+        "normal": 2400,
+        "attack": 480,
+        "fpr": 0.0004166666666666667,
+        "recall": 0.004166666666666667
+      },
+      "roc_auc": 0.6155277777777778,
+      "pr_auc_average_precision": 0.29634298715528246,
+      "roc_recall_at_test_fpr_le_1pct": 0.09166666666666666,
+      "roc_recall_at_test_fpr_le_0_1pct": 0.010416666666666666,
+      "additional_attacks_after_l1_l2_allow": 3,
+      "attacks_l1_l2_allow": 212,
+      "conditional_allow": {
+        "normal": 1648,
+        "attack": 212,
+        "fpr": 0.0006067961165048543,
+        "recall": 0.014150943396226415
+      },
+      "by_family": {
+        "burst": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.03333333333333333
+        },
+        "combined_context": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.0
+        },
+        "foreign": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.0
+        },
+        "language_change": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.05
+        },
+        "method_departure": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.03333333333333333
+        },
+        "new_authenticator": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.016666666666666666
+        },
+        "new_device": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.4666666666666667
+        },
+        "normal": {
+          "normal": 2400,
+          "attack": 0,
+          "fpr": 0.00875,
+          "recall": null
+        },
+        "recovery_takeover": {
+          "normal": 0,
+          "attack": 60,
+          "fpr": null,
+          "recall": 0.0
+        }
+      },
+      "by_history": {
+        "cold_start": {
+          "normal": 400,
+          "attack": 80,
+          "fpr": 0.005,
+          "recall": 0.0875
+        },
+        "established": {
+          "normal": 2000,
+          "attack": 400,
+          "fpr": 0.0095,
+          "recall": 0.0725
+        }
+      },
+      "single_row_model_p95_ms": 1.817362551264523,
+      "latency_scope": "model-only, warm local CPU; excludes extraction, DB, Redis, HTTP",
+      "threshold_note": "normal calibration only; achieved test FPR may differ due ties/sample variation",
+      "roc_note": "test ROC points are descriptive, never used as deployed thresholds"
+    }
+  },
+  "l1_l2_feature_only": {
+    "warn_or_higher": {
+      "normal": 2400,
+      "attack": 480,
+      "fpr": 0.31333333333333335,
+      "recall": 0.5583333333333333
+    },
+    "challenge_or_block": {
+      "normal": 2400,
+      "attack": 480,
+      "fpr": 0.31333333333333335,
+      "recall": 0.5583333333333333
+    },
+    "scope": "actual current rule/behavior/aggregation code, simulated profile; DB-only checks not evaluated"
+  }
+}
