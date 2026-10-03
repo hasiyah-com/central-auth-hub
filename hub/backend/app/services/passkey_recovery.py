@@ -205,6 +205,11 @@ def _revoke_all_passkeys(user_id: UUIDType | str, db: Session, *, reason: str) -
             synchronize_session=False,
         )
     )
+    if count:
+        from app.services.audit_service import log_action
+        log_action(db, action="auth_factor_reset_completed", target_type="user",
+                   target_id=user_id, metadata={"factor": "passkey", "reason": reason,
+                                                "revoked_count": count})
     return count
 
 
