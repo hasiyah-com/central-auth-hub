@@ -55,3 +55,16 @@ test('shows every stored point input without pretending unavailable SHAP is zero
   fireEvent.click(screen.getByRole('button', { name: /ย่อ/ }));
   expect(screen.getByText(/ยังไม่มีค่า SHAP/)).toBeInTheDocument();
 });
+
+test('shows the nested hour-rarity weight instead of a dash', () => {
+  const s = session();
+  s.risk_reasons = [
+    'weekend_mismatch (+0.10)',
+    'hour_rarity=0.98 (hour 2 ไม่เคยเข้า, +0.30)',
+  ];
+  render(<SessionDetailPanel session={s} />);
+
+  expect(screen.getByText('hour_rarity')).toBeInTheDocument();
+  expect(screen.getByText('+0.30')).toBeInTheDocument();
+  expect(screen.getByText(/hour 2 ไม่เคยเข้า/)).toBeInTheDocument();
+});
