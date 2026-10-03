@@ -894,6 +894,34 @@ export default function SubsystemDetailPage({
   }
 
   const scopes = scopeList(sub.scope);
+  const redirectUris = sub.redirect_uris || [];
+  const securityChecks = [
+    {
+      label: "สถานะระบบพร้อมใช้งาน",
+      detail: sub.status === "active" ? "ระบบได้รับอนุมัติและเปิดใช้งาน" : `สถานะปัจจุบัน: ${sub.status}`,
+      passed: sub.status === "active",
+    },
+    {
+      label: "Redirect URI ใช้ HTTPS",
+      detail: redirectUris.length
+        ? `${redirectUris.filter((uri) => uri.startsWith("https://")).length}/${redirectUris.length} URI ผ่านการตรวจ`
+        : "ยังไม่ได้ลงทะเบียน Redirect URI",
+      passed: redirectUris.length > 0 && redirectUris.every((uri) => uri.startsWith("https://")),
+    },
+    {
+      label: "Health endpoint ตอบสนอง",
+      detail: sub.health?.status === "online"
+        ? `ออนไลน์ · ${sub.health.latency_ms ?? "—"} ms`
+        : HEALTH_TONE[sub.health?.status || "unknown"]?.label || "ยังไม่เคยตรวจ",
+      passed: sub.health?.status === "online",
+    },
+    {
+      label: "กำหนด OAuth scope แล้ว",
+      detail: scopes.length ? `${scopes.length} scopes · ${scopes.join(", ")}` : "ยังไม่ได้กำหนด scope",
+      passed: scopes.length > 0,
+    },
+  ];
+  const securityPassed = securityChecks.filter((check) => check.passed).length;
 
   // ── Tables ──────────────────────────────────────────────
   const wlCols: Column<WhitelistEntry & Record<string, unknown>>[] = [
@@ -1292,43 +1320,38 @@ export default function SubsystemDetailPage({
           Subsystems
         </Link>
 
-        {/* ── Hero identity ── */}
-        <section className="cx-identity-hero">
-          <div>
-            <span>subsystem</span>
-            <h2>
-              {sub.name}
-              {sub.description && <small>{sub.description}</small>}
-            </h2>
-            <code>client_id · {sub.client_id}</code>
-            {(sub.created_at || sub.approved_at) && (
-              <span className="cx-hero-dates">
-                {sub.created_at &&
-                  `สร้าง ${new Date(sub.created_at).toISOString().slice(0, 10)}`}
-                {sub.approved_at &&
-                  ` · อนุมัติ ${new Date(sub.approved_at)
-                    .toISOString()
-                    .slice(0, 10)}`}
-              </span>
-            )}
+        {/* ── Secure subsystem identity ── */}
+        <section className="cx-identity-hero cx-secure-identity">
+          <div className="cx-secure-identity-main">
+            <div className="cx-secure-mark" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none"><path d="M12 3 20 6v5c0 5-3 8-8 10-5-2-8-5-8-10V6l8-3Z" stroke="currentColor" strokeWidth="1.6"/><path d="m8.5 12 2.2 2.2 4.8-5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>
+            </div>
+            <div>
+              <span>subsystem security profile</span>
+              <h2>
+                {sub.name}
+                {sub.description && <small>{sub.description}</small>}
+              </h2>
+              <div className="cx-secure-tags">
+                <span className={sub.status === "active" ? "ok" : "warn"}>{sub.status.toUpperCase()}</span>
+                <span className={sub.health?.status === "online" ? "ok" : "muted"}>
+                  {sub.health?.status === "online" ? "HEALTHY" : HEALTH_TONE[sub.health?.status || "unknown"]?.label}
+                </span>
+                <span className="verified">OAuth 2.0 · OIDC</span>
+              </div>
+              <code>client_id · {sub.client_id}</code>
+              {(sub.created_at || sub.approved_at) && (
+                <span className="cx-hero-dates">
+                  {sub.created_at && `สร้าง ${new Date(sub.created_at).toISOString().slice(0, 10)}`}
+                  {sub.approved_at && ` · อนุมัติ ${new Date(sub.approved_at).toISOString().slice(0, 10)}`}
+                </span>
+              )}
+            </div>
           </div>
           <div className="cx-hero-metrics">
-            <span>
-              health
-              <b className={HEALTH_HERO[sub.health?.status || "unknown"] || ""}>
-                {sub.health?.latency_ms != null
-                  ? `${sub.health.latency_ms}ms`
-                  : HEALTH_TONE[sub.health?.status || "unknown"]?.label || "—"}
-              </b>
-            </span>
-            <span>
-              whitelist
-              <b>{sub.whitelist_count}</b>
-            </span>
-            <span>
-              owner
-              <b>{sub.owner_email || "—"}</b>
-            </span>
+            <span>health<b className={HEALTH_HERO[sub.health?.status || "unknown"] || ""}>{sub.health?.latency_ms != null ? `${sub.health.latency_ms}ms` : HEALTH_TONE[sub.health?.status || "unknown"]?.label || "—"}</b></span>
+            <span>whitelist<b>{sub.whitelist_count}</b></span>
+            <span>owner<b>{sub.owner_email || "—"}</b></span>
           </div>
         </section>
 
@@ -1381,6 +1404,38 @@ export default function SubsystemDetailPage({
                 ).toLocaleString("en-US")}
                 tone="danger"
               />
+            </div>
+            <div className="subsystem-security-overview">
+              <section className="security-posture-card">
+                <header>
+                  <div>
+                    <span>configuration checks</span>
+                    <h2>สถานะความปลอดภัย</h2>
+                  </div>
+                  <div className="security-check-score">
+                    <strong>{securityPassed}/{securityChecks.length}</strong>
+                    <small>ผ่านการตรวจ</small>
+                  </div>
+                </header>
+                <div className="security-check-list">
+                  {securityChecks.map((check) => (
+                    <div key={check.label} className={check.passed ? "passed" : "attention"}>
+                      <span className="security-check-icon" aria-hidden="true">{check.passed ? "✓" : "!"}</span>
+                      <div><b>{check.label}</b><small>{check.detail}</small></div>
+                      <em>{check.passed ? "ผ่าน" : "ตรวจสอบ"}</em>
+                    </div>
+                  ))}
+                </div>
+              </section>
+              <section className="credential-posture-card">
+                <span>active credentials</span>
+                <h2>Client secret protected</h2>
+                <p>ค่า secret ไม่ถูกส่งกลับมาแสดงในหน้าเว็บ และการหมุน secret ต้องยืนยันตัวตนเพิ่มเติม</p>
+                <div className="credential-facts">
+                  <div><small>Client ID</small><code>{sub.client_id}</code></div>
+                  <div><small>สถานะการเปลี่ยนผ่าน</small><b>{sub.previous_secret_expires_at && parseUTC(sub.previous_secret_expires_at) > new Date() ? "อยู่ในช่วง Grace period" : "ไม่มี secret เก่าที่ยังใช้งาน"}</b></div>
+                </div>
+              </section>
             </div>
             {/* Daily grouped bars — แยกตามระดับความเสี่ยงจริง */}
             <section className="cx-panel">
