@@ -98,11 +98,11 @@ export default function UserTimelinePage({ params }: { params: { id: string } })
               </section>
 
               <section className="rounded-xl border border-ink-200 bg-white p-5">
-                <SectionTitle eyebrow="Behavior baseline" title="พฤติกรรมปกติของผู้ใช้" />
+                <SectionTitle eyebrow="Session summary" title="สรุปพฤติกรรมจากประวัติ" detail={`${days} วันย้อนหลัง · ${sessions.length} รายการล่าสุด (สูงสุด 100) · เวลาไทย · สถิตินี้ไม่ใช่ baseline ที่ใช้คำนวณคะแนน`} />
                 <dl className="mt-5 divide-y divide-ink-100">
                   <BaselineRow label="ประเทศที่พบบ่อย" value={summary.country} />
                   <BaselineRow label="อุปกรณ์ที่พบบ่อย" value={summary.device} />
-                  <BaselineRow label="ช่วงเวลาที่ใช้บ่อย" value={summary.hourRange} />
+                  <BaselineRow label="ชั่วโมงที่พบบ่อย (สูงสุด 3)" value={summary.hourRange} />
                   <BaselineRow label="Decision หลัก" value={summary.decision} />
                 </dl>
               </section>
@@ -174,13 +174,23 @@ function summarize(sessions: UserSession[]) {
   const scores = sessions.map((session) => session.risk_score ?? session.score ?? 0);
   const average = scores.length ? scores.reduce((sum, score) => sum + score, 0) / scores.length : 0;
   const decisions = countBy(sessions.map((session) => session.decision || "unknown"));
-  const hours = sessions.map((session) => Number(new Intl.DateTimeFormat("en-GB", {
-    timeZone: "Asia/Bangkok",
-    hour: "2-digit",
-    hour12: false,
-  }).format(new Date(asUtc(session.created_at)))));
-  const minHour = hours.length ? Math.min(...hours) : 0;
-  const maxHour = hours.length ? Math.max(...hours) : 0;
+  const hourCounts: Record<number, number> = {};
+  const hourFormatter = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Bangkok", hour: "2-digit", hourCycle: "h23",
+  });
+  for (const session of sessions) {
+    const date = new Date(asUtc(session.created_at));
+    if (!Number.isFinite(date.getTime())) continue;
+    const hour = Number(hourFormatter.format(date));
+    hourCounts[hour] = (hourCounts[hour] || 0) + 1;
+  }
+  const frequentHours = Object.entries(hourCounts)
+    .sort((a, b) => b[1] - a[1] || Number(a[0]) - Number(b[0]));
+  const validCount = frequentHours.reduce((sum, [, count]) => sum + count, 0);
+  const hourRange = frequentHours.slice(0, 3).map(([hour, count]) => {
+    const label = String(hour).padStart(2, "0");
+    return `${label}:00–${label}:59 น. · ${count} ครั้ง (${Math.round(count / validCount * 100)}%)`;
+  }).join(" / ") || "—";
   return {
     average,
     peak: scores.length ? Math.max(...scores) : 0,
@@ -188,7 +198,7 @@ function summarize(sessions: UserSession[]) {
     country: topValue(sessions.map((session) => session.geo_country || "ไม่ระบุ")),
     device: topValue(sessions.map((session) => [session.device_type, session.browser].filter(Boolean).join(" · ") || "ไม่ระบุ")),
     decision: topValue(sessions.map((session) => session.decision || "unknown")).toUpperCase(),
-    hourRange: hours.length ? `${String(minHour).padStart(2, "0")}:00–${String(maxHour).padStart(2, "0")}:59 น.` : "—",
+    hourRange,
     decisions,
   };
 }
