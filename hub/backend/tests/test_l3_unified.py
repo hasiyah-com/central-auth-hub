@@ -81,7 +81,7 @@ def seeded():
 
 
 def _reset_dup(r):
-    r.delete("l3dup:flagged", "l3dup:dup")
+    r.delete("l3dup:bangkok-v1:flagged", "l3dup:bangkok-v1:dup")
 
 
 # ══════════════════ 1. SHAP ของ sequence view (สิ่งที่ขาดไป) ══════════════════
