@@ -28,7 +28,7 @@ import logging
 from app import sequence as SEQ
 from app.features import FEATURE_COUNT
 from app.model import explainer_status as point_explainer_status
-from app.model import predict_with_explanation, model_sha256
+from app.model import predict_with_explanation, model_sha256, FeatureContractMismatch
 
 logger = logging.getLogger(__name__)
 
@@ -52,8 +52,8 @@ OWNER_SEQUENCE = "l3_sequence"
 TOP_K = 5
 
 # ตัวนับสะสมของ duplicate ratio — ratio ต้องมีตัวหาร จึงเป็นค่าสะสม ไม่ใช่ค่าต่อ event
-DUP_FLAGGED_KEY = "l3dup:flagged"
-DUP_DUPLICATE_KEY = "l3dup:dup"
+DUP_FLAGGED_KEY = "l3dup:bangkok-v1:flagged"
+DUP_DUPLICATE_KEY = "l3dup:bangkok-v1:dup"
 
 
 def _point_view(features: list[float]) -> dict:
@@ -82,6 +82,8 @@ def _point_view(features: list[float]) -> dict:
         }
     except FileNotFoundError:
         return {**quiet, "error": "model_not_loaded"}
+    except FeatureContractMismatch:
+        return {**quiet, "error": "feature_contract_mismatch"}
     except Exception as e:  # noqa: BLE001
         logger.warning("[l3_unified] point view error: %s", e)
         return {**quiet, "error": f"point_error: {type(e).__name__}"}
@@ -249,7 +251,7 @@ def evaluate(
         "point": point,
         "sequence": seq,
         "model_version": {
-            "point": "iforest-23feat",
+            "point": "iforest-23feat-bangkok-v1",
             "sequence": SEQ.MODEL_VERSION,
         },
     }

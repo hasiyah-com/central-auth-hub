@@ -42,7 +42,7 @@ MAX_HISTORY = 2000  # กันหน่วยความจำ/เวลา fi
 CAL_FPR = 0.001  # anomaly: ยิง normal ~0.8% จริง (เป็น warn = ภาระ SOC ไม่ใช่ UX)
 EXTREME_FPR = 0.0003  # extreme -> shadow would_challenge (ยังไม่ enforce)
 REASON = "multivariate_behavioral_anomaly"
-MODEL_VERSION = "iforest-l3-seq-v1"
+MODEL_VERSION = "iforest-l3-seq-bangkok-v2"
 
 # ── abstention tiers ตามจำนวน trusted history (แผน §5) ──
 # ข้อมูล learning curve: 4.7% (50 events) -> 16.3% (5000) => ยิ่งมี history ยิ่งเชื่อได้
@@ -320,7 +320,7 @@ def to_contract(result: L3Result, model: L3Model | None) -> dict:
 # Adapter — history ใน Redis + cache โมเดลรายคน (ส่วนที่แตะ I/O, fail-safe ทั้งหมด)
 # ══════════════════════════════════════════════════════════════════════════════
 
-_REDIS_KEY = "l3resid:{user_id}"
+_REDIS_KEY = "l3resid:bangkok-v1:{user_id}"
 _CACHE_TTL_SEC = 3600  # refit อย่างมากชั่วโมงละครั้งต่อคน (fit ~50-150ms)
 _MODEL_CACHE: dict[
     str, tuple[float, int, "L3Model | None"]

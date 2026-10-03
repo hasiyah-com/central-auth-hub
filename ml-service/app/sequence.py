@@ -38,7 +38,7 @@ WINDOW = 5
 MAX_HISTORY = 2000
 CAL_FPR = 0.001  # p99.9 — จุดเดียวบน holdout ที่ FPR <= 1% (วัดจริง 0.79%)
 EXTREME_FPR = 0.0003
-MODEL_VERSION = "iforest-l3-seq-v1"
+MODEL_VERSION = "iforest-l3-seq-bangkok-v2"
 
 TIER_DIAGNOSTIC = 100  # 100-999: ให้คะแนน+log แต่ห้ามเปลี่ยน decision
 TIER_WARN = 1000  # 1000+: ยก warn ได้จริง
@@ -60,10 +60,10 @@ SEQ_FEATURE_COUNT = DIMS * len(STAT_NAMES)
 
 # คำอธิบายหลักที่ส่งให้ SOC — ดู robust_deviation() และ B67
 DIAGNOSTIC_METHOD = "robust_window_deviation_v1"
-BASELINE_VERSION = "win-median-iqr-v1"
+BASELINE_VERSION = "win-median-iqr-bangkok-v2"
 DIAG_TOP_K = 5
 
-REDIS_KEY = "l3resid:{user_id}"
+REDIS_KEY = "l3resid:bangkok-v1:{user_id}"
 CACHE_TTL_SEC = 3600
 # user -> (ts, n_raw ตอน fit, model, n_parsed)
 _MODEL_CACHE: dict[str, tuple[float, int, Any, int]] = {}

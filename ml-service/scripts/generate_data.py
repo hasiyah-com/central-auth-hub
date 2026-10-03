@@ -24,13 +24,16 @@ Run:
 
 import csv
 import random
+import os
+import json
+import hashlib
 from pathlib import Path
 
 random.seed(42)
 
 NORMAL_COUNT = 10_000
 ANOMALY_COUNT = 500
-DATA_DIR = Path("/app/data")
+DATA_DIR = Path(os.environ.get("RBA_DATA_DIR", "/app/data"))
 DATA_DIR.mkdir(parents=True, exist_ok=True)
 OUTPUT = DATA_DIR / "sessions.csv"
 
@@ -385,6 +388,14 @@ def main():
         writer = csv.writer(f)
         writer.writerow(headers)
         writer.writerows(rows)
+
+    # Synthetic hour/day values are Bangkok wall-clock values, not UTC timestamps.
+    OUTPUT.with_suffix(".csv.meta.json").write_text(json.dumps({
+        "feature_contract": "rba-23-bangkok-v1",
+        "timezone": "Asia/Bangkok",
+        "source": "synthetic-feature-level", "seed": 42,
+        "dataset_sha256": hashlib.sha256(OUTPUT.read_bytes()).hexdigest(),
+    }, indent=2), encoding="utf-8")
 
     print(f"✅ สร้าง dataset (23 features) แล้ว: {OUTPUT}")
     print(f"   normal:  {NORMAL_COUNT}")

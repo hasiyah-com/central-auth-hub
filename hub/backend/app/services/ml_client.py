@@ -9,6 +9,7 @@ import time
 import httpx
 
 from app.config import settings
+from app.services.feature_time import FEATURE_CONTRACT
 from app.services.hooks import EVT_ML_SCORED, emit
 
 
@@ -31,12 +32,15 @@ async def get_anomaly_score(features: list[float]) -> dict:
         async with httpx.AsyncClient(timeout=settings.ml_timeout_seconds) as client:
             r = await client.post(
                 f"{settings.ml_service_url}/v1/score",
-                json={"features": features},
+                json={"features": features, "feature_contract": FEATURE_CONTRACT},
             )
             r.raise_for_status()
             body = r.json()
             # support both new wrapped {data, meta} และ legacy flat
             data = body.get("data", body)
+            if body.get("meta", {}).get("feature_contract") != FEATURE_CONTRACT:
+                return {"anomaly_score": 0.0, "decision": "pass",
+                    "explanation": [], "error": "feature_contract_mismatch"}
             result = {
                 "anomaly_score": data.get("anomaly_score", 0.0),
                 "decision": data.get("decision", "pass"),

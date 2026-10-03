@@ -25,6 +25,7 @@ import pytest
 
 from app.models import AuditLog, LoginSession, User
 from app.security.risk_engine import evaluate_login_risk
+from app.services.feature_time import as_bangkok, as_utc_naive
 from app.services.feature_extraction import (
     MIN_HISTORY_FOR_PERSONALIZATION,
     extract_session_features,
@@ -91,7 +92,7 @@ def _add_session(
         user_agent=user_agent,
         geo_country=country,
         decision=decision,
-        created_at=created_at,
+        created_at=as_utc_naive(created_at),
     )
     db.add(s)
     db.commit()
@@ -131,7 +132,9 @@ def user_with_history(db):
     """user ที่มีประวัติ login ปกติ 8 ครั้ง (ไทย/อุปกรณ์เดิม/9 โมง)."""
     u = _mk_user(db)
     uid = u.id
-    base = datetime.utcnow().replace(hour=USUAL_HOUR, minute=0, second=0, microsecond=0)
+    base = as_bangkok(datetime.utcnow()).replace(
+        hour=USUAL_HOUR, minute=0, second=0, microsecond=0
+    )
     _seed_normal_history(db, u, base=base)
     u._base = base  # เก็บเวลาอ้างอิงไว้ใช้ในเทส
     yield u

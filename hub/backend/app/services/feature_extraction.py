@@ -41,6 +41,7 @@ from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
 from app.models import AuditLog, LoginSession, User
+from app.services.feature_time import as_bangkok, as_utc_naive
 
 # ต้องมี history อย่างน้อยกี่ session ก่อนคำนวณ personalized features
 MIN_HISTORY_FOR_PERSONALIZATION = 5
@@ -277,11 +278,12 @@ def extract_session_features(
 
     subsystem_id: ใช้คำนวณ scope_sensitivity_score (None = Hub-direct → 0.0)
     """
-    now = now or datetime.utcnow()
+    now = as_utc_naive(now or datetime.utcnow())
 
     # === Temporal ===
-    hour = float(now.hour)
-    day = float(now.weekday())
+    local_now = as_bangkok(now)
+    hour = float(local_now.hour)
+    day = float(local_now.weekday())
 
     # hours_from_typical_login_time + weekday_usage_score — เทียบกับ history
     # Cold Start: ถ้ามี history < 5 session ให้ค่า 0 (neutral, ไม่ penalize user ใหม่)
@@ -296,13 +298,14 @@ def extract_session_features(
         .all()
     )
     if len(past_sessions) >= MIN_HISTORY_FOR_PERSONALIZATION:
-        past_hours = [row[0].hour for row in past_sessions]
+        past_hours = [as_bangkok(row[0]).hour for row in past_sessions]
         typical = statistics.median(past_hours)
         diff = abs(hour - typical)
         hours_from_typical = float(min(diff, 24 - diff))  # circular distance
         # weekday_usage_score — วันนี้เป็นวันที่ user ไม่ค่อยใช้?
         same_weekday = sum(
-            1 for row in past_sessions if row[0].weekday() == now.weekday()
+            1 for row in past_sessions
+            if as_bangkok(row[0]).weekday() == local_now.weekday()
         )
         weekday_usage = 1.0 - (same_weekday / len(past_sessions))
     else:

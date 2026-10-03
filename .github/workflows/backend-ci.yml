@@ -70,6 +70,9 @@ jobs:
         working-directory: ml-service
         run: |
           docker build -q -t cah-ml-ci .
+          # Isolated CI checkout: build a Bangkok artifact; never reuse the legacy UTC model.
+          docker run --rm -v "$PWD:/app" cah-ml-ci python -m scripts.generate_data
+          docker run --rm -v "$PWD:/app" cah-ml-ci python -m scripts.train_model
           docker run -d --name ml --network host             -e REDIS_URL=redis://localhost:6379/0             -v "$PWD:/app" cah-ml-ci
           for i in $(seq 1 60); do
             curl -fsS http://localhost:9000/health && exit 0
@@ -81,7 +84,7 @@ jobs:
       - name: Verify point model and full SHAP explanations
         working-directory: ml-service
         run: |
-          docker exec ml pip install pytest
+          docker exec ml pip install pytest httpx==0.27.2
           docker exec -e PYTHONPATH=/app ml pytest tests -q
 
       - name: Generate JWT RS256 keys

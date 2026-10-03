@@ -16,16 +16,20 @@ Run (step 1):
     # → /app/tests/reports/real_labeled.csv
 Step 2 (ย้ายไป ml-service + retrain):
     docker compose cp hub-backend:/app/tests/reports/real_labeled.csv ml-service:/app/data/
+    docker compose cp hub-backend:/app/tests/reports/real_labeled.csv.meta.json ml-service:/app/data/
     docker compose exec ml-service python -m scripts.train_model
 """
 
 import csv
+import json
+import hashlib
 from pathlib import Path
 
 from app.database import SessionLocal
 from app.models import LoginSession, MLFeedback
 from app.security.rule_engine import FEAT
 from app.services.feature_extraction import extract_session_features
+from app.services.feature_time import FEATURE_CONTRACT
 
 OUT = Path("/app/tests/reports/real_labeled.csv")
 
@@ -78,6 +82,12 @@ def main() -> None:
             w = csv.writer(f)
             w.writerow(names + ["label"])
             w.writerows(rows)
+
+        OUT.with_suffix(".csv.meta.json").write_text(json.dumps({
+            "feature_contract": FEATURE_CONTRACT,
+            "timezone": "Asia/Bangkok", "source": "real-labeled-db",
+            "dataset_sha256": hashlib.sha256(OUT.read_bytes()).hexdigest(),
+        }, indent=2), encoding="utf-8")
 
         print(f"✅ export real labeled → {OUT}")
         print(f"   total: {len(rows)}  (normal={n_neg}, anomaly={n_pos})")

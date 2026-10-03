@@ -14,6 +14,7 @@ import httpx
 import math
 
 from app.config import settings
+from app.services.feature_time import FEATURE_CONTRACT
 
 QUIET: dict = {
     "fired": False,
@@ -24,7 +25,7 @@ QUIET: dict = {
     "eligibility": "abstain",
     "shadow_decision": None,
     "n_history": 0,
-    "model_version": "iforest-l3-seq-v1",
+    "model_version": "iforest-l3-seq-bangkok-v2",
     "explanation": [],
     "error": None,
 }
@@ -84,13 +85,17 @@ async def get_sequence_score(user_id: str, residual: list[float] | None) -> dict
             r = await client.post(
                 f"{settings.ml_service_url}/v1/sequence-score",
                 json={
+                    "feature_contract": FEATURE_CONTRACT,
                     "user_id": str(user_id),
                     "residual": [float(x) for x in residual] if residual else None,
                 },
             )
             r.raise_for_status()
             body = r.json()
-            return _coerce(body.get("data", body) or {})
+            data = body.get("data", body) or {}
+            if data.get("model_version") != QUIET["model_version"]:
+                return _quiet("feature_contract_mismatch")
+            return _coerce(data)
     except httpx.TimeoutException:
         return _quiet("l3_timeout")
     except httpx.HTTPStatusError as e:
@@ -235,6 +240,7 @@ async def evaluate_l3(
             r = await client.post(
                 f"{settings.ml_service_url}/v1/l3-evaluate",
                 json={
+                    "feature_contract": FEATURE_CONTRACT,
                     "user_id": str(user_id),
                     "features": [float(x) for x in features],
                     "residual": [float(x) for x in residual] if residual else None,
@@ -245,7 +251,10 @@ async def evaluate_l3(
             )
             r.raise_for_status()
             body = r.json()
-            return _coerce_unified(body.get("data", body) or {})
+            data = body.get("data", body) or {}
+            if data.get("feature_contract") != FEATURE_CONTRACT:
+                return _unified_quiet("feature_contract_mismatch")
+            return _coerce_unified(data)
     except httpx.TimeoutException:
         return _unified_quiet("l3_timeout")
     except httpx.HTTPStatusError as e:
