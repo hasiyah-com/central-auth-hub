@@ -33,6 +33,8 @@ async def evaluate_login_risk(
     subsystem_id=None,
     user_agent: str | None = None,
     login_method: str | None = None,
+    authenticator_aaguid: str | None = None,
+    accept_language: str | None = None,
 ) -> dict:
     """ประเมินความเสี่ยงของ login 4 ชั้น.
 
@@ -52,7 +54,9 @@ async def evaluate_login_risk(
         try:
             with db.begin_nested():
                 candidate = extract_auth_context(db, user_id, login_method,
-                                                 subsystem_id=subsystem_id)
+                                                 subsystem_id=subsystem_id,
+                                                 authenticator_aaguid=authenticator_aaguid,
+                                                 accept_language=accept_language)
                 candidate["user_type"] = _user_type(db, user_id)
             candidate["base_feature_contract"] = FEATURE_CONTRACT
             candidate["base_features"] = {
@@ -60,7 +64,8 @@ async def evaluate_login_risk(
             }
         except Exception:
             logger.exception("L3 auth context collection unavailable user=%s", user_id)
-            candidate = {"status": "unavailable", "contract": "l3-auth-context-v1"}
+            from app.services.l3_auth_context import CONTRACT
+            candidate = {"status": "unavailable", "contract": CONTRACT}
 
     # ── Layer 1: Rule Engine (+ cross-subsystem risk propagation) ──
     rule_result = evaluate_rules(

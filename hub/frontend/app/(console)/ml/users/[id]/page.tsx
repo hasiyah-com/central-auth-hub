@@ -8,7 +8,7 @@ import { SlidePanel } from "@/components/SlidePanel";
 import { clientFetch } from "@/lib/api";
 import { AnomalyTable } from "../../_components/AnomalyTable";
 import { SessionDetailPanel } from "../../_components/SessionDetailPanel";
-import type { UserTimeline, UserSession, BehaviorFrequency } from "../../_types";
+import type { UserTimeline, UserSession, BehaviorFrequency, PostAuthContext } from "../../_types";
 
 const USER_TYPE_TONE: Record<string, "good" | "warn" | "danger" | "brand" | "default"> = {
   admin: "danger",
@@ -115,6 +115,7 @@ export default function UserTimelinePage({ params }: { params: { id: string } })
                     <FrequencyGroup label="IP ที่พบในประวัติ" detail="ข้อมูลประกอบ · ชั้น 2 ไม่ให้คะแนนจากความถี่ IP โดยตรง" items={data.behavior_baseline.ips} />
                   </div>
                 ) : <p className="mt-4 text-sm text-ink-500">ยังไม่มีข้อมูล baseline จากเซิร์ฟเวอร์</p>}
+                <PostAuthSummary context={data.post_auth_context} />
               </section>
             </div>
 
@@ -235,5 +236,22 @@ function FrequencyGroup({ label, detail, items }: { label: string; detail?: stri
     <h4 className="text-xs font-semibold text-ink-700">{label}</h4>
     {detail && <p className="mt-1 text-xs text-ink-500">{detail}</p>}
     {items.length ? <ul className="mt-2 space-y-2">{items.map(item => <li key={item.value} className="flex items-start justify-between gap-3 text-xs"><span className="min-w-0 break-words text-ink-800">{item.value}</span><span className="shrink-0 text-ink-500">{item.count} ครั้ง</span></li>)}</ul> : <p className="mt-2 text-xs text-ink-400">ไม่มีข้อมูลที่ระบุ</p>}
+  </div>;
+}
+
+function PostAuthSummary({ context }: { context?: PostAuthContext }) {
+  if (!context || context.status === "unavailable") return <p className="mt-4 text-xs text-ink-500">ยังไม่มีข้อมูลพฤติกรรมหลังล็อกอิน</p>;
+  const features = context.features ?? {};
+  const formatTime = (value?: string) => value ? new Date(value).toLocaleTimeString("th-TH", {timeZone: "Asia/Bangkok", hour: "2-digit", minute: "2-digit"}) : "—";
+  return <div className="mt-5 border-t border-ink-200 pt-4">
+    <h4 className="text-sm font-semibold text-ink-800">พฤติกรรมหลังล็อกอิน</h4>
+    <p className="mt-1 text-xs text-ink-500">ช่วง 5 นาทีที่จบแล้ว · {formatTime(context.from)}–{formatTime(context.to)} น. เวลาไทย · เฉพาะคำขอที่ Hub ยืนยันบัญชีได้</p>
+    <p className="mt-1 text-xs text-ink-500">เก็บเพื่อทดลอง ยังไม่เพิ่มคะแนน · ไม่รวมกิจกรรมภายในระบบย่อย</p>
+    {context.truncated ? <p className="mt-2 text-xs text-amber-700">ข้อมูลเกินขีดจำกัด ยังไม่ใช้ช่วงนี้ฝึกโมเดล</p> : !context.request_count ? <p className="mt-2 text-xs text-ink-500">ไม่มีคำขอใช้งานในช่วงนี้</p> : <dl className="mt-3">
+      <BaselineRow label="คำขอใช้งาน" value={`${context.request_count} ครั้ง`} />
+      <BaselineRow label="กลุ่มหน้าหรือ API ที่ใช้" value={`${Math.round(Math.expm1(features.post_route_diversity_log1p ?? 0))} กลุ่ม`} />
+      <BaselineRow label="คำขอส่งหรือแก้ข้อมูล" value={`${Math.round((features.post_write_fraction ?? 0)*100)}%`} />
+      <BaselineRow label="คำขอที่ถูกปฏิเสธหรือเกิดข้อผิดพลาด" value={`${Math.round((features.post_error_fraction ?? 0)*100)}%`} />
+    </dl>}
   </div>;
 }

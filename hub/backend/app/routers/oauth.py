@@ -517,6 +517,7 @@ async def _finalize_subsystem_login(
     db: Session,
     provider: str,
     counter_regression: bool = False,
+    authenticator_aaguid: str | None = None,
 ) -> str:
     """Logic หลังยืนยันตัวตนแล้ว (provider-agnostic) → คืน callback_url.
 
@@ -593,6 +594,8 @@ async def _finalize_subsystem_login(
         subsystem_id=uuid.UUID(str(authreq["subsystem_id"])),  # cross-subsystem risk
         user_agent=user_agent,
         login_method=provider,
+        authenticator_aaguid=authenticator_aaguid,
+        accept_language=request.headers.get("accept-language"),
     )
     risk_score = risk["score"]
     actual_decision = risk["decision"]
@@ -978,6 +981,7 @@ async def oauth_passkey_finish(
         db=db,
         provider="passkey",
         counter_regression=result.counter_regression,
+        authenticator_aaguid=str(getattr(getattr(result, "credential", None), "aaguid", "")) or None,
     )
     return {"redirect_url": callback_url}
 

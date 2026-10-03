@@ -1,4 +1,4 @@
-"""Offline paired ablation: retrained 23-input baseline versus 32-input candidate.
+"""Offline paired ablation: retrained 23-input baseline versus versioned candidate.
 
 Both train only on labeled normal rows; users are disjoint across train/cal/test.
 Neither model is loaded by production. Require real exported snapshots for results.
@@ -17,18 +17,21 @@ from sklearn.metrics import roc_auc_score
 from app.features import FEATURE_CONTRACT, FEATURE_NAMES, FEATURE_RANGES
 from point_scoring import scores_with_model
 
-CONTEXT_CONTRACT = "l3-auth-context-v1"
+CONTEXT_CONTRACT = "l3-auth-context-v2"
 CONTEXT_NAMES = ["recovery_observed", "recovery_log1p_hours",
                  "factor_reset_observed", "factor_reset_log1p_hours",
                  "auth_method_known", "auth_phishing_resistant",
-                 "prior_auth_observed", "prior_passkey_rate", "auth_method_departure"]
+                 "prior_auth_observed", "prior_passkey_rate", "auth_method_departure",
+                 "aaguid_known", "prior_aaguid_observed", "aaguid_novel",
+                 "language_known", "prior_language_observed", "language_novel"]
 
 
 def read_dataset(path):
     meta = json.loads(path.with_suffix(path.suffix + ".meta.json").read_text())
     digest = hashlib.sha256(path.read_bytes()).hexdigest()
-    names = FEATURE_NAMES + CONTEXT_NAMES
-    if (meta.get("dataset_sha256") != digest or meta.get("contract") != CONTEXT_CONTRACT
+    context_names = CONTEXT_NAMES if meta.get("contract") == CONTEXT_CONTRACT else CONTEXT_NAMES[:9]
+    names = FEATURE_NAMES + context_names
+    if (meta.get("dataset_sha256") != digest or meta.get("contract") not in {CONTEXT_CONTRACT, "l3-auth-context-v1"}
         or meta.get("base_feature_contract") != FEATURE_CONTRACT
         or meta.get("feature_names") != names):
         raise ValueError("dataset checksum/contract/order mismatch")
@@ -80,11 +83,12 @@ def compare(path, output):
                                           "test": test.tolist()},
               "scope": "disjoint-user holdout; primary method before step-up; not temporal holdout",
               "results": {}}
-    for name, dimensions in [("baseline_23", len(FEATURE_NAMES)), ("candidate_32", X.shape[1])]:
+    candidate_name = f"candidate_{X.shape[1]}"
+    for name, dimensions in [("baseline_23", len(FEATURE_NAMES)), (candidate_name, X.shape[1])]:
         model = IsolationForest(n_estimators=100, contamination=.02, max_samples=min(256, int(sum(y[train] == 0))),
                                 random_state=42, n_jobs=-1)
         model.fit(X[train][y[train] == 0, :dimensions])
-        model.rba_feature_contract_ = FEATURE_CONTRACT if dimensions == 23 else CONTEXT_CONTRACT
+        model.rba_feature_contract_ = FEATURE_CONTRACT if dimensions == 23 else meta["contract"]
         model.rba_feature_names_ = (FEATURE_NAMES + CONTEXT_NAMES)[:dimensions]
         model.rba_training_provenance_ = meta
         cal_scores = np.asarray(scores_with_model(model, X[cal, :dimensions]))
@@ -111,7 +115,7 @@ def compare(path, output):
             "roles": role_results,
         }
     report["delta_candidate_minus_baseline"] = {
-        key: report["results"]["candidate_32"]["test"][key] -
+        key: report["results"][candidate_name]["test"][key] -
              report["results"]["baseline_23"]["test"][key]
         for key in ["fpr", "recall", "roc_auc"]}
     (output / "comparison.json").write_text(json.dumps(report, indent=2), encoding="utf-8")

@@ -52,9 +52,25 @@ def test_corrupted_checksum_fails_before_training(tmp_path):
 def test_paired_comparison_stages_both_models_without_live_replacement(tmp_path):
     output = tmp_path / "candidate"
     report = compare(dataset(tmp_path), output)
-    assert set(report["results"]) == {"baseline_23", "candidate_32"}
+    assert set(report["results"]) == {"baseline_23", "candidate_38"}
     assert report["activation"].startswith("offline_only")
-    assert (output / "candidate_32.candidate.pkl").exists()
+    assert (output / "candidate_38.candidate.pkl").exists()
     assert not (output / "iforest.pkl").exists()
     for result in report["results"].values():
         assert 0 <= result["test"]["roc_auc"] <= 1
+
+
+def test_existing_v1_dataset_remains_readable_without_fabricated_new_features(tmp_path):
+    path = dataset(tmp_path)
+    rows = [json.loads(line) for line in path.read_text().splitlines()]
+    names = FEATURE_NAMES + CONTEXT_NAMES[:9]
+    for row in rows:
+        row["features"] = {n: row["features"][n] for n in names}
+    path.write_text("".join(json.dumps(r)+"\n" for r in rows))
+    meta_path = path.with_suffix(".jsonl.meta.json")
+    meta = json.loads(meta_path.read_text())
+    meta.update(contract="l3-auth-context-v1", feature_names=names,
+                dataset_sha256=hashlib.sha256(path.read_bytes()).hexdigest())
+    meta_path.write_text(json.dumps(meta))
+    _, X, _, _ = read_dataset(path)
+    assert X.shape[1] == 32

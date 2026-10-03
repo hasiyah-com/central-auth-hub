@@ -441,9 +441,18 @@ def user_session_timeline(
         "temporal_median_hour": median([as_bangkok(row[0]).hour for row in temporal]) if len(temporal) >= MIN_SESSIONS else None,
     }
 
+    # Completed post-login window is a separate observation, never a login input.
+    from app.services.l3_post_auth import latest_completed_window
+    try:
+        with db.begin_nested():
+            post_auth = latest_completed_window(db, user_id, now=now)
+    except Exception:
+        post_auth = {"status": "unavailable", "contract": "l3-post-auth-v1"}
+
     return {
         "data": {
             "behavior_baseline": baseline,
+            "post_auth_context": post_auth,
             "user": {
                 "id": str(user.id),
                 "email": user.email,

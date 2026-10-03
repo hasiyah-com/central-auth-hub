@@ -51,11 +51,14 @@ def test_queries_use_target_user_completed_events_and_prior_sessions(db):
                 full_name="L3 context test", user_type="teacher", status="active")
     db.add(user)
     db.flush()
+    old_aaguid, new_aaguid = str(uuid.uuid4()), str(uuid.uuid4())
     try:
         for i in range(5):
             db.add(LoginSession(user_id=user.id, subsystem_id=None,
                 created_at=NOW - timedelta(days=i+1), login_method="passkey",
-                decision="allow", jti=uuid.uuid4().hex))
+                decision="allow", jti=uuid.uuid4().hex,
+                risk_breakdown={"l3_auth_candidate": {"authenticator_aaguid": old_aaguid,
+                                                       "browser_language": "th-th"}}))
         # Administrator is actor; target is the person whose factors were reset.
         db.add(AuditLog(actor_id=uuid.uuid4(), target_type="user", target_id=user.id,
                         action="passkey_admin_reset", metadata_json={"revoked_count": 1},
@@ -74,6 +77,10 @@ def test_queries_use_target_user_completed_events_and_prior_sessions(db):
         assert result["features"]["auth_method_departure"] == 1
         assert result["features"]["recovery_log1p_hours"] == pytest.approx(math.log1p(2))
         assert result["features"]["factor_reset_log1p_hours"] == pytest.approx(math.log1p(3))
+        extended = extract_auth_context(db, user.id, "passkey", now=NOW,
+                                        authenticator_aaguid=new_aaguid, accept_language="en-US")
+        assert extended["features"]["aaguid_novel"] == 1
+        assert extended["features"]["language_novel"] == 1
     finally:
         db.rollback()
 
@@ -86,7 +93,7 @@ def test_export_requires_original_snapshot_not_recomputed_inputs():
              base_features={name: 0 for name in BASE_NAMES})
     s = SimpleNamespace(id="s", user_id="u", jti="verified", decision="allow",
                         risk_breakdown={"l3_auth_candidate": c})
-    assert len(candidate_row(s, 0)["features"]) == 32
+    assert len(candidate_row(s, 0)["features"]) == 38
     s.risk_breakdown = {}
     assert candidate_row(s, 0) is None
 
