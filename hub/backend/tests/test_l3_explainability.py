@@ -247,7 +247,7 @@ async def test_result_records_method_and_versions(seeded):
     """ผลลัพธ์ต้องบอกได้เองว่าคำนวณด้วยวิธีใด baseline ไหน โมเดลรุ่นใด."""
     out = await _ok(_spike(8, 30, 0))
     assert out["diagnostic_method"] == "robust_window_deviation_v1"
-    assert out["baseline_version"] == "win-median-iqr-v1"
+    assert out["baseline_version"] == "win-median-iqr-bangkok-v2"
     assert out["sequence"]["model_version"] == L3.MODEL_VERSION
     assert out["model_version"].get("sequence") == L3.MODEL_VERSION
     assert out["model_version"].get("point")
