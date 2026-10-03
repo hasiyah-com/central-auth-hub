@@ -626,26 +626,26 @@ async def _finalize_subsystem_login(
         subsystem_name=subsystem_for_alert.name if subsystem_for_alert else None,
     )
 
-    db.add(
-        LoginSession(
-            user_id=user.id,
-            subsystem_id=authreq["subsystem_id"],
-            ip=client_ip,
-            user_agent=user_agent,
-            geo_country=geo_country,
-            geo_city=geo_city,
-            os_name=parse_os_name(user_agent),
-            browser=parse_browser(user_agent),
-            device_type=parse_device_type(user_agent),
-            anomaly_score=anomaly_score,
-            risk_score=risk_score,
-            risk_breakdown=risk_breakdown,
-            risk_reasons=risk_reasons,
-            decision=actual_decision,
-            is_attack_ip=is_blacklisted(db, client_ip),
-            login_method=provider,
-        )
+    login_session = LoginSession(
+        user_id=user.id,
+        subsystem_id=authreq["subsystem_id"],
+        ip=client_ip,
+        user_agent=user_agent,
+        geo_country=geo_country,
+        geo_city=geo_city,
+        os_name=parse_os_name(user_agent),
+        browser=parse_browser(user_agent),
+        device_type=parse_device_type(user_agent),
+        anomaly_score=anomaly_score,
+        risk_score=risk_score,
+        risk_breakdown=risk_breakdown,
+        risk_reasons=risk_reasons,
+        decision=actual_decision,
+        is_attack_ip=is_blacklisted(db, client_ip),
+        login_method=provider,
     )
+    db.add(login_session)
+    db.flush()
 
     # ─── Risk-Triggered Decision (Week 9-10) ─────────────────────────────
     # Hard block ที่ finalizer (single source of truth) — ไม่พึ่ง aggregator
@@ -711,6 +711,7 @@ async def _finalize_subsystem_login(
         if has_passkey:
             # Branch A: Passkey Re-Auth
             challenge_id = risk_challenge.mint(
+                session_id=str(login_session.id),
                 user_id=str(user.id),
                 hub_state=hub_state,
                 authreq=authreq,
@@ -763,6 +764,7 @@ async def _finalize_subsystem_login(
         else:
             # Branch B: Force Enrollment
             challenge_id = risk_challenge.mint(
+                session_id=str(login_session.id),
                 user_id=str(user.id),
                 hub_state=hub_state,
                 authreq=authreq,

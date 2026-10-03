@@ -1356,6 +1356,9 @@ def _finalize_after_reauth(
     """
     flow = payload.get("flow")
     client_ip = get_client_ip(request)
+    from app.services.risk_session import resolve_challenge_session
+
+    challenged_session = resolve_challenge_session(db, payload, user.id)
 
     if flow == "subsystem":
         authreq = payload["authreq"]
@@ -1407,17 +1410,8 @@ def _finalize_after_reauth(
                 }
             ),
         )
-        latest = (
-            db.query(LoginSession)
-            .filter(
-                LoginSession.user_id == user.id,
-                LoginSession.subsystem_id == authreq["subsystem_id"],
-            )
-            .order_by(LoginSession.created_at.desc())
-            .first()
-        )
-        if latest:
-            latest.decision = "mfa_passed"
+        if challenged_session:
+            challenged_session.decision = "mfa_passed"
         log_action(
             db,
             actor_id=user.id,
@@ -1438,20 +1432,14 @@ def _finalize_after_reauth(
 
     # flow == "hub_direct"
     access_token, token_jti = create_access_token(user)
-    latest = (
-        db.query(LoginSession)
-        .filter(LoginSession.user_id == user.id)
-        .order_by(LoginSession.created_at.desc())
-        .first()
-    )
     refresh_token = None
-    if latest:
-        latest.jti = token_jti
-        latest.decision = "mfa_passed"
+    if challenged_session:
+        challenged_session.jti = token_jti
+        challenged_session.decision = "mfa_passed"
         refresh_token, refresh_id = refresh_token_service.issue(
-            user_id=str(user.id), session_id=str(latest.id)
+            user_id=str(user.id), session_id=str(challenged_session.id)
         )
-        latest.refresh_id = refresh_id
+        challenged_session.refresh_id = refresh_id
     log_action(
         db,
         actor_id=user.id,

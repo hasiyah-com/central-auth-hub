@@ -45,6 +45,7 @@ def mint(
     provider: str,
     kind: ChallengeKind,
     flow: Literal["subsystem", "hub_direct"],
+    session_id: str | None = None,
 ) -> str:
     """Mint a one-time challenge token for risk-triggered MFA.
 
@@ -65,6 +66,7 @@ def mint(
     challenge_id = secrets.token_urlsafe(32)
     payload = {
         "user_id": user_id,
+        "session_id": session_id,
         "hub_state": hub_state,
         "authreq": authreq,
         "risk_score": float(risk_score),
