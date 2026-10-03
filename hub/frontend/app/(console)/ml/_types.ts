@@ -120,6 +120,7 @@ export type BehaviorBaseline = {
   days: number; session_count: number; ready: boolean; min_sessions: number;
   hours: BehaviorFrequency[]; devices: BehaviorFrequency[]; browsers: BehaviorFrequency[];
   operating_systems: BehaviorFrequency[]; device_signatures: BehaviorFrequency[];
+  device_signature_versions?: BehaviorFrequency[];
   ips: BehaviorFrequency[]; countries: BehaviorFrequency[]; subsystems: BehaviorFrequency[];
   typical_weekend: number | null; temporal_count: number; temporal_median_hour: number | null;
 };
