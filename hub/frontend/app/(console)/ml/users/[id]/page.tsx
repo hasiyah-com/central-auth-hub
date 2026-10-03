@@ -133,12 +133,12 @@ export default function UserTimelinePage({ params }: { params: { id: string } })
                       <div className="rounded-xl border border-ink-200 p-5 xl:col-span-7">
                         <div className="flex flex-wrap items-start justify-between gap-2">
                           <div>
-                            <h4 className="text-sm font-semibold text-ink-800">อุปกรณ์ที่ใช้ประจำ</h4>
-                            <p className="mt-1 text-[11px] text-ink-500">OS + ประเภทอุปกรณ์ + ตระกูลเบราว์เซอร์</p>
+                            <h4 className="text-base font-semibold text-ink-800">อุปกรณ์ที่ใช้ประจำ</h4>
+                            <p className="mt-1 text-sm text-ink-500">OS + ประเภทอุปกรณ์ + เบราว์เซอร์พร้อมเวอร์ชัน</p>
                           </div>
-                          <span className="text-[10px] text-ink-400">ไม่รวมเลขเวอร์ชันเบราว์เซอร์</span>
+                          <span className="text-xs text-ink-400">เวอร์ชันจาก session ที่บันทึกจริง</span>
                         </div>
-                        <DeviceSignatureTable items={data.behavior_baseline.device_signatures} />
+                        <DeviceSignatureTable items={data.behavior_baseline.device_signature_versions ?? data.behavior_baseline.device_signatures} />
                       </div>
                     </div>
 
@@ -233,21 +233,21 @@ function FrequencyBars({ label, detail, items, compact = false, embedded = false
 function DeviceSignatureTable({ items }: { items: BehaviorFrequency[] }) {
   if (!items.length) return <p className="mt-4 text-xs text-ink-400">ไม่มีข้อมูลที่ระบุ</p>;
   return <div className="mt-4 overflow-x-auto">
-    <table className="w-full min-w-[520px] text-left text-xs">
+    <table className="w-full min-w-[560px] text-left text-sm">
       <thead><tr className="border-b border-ink-200 bg-ink-50 text-ink-500">
-        <th className="px-3 py-2.5 font-semibold">ระบบปฏิบัติการ</th>
-        <th className="px-3 py-2.5 font-semibold">อุปกรณ์</th>
-        <th className="px-3 py-2.5 font-semibold">เบราว์เซอร์</th>
-        <th className="px-3 py-2.5 text-right font-semibold">จำนวน</th>
+        <th className="px-4 py-3 text-xs font-semibold">ระบบปฏิบัติการ</th>
+        <th className="px-4 py-3 text-xs font-semibold">อุปกรณ์</th>
+        <th className="px-4 py-3 text-xs font-semibold">เบราว์เซอร์ / เวอร์ชัน</th>
+        <th className="px-4 py-3 text-right text-xs font-semibold">จำนวน</th>
       </tr></thead>
       <tbody className="divide-y divide-ink-100">
         {items.map((item) => {
           const [os = "—", device = "—", browser = "—"] = item.value.split(" · ");
           return <tr key={item.value}>
-            <td className="px-3 py-3 text-ink-800">{os}</td>
-            <td className="px-3 py-3 text-ink-700">{device}</td>
-            <td className="px-3 py-3 text-ink-700">{browser}</td>
-            <td className="px-3 py-3 text-right font-mono tabular-nums text-ink-500">{item.count} ครั้ง</td>
+            <td className="px-4 py-4 font-medium text-ink-800">{os}</td>
+            <td className="px-4 py-4 text-ink-700">{device}</td>
+            <td className="px-4 py-4 font-medium text-ink-800">{browser}</td>
+            <td className="px-4 py-4 text-right font-mono text-xs tabular-nums text-ink-600">{item.count} ครั้ง</td>
           </tr>;
         })}
       </tbody>
