@@ -433,6 +433,17 @@ def user_session_timeline(
         "browsers": ranked(browser_family(row.user_agent) for row in history if row.user_agent),
         "operating_systems": ranked(parse_os_name(row.user_agent) for row in history if row.user_agent),
         "device_signatures": ranked(_device_signature(row.user_agent).replace("|", " · ") for row in history if row.user_agent),
+        # Display-only signature that keeps the recorded browser version. Risk
+        # comparison still uses _device_signature/browser_family above so a
+        # routine browser update does not become a new device by itself.
+        "device_signature_versions": ranked(
+            " · ".join((
+                parse_os_name(row.user_agent),
+                parse_device_type(row.user_agent),
+                row.browser or browser_family(row.user_agent),
+            ))
+            for row in history if row.user_agent
+        ),
         "ips": ranked(str(row.ip) for row in history if row.ip),
         "countries": ranked(row.geo_country for row in history),
         "subsystems": ranked(subsystem_names.get(str(row.subsystem_id), "ระบบที่ไม่พบชื่อ") if row.subsystem_id else "Hub (เข้าระบบโดยตรง)" for row in history),
