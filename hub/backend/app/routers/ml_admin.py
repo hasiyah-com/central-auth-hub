@@ -7,6 +7,8 @@ Endpoints:
   GET  /admin/ml/users/{user_id}/sessions           -> timeline session ของ user คนเดียว
 """
 
+from collections import Counter
+from statistics import median
 from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -19,7 +21,9 @@ from app.database import get_db
 from app.deps import get_client_ip, require_hub_admin
 from app.models import LoginSession, MLFeedback, Subsystem, User
 from app.services.audit_service import log_action
-from app.services.feature_extraction import browser_family
+from app.services.feature_extraction import browser_family, _device_signature, parse_os_name, parse_device_type
+from app.services.feature_time import as_bangkok
+from app.security.behavior_profiling import get_user_profile, PROFILE_WINDOW_DAYS, MIN_SESSIONS
 from app.services.ip_blacklist import add_to_blacklist, remove_from_blacklist
 
 router = APIRouter()
@@ -400,8 +404,46 @@ def user_session_timeline(
         .all()
     )
 
+    # Current baseline snapshot, independent of timeline days/limit.
+    profile = get_user_profile(db, user_id)
+    history = db.query(LoginSession).filter(
+        LoginSession.user_id == user_id,
+        LoginSession.created_at >= now - timedelta(days=PROFILE_WINDOW_DAYS),
+    ).all()
+    temporal = db.query(LoginSession.created_at).filter(
+        LoginSession.user_id == user_id, LoginSession.created_at < now,
+    ).order_by(LoginSession.created_at.desc()).limit(50).all()
+    subsystem_ids = {row.subsystem_id for row in history if row.subsystem_id}
+    subsystem_names = {
+        str(sub.id): sub.name for sub in db.query(Subsystem).filter(
+            Subsystem.id.in_(subsystem_ids)
+        ).all()
+    } if subsystem_ids else {}
+    def ranked(values):
+        counts = Counter(value for value in values if value)
+        return [{"value": value, "count": count} for value, count in
+                sorted(counts.items(), key=lambda item: (-item[1], str(item[0])))[:5]]
+    baseline = {
+        "days": PROFILE_WINDOW_DAYS,
+        "session_count": len(history),
+        "ready": profile is not None,
+        "min_sessions": MIN_SESSIONS,
+        "hours": ranked(f"{as_bangkok(row.created_at).hour:02d}:00–{as_bangkok(row.created_at).hour:02d}:59" for row in history),
+        "devices": ranked(parse_device_type(row.user_agent) for row in history if row.user_agent),
+        "browsers": ranked(browser_family(row.user_agent) for row in history if row.user_agent),
+        "operating_systems": ranked(parse_os_name(row.user_agent) for row in history if row.user_agent),
+        "device_signatures": ranked(_device_signature(row.user_agent).replace("|", " · ") for row in history if row.user_agent),
+        "ips": ranked(str(row.ip) for row in history if row.ip),
+        "countries": ranked(row.geo_country for row in history),
+        "subsystems": ranked(subsystem_names.get(str(row.subsystem_id), "ระบบที่ไม่พบชื่อ") if row.subsystem_id else "Hub (เข้าระบบโดยตรง)" for row in history),
+        "typical_weekend": profile["typical_weekend"] if profile else None,
+        "temporal_count": len(temporal),
+        "temporal_median_hour": median([as_bangkok(row[0]).hour for row in temporal]) if len(temporal) >= MIN_SESSIONS else None,
+    }
+
     return {
         "data": {
+            "behavior_baseline": baseline,
             "user": {
                 "id": str(user.id),
                 "email": user.email,
