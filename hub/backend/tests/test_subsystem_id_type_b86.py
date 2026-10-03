@@ -11,12 +11,10 @@ from __future__ import annotations
 
 import uuid
 
-import pyotp
 import pytest
 
 from app.config import settings
 from app.rate_limiter import limiter
-from app.services import risk_challenge
 from tests.finalize_env import (
     UA_NEW_DEVICE,
     add_owner_history,
@@ -72,16 +70,11 @@ async def test_new_device_on_regular_subsystem_is_not_blocked(
     url = await finalize(db, env, ip, ua=UA_NEW_DEVICE)  # ต้องไม่ raise 403
     assert not _has_new_subsystem(cap["risk"]), cap["risk"]["reasons"]
     assert cap["risk"]["score"] < settings.risk_block_hard_threshold
-    # เครื่องใหม่ = challenge floor → step-up แล้วเข้าได้จริง
-    assert url.startswith("/auth/passkey/risk-stepup?challenge="), url
-    cid = url.split("challenge=", 1)[1]
-    r = client.post(
-        "/auth/passkey/risk-stepup/verify-totp",
-        json={"challenge_id": cid, "code": pyotp.TOTP(env["secret"]).now()},
-    )
-    assert r.status_code == 200, r.text
-    assert r.json()["redirect_url"].startswith(env["authreq"]["redirect_uri"])
-    assert risk_challenge.peek(cid) is None
+    # A single environment change no longer forces challenge in current policy.
+    assert cap["risk"]["decision"] == "warn"
+    assert url.startswith(env["authreq"]["redirect_uri"]), url
+    assert "code=" in url
+    assert cap["risk"]["breakdown"]["rule_context"]["policy_version"] == "contextual-challenge-v1"
 
 
 async def test_truly_new_subsystem_still_flagged(db, env, ip, monkeypatch):
