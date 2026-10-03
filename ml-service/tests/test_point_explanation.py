@@ -42,3 +42,41 @@ def test_missing_explainer_preserves_score_without_fabricating_contributions(mon
     score, entries = model.predict_with_explanation([0.] * 23, top_k=23)
     assert score == .57
     assert entries == []
+
+
+def test_startup_initializes_shap_and_reuses_it_for_requests(monkeypatch):
+    class FakeExplainer:
+        def shap_values(self, X):
+            return np.ones_like(X)
+
+    calls = []
+    def initialize():
+        calls.append(True)
+        model._explainer = FakeExplainer()
+        model._explainer_status = "ready"
+        return model._explainer
+
+    monkeypatch.setattr(model, "_explainer", None)
+    monkeypatch.setattr(model, "_explainer_status", "uninitialized")
+    monkeypatch.setattr(model, "predict_score", lambda _: .5)
+    original_loader = model._load_explainer
+    monkeypatch.setattr(model, "_load_explainer", initialize)
+    assert model.warm_up_explainer() == "ready"
+    monkeypatch.setattr(model, "_load_explainer", original_loader)
+    assert len(model.predict_with_explanation([0.] * 23, top_k=23)[1]) == 23
+    assert len(calls) == 1
+
+
+def test_warmup_failure_preserves_unavailable_status(monkeypatch):
+    monkeypatch.setattr(model, "_explainer_status", "unavailable")
+    monkeypatch.setattr(model, "_explainer", None)
+    assert model.warm_up_explainer() == "unavailable"
+
+
+def test_service_startup_warms_shap_after_loading_model(monkeypatch):
+    from app import main
+    calls = []
+    monkeypatch.setattr(main, "load_model", lambda: calls.append("model"))
+    monkeypatch.setattr(main, "warm_up_explainer", lambda: calls.append("shap") or "ready")
+    main.startup()
+    assert calls == ["model", "shap"]
