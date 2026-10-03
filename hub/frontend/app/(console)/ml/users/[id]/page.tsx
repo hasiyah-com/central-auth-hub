@@ -91,7 +91,7 @@ export default function UserTimelinePage({ params }: { params: { id: string } })
               </div>
             </section>
 
-            <div className="mt-5 grid gap-5 xl:grid-cols-[1.7fr_1fr]">
+            <div className="mt-5 space-y-5">
               <section className="rounded-xl border border-ink-200 bg-white p-5">
                 <SectionTitle eyebrow="Risk timeline" title="รูปแบบความเสี่ยงตามเวลา" detail={`${days} วันล่าสุด · ${sessions.length} sessions`} />
                 <RiskSparkline sessions={sessions} />
@@ -102,10 +102,13 @@ export default function UserTimelinePage({ params }: { params: { id: string } })
                 {data.behavior_baseline ? (
                   <div className="mt-4 space-y-4">
                     <p className="text-xs text-ink-500">ประวัติ {data.behavior_baseline.days} วัน · {data.behavior_baseline.session_count} ครั้ง · {data.behavior_baseline.ready ? "พร้อมใช้ชั้นพฤติกรรม" : `ข้อมูลยังไม่พอ (ต้องมี ${data.behavior_baseline.min_sessions} ครั้ง)`}</p>
-                    <FrequencyGroup label="ชั่วโมงที่พบบ่อย" items={data.behavior_baseline.hours} />
+                    <div className="grid items-start gap-4 md:grid-cols-2 xl:grid-cols-3">
+                    <div className="space-y-3 rounded-lg border border-ink-200 bg-ink-50/40 p-4 md:col-span-2 xl:col-span-1">
+                    <FrequencyGroup embedded label="ชั่วโมงที่พบบ่อย" items={data.behavior_baseline.hours} />
                     <BaselineRow label="เวลาอ้างอิงสำหรับ hours_diff" value={data.behavior_baseline.temporal_median_hour === null ? "ข้อมูลยังไม่พอ" : `${data.behavior_baseline.temporal_median_hour} นาฬิกา (มัธยฐานชั่วโมง)`} />
                     <p className="text-xs text-ink-500">เวลาอ้างอิงใช้ {data.behavior_baseline.temporal_count} ครั้งล่าสุด (สูงสุด 50) ไม่จำกัด 30 วัน; ค่า .5 คือค่ากึ่งกลางทางสถิติ</p>
                     <BaselineRow label="กลุ่มวันที่ใช้เป็นประจำ" value={data.behavior_baseline.typical_weekend === null ? "ข้อมูลยังไม่พอ" : data.behavior_baseline.typical_weekend ? "เสาร์–อาทิตย์" : "จันทร์–ศุกร์"} />
+                    </div>
                     <FrequencyGroup label="ลายเซ็นอุปกรณ์ที่ใช้เทียบจริง" detail="OS + ประเภทอุปกรณ์ + ตระกูลเบราว์เซอร์ · ไม่นับเลขเวอร์ชัน" items={data.behavior_baseline.device_signatures} />
                     <FrequencyGroup label="ประเภทอุปกรณ์" items={data.behavior_baseline.devices} />
                     <FrequencyGroup label="เบราว์เซอร์" items={data.behavior_baseline.browsers} />
@@ -113,6 +116,7 @@ export default function UserTimelinePage({ params }: { params: { id: string } })
                     <FrequencyGroup label="ประเทศ" items={data.behavior_baseline.countries} />
                     <FrequencyGroup label="ระบบที่เข้าบ่อย" detail="ใช้เทียบระบบใหม่ ระบบที่ใช้นาน ๆ ครั้ง และระดับสิทธิ์" items={data.behavior_baseline.subsystems} />
                     <FrequencyGroup label="IP ที่พบในประวัติ" detail="ข้อมูลประกอบ · ชั้น 2 ไม่ให้คะแนนจากความถี่ IP โดยตรง" items={data.behavior_baseline.ips} />
+                    </div>
                   </div>
                 ) : <p className="mt-4 text-sm text-ink-500">ยังไม่มีข้อมูล baseline จากเซิร์ฟเวอร์</p>}
               </section>
@@ -177,7 +181,7 @@ function RiskSparkline({ sessions }: { sessions: UserSession[] }) {
 }
 
 function LoadingState() {
-  return <div className="space-y-5" aria-label="กำลังโหลด"><div className="h-48 animate-pulse rounded-2xl bg-ink-200" /><div className="grid gap-5 xl:grid-cols-[1.7fr_1fr]"><div className="h-64 animate-pulse rounded-xl bg-white" /><div className="h-64 animate-pulse rounded-xl bg-white" /></div></div>;
+  return <div className="space-y-5" aria-label="กำลังโหลด"><div className="h-48 animate-pulse rounded-2xl bg-ink-200" /><div className="space-y-5"><div className="h-64 animate-pulse rounded-xl bg-white" /><div className="h-64 animate-pulse rounded-xl bg-white" /></div></div>;
 }
 
 function summarize(sessions: UserSession[]) {
@@ -230,8 +234,8 @@ function asUtc(value: string) {
   return /[+-]\d{2}:?\d{2}$|Z$/i.test(value) ? value : `${value}Z`;
 }
 
-function FrequencyGroup({ label, detail, items }: { label: string; detail?: string; items: BehaviorFrequency[] }) {
-  return <div className="border-t border-ink-100 pt-3">
+function FrequencyGroup({ label, detail, items, embedded = false }: { label: string; detail?: string; items: BehaviorFrequency[]; embedded?: boolean }) {
+  return <div className={embedded ? "min-w-0" : "min-w-0 rounded-lg border border-ink-200 bg-ink-50/40 p-4"}>
     <h4 className="text-xs font-semibold text-ink-700">{label}</h4>
     {detail && <p className="mt-1 text-xs text-ink-500">{detail}</p>}
     {items.length ? <ul className="mt-2 space-y-2">{items.map(item => <li key={item.value} className="flex items-start justify-between gap-3 text-xs"><span className="min-w-0 break-words text-ink-800">{item.value}</span><span className="shrink-0 text-ink-500">{item.count} ครั้ง</span></li>)}</ul> : <p className="mt-2 text-xs text-ink-400">ไม่มีข้อมูลที่ระบุ</p>}
