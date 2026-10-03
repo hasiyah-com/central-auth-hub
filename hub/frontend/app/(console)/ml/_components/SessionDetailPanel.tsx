@@ -478,10 +478,19 @@ type ParsedReason = {
 function parseReason(raw: string): ParsedReason {
   const isHardBlock = classifyReason(raw) === "hard_block";
 
-  // Pull off the trailing "(+0.XX)" weight if present
-  const weightMatch = raw.match(/\(\+(\d+(?:\.\d+)?)\)\s*$/);
+  // Pull the weight from either the ordinary trailing form "(+0.20)" or
+  // behavior detail such as "(hour 2 ไม่เคยเข้า, +0.30)".
+  const weightMatch = raw.match(/\+(\d+(?:\.\d+)?)\)\s*$/);
   const weight = weightMatch ? parseFloat(weightMatch[1]) : null;
-  let body = weightMatch ? raw.slice(0, weightMatch.index).trim() : raw.trim();
+  let body = raw.trim();
+  if (weightMatch) {
+    if (/\(\+\d+(?:\.\d+)?\)\s*$/.test(body)) {
+      body = body.slice(0, body.lastIndexOf("(+")).trim();
+    } else {
+      // Preserve the explanatory parenthesis, removing only its score.
+      body = body.replace(/,\s*\+\d+(?:\.\d+)?\)\s*$/, ")").trim();
+    }
+  }
 
   // Layer-2 "skipped" — leave as is
   if (body.startsWith("skipped")) {
