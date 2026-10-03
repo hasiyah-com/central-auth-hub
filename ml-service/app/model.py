@@ -110,6 +110,12 @@ def _load_explainer():
     return _explainer
 
 
+def warm_up_explainer() -> str:
+    """Initialize SHAP before serving logins; failure remains observable/fail-safe."""
+    _load_explainer()
+    return explainer_status()
+
+
 def explainer_status() -> str:
     """For /health debug — บอกว่า explainer พร้อมไหม."""
     return _explainer_status

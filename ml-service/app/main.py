@@ -31,6 +31,7 @@ from app.model import (
     load_model,
     model_loaded,
     predict_with_explanation,
+    warm_up_explainer,
     FeatureContractMismatch,
 )
 
@@ -52,6 +53,7 @@ def startup():
     try:
         load_model()
         print("✅ Model loaded")
+        print(f"SHAP startup status: {warm_up_explainer()}")
     except (FileNotFoundError, FeatureContractMismatch) as e:
         print(f"⚠️  {e}")
 
