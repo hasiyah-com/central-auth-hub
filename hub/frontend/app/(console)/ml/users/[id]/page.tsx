@@ -97,28 +97,75 @@ export default function UserTimelinePage({ params }: { params: { id: string } })
                 <RiskSparkline sessions={sessions} />
               </section>
 
-              <section className="rounded-xl border border-ink-200 bg-white p-5">
-                <SectionTitle eyebrow="Behavior baseline" title="ข้อมูลพฤติกรรมที่ใช้ประเมิน" detail="ภาพรวม ณ ตอนนี้ · เวลาไทย · ไม่ใช่ baseline ย้อนหลังของแต่ละเหตุการณ์" />
+              <section className="overflow-hidden rounded-2xl border border-ink-200 bg-white shadow-[0_12px_36px_rgba(15,23,42,.04)]">
+                <div className="flex flex-wrap items-start justify-between gap-4 border-b border-ink-100 px-5 py-5 sm:px-6">
+                  <SectionTitle eyebrow="Behavior baseline" title="ข้อมูลพฤติกรรมที่ใช้ประเมิน" detail="ภาพรวม ณ ตอนนี้ · เวลาไทย" />
+                  <span className="rounded-lg border border-ink-200 bg-ink-50 px-3 py-2 font-mono text-[10px] font-semibold text-ink-600">ย้อนหลัง {data.behavior_baseline?.days ?? days} วัน</span>
+                </div>
                 {data.behavior_baseline ? (
-                  <div className="mt-4 space-y-4">
-                    <p className="text-xs text-ink-500">ประวัติ {data.behavior_baseline.days} วัน · {data.behavior_baseline.session_count} ครั้ง · {data.behavior_baseline.ready ? "พร้อมใช้ชั้นพฤติกรรม" : `ข้อมูลยังไม่พอ (ต้องมี ${data.behavior_baseline.min_sessions} ครั้ง)`}</p>
-                    <div className="grid items-start gap-4 md:grid-cols-2 xl:grid-cols-3">
-                    <div className="space-y-3 rounded-lg border border-ink-200 bg-ink-50/40 p-4 md:col-span-2 xl:col-span-1">
-                    <FrequencyGroup embedded label="ชั่วโมงที่พบบ่อย" items={data.behavior_baseline.hours} />
-                    <BaselineRow label="เวลาอ้างอิงสำหรับ hours_diff" value={data.behavior_baseline.temporal_median_hour === null ? "ข้อมูลยังไม่พอ" : `${data.behavior_baseline.temporal_median_hour} นาฬิกา (มัธยฐานชั่วโมง)`} />
-                    <p className="text-xs text-ink-500">เวลาอ้างอิงใช้ {data.behavior_baseline.temporal_count} ครั้งล่าสุด (สูงสุด 50) ไม่จำกัด 30 วัน; ค่า .5 คือค่ากึ่งกลางทางสถิติ</p>
-                    <BaselineRow label="กลุ่มวันที่ใช้เป็นประจำ" value={data.behavior_baseline.typical_weekend === null ? "ข้อมูลยังไม่พอ" : data.behavior_baseline.typical_weekend ? "เสาร์–อาทิตย์" : "จันทร์–ศุกร์"} />
+                  <div className="p-5 sm:p-6">
+                    <p className="mb-4 text-xs text-ink-500">
+                      {data.behavior_baseline.session_count} ครั้ง · {data.behavior_baseline.ready ? "พร้อมใช้เป็นพฤติกรรม" : `ข้อมูลยังไม่พอ (ต้องมี ${data.behavior_baseline.min_sessions} ครั้ง)`}
+                    </p>
+
+                    <div className="grid gap-3 sm:grid-cols-3">
+                      <BaselineSummary label="การเข้าใช้งาน" value={`${data.behavior_baseline.session_count}`} unit="ครั้ง" />
+                      <BaselineSummary label="อุปกรณ์หลัก" value={data.behavior_baseline.devices[0]?.value || "ยังไม่มีข้อมูล"} />
+                      <BaselineSummary label="ช่วงวันที่ใช้งาน" value={data.behavior_baseline.typical_weekend === null ? "ข้อมูลยังไม่พอ" : data.behavior_baseline.typical_weekend ? "เสาร์–อาทิตย์" : "จันทร์–ศุกร์"} />
                     </div>
-                    <FrequencyGroup label="ลายเซ็นอุปกรณ์ที่ใช้เทียบจริง" detail="OS + ประเภทอุปกรณ์ + ตระกูลเบราว์เซอร์ · ไม่นับเลขเวอร์ชัน" items={data.behavior_baseline.device_signatures} />
-                    <FrequencyGroup label="ประเภทอุปกรณ์" items={data.behavior_baseline.devices} />
-                    <FrequencyGroup label="เบราว์เซอร์" items={data.behavior_baseline.browsers} />
-                    <FrequencyGroup label="ระบบปฏิบัติการ (OS)" items={data.behavior_baseline.operating_systems} />
-                    <FrequencyGroup label="ประเทศ" items={data.behavior_baseline.countries} />
-                    <FrequencyGroup label="ระบบที่เข้าบ่อย" detail="ใช้เทียบระบบใหม่ ระบบที่ใช้นาน ๆ ครั้ง และระดับสิทธิ์" items={data.behavior_baseline.subsystems} />
-                    <FrequencyGroup label="IP ที่พบในประวัติ" detail="ข้อมูลประกอบ · ชั้น 2 ไม่ให้คะแนนจากความถี่ IP โดยตรง" items={data.behavior_baseline.ips} />
+
+                    <div className="mt-4 grid items-stretch gap-4 xl:grid-cols-12">
+                      <div className="rounded-xl border border-ink-200 p-5 xl:col-span-5">
+                        <FrequencyBars label="ช่วงเวลาที่ใช้บ่อย" items={data.behavior_baseline.hours} />
+                        <div className="mt-5 rounded-xl bg-brand-50 px-4 py-3">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <span className="text-xs font-semibold text-ink-700">เวลาอ้างอิง</span>
+                            <span className="font-mono text-sm font-semibold text-ink-900">
+                              {data.behavior_baseline.temporal_median_hour === null ? "ข้อมูลยังไม่พอ" : `${data.behavior_baseline.temporal_median_hour} น.`}
+                            </span>
+                          </div>
+                          <p className="mt-1 text-[11px] leading-relaxed text-ink-500">
+                            มัธยฐานจาก {data.behavior_baseline.temporal_count} ครั้งล่าสุด (สูงสุด 50) · ใช้คำนวณ hours_diff
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="rounded-xl border border-ink-200 p-5 xl:col-span-7">
+                        <div className="flex flex-wrap items-start justify-between gap-2">
+                          <div>
+                            <h4 className="text-sm font-semibold text-ink-800">อุปกรณ์ที่ใช้ประจำ</h4>
+                            <p className="mt-1 text-[11px] text-ink-500">OS + ประเภทอุปกรณ์ + ตระกูลเบราว์เซอร์</p>
+                          </div>
+                          <span className="text-[10px] text-ink-400">ไม่รวมเลขเวอร์ชันเบราว์เซอร์</span>
+                        </div>
+                        <DeviceSignatureTable items={data.behavior_baseline.device_signatures} />
+                      </div>
                     </div>
+
+                    <div className="mt-4 grid gap-4 lg:grid-cols-3">
+                      <FrequencyBars label="เบราว์เซอร์" items={data.behavior_baseline.browsers} compact />
+                      <FrequencyBars label="ระบบปฏิบัติการ (OS)" items={data.behavior_baseline.operating_systems} compact />
+                      <div className="rounded-xl border border-ink-200 p-5">
+                        <FrequencyBars label="ประเภทอุปกรณ์" items={data.behavior_baseline.devices} compact embedded />
+                        <div className="mt-4 border-t border-ink-100 pt-4">
+                          <h4 className="text-xs font-semibold text-ink-700">ประเทศ</h4>
+                          <p className="mt-2 text-xs text-ink-500">
+                            {data.behavior_baseline.countries.length ? data.behavior_baseline.countries.map((item) => `${item.value} · ${item.count} ครั้ง`).join(" / ") : "ยังไม่มีข้อมูลที่ระบุ"}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="mt-4 grid gap-4 lg:grid-cols-2">
+                      <FrequencyBars label="ระบบที่เข้าบ่อย" detail="ใช้เทียบระบบใหม่ ระบบที่ใช้นาน ๆ ครั้ง และระดับสิทธิ์" items={data.behavior_baseline.subsystems} compact />
+                      <FrequencyBars label="IP ที่พบในประวัติ" detail="ข้อมูลประกอบ · ชั้น 2 ไม่ให้คะแนนจากความถี่ IP โดยตรง" items={data.behavior_baseline.ips} compact />
+                    </div>
+
+                    <p className="mt-4 border-t border-ink-100 pt-4 text-[11px] text-ink-400">
+                      ข้อมูลสรุปปัจจุบัน ไม่ใช่ baseline ย้อนหลังของแต่ละเหตุการณ์
+                    </p>
                   </div>
-                ) : <p className="mt-4 text-sm text-ink-500">ยังไม่มีข้อมูล baseline จากเซิร์ฟเวอร์</p>}
+                ) : <p className="px-6 py-8 text-sm text-ink-500">ยังไม่มีข้อมูล baseline จากเซิร์ฟเวอร์</p>}
               </section>
             </div>
 
@@ -155,6 +202,57 @@ function DarkMetric({ label, value, sub, tone = "text-white" }: { label: string;
 
 function BaselineRow({ label, value }: { label: string; value: string }) {
   return <div className="flex items-center justify-between gap-4 py-3 first:pt-0 last:pb-0"><dt className="text-xs text-ink-500">{label}</dt><dd className="text-right font-mono text-[11px] font-semibold text-ink-800">{value}</dd></div>;
+}
+
+function BaselineSummary({ label, value, unit }: { label: string; value: string; unit?: string }) {
+  return <div className="rounded-xl border border-ink-200 bg-ink-50/40 px-5 py-4">
+    <dt className="text-xs font-semibold text-ink-500">{label}</dt>
+    <dd className="mt-2 flex items-baseline gap-2 font-display text-2xl font-extrabold text-ink-900">
+      <span className="truncate">{value}</span>{unit && <span className="text-xs font-medium text-ink-500">{unit}</span>}
+    </dd>
+  </div>;
+}
+
+function FrequencyBars({ label, detail, items, compact = false, embedded = false }: { label: string; detail?: string; items: BehaviorFrequency[]; compact?: boolean; embedded?: boolean }) {
+  const max = Math.max(1, ...items.map((item) => item.count));
+  return <div className={embedded ? "min-w-0" : "min-w-0 rounded-xl border border-ink-200 p-5"}>
+    <h4 className="text-xs font-semibold text-ink-700">{label}</h4>
+    {detail && <p className="mt-1 text-[11px] leading-relaxed text-ink-500">{detail}</p>}
+    {items.length ? <ul className={`mt-3 ${compact ? "space-y-3" : "space-y-3.5"}`}>
+      {items.map((item) => <li key={item.value} className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1">
+        <span className="truncate text-xs text-ink-800" title={item.value}>{item.value}</span>
+        <span className="font-mono text-[11px] tabular-nums text-ink-500">{item.count} ครั้ง</span>
+        <span className="col-span-2 h-1.5 overflow-hidden rounded-full bg-ink-100">
+          <span className="block h-full rounded-full bg-brand-600" style={{ width: `${Math.max(3, item.count / max * 100)}%` }} />
+        </span>
+      </li>)}
+    </ul> : <p className="mt-3 text-xs text-ink-400">ไม่มีข้อมูลที่ระบุ</p>}
+  </div>;
+}
+
+function DeviceSignatureTable({ items }: { items: BehaviorFrequency[] }) {
+  if (!items.length) return <p className="mt-4 text-xs text-ink-400">ไม่มีข้อมูลที่ระบุ</p>;
+  return <div className="mt-4 overflow-x-auto">
+    <table className="w-full min-w-[520px] text-left text-xs">
+      <thead><tr className="border-b border-ink-200 bg-ink-50 text-ink-500">
+        <th className="px-3 py-2.5 font-semibold">ระบบปฏิบัติการ</th>
+        <th className="px-3 py-2.5 font-semibold">อุปกรณ์</th>
+        <th className="px-3 py-2.5 font-semibold">เบราว์เซอร์</th>
+        <th className="px-3 py-2.5 text-right font-semibold">จำนวน</th>
+      </tr></thead>
+      <tbody className="divide-y divide-ink-100">
+        {items.map((item) => {
+          const [os = "—", device = "—", browser = "—"] = item.value.split(" · ");
+          return <tr key={item.value}>
+            <td className="px-3 py-3 text-ink-800">{os}</td>
+            <td className="px-3 py-3 text-ink-700">{device}</td>
+            <td className="px-3 py-3 text-ink-700">{browser}</td>
+            <td className="px-3 py-3 text-right font-mono tabular-nums text-ink-500">{item.count} ครั้ง</td>
+          </tr>;
+        })}
+      </tbody>
+    </table>
+  </div>;
 }
 
 function RiskSparkline({ sessions }: { sessions: UserSession[] }) {
