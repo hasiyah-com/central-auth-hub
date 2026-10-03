@@ -256,8 +256,68 @@ async def evaluate_l3(
                 return _unified_quiet("feature_contract_mismatch")
             return _coerce_unified(data)
     except httpx.TimeoutException:
-        return _unified_quiet("l3_timeout")
+        return await _recover_point(features, access_decision, "l3_timeout")
     except httpx.HTTPStatusError as e:
-        return _unified_quiet(f"l3_http_{e.response.status_code}")
+        return await _recover_point(
+            features, access_decision, f"l3_http_{e.response.status_code}"
+        )
     except Exception as e:  # noqa: BLE001
-        return _unified_quiet(f"l3_unreachable: {type(e).__name__}")
+        return await _recover_point(
+            features, access_decision, f"l3_unreachable: {type(e).__name__}"
+        )
+
+
+async def _recover_point(
+    features: list[float], access_decision: str, unified_error: str
+) -> dict:
+    """Keep Point IForest when the combined Point+Sequence request fails.
+
+    Sequence fitting can exceed its short monitoring timeout.  The independent
+    point endpoint is fast after startup warm-up, so retry it with the same
+    bounded timeout instead of recording a false 0.00 for the whole L3 layer.
+    """
+    try:
+        async with httpx.AsyncClient(timeout=settings.l3_timeout_seconds) as client:
+            response = await client.post(
+                f"{settings.ml_service_url}/v1/score",
+                json={
+                    "feature_contract": FEATURE_CONTRACT,
+                    "features": [float(x) for x in features],
+                },
+            )
+            response.raise_for_status()
+            body = response.json()
+            data = body.get("data", body) or {}
+            if body.get("meta", {}).get("feature_contract") != FEATURE_CONTRACT:
+                return _unified_quiet("feature_contract_mismatch")
+            score = float(data["anomaly_score"])
+            if not math.isfinite(score) or not 0 <= score <= 1:
+                raise ValueError("invalid point score")
+            explanation = data.get("explanation")
+            explanation = explanation if isinstance(explanation, list) else []
+            is_anomaly = score >= 0.50
+            result = _unified_quiet(None)
+            result.update(
+                {
+                    "monitoring_decision": "l3_investigate" if score >= 0.70 else "normal",
+                    "is_anomaly": is_anomaly,
+                    "unique_to_l3": is_anomaly and access_decision == "allow",
+                    "detected_by": ["point_iforest"] if is_anomaly else [],
+                    "model_version": {"point": "iforest-23feat-bangkok-v1"},
+                }
+            )
+            result["point"] = {
+                "available": True,
+                "model_sha256": None,
+                "anomaly_score": score,
+                "is_anomaly": is_anomaly,
+                "explanation": explanation,
+                "error": None,
+                "explainer": body.get("meta", {}).get("explainer"),
+            }
+            result["sequence"] = _quiet(unified_error)
+            return result
+    except Exception as point_error:  # noqa: BLE001
+        return _unified_quiet(
+            f"{unified_error}; point_recovery: {type(point_error).__name__}"
+        )
