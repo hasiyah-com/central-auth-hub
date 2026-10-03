@@ -65,8 +65,8 @@ def test_failed_login_hard_block_still_applies_at_ten(monkeypatch):
 @pytest.mark.parametrize(
     ("age", "expected_score", "expected_reason", "expected_floor"),
     [
-        (0.0, 0.25, "permission_change_age (+0.25)", "challenge"),
-        (1.0, 0.25, "permission_change_age (+0.25)", "challenge"),
+        (0.0, 0.25, "permission_change_age (+0.25)", None),
+        (1.0, 0.25, "permission_change_age (+0.25)", None),
         (2.0, 0.10, "permission_change_age (+0.1)", None),
         (7.0, 0.10, "permission_change_age (+0.1)", None),
         (8.0, 0.0, None, None),

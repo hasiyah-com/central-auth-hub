@@ -21,6 +21,7 @@ from app.config import settings
 from app.models import LoginSession
 from app.services.feature_extraction import count_failed_auth
 from app.services.ip_blacklist import is_blacklisted
+from app.services.rule_context import RuleContext
 
 # policy floor ranking (ใช้แปลง min action <-> อันดับ)
 _ACTION_RANK = {"warn": 1, "challenge": 2, "block": 3}
@@ -68,9 +69,10 @@ HARD_BLOCK_RULES = [
 # op รองรับ ">=", "==", "<="; กฎใน exclusive_group เดียวกันเรียงระดับแรงก่อน
 # และให้คะแนนเฉพาะกฎแรกที่ตรง เพื่อไม่ให้ช่วงเกณฑ์ซ้อนกันถูกบวกคะแนนซ้ำ
 # floor = min action ที่บังคับเมื่อกฎนี้ยิง (deterministic security event) —
-#   "challenge" = ต้อง step-up เสมอ, None = แค่เพิ่มคะแนน (ปล่อยให้ aggregator ตัดสิน)
+#   Current mode contextual changes defer their floor to the compound policy below.
+#   Other "challenge" floors remain mandatory; None adds score only.
 SCORE_RULES = [
-    # ── Device (มี floor เพราะเป็น deterministic takeover sign) ──
+    # ── Device (current: conditional floor below; legacy: frozen unconditional floor) ──
     ("is_new_device", "==", 1, 0.30, "challenge"),
     ("is_new_user_agent_family", "==", 1, 0.20, "challenge"),
     # ── Geo (คงไว้เพื่อ portability — ไม่ยิงเมื่อไม่มี geo) ──
@@ -85,7 +87,7 @@ SCORE_RULES = [
     # ── Session — concurrent + lateral movement ──
     ("concurrent_session_count", ">=", 3, 0.25, "challenge"),
     ("active_subsystem_count", ">=", 2, 0.20, "challenge"),
-    # ── Credential — passkey เพิ่งลงทะเบียน (takeover sign) ──
+    # ── Credential — recent enrollment is a signal, not proof of takeover ──
     ("new_passkey_recently_added", "==", 1, 0.30, "challenge"),
     # ── Privilege — สิทธิ์เพิ่งเปลี่ยน ──
     ("permission_change_age", "<=", 1, 0.25, "challenge", "permission_change_tier"),
@@ -147,6 +149,7 @@ def evaluate_rules(
     subsystem_id=None,
     *,
     mode: str = "current",
+    context: RuleContext | None = None,
 ) -> RuleResult:
     """Layer 1: ประเมินกฎตายตัว → hard block หรือ risk score.
 
@@ -166,6 +169,7 @@ def evaluate_rules(
         geo_country,
         subsystem_id,
         legacy=mode == "legacy_replay",
+        context=context or RuleContext(),
     )
     result.rule_mode = mode
     return result
@@ -180,6 +184,7 @@ def _evaluate_rules(
     subsystem_id,
     *,
     legacy: bool,
+    context: RuleContext,
 ) -> RuleResult:
     """ตัวประเมินจริงของ evaluate_rules (ดู docstring ที่นั่นเรื่องโหมด).
 
@@ -263,8 +268,34 @@ def _evaluate_rules(
             reasons.append(f"{feat_name} (+{weight})")
             if not legacy and exclusive_group:
                 matched_exclusive_groups.add(exclusive_group)
-            if min_act:
+            contextual = feat_name in {"is_new_device", "is_new_user_agent_family",
+                                       "new_passkey_recently_added", "permission_change_age"}
+            if min_act and (legacy or not contextual):
                 floor_rank = max(floor_rank, _ACTION_RANK[min_act])
+
+    if not legacy:
+        # Device + browser family represent one environment change, not two independent signs.
+        device = any(features[FEAT[n]] == 1 for n in
+                     ("is_new_device", "is_new_user_agent_family"))
+        passkey = features[FEAT["new_passkey_recently_added"]] == 1
+        permission = features[FEAT["permission_change_age"]] <= 1
+        unverified_passkey = passkey and not context.strong_primary_verified
+        unexplained_permission = permission and not context.latest_permission_approved
+        novelty_count = sum((device, unverified_passkey, unexplained_permission))
+        corroborated = (
+            failed_post >= 3 or features[FEAT["is_new_country"]] == 1
+            or context.recent_recovery_or_reset
+        )
+        if (novelty_count >= 2 or
+                ((device or passkey or permission) and corroborated)):
+            floor_rank = max(floor_rank, _ACTION_RANK["challenge"])
+            reasons.append("contextual_stepup (independent signals or recovery/reset)")
+        elif device or passkey or permission:
+            reasons.append("contextual_change (score only; no automatic challenge)")
+        if passkey and context.strong_primary_verified:
+            reasons.append("strong_primary_verified (current passkey ceremony)")
+        if permission and context.latest_permission_approved:
+            reasons.append("permission_change_approved (matched latest admin grant)")
 
     # ── Velocity compound (B60): ล็อกอินถี่มาก + จำนวนสูง = credential stuffing/replay ──
     # ต้องเป็น compound (2 ฟีเจอร์) จึงอยู่นอก SCORE_RULES ที่เป็น single-feature
