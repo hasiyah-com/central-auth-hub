@@ -480,6 +480,7 @@ async def google_callback(request: Request, db: Session = Depends(get_db)):
         db=db,
         shadow_mode=settings.ml_shadow_mode,
         user_agent=user_agent,
+        login_method="google",
     )
     risk_score = risk["score"]
     actual_decision = risk["decision"]
@@ -994,6 +995,7 @@ async def line_callback(request: Request, db: Session = Depends(get_db)):
         db=db,
         shadow_mode=settings.ml_shadow_mode,
         user_agent=user_agent,
+        login_method="line",
     )
     risk_score = risk["score"]
     actual_decision = risk["decision"]
@@ -1398,6 +1400,8 @@ async def _refresh_risk_gate(
     )
     if sess:
         sess.risk_score = risk_score
+        if (sess.risk_breakdown or {}).get("l3_auth_candidate"):
+            breakdown["l3_auth_candidate"] = sess.risk_breakdown["l3_auth_candidate"]
         sess.risk_breakdown = breakdown
         sess.risk_reasons = reasons
 

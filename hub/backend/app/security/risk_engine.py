@@ -32,6 +32,7 @@ async def evaluate_login_risk(
     shadow_mode: bool = False,
     subsystem_id=None,
     user_agent: str | None = None,
+    login_method: str | None = None,
 ) -> dict:
     """ประเมินความเสี่ยงของ login 4 ชั้น.
 
@@ -43,6 +44,24 @@ async def evaluate_login_risk(
             "breakdown": {"rule": 0.3, "behavior": 0.2, "iforest": 0.1, "iforest_raw": 0.45},
         }
     """
+    # Staged L3-only research snapshot; no values enter rules/live point/sequence.
+    candidate = None
+    if login_method is not None:
+        from app.services.l3_auth_context import extract_auth_context
+        from app.services.feature_time import FEATURE_CONTRACT
+        try:
+            with db.begin_nested():
+                candidate = extract_auth_context(db, user_id, login_method,
+                                                 subsystem_id=subsystem_id)
+                candidate["user_type"] = _user_type(db, user_id)
+            candidate["base_feature_contract"] = FEATURE_CONTRACT
+            candidate["base_features"] = {
+                name: float(features[index]) for name, index in FEAT.items()
+            }
+        except Exception:
+            logger.exception("L3 auth context collection unavailable user=%s", user_id)
+            candidate = {"status": "unavailable", "contract": "l3-auth-context-v1"}
+
     # ── Layer 1: Rule Engine (+ cross-subsystem risk propagation) ──
     rule_result = evaluate_rules(
         features, db, user_id, ip, geo_country, subsystem_id=subsystem_id
@@ -71,7 +90,7 @@ async def evaluate_login_risk(
             "decision": decision.decision,
             "score": decision.total_score,
             "reasons": decision.reasons,
-            "breakdown": decision.breakdown,
+            "breakdown": {**decision.breakdown, **({"l3_auth_candidate": candidate} if candidate else {})},
             # hard block ข้าม L3 ไปเลย — คง shape ของ response ให้เท่ากันทุกเส้นทาง
             "iforest_explanation": [],
             "monitoring_decision": "normal",
@@ -142,6 +161,8 @@ async def evaluate_login_risk(
     }
     # คงคีย์เดิมไว้ให้ replay script + ข้อมูลที่เก็บมาแล้วอ่านต่อได้ · ใส่เฉพาะตอนมีจริง
     # (ปิดแฟล็ก/L3 พัง -> ไม่ใส่ ไม่ใช่ใส่ contract เปล่า — ดู _sequence_contract)
+    if candidate is not None:
+        breakdown["l3_auth_candidate"] = candidate
     if seq_contract is not None:
         breakdown["l3_sequence"] = seq_contract
 
