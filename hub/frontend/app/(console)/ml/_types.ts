@@ -116,6 +116,15 @@ export type ThresholdPreview = {
   };
 };
 
+export type BehaviorBaseline = {
+  days: number; session_count: number; ready: boolean; min_sessions: number;
+  hours: BehaviorFrequency[]; devices: BehaviorFrequency[]; browsers: BehaviorFrequency[];
+  operating_systems: BehaviorFrequency[]; device_signatures: BehaviorFrequency[];
+  ips: BehaviorFrequency[]; countries: BehaviorFrequency[]; subsystems: BehaviorFrequency[];
+  typical_weekend: number | null; temporal_count: number; temporal_median_hour: number | null;
+};
+export type BehaviorFrequency = { value: string; count: number };
+
 export type UserTimeline = {
   data: {
     user: {
@@ -124,6 +133,7 @@ export type UserTimeline = {
       full_name: string;
       user_type: string;
     };
+    behavior_baseline?: BehaviorBaseline;
     sessions: UserSession[];
     range: { days: number; from: string; to: string };
   };
