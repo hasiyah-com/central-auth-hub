@@ -481,6 +481,7 @@ async def google_callback(request: Request, db: Session = Depends(get_db)):
         shadow_mode=settings.ml_shadow_mode,
         user_agent=user_agent,
         login_method="google",
+        accept_language=request.headers.get("accept-language"),
     )
     risk_score = risk["score"]
     actual_decision = risk["decision"]
@@ -996,6 +997,7 @@ async def line_callback(request: Request, db: Session = Depends(get_db)):
         shadow_mode=settings.ml_shadow_mode,
         user_agent=user_agent,
         login_method="line",
+        accept_language=request.headers.get("accept-language"),
     )
     risk_score = risk["score"]
     actual_decision = risk["decision"]

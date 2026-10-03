@@ -125,6 +125,12 @@ export type BehaviorBaseline = {
 };
 export type BehaviorFrequency = { value: string; count: number };
 
+export type PostAuthContext = {
+  contract: string; status: "collection_only" | "unavailable";
+  from?: string; to?: string; request_count?: number; truncated?: boolean;
+  features?: Record<string, number>;
+};
+
 export type UserTimeline = {
   data: {
     user: {
@@ -134,6 +140,7 @@ export type UserTimeline = {
       user_type: string;
     };
     behavior_baseline?: BehaviorBaseline;
+    post_auth_context?: PostAuthContext;
     sessions: UserSession[];
     range: { days: number; from: string; to: string };
   };

@@ -158,6 +158,8 @@ async def _build_login_session(result, request, jti, db, method: str) -> LoginSe
         shadow_mode=settings.ml_shadow_mode,
         user_agent=user_agent,
         login_method=method,
+        authenticator_aaguid=str(getattr(getattr(result, "credential", None), "aaguid", "")) or None,
+        accept_language=request.headers.get("accept-language"),
     )
     risk_score = risk["score"]
     risk_breakdown = risk["breakdown"]
