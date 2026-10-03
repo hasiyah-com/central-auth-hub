@@ -254,7 +254,17 @@ async def evaluate_l3(
             data = body.get("data", body) or {}
             if data.get("feature_contract") != FEATURE_CONTRACT:
                 return _unified_quiet("feature_contract_mismatch")
-            return _coerce_unified(data)
+            result = _coerce_unified(data)
+            # The combined endpoint may answer within the short sequence
+            # budget while its point view is unavailable.  Do not persist a
+            # fabricated 0.00: retry the independent point endpoint, which is
+            # the source of the score shown in Session Detail.
+            if not result["point"]["available"]:
+                point_error = result["point"].get("error") or "point_unavailable"
+                return await _recover_point(
+                    features, access_decision, f"l3_point: {point_error}"
+                )
+            return result
     except httpx.TimeoutException:
         return await _recover_point(features, access_decision, "l3_timeout")
     except httpx.HTTPStatusError as e:
@@ -277,7 +287,11 @@ async def _recover_point(
     bounded timeout instead of recording a false 0.00 for the whole L3 layer.
     """
     try:
-        async with httpx.AsyncClient(timeout=settings.l3_timeout_seconds) as client:
+        # Point IForest is the score displayed to admins and used by the L3
+        # fallback.  Give it the normal ML budget rather than the 0.5-second
+        # sequence-monitoring budget; otherwise a slow/cold explainer is
+        # indistinguishable from a genuine anomaly score of zero.
+        async with httpx.AsyncClient(timeout=settings.ml_timeout_seconds) as client:
             response = await client.post(
                 f"{settings.ml_service_url}/v1/score",
                 json={
