@@ -34,7 +34,7 @@ Cold Start Policy:
 
 import math
 import re
-import statistics
+from collections import Counter
 from datetime import datetime, timedelta
 
 from sqlalchemy import func, or_
@@ -45,6 +45,29 @@ from app.services.feature_time import as_bangkok, as_utc_naive
 
 # ต้องมี history อย่างน้อยกี่ session ก่อนคำนวณ personalized features
 MIN_HISTORY_FOR_PERSONALIZATION = 5
+
+
+def circular_median_hour(hours: list[int]) -> float:
+    """Representative clock hour without splitting the midnight cluster.
+
+    A linear median treats 23:00 and 00:00 as opposite ends.  For clock data,
+    choose the integer hour with the least total circular distance.  If more
+    than one hour is equally central, prefer the most frequently observed
+    hour, then the earlier numeric hour for a deterministic result.
+    """
+    if not hours:
+        raise ValueError("hours must not be empty")
+    normalized = [int(hour) % 24 for hour in hours]
+    counts = Counter(normalized)
+
+    def rank(candidate: int) -> tuple[float, int, int]:
+        distance = sum(
+            min(abs(candidate - hour), 24 - abs(candidate - hour))
+            for hour in normalized
+        )
+        return float(distance), -counts[candidate], candidate
+
+    return float(min(range(24), key=rank))
 
 # ── Trusted history — ใช้กับ "เคยเห็นสิ่งนี้ไหม" เท่านั้น (B57) ─────────────────
 # is_new_device / is_new_user_agent_family / is_new_country เป็น **trust signal**:
@@ -299,7 +322,7 @@ def extract_session_features(
     )
     if len(past_sessions) >= MIN_HISTORY_FOR_PERSONALIZATION:
         past_hours = [as_bangkok(row[0]).hour for row in past_sessions]
-        typical = statistics.median(past_hours)
+        typical = circular_median_hour(past_hours)
         diff = abs(hour - typical)
         hours_from_typical = float(min(diff, 24 - diff))  # circular distance
         # weekday_usage_score — วันนี้เป็นวันที่ user ไม่ค่อยใช้?

@@ -12,7 +12,7 @@ import type {
 } from "../_types";
 import { DECISION_TONE, DEVICE_ICON, FEEDBACK_LABELS, featureLabelTh } from "../_types";
 import { classifyReason, l3Status } from "@/lib/riskDisplay";
-import { formatShapFeatureValue, utcHourFromShap } from "@/lib/shapDisplay";
+import { formatShapFeatureValue, localHourFromShap } from "@/lib/shapDisplay";
 
 type SessionData = Anomaly | (UserSession & { user_email?: string; user_id?: string; session_id?: string; subsystem_name?: string });
 
@@ -396,7 +396,7 @@ function ShapBreakdown({ items, inputs }: { items: ShapContribution[]; inputs: A
   const COLLAPSED = 5;
   const [showAll, setShowAll] = useState(false);
   const shown = showAll ? ranked : ranked.slice(0, COLLAPSED);
-  const hourUtc = utcHourFromShap(ranked);
+  const hourLocal = localHourFromShap(ranked);
 
   return (
     <div className="mt-3 p-3 rounded-lg bg-amber-50/50 border border-amber-200">
@@ -422,7 +422,7 @@ function ShapBreakdown({ items, inputs }: { items: ShapContribution[]; inputs: A
                 <span className="text-[11px] text-ink-700 truncate" title={it.feature}>
                   {featureLabelTh(it.feature)}
                   <span className="ml-1.5 font-mono text-ink-400">
-                    = {formatShapFeatureValue(it.feature, it.value, hourUtc)}
+                    = {formatShapFeatureValue(it.feature, it.value, hourLocal)}
                   </span>
                 </span>
                 <span
