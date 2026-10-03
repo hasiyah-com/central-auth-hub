@@ -94,16 +94,16 @@ def _decide(v: list[float]) -> str:
     return aggregate(rr, beh, ifr).decision
 
 
-def test_policy_floor_new_passkey_forces_challenge():
+def test_isolated_new_passkey_scores_without_floor():
     v = base_vector()
     v[FEAT["new_passkey_recently_added"]] = 1.0  # rule +0.30 เท่านั้น ไม่ถึง 0.7
-    assert _decide(v) == "challenge"
+    assert _decide(v) == "allow"
 
 
-def test_policy_floor_permission_change_forces_challenge():
+def test_isolated_permission_change_scores_without_floor():
     v = base_vector()
     v[FEAT["permission_change_age"]] = 0.0
-    assert _decide(v) == "challenge"
+    assert _decide(v) == "allow"
 
 
 def test_policy_floor_concurrent_forces_challenge():

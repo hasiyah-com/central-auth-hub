@@ -62,9 +62,18 @@ async def evaluate_login_risk(
             logger.exception("L3 auth context collection unavailable user=%s", user_id)
             candidate = {"status": "unavailable", "contract": "l3-auth-context-v1"}
 
+    from app.services.rule_context import RuleContext, collect_rule_context
+    context = RuleContext(strong_primary_verified=login_method in ("passkey", "discoverable"))
+    if any(features[FEAT[n]] == 1 for n in
+           ("is_new_device", "is_new_user_agent_family", "new_passkey_recently_added")) or features[FEAT["permission_change_age"]] <= 1:
+        try:
+            with db.begin_nested():
+                context = collect_rule_context(db, user_id, login_method=login_method)
+        except Exception:
+            logger.exception("Rule context unavailable user=%s", user_id)
     # ── Layer 1: Rule Engine (+ cross-subsystem risk propagation) ──
     rule_result = evaluate_rules(
-        features, db, user_id, ip, geo_country, subsystem_id=subsystem_id
+        features, db, user_id, ip, geo_country, subsystem_id=subsystem_id, context=context
     )
 
     if rule_result.blocked:
@@ -148,6 +157,7 @@ async def evaluate_login_risk(
     # `iforest_raw` ยังเก็บค่าจริงไว้เหมือนเดิม — เปลี่ยนแค่ว่ามันไม่ถูกบวกเข้า total
     breakdown = {
         **decision.breakdown,
+        "rule_context": context.snapshot(),
         "iforest_raw": round(l3["point"]["anomaly_score"], 4),
         # All login routers persist breakdown, including Hub Google/LINE.
         # Keeping SHAP only in the top-level result loses it on those paths.

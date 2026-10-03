@@ -86,8 +86,8 @@ def aggregate(
         raw_decision = "allow"
 
     # ── Policy floor (B60) ──
-    # deterministic security event (เครื่องใหม่, passkey ใหม่, สิทธิ์เพิ่งเปลี่ยน,
-    # concurrent, velocity) ต้องได้ min action เสมอ แม้คะแนนรวมไม่ถึง threshold —
+    # Confirmed/compound signals (contextual change, concurrent, velocity)
+    # enforce the evaluated min action even below the score threshold —
     # ไม่งั้นเหตุการณ์ที่ควร step-up ถูกลดเหลือ allow เพราะขาดคะแนนจากชั้นอื่น
     if getattr(rule, "min_action", None):
         raw_decision = _max_action(raw_decision, rule.min_action)

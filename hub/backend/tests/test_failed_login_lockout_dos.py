@@ -127,13 +127,15 @@ async def test_control_same_device_passes(db, env, ip, monkeypatch):
     assert url.startswith(env["authreq"]["redirect_uri"]), cap["risk"]["reasons"]
 
 
-async def test_control_new_device_is_challenged_not_blocked(
+async def test_control_new_device_without_attack_avoids_redundant_challenge(
     client, db, env, ip, monkeypatch
 ):
     cap = spy_risk(monkeypatch)
     url = await finalize(db, env, ip, ua=UA_NEW_DEVICE)
     assert cap["risk"]["score"] < settings.risk_block_hard_threshold
-    _redeem(client, env, url)
+    assert cap["risk"]["decision"] == "warn"
+    assert url.startswith(env["authreq"]["redirect_uri"]), url
+    assert "code=" in url
 
 
 async def test_email_only_attack_same_device_gets_usable_challenge(

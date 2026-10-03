@@ -6,7 +6,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from app.services.feature_time import as_bangkok, as_utc_naive
-from app.services.feature_extraction import extract_session_features
+from app.services.feature_extraction import circular_median_hour, extract_session_features
 from app.security.behavior_profiling import get_user_profile, evaluate_behavior
 
 
@@ -26,6 +26,20 @@ def test_aware_input_and_elapsed_duration():
     assert as_utc_naive(local) == datetime(2026, 10, 2, 20, 49)
     before = local - timedelta(hours=24)
     assert as_utc_naive(local) - as_utc_naive(before) == timedelta(hours=24)
+
+
+def test_circular_median_keeps_midnight_cluster_together():
+    # Linear median of this history is 14, even though 70/81 logins are around midnight.
+    hours = [1] * 23 + [0] * 20 + [23] * 14 + [22] * 13 + [14] * 11
+    assert circular_median_hour(hours) == 0.0
+    current = 23
+    typical = circular_median_hour(hours)
+    diff = abs(current - typical)
+    assert min(diff, 24 - diff) == 1.0
+
+
+def test_circular_median_preserves_ordinary_daytime_profile():
+    assert circular_median_hour([8, 9, 9, 10, 10, 11]) == 9.0
 
 
 def test_extraction_uses_bangkok_calendar():
