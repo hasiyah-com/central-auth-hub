@@ -579,6 +579,7 @@ async def google_callback(request: Request, db: Session = Depends(get_db)):
         has_passkey = mfa_policy.has_second_factor(user, db)
         if has_passkey:
             challenge_id = risk_challenge.mint(
+                session_id=str(login_session.id),
                 user_id=str(user.id),
                 hub_state="",
                 authreq=None,
@@ -626,6 +627,7 @@ async def google_callback(request: Request, db: Session = Depends(get_db)):
             # fall through → ออก JWT ปกติ
         else:
             challenge_id = risk_challenge.mint(
+                session_id=str(login_session.id),
                 user_id=str(user.id),
                 hub_state="",
                 authreq=None,
@@ -1094,6 +1096,7 @@ async def line_callback(request: Request, db: Session = Depends(get_db)):
         has_passkey = mfa_policy.has_second_factor(user, db)
         if has_passkey:
             challenge_id = risk_challenge.mint(
+                session_id=str(login_session.id),
                 user_id=str(user.id),
                 hub_state="",
                 authreq=None,
@@ -1141,6 +1144,7 @@ async def line_callback(request: Request, db: Session = Depends(get_db)):
             # fall through → ออก JWT ปกติ
         else:
             challenge_id = risk_challenge.mint(
+                session_id=str(login_session.id),
                 user_id=str(user.id),
                 hub_state="",
                 authreq=None,
@@ -1443,6 +1447,7 @@ async def _refresh_risk_gate(
 
     if is_mfa and has_passkey:
         challenge_id = risk_challenge.mint(
+            session_id=str(rotate_result["session_id"]),
             user_id=str(user.id),
             hub_state="",
             authreq=None,
