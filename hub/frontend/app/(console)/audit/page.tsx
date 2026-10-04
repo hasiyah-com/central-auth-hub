@@ -471,6 +471,12 @@ import { useSearchParams, useRouter } from "next/navigation";
 import { Topbar } from "@/components/Topbar";
 import { clientFetch } from "@/lib/api";
 import { parseUserAgent } from "@/lib/ua";
+import {
+  auditPresentation,
+  auditTone,
+  loginMethodLabel,
+  type AuditTone,
+} from "@/lib/auditPresentation";
 // design system เดียวกับหน้าคอนโซล — .sc = ชุด cx-*
 import "../../signal-room.css";
 import "../../signal-console.css";
@@ -495,21 +501,7 @@ type AuditResponse = {
   limit: number;
 };
 
-type Tone = "signal" | "warn" | "danger" | "default";
-
-function actionTone(action: string): Tone {
-  if (action.includes("approved") || action.includes("success")) return "signal";
-  if (
-    action.includes("rejected") ||
-    action.includes("failed") ||
-    action.includes("blocked")
-  )
-    return "danger";
-  if (action.includes("revoked") || action.includes("suspended")) return "warn";
-  return "default";
-}
-
-function resultLabel(tone: Tone): string {
+function resultLabel(tone: AuditTone): string {
   return tone === "danger"
     ? "ล้มเหลว"
     : tone === "warn"
@@ -636,7 +628,7 @@ function AuditPageInner() {
   const onPage = useMemo(() => {
     const t = { danger: 0, warn: 0 };
     items.forEach((r) => {
-      const tone = actionTone(r.action);
+      const tone = auditTone(r.action);
       if (tone === "danger") t.danger += 1;
       if (tone === "warn") t.warn += 1;
     });
@@ -775,7 +767,8 @@ function AuditPageInner() {
             ) : (
               <div className="cx-audit-rows">
                 {shown.map((r) => {
-                  const tone = actionTone(r.action);
+                  const tone = auditTone(r.action);
+                  const presentation = auditPresentation(r.action);
                   return (
                     <button
                       key={r.id}
@@ -793,7 +786,7 @@ function AuditPageInner() {
                         </small>
                       </span>
                       <span>
-                        <i className={tone} title={r.action}>{r.action}</i>
+                        <i className={tone} title={r.action}>{presentation.title}</i>
                         <small className="mono">{r.id.slice(0, 8)}</small>
                       </span>
                       <span className="target">
@@ -804,7 +797,7 @@ function AuditPageInner() {
                         <span className={`cx-dot ${tone === "default" ? "" : tone}`}>
                           <i />
                         </span>
-                        {resultLabel(tone)}
+                        {presentation.result}
                       </span>
                       <span aria-hidden="true">›</span>
                     </button>
@@ -847,8 +840,8 @@ function AuditPageInner() {
                 <h2>รายละเอียดเหตุการณ์</h2>
               </div>
               {current && (
-                <span className={`cx-chip ${actionTone(current.action)}`}>
-                  {resultLabel(actionTone(current.action))}
+                <span className={`cx-chip ${auditTone(current.action)}`}>
+                  {auditPresentation(current.action).result}
                 </span>
               )}
             </header>
@@ -859,10 +852,14 @@ function AuditPageInner() {
               </div>
             ) : (
               <>
-                <div className="cx-audit-detail-id">
-                  <small className="mono">ACTION</small>
-                  <b className="mono">{current.action}</b>
-                  <span className="mono">{current.id}</span>
+                <div className={`cx-audit-explanation ${auditTone(current.action)}`}>
+                  <small>เกิดอะไรขึ้น</small>
+                  <b>{auditPresentation(current.action).title}</b>
+                  <p>{auditPresentation(current.action).description}</p>
+                  <div>
+                    <strong>ผลลัพธ์</strong>
+                    <span>{auditPresentation(current.action).resultDetail}</span>
+                  </div>
                 </div>
 
                 <dl>
@@ -873,7 +870,7 @@ function AuditPageInner() {
                     </dd>
                   </div>
                   <div>
-                    <dt>ผู้ดำเนินการ</dt>
+                    <dt>{auditPresentation(current.action).actorLabel}</dt>
                     <dd>
                       {current.actor_email || "system"}
                       <small className="mono">
@@ -891,6 +888,12 @@ function AuditPageInner() {
                     </dd>
                   </div>
                   <div>
+                    <dt>วิธีเข้าสู่ระบบ</dt>
+                    <dd>
+                      {loginMethodLabel(current.metadata?.method) || "—"}
+                    </dd>
+                  </div>
+                  <div>
                     <dt>Source IP</dt>
                     <dd className="mono">{current.ip || "—"}</dd>
                   </div>
@@ -904,6 +907,12 @@ function AuditPageInner() {
                     </dd>
                   </div>
                 </dl>
+
+                <div className="cx-audit-detail-id">
+                  <small className="mono">ข้อมูลทางเทคนิค</small>
+                  <b className="mono">{current.action}</b>
+                  <span className="mono">Event ID · {current.id}</span>
+                </div>
 
                 <div className="cx-audit-json">
                   <span className="mono">METADATA JSON</span>
