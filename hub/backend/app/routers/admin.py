@@ -881,6 +881,14 @@ def user_summary(
         .order_by(LoginSession.created_at.desc())
         .first()
     )
+    snoozed_until = target.security_onboarding_snoozed_until
+    if target.effective_mfa_always:
+        mfa_policy_choice = "always"
+    elif snoozed_until and snoozed_until > datetime.utcnow():
+        mfa_policy_choice = "snoozed"
+    else:
+        mfa_policy_choice = "risk_based"
+
     return {
         "failed_logins_7d": int(failed_7d),
         "last_login_at": last_login[0].isoformat() if last_login else None,
@@ -890,6 +898,15 @@ def user_summary(
         }
         if last_risk
         else None,
+        # Admin user detail must show the user's stored 2FA decision, not infer it
+        # from whether a credential currently exists.
+        "mfa_policy_choice": mfa_policy_choice,
+        "mfa_always": bool(target.mfa_always),
+        "effective_mfa_always": target.effective_mfa_always,
+        "mfa_preferred_factor": target.mfa_preferred_factor,
+        "security_onboarding_snoozed_until": (
+            snoozed_until.isoformat() if snoozed_until else None
+        ),
     }
 
 
