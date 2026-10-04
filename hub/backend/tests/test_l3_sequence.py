@@ -219,7 +219,7 @@ def test_contract_fields_present():
         "eligibility",
         "raw_score",
         "percentile",
-        "decision",
+        "monitoring_decision",
         "tier",
         "model_version",
         "n_history",
