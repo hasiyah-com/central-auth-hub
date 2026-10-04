@@ -23,7 +23,7 @@ def assess(monkeypatch, context=None, **signals):
     return result, aggregate(result, BehaviorResult(0, []), monitoring_only())
 
 
-@pytest.mark.parametrize("signal", ["is_new_device", "is_new_user_agent_family", "new_passkey_recently_added"])
+@pytest.mark.parametrize("signal", ["new_passkey_recently_added"])
 def test_isolated_change_does_not_force_stepup(monkeypatch, signal):
     r, decision = assess(monkeypatch, **{signal: 1})
     assert r.min_action is None
@@ -33,8 +33,8 @@ def test_isolated_change_does_not_force_stepup(monkeypatch, signal):
 
 def test_device_and_browser_are_one_signal(monkeypatch):
     r, d = assess(monkeypatch, is_new_device=1, is_new_user_agent_family=1)
-    assert r.min_action is None
-    assert d.decision == "warn"
+    assert r.min_action == "challenge"
+    assert d.decision == "challenge"
 
 
 def test_independent_changes_require_stepup(monkeypatch):
@@ -43,18 +43,18 @@ def test_independent_changes_require_stepup(monkeypatch):
     assert d.decision == "challenge"
 
 
-def test_verified_current_passkey_avoids_redundant_floor(monkeypatch):
+def test_verified_current_passkey_preserves_risk_assessment(monkeypatch):
     r, d = assess(monkeypatch, RuleContext(strong_primary_verified=True),
                   is_new_device=1, new_passkey_recently_added=1)
-    assert r.min_action is None
-    assert d.decision == "warn"
+    assert r.min_action == "challenge"
+    assert d.decision == "challenge"
 
 
 def test_approval_excuses_only_matching_permission_signal(monkeypatch):
     r, d = assess(monkeypatch, RuleContext(latest_permission_approved=True),
                   permission_change_age=0, is_new_device=1)
-    assert r.min_action is None
-    assert d.decision == "warn"
+    assert r.min_action == "challenge"
+    assert d.decision == "challenge"
     assert r.score == pytest.approx(.55)
 
 
@@ -69,10 +69,10 @@ def test_recovery_still_requires_stepup_even_with_strong_primary(monkeypatch):
     assert d.decision == "challenge"
 
 
-def test_three_failures_do_not_force_stepup_with_new_device(monkeypatch):
+def test_new_device_requires_stepup_even_with_only_three_failures(monkeypatch):
     r, d = assess(monkeypatch, is_new_device=1, failed_logins_24h=3)
-    assert d.decision == "warn"
-    assert r.min_action is None
+    assert d.decision == "challenge"
+    assert r.min_action == "challenge"
 
 
 @pytest.mark.parametrize("failed,decision", [(5, "challenge"), (10, "block")])

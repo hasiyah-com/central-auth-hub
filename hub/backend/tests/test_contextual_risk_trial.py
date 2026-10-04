@@ -86,3 +86,20 @@ def test_hard_block_unchanged():
 def test_legacy_replay_keeps_session_floor():
     assert evaluate_rules(vector(concurrent_session_count=3),None,'u',None,None,
         mode='legacy_replay').min_action == 'challenge'
+
+
+@pytest.mark.parametrize("trial_enabled", [False, True])
+@pytest.mark.parametrize("values", [dict(is_new_device=1), dict(is_new_user_agent_family=1), dict(is_new_device=1, is_new_user_agent_family=1)])
+def test_new_environment_requires_challenge(monkeypatch, trial_enabled, values):
+    monkeypatch.setattr(settings, "risk_contextual_trial_enabled", trial_enabled)
+    d = assess(vector(**values))
+    assert d.decision == "challenge"
+    assert any("new_environment_stepup" in reason for reason in d.reasons)
+
+def test_browser_version_update_keeps_environment_signature():
+    from app.services.feature_extraction import _device_signature, browser_family
+    old = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/150.0.0.0 Safari/537.36"
+    new = old.replace("150.0.0.0", "154.0.0.0")
+    assert _device_signature(old) == _device_signature(new)
+    assert browser_family(old) == browser_family(new)
+    assert assess(vector()).decision == "allow"

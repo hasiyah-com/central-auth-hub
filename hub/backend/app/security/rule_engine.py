@@ -292,11 +292,14 @@ def _evaluate_rules(
             failed_post >= 5 or features[FEAT["is_new_country"]] == 1
             or context.recent_recovery_or_reset
         )
+        if device:
+            floor_rank = max(floor_rank, _ACTION_RANK["challenge"])
+            reasons.append("new_environment_stepup (new device or browser family)")
         if (novelty_count >= 2 or
                 ((device or passkey or permission) and corroborated)):
             floor_rank = max(floor_rank, _ACTION_RANK["challenge"])
             reasons.append("contextual_stepup (independent signals or recovery/reset)")
-        elif device or passkey or permission:
+        elif not device and (passkey or permission):
             reasons.append("contextual_change (score only; no automatic challenge)")
         if passkey and context.strong_primary_verified:
             reasons.append("strong_primary_verified (current passkey ceremony)")
