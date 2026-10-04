@@ -16223,3 +16223,250 @@
     background: #fff;
   }
 }
+
+
+/* Compact subsystem detail — keep high-value content inside the first viewport */
+.sc.subsystem-detail-view .cx-command {
+  min-height: 72px;
+  padding-top: 14px;
+  padding-bottom: 14px;
+}
+.sc.subsystem-detail-view .cx-command h1 {
+  margin-top: 3px;
+  font-size: 25px;
+}
+.sc.subsystem-detail-view .cx-command-actions {
+  gap: 7px;
+}
+.sc.subsystem-detail-view .cx-hero-btn,
+.sc.subsystem-detail-view .cx-hero-status {
+  min-height: 36px;
+  padding: 8px 12px;
+}
+.sc.subsystem-detail-view .cx-document {
+  padding-top: 12px;
+}
+.sc.subsystem-detail-view .cx-back {
+  margin-bottom: 8px;
+}
+.sc.subsystem-detail-view .cx-secure-identity {
+  min-height: 0;
+  padding: 18px 22px;
+  gap: 18px;
+  margin-bottom: 10px;
+}
+.sc.subsystem-detail-view .cx-secure-identity-main {
+  gap: 15px;
+}
+.sc.subsystem-detail-view .cx-secure-mark {
+  width: 58px;
+  height: 58px;
+  border-radius: 17px;
+  box-shadow: 0 0 0 7px rgba(52,232,196,.03);
+}
+.sc.subsystem-detail-view .cx-secure-mark svg {
+  width: 34px;
+  height: 34px;
+}
+.sc.subsystem-detail-view .cx-secure-identity h2 {
+  font-size: clamp(23px, 2.2vw, 31px);
+  line-height: 1.08;
+}
+.sc.subsystem-detail-view .cx-secure-identity h2 small {
+  margin-top: 3px;
+  font-size: 12px;
+}
+.sc.subsystem-detail-view .cx-secure-tags {
+  margin: 7px 0 8px;
+}
+.sc.subsystem-detail-view .cx-secure-tags > span {
+  min-height: 21px;
+  padding: 3px 7px;
+  font-size: 8px;
+}
+.sc.subsystem-detail-view .cx-secure-identity code,
+.sc.subsystem-detail-view .cx-hero-dates {
+  font-size: 10px;
+}
+.sc.subsystem-detail-view .cx-hero-metrics > span {
+  min-width: 92px;
+  padding: 0 13px;
+}
+.sc.subsystem-detail-view .cx-hero-metrics > span:last-child {
+  max-width: 230px;
+}
+.sc.subsystem-detail-view .cx-hero-metrics b {
+  margin-top: 5px;
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sc.subsystem-detail-view .cx-kpis {
+  gap: 9px;
+  margin-bottom: 10px;
+}
+.sc.subsystem-detail-view .cx-kpi {
+  min-height: 76px;
+  padding: 11px 14px;
+}
+.sc.subsystem-detail-view .cx-kpi > span {
+  font-size: 10px;
+}
+.sc.subsystem-detail-view .cx-kpi > strong {
+  margin: 4px 0 2px;
+  font-size: 23px;
+}
+.sc.subsystem-detail-view .cx-kpi > small {
+  font-size: 10px;
+}
+.sc.subsystem-detail-view .subsystem-security-overview {
+  gap: 10px;
+  margin-bottom: 10px;
+  grid-template-columns: minmax(0, 1.55fr) minmax(280px, .75fr);
+}
+.sc.subsystem-detail-view .security-posture-card > header {
+  min-height: 58px;
+  padding: 10px 14px;
+}
+.sc.subsystem-detail-view .security-posture-card h2,
+.sc.subsystem-detail-view .credential-posture-card h2 {
+  font-size: 15px;
+}
+.sc.subsystem-detail-view .security-check-score strong {
+  font-size: 20px;
+}
+.sc.subsystem-detail-view .security-check-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  padding: 0 14px 8px;
+  column-gap: 18px;
+}
+.sc.subsystem-detail-view .security-check-list > div {
+  min-height: 52px;
+  grid-template-columns: 23px minmax(0,1fr) auto;
+  gap: 8px;
+}
+.sc.subsystem-detail-view .security-check-list > div:nth-last-child(-n+2) {
+  border-bottom: 0;
+}
+.sc.subsystem-detail-view .security-check-icon {
+  width: 21px;
+  height: 21px;
+  font-size: 11px;
+}
+.sc.subsystem-detail-view .security-check-list b {
+  font-size: 11px;
+}
+.sc.subsystem-detail-view .security-check-list small {
+  margin-top: 1px;
+  font-size: 9px;
+  line-height: 1.25;
+}
+.sc.subsystem-detail-view .security-check-list em {
+  padding: 3px 6px;
+  font-size: 8px;
+}
+.sc.subsystem-detail-view .credential-posture-card {
+  padding: 14px;
+}
+.sc.subsystem-detail-view .credential-posture-card h2 {
+  margin-top: 5px;
+}
+.sc.subsystem-detail-view .credential-posture-card > p {
+  margin: 5px 0 10px;
+  font-size: 10px;
+  line-height: 1.4;
+}
+.sc.subsystem-detail-view .credential-facts {
+  grid-template-columns: minmax(0,1fr);
+  gap: 7px;
+}
+.sc.subsystem-detail-view .credential-facts > div {
+  padding: 8px 10px;
+}
+.sc.subsystem-detail-view .credential-facts small {
+  margin-bottom: 2px;
+  font-size: 8px;
+}
+.sc.subsystem-detail-view .credential-facts code,
+.sc.subsystem-detail-view .credential-facts b {
+  font-size: 10px;
+}
+.sc.subsystem-detail-view .cx-panel {
+  margin-bottom: 10px;
+}
+.sc.subsystem-detail-view .cx-panel > header {
+  min-height: 52px;
+  padding: 9px 14px;
+}
+.sc.subsystem-detail-view .cx-panel > header h2 {
+  margin-top: 2px;
+  font-size: 14px;
+}
+.sc.subsystem-detail-view .cx-panel-body {
+  padding: 12px 14px;
+}
+.sc.subsystem-detail-view .subsystem-risk-panel .cx-panel-body {
+  padding-top: 9px;
+  padding-bottom: 9px;
+}
+.sc.subsystem-detail-view .subsystem-risk-panel svg {
+  height: 180px;
+  max-height: 180px;
+}
+.sc.subsystem-detail-view .subsystem-risk-panel .mb-3 {
+  margin-bottom: 5px;
+}
+.sc.subsystem-detail-view .subsystem-config-grid {
+  align-items: start;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.sc.subsystem-detail-view .subsystem-config-grid > * {
+  align-self: start;
+  width: 100%;
+}
+.sc.subsystem-detail-view .subsystem-config-grid .cx-panel-body {
+  height: auto;
+  min-height: 0;
+}
+.sc.subsystem-detail-view .subsystem-config-grid .cx-active-panel {
+  min-height: 0;
+}
+.sc.subsystem-detail-view .subsystem-config-grid .cx-active-panel .cx-panel-body {
+  min-height: 110px;
+}
+.sc.subsystem-detail-view .subsystem-config-grid .bg-white.rounded-xl.border {
+  padding: 12px;
+}
+.sc.subsystem-detail-view .subsystem-config-grid .text-2xl {
+  font-size: 20px;
+}
+@media (max-width: 1050px) {
+  .sc.subsystem-detail-view .subsystem-security-overview {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .sc.subsystem-detail-view .security-check-list {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .sc.subsystem-detail-view .security-check-list > div:nth-last-child(2) {
+    border-bottom: 1px solid #edf1f4;
+  }
+}
+@media (max-width: 760px) {
+  .sc.subsystem-detail-view .cx-command {
+    min-height: 0;
+  }
+  .sc.subsystem-detail-view .cx-secure-identity {
+    padding: 16px;
+  }
+  .sc.subsystem-detail-view .cx-secure-identity-main {
+    gap: 12px;
+  }
+  .sc.subsystem-detail-view .cx-hero-metrics {
+    width: 100%;
+  }
+  .sc.subsystem-detail-view .subsystem-risk-panel svg {
+    height: 155px;
+  }
+}
