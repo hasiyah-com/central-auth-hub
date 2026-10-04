@@ -22,6 +22,16 @@ Active session counts exclude pending challenges and Block attempts. Completed t
 
 Hard attack checks and 5/10-failure rules remain. Strong primary authentication remains governed by the existing MFA policy. L3 stays monitoring-only; this change does not grant L3 Challenge authority. `legacy_replay` scoring remains frozen.
 
+## Optional L3 percentile decision trial
+
+Set `L3_DECISION_TRIAL_ENABLED=true` only with a registered role calibration artifact in
+`L3_ROLE_CALIBRATION_PATH`. The trial applies only when L1+L2 return Allow. A point score above the
+role's calibrated warning percentile becomes Warn. It becomes Challenge at
+`L3_DECISION_TRIAL_CHALLENGE_PERCENTILE` (default P99), or when the warning percentile is reached
+and the enabled Sequence view independently returns `l3_investigate`. Missing calibration, model
+hash mismatch, unavailable point score, or insufficient Sequence history abstains rather than
+changing access. `L3_FALLBACK_WARN_ENABLED` is ignored while this trial is enabled.
+
 Suggested verification: same known device/time, new browser/device, multiple normal subsystems, retry after successful MFA, and an independent high-risk scenario. Record policy marker, L1/L2 contributions, reasons, risk decision and authentication evidence for each. Do not replace chapter 4 experiment numbers with these scenario results; rerun the held-out evaluation before making performance claims.
 
 New device or browser family always sets a Challenge floor in both live policies. Trial scoring remains deduplicated. Browser version changes alone retain the same signature. Existing strong-authentication handling can satisfy Challenge; risk assessment remains Challenge. Passkey/permission-only changes retain contextual handling.

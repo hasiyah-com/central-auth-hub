@@ -1,5 +1,6 @@
 """Application configuration loaded from environment."""
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # default ที่ห้ามใช้ใน production — ถ้าเจอตัวเหล่านี้ + app_env=production จะ fail-fast
@@ -121,6 +122,11 @@ class Settings(BaseSettings):
     # (app/security/l3_fallback.py · หลักฐาน l3_fallback_result_2026-10-01) · ยกได้ถึง warn เท่านั้น
     # ปิด = L3 กลับเป็นแกนเฝ้าระวังอย่างเดียวเหมือนเดิม
     l3_fallback_warn_enabled: bool = True
+
+    # การทดลอง: ให้ L3 point percentile ยก Allow -> Warn/Challenge และใช้ sequence
+    # เป็นหลักฐานเสริม ค่าเริ่มต้นปิดและต้องมี role calibration ที่ตรงกับ model hash
+    l3_decision_trial_enabled: bool = False
+    l3_decision_trial_challenge_percentile: float = Field(default=0.99, ge=0.5, le=1.0)
 
     # timeout ของ L3 แยกจาก ml_timeout_seconds โดยตั้งใจ (B63):
     # L3 เป็นช่องเฝ้าระวัง ไม่ใช่ผู้ตัดสินสิทธิ์ -> ห้ามถ่วง login path เท่ากับ IForest หลัก

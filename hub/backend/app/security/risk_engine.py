@@ -184,7 +184,19 @@ async def evaluate_login_risk(
     # ── ชั้นที่ 3 เป็นตัวสำรองระดับ warn (เฉพาะเมื่อชั้นที่ 1+2 ตัดสิน allow) ──
     # ยกได้ถึง warn เท่านั้น · ไม่เปลี่ยนคะแนน · L3 ล่ม/ไม่มีคะแนน = คงผลเดิม (fail-safe B21)
     access_decision, access_reasons = decision.decision, list(decision.reasons)
-    if settings.l3_fallback_warn_enabled:
+    if settings.l3_decision_trial_enabled:
+        from app.security import l3_decision_trial
+
+        access_decision, trial_reason, trial_detail = l3_decision_trial.apply(
+            decision.decision,
+            l3.get("fallback"),
+            seq_contract,
+            settings.l3_decision_trial_challenge_percentile,
+        )
+        if trial_reason:
+            access_reasons.append(trial_reason)
+        breakdown["l3_decision_trial"] = trial_detail
+    elif settings.l3_fallback_warn_enabled:
         point = l3.get("point") or {}
         usable = (
             not l3.get("error") and point.get("available") and not point.get("error")
@@ -213,16 +225,14 @@ async def evaluate_login_risk(
     )
 
     return {
-        # ── แกนที่ 1: access — L1/L2/L4 (+ L3 ตัวสำรองระดับ warn เมื่อเปิดแฟล็ก) ──
+        # ── แกนที่ 1: access — L1/L2/L4 และ L3 เฉพาะเมื่อเปิด fallback/trial ──
         "decision": access_decision,
         "score": decision.total_score,
         "reasons": access_reasons,
         "breakdown": breakdown,
         # SHAP ของ point view (23 ฟีเจอร์) — คีย์เดิม UI/audit ใช้อยู่
         "iforest_explanation": l3["point"]["explanation"],
-        # ── แกนที่ 2: monitoring — L3 เท่านั้น ──
-        # L3 มีอำนาจแค่ตั้งค่าใน field นี้ ("normal" | "l3_investigate")
-        # ห้ามให้ L3 ไปแตะ "decision"/"score"/"reasons" ข้างบนเด็ดขาด
+        # ── แกนที่ 2: monitoring — เก็บผล L3 แยกไว้เสมอ ──
         # (บังคับด้วย tests/test_l3_access_monitoring_split.py)
         "monitoring_decision": l3["monitoring_decision"],
         "l3_sequence": seq_contract,

@@ -134,8 +134,9 @@ def test_file_errors_abstain_without_breaking_login(tmp_path):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("baseline", ["allow", "warn", "challenge", "block"])
-async def test_production_engine_preserves_access_and_only_warns_for_allow(
-    monkeypatch, tmp_path, baseline
+@pytest.mark.parametrize("decision_trial", [False, True])
+async def test_production_engine_percentile_trial_is_opt_in(
+    monkeypatch, tmp_path, baseline, decision_trial
 ):
     import json
 
@@ -152,6 +153,8 @@ async def test_production_engine_preserves_access_and_only_warns_for_allow(
     # ทดสอบกลไก percentile (monitoring-only) แยกจากตัวสำรองระดับ warn ที่ยกการตัดสิน
     # (tests/test_l3_fallback_warn.py) — ปิดตัวหลังเพื่อให้เห็นว่ากลไกนี้เองไม่เปลี่ยน decision
     monkeypatch.setattr(settings, "l3_fallback_warn_enabled", False)
+    monkeypatch.setattr(settings, "l3_decision_trial_enabled", decision_trial)
+    monkeypatch.setattr(settings, "l3_decision_trial_challenge_percentile", 0.99)
     monkeypatch.setattr(
         E, "evaluate_rules", lambda *a, **kw: RuleResult(False, 0.0, [])
     )
@@ -182,9 +185,11 @@ async def test_production_engine_preserves_access_and_only_warns_for_allow(
             return "student"
 
     result = await E.evaluate_login_risk([0] * 23, "user", None, None, DB())
-    assert result["decision"] == baseline
+    expected = "challenge" if decision_trial and baseline == "allow" else baseline
+    assert result["decision"] == expected
     assert result["score"] == 0.2
-    assert result["reasons"] == ["baseline"]
+    assert result["reasons"][0] == "baseline"
+    assert len(result["reasons"]) == (2 if expected != baseline else 1)
     inputs = result["breakdown"]["l3_point_features"]
     assert len(inputs) == 23
     assert inputs[0] == {"feature": "hour_of_day", "value": 0.0}
