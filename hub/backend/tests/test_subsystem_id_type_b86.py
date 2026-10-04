@@ -70,10 +70,9 @@ async def test_new_device_on_regular_subsystem_is_not_blocked(
     url = await finalize(db, env, ip, ua=UA_NEW_DEVICE)  # ต้องไม่ raise 403
     assert not _has_new_subsystem(cap["risk"]), cap["risk"]["reasons"]
     assert cap["risk"]["score"] < settings.risk_block_hard_threshold
-    # A single environment change no longer forces challenge in current policy.
-    assert cap["risk"]["decision"] == "warn"
-    assert url.startswith(env["authreq"]["redirect_uri"]), url
-    assert "code=" in url
+    # Environment novelty requires verification; a known subsystem stays known.
+    assert cap["risk"]["decision"] == "challenge"
+    assert url.startswith("/auth/passkey/risk-stepup?challenge="), url
     assert cap["risk"]["breakdown"]["rule_context"]["policy_version"] == "contextual-challenge-v1"
 
 
