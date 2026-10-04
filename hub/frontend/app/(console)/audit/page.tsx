@@ -469,7 +469,6 @@
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { Topbar } from "@/components/Topbar";
-import { SlidePanel } from "@/components/SlidePanel";
 import { clientFetch } from "@/lib/api";
 import { parseUserAgent } from "@/lib/ua";
 import {
@@ -619,7 +618,7 @@ function AuditPageInner() {
     );
   }, [items, q]);
 
-  const current = shown.find((r) => r.id === selected) ?? null;
+  const current = shown.find((r) => r.id === selected) ?? shown[0] ?? null;
 
   const total = data?.total ?? 0;
   const page = Math.floor(skip / PAGE_SIZE) + 1;
@@ -833,22 +832,26 @@ function AuditPageInner() {
             </div>
           </article>
 
-          <SlidePanel
-            open={!!current}
-            onClose={() => setSelected(null)}
-            title="รายละเอียดเหตุการณ์ Audit"
-          >
-            {current && (
-              <div className="cx-audit-detail cx-audit-detail-panel">
-                <div className="cx-audit-detail-modal-head">
-                  <div>
-                    <span className="mono">EVENT INSPECTOR</span>
-                    <h2>{auditPresentation(current.action).title}</h2>
-                  </div>
-                  <span className={`cx-chip ${auditTone(current.action)}`}>
-                    {auditPresentation(current.action).result}
-                  </span>
-                </div>
+          {/* ── รายละเอียดเหตุการณ์ที่เลือก ── */}
+          <aside className="cx-panel cx-audit-detail">
+            <header>
+              <div>
+                <span className="mono">EVENT INSPECTOR</span>
+                <h2>รายละเอียดเหตุการณ์</h2>
+              </div>
+              {current && (
+                <span className={`cx-chip ${auditTone(current.action)}`}>
+                  {auditPresentation(current.action).result}
+                </span>
+              )}
+            </header>
+
+            {!current ? (
+              <div className="cx-empty sm">
+                <strong>เลือกเหตุการณ์เพื่อดูรายละเอียด</strong>
+              </div>
+            ) : (
+              <>
                 <div className={`cx-audit-explanation ${auditTone(current.action)}`}>
                   <small>เกิดอะไรขึ้น</small>
                   <b>{auditPresentation(current.action).title}</b>
@@ -919,9 +922,9 @@ function AuditPageInner() {
                       : "—"}
                   </code>
                 </div>
-              </div>
+              </>
             )}
-          </SlidePanel>
+          </aside>
         </section>
       </main>
     </div>
