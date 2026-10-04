@@ -108,6 +108,7 @@ class Settings(BaseSettings):
     # Deployment อยู่หลัง NAT ร่วม (campus/office) — ผู้ใช้ทุกคนใช้ public IP เดียวกัน
     # -> ปิดกฎ multi_account_ip ที่จะยิงใส่ login ปกติ ~26% โดยไม่มีข้อมูลจริง
     # (ตั้ง SHARED_NAT=true ใน .env สำหรับ deployment หลัง campus NAT)
+    risk_contextual_trial_enabled: bool = False  # opt-in scoring/session policy trial
     shared_nat: bool = False
 
     # L3 sequence channel — per-user joint-residual anomaly เป็น "ธงเฝ้าระวัง" (warn เท่านั้น)

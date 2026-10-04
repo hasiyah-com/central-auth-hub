@@ -456,3 +456,33 @@ def test_challenge_with_verified_passkey_proof_controls_trusted_history(user, db
     feats = extract_session_features(db, user.id, "1.2.3.4", _UA_IPHONE, "TH")
     assert feats[IDX["is_new_device"]] == expected
     assert feats[IDX["is_new_user_agent_family"]] == expected
+
+
+def test_trial_counts_authenticated_sessions_only(user, db, monkeypatch):
+    from app.config import settings
+    from app.services.auth_evidence import authentication_evidence
+    monkeypatch.setattr(settings, 'risk_contextual_trial_enabled', True)
+    when = datetime.utcnow() - timedelta(minutes=1)
+    for decision in ('challenge', 'challenge', 'block'):
+        _add_session(db, user, decision=decision, created_at=when)
+    proof = {'risk_decision': 'challenge', 'authentication': authentication_evidence(
+        'passkey', verified=True, user_verified=True, stage='step_up')}
+    _add_session(db, user, decision='mfa_passed', risk_breakdown=proof, created_at=when)
+    values = extract_session_features(db,user.id,None,None)
+    assert values[IDX['concurrent_session_count']] == 1
+    assert values[IDX['active_subsystem_count']] == 0
+    monkeypatch.setattr(settings, 'risk_contextual_trial_enabled', False)
+    assert extract_session_features(db,user.id,None,None)[IDX['concurrent_session_count']] == 4
+
+
+def test_trial_behavior_profile_ignores_unverified_attempts(user, db, monkeypatch):
+    from app.config import settings
+    from app.security.behavior_profiling import get_user_profile
+    monkeypatch.setattr(settings, 'risk_contextual_trial_enabled', True)
+    when = datetime.utcnow() - timedelta(minutes=1)
+    for _ in range(5):
+        _add_session(db,user,decision='challenge',created_at=when)
+    assert get_user_profile(db,user.id) is None
+    for _ in range(5):
+        _add_session(db,user,decision='mfa_passed',created_at=when)
+    assert get_user_profile(db,user.id)['total'] == 5

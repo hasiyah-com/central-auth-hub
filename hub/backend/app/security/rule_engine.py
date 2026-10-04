@@ -11,6 +11,7 @@
   - Laperdrix et al. (2020) — UA family change signal
 """
 
+import math
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
@@ -192,6 +193,8 @@ def _evaluate_rules(
     ถ้าระบบอื่นเพิ่งเสี่ยง → escalate ระบบนี้). None = Hub-direct (ไม่ propagate)
     """
 
+    trial = settings.risk_contextual_trial_enabled and not legacy
+
     # ── IP Blacklist check ──
     if ip and is_blacklisted(db, ip):
         return RuleResult(
@@ -254,6 +257,8 @@ def _evaluate_rules(
         # legacy_replay ต้องคงผล frozen experiment เดิมที่เคยบวกช่วงซ้อนกันทุกบิต
         if not legacy and exclusive_group in matched_exclusive_groups:
             continue
+        if trial and feat_name == "is_new_user_agent_family" and features[FEAT["is_new_device"]] == 1:
+            continue  # browser novelty is already represented by device signature
         value = features[FEAT[feat_name]]
         if feat_name == "failed_logins_24h":
             value = failed_post
@@ -270,7 +275,8 @@ def _evaluate_rules(
                 matched_exclusive_groups.add(exclusive_group)
             contextual = feat_name in {"is_new_device", "is_new_user_agent_family",
                                        "new_passkey_recently_added", "permission_change_age"}
-            if min_act and (legacy or not contextual):
+            session_signal = feat_name in {"concurrent_session_count", "active_subsystem_count"}
+            if min_act and (legacy or not contextual) and not (trial and session_signal):
                 floor_rank = max(floor_rank, _ACTION_RANK[min_act])
 
     if not legacy:
@@ -297,15 +303,23 @@ def _evaluate_rules(
         if permission and context.latest_permission_approved:
             reasons.append("permission_change_approved (matched latest admin grant)")
 
+    if trial and (features[FEAT["concurrent_session_count"]] >= 3 or
+                  features[FEAT["active_subsystem_count"]] >= 2):
+        if (device or features[FEAT["is_new_country"]] == 1 or failed_post >= 5
+                or context.recent_recovery_or_reset):
+            floor_rank = max(floor_rank, _ACTION_RANK["challenge"])
+            reasons.append("session_context_stepup (session activity with independent risk signal)")
+
     # ── Velocity compound (B60): ล็อกอินถี่มาก + จำนวนสูง = credential stuffing/replay ──
     # ต้องเป็น compound (2 ฟีเจอร์) จึงอยู่นอก SCORE_RULES ที่เป็น single-feature
     if (
-        features[FEAT["log_minutes_since_last_login"]] <= 2.0
+        features[FEAT["log_minutes_since_last_login"]] <= (math.log(2.0) if trial else 2.0)
         and features[FEAT["login_count_24h"]] >= 5
     ):
         score += 0.25
         reasons.append("login_velocity (+0.25)")
-        floor_rank = max(floor_rank, _ACTION_RANK["challenge"])
+        if not trial or failed_post >= 5 or features[FEAT["is_new_country"]] == 1 or context.recent_recovery_or_reset:
+            floor_rank = max(floor_rank, _ACTION_RANK["challenge"])
 
     # ── Geo (เพิ่ม): login จาก "ประเทศใหม่ที่เป็นต่างประเทศ" (ไม่ใช่แค่ domestic ใหม่) ──
     # is_new_country(0.3)+is_thailand=0(0.1)+new_foreign(0.3) = 0.7 → ถึงเกณฑ์ challenge (step-up MFA)
@@ -318,7 +332,7 @@ def _evaluate_rules(
     # ระบบย่อยอื่นเพิ่งมี login เสี่ยงสูง (เช่น ระบบ 1 ได้ 0.7) → พอ user เข้าระบบนี้
     # ให้ "ระแวง" มากขึ้น (escalate). Hub เห็น login ทุกระบบใน DB เดียว → ทำได้
     if subsystem_id is not None:
-        cross = _check_cross_subsystem_risk(db, user_id, subsystem_id)
+        cross = _check_cross_subsystem_risk(db, user_id, subsystem_id, use_trial=trial)
         if cross:
             boost, reason = cross
             score += boost
@@ -356,7 +370,7 @@ def _evaluate_rules(
 
 
 def _check_cross_subsystem_risk(
-    db: Session, user_id: str, current_subsystem_id
+    db: Session, user_id: str, current_subsystem_id, *, use_trial: bool = False
 ) -> tuple[float, str] | None:
     """ระบบย่อย *อื่น* เพิ่งมี login เสี่ยงสูงไหม (risk propagation ระหว่างระบบ).
 
@@ -368,17 +382,31 @@ def _check_cross_subsystem_risk(
     (เลี่ยง feedback loop). Explainable: โผล่ใน rule reasons.
     """
     cutoff = datetime.utcnow() - timedelta(minutes=CROSS_SUBSYSTEM_WINDOW_MIN)
-    recent_max = (
-        db.query(func.max(LoginSession.risk_score))
-        .filter(
+    if use_trial:
+        from app.services.auth_evidence import trusted_history, verified_strong_auth
+        rows = db.query(LoginSession).filter(
             LoginSession.user_id == user_id,
             LoginSession.subsystem_id.is_not(None),
             LoginSession.subsystem_id != current_subsystem_id,
             LoginSession.created_at >= cutoff,
             LoginSession.risk_score.is_not(None),
+        ).all()
+        unresolved = [float(s.risk_score) for s in rows if not trusted_history(
+            s.decision, s.risk_breakdown, s.is_attack_ip, s.is_account_takeover)
+            or not verified_strong_auth(s.risk_breakdown)]
+        recent_max = max(unresolved, default=None)
+    else:
+        recent_max = (
+            db.query(func.max(LoginSession.risk_score))
+            .filter(
+                LoginSession.user_id == user_id,
+                LoginSession.subsystem_id.is_not(None),
+                LoginSession.subsystem_id != current_subsystem_id,
+                LoginSession.created_at >= cutoff,
+                LoginSession.risk_score.is_not(None),
+            )
+            .scalar()
         )
-        .scalar()
-    )
     if recent_max is None:
         return None
     recent_max = float(recent_max)
