@@ -89,17 +89,20 @@ export function SessionDetailPanel({ session, onFeedbackSaved, hideUserLink }: P
     riskScore >= 0.8 ? "bg-rose-500" : riskScore >= 0.5 ? "bg-amber-500" : riskScore >= 0.3 ? "bg-yellow-400" : "bg-emerald-500";
   const deviceIcon = DEVICE_ICON[session.device_type || "unknown"] || DEVICE_ICON.unknown;
   const bd = session.risk_breakdown;
+  const riskDecision = bd?.risk_decision || (session.decision === "mfa_passed" ? "unknown" : session.decision) || "unknown";
+  const authentication = bd?.authentication;
 
   return (
     <div className="space-y-6">
       {/* ── 1. Risk Score header ── */}
       <div>
+        <h3 className="mb-2 text-sm font-semibold text-ink-700">ผลประเมินความเสี่ยง</h3>
         <div className="flex items-center gap-4">
           <span className="text-4xl font-extrabold tabular-nums text-ink-900">
             {riskScore.toFixed(3)}
           </span>
-          <Badge tone={DECISION_TONE[session.decision || "unknown"] || "default"}>
-            {(session.decision || "unknown").toUpperCase()}
+          <Badge tone={DECISION_TONE[riskDecision] || "default"}>
+            {riskDecision.toUpperCase()}
           </Badge>
         </div>
         <div className="mt-2 h-2 w-full bg-ink-100 rounded-full overflow-hidden">
@@ -158,6 +161,20 @@ export function SessionDetailPanel({ session, onFeedbackSaved, hideUserLink }: P
           <ShapBreakdown items={bd?.iforest_explanation || []} inputs={bd?.l3_point_features || []} />
         )}
       </div>
+
+      <section className="rounded-xl border border-ink-100 bg-ink-50 p-4 text-sm">
+        <h3 className="font-semibold text-ink-800">ผลยืนยันตัวตน</h3>
+        {authentication ? (
+          <div className="mt-2 space-y-1 text-ink-600">
+            <p>{authentication.verified ? (authentication.stage === "step_up" ? "ยืนยันเพิ่มเติมสำเร็จ" : "ยืนยันขั้นต้นสำเร็จ") : "ยังไม่ยืนยันสำเร็จ"}</p>
+            <p>วิธีที่ใช้: {authentication.method}</p>
+            <p>User Verification: {authentication.user_verified === true ? "ผ่านการตรวจ PIN/ชีวมิติของ Passkey" : authentication.user_verified === false ? "ไม่ผ่าน/ไม่ได้ตรวจ" : "ไม่เกี่ยวข้องหรือไม่มีหลักฐานบันทึก"}</p>
+            {authentication.counter_regression && <p className="text-rose-600">พบ counter regression — ไม่ใช้เป็นประวัติอุปกรณ์ที่เชื่อถือได้</p>}
+            {session.decision === "challenge" && authentication.stage !== "step_up" && !authentication.user_verified && <p className="text-amber-700">ต้องยืนยันเพิ่มเติม</p>}
+          </div>
+        ) : <p className="mt-2 text-ink-500">รายการเก่า: ไม่มีหลักฐานวิธีและ User Verification แยกไว้</p>}
+        {bd?.risk_shadow_decision && <p className="mt-3 text-xs text-ink-500">ผลจำลองสำหรับวิเคราะห์: {bd.risk_shadow_decision.toUpperCase()}</p>}
+      </section>
 
       {/* ── 2. Detail grid ── */}
       <div className="grid grid-cols-2 gap-x-6 gap-y-3 text-sm">

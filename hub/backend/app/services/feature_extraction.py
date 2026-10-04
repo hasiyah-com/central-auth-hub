@@ -40,6 +40,7 @@ from datetime import datetime, timedelta
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
+from app.services.auth_evidence import trusted_history
 from app.models import AuditLog, LoginSession, User
 from app.services.feature_time import as_bangkok, as_utc_naive
 
@@ -347,18 +348,17 @@ def extract_session_features(
         # แยกกันเพราะ geo_country เป็น NULL บ่อยมากใน deployment นี้ (private/NAT IP —
         # ดู CLAUDE.md gotcha #4) → ถ้าใช้ has_history รวมจะกลายเป็นประเทศใหม่ผิดๆ
         country_rows = (
-            db.query(LoginSession.geo_country, LoginSession.decision)
+            db.query(LoginSession.geo_country, LoginSession.decision, LoginSession.risk_breakdown, LoginSession.is_attack_ip, LoginSession.is_account_takeover)
             .filter(
                 LoginSession.user_id == user_id,
                 LoginSession.geo_country.is_not(None),
                 LoginSession.created_at < now,  # point-in-time
             )
-            .distinct()
             .all()
         )
         has_country_history = len(country_rows) > 0
         # trusted เท่านั้น (B57) — ประเทศที่โผล่เฉพาะใน session ที่ถูก flag ไม่นับว่า "เคยเห็น"
-        seen_set = {c for c, dec in country_rows if dec in TRUSTED_DECISIONS}
+        seen_set = {c for c, dec, bd, ip_attack, takeover in country_rows if trusted_history(dec, bd, ip_attack, takeover)}
         if has_country_history and geo_country not in seen_set:
             is_new_country = 1.0
 
@@ -388,17 +388,16 @@ def extract_session_features(
         # ผลรวม: user ที่มีประวัติแต่ยังไม่เคยมี login ที่พิสูจน์แล้ว → ทุกเครื่องเป็นเครื่องใหม่
         # (ไม่ใช่ตกไปเป็น cold-start neutral ซึ่งจะกลายเป็นช่องให้ attacker ได้คะแนนต่ำ)
         ua_rows = (
-            db.query(LoginSession.user_agent, LoginSession.decision)
+            db.query(LoginSession.user_agent, LoginSession.decision, LoginSession.risk_breakdown, LoginSession.is_attack_ip, LoginSession.is_account_takeover)
             .filter(
                 LoginSession.user_id == user_id,
                 LoginSession.user_agent.is_not(None),
                 LoginSession.created_at < now,  # point-in-time
             )
-            .distinct()
             .all()
         )
         has_ua_history = len(ua_rows) > 0
-        seen_ua_set = {ua for ua, dec in ua_rows if dec in TRUSTED_DECISIONS}
+        seen_ua_set = {ua for ua, dec, bd, ip_attack, takeover in ua_rows if trusted_history(dec, bd, ip_attack, takeover)}
 
         # is_new_device เทียบ device signature ที่เสถียร (ไม่ใช่ UA string เต็ม) —
         # กัน browser อัปเดต build number แล้วกลายเป็น "เครื่องใหม่" ทุกครั้ง (B56)

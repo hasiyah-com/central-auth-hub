@@ -517,6 +517,7 @@ async def _finalize_subsystem_login(
     db: Session,
     provider: str,
     counter_regression: bool = False,
+    user_verified: bool | None = None,
 ) -> str:
     """Logic หลังยืนยันตัวตนแล้ว (provider-agnostic) → คืน callback_url.
 
@@ -626,26 +627,31 @@ async def _finalize_subsystem_login(
         subsystem_name=subsystem_for_alert.name if subsystem_for_alert else None,
     )
 
-    db.add(
-        LoginSession(
-            user_id=user.id,
-            subsystem_id=authreq["subsystem_id"],
-            ip=client_ip,
-            user_agent=user_agent,
-            geo_country=geo_country,
-            geo_city=geo_city,
-            os_name=parse_os_name(user_agent),
-            browser=parse_browser(user_agent),
-            device_type=parse_device_type(user_agent),
-            anomaly_score=anomaly_score,
-            risk_score=risk_score,
-            risk_breakdown=risk_breakdown,
-            risk_reasons=risk_reasons,
-            decision=actual_decision,
-            is_attack_ip=is_blacklisted(db, client_ip),
-            login_method=provider,
-        )
+    from app.services.auth_evidence import authentication_evidence
+    risk_breakdown = {**risk_breakdown, "authentication": authentication_evidence(
+        provider, verified=True, user_verified=user_verified, counter_regression=counter_regression)}
+    login_session = LoginSession(
+        user_id=user.id,
+        subsystem_id=authreq["subsystem_id"],
+        ip=client_ip,
+        user_agent=user_agent,
+        geo_country=geo_country,
+        geo_city=geo_city,
+        os_name=parse_os_name(user_agent),
+        browser=parse_browser(user_agent),
+        device_type=parse_device_type(user_agent),
+        anomaly_score=anomaly_score,
+        risk_score=risk_score,
+        risk_breakdown=risk_breakdown,
+        risk_reasons=risk_reasons,
+        decision=actual_decision,
+        is_attack_ip=is_blacklisted(db, client_ip),
+        login_method=provider,
     )
+    db.add(login_session)
+    db.flush()
+    risk_breakdown = {**risk_breakdown, "login_session_id": str(login_session.id)}
+    login_session.risk_breakdown = risk_breakdown
 
     # ─── Risk-Triggered Decision (Week 9-10) ─────────────────────────────
     # Hard block ที่ finalizer (single source of truth) — ไม่พึ่ง aggregator
@@ -978,6 +984,7 @@ async def oauth_passkey_finish(
         db=db,
         provider="passkey",
         counter_regression=result.counter_regression,
+        user_verified=result.user_verified,
     )
     return {"redirect_url": callback_url}
 

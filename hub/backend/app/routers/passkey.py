@@ -61,6 +61,7 @@ from app.services.feature_extraction import (
 )
 from app.services.geoip import lookup_country, lookup_geo
 from app.services.ip_blacklist import is_blacklisted
+from app.services.auth_evidence import authentication_evidence, record_authentication
 from app.services.jwt_service import create_access_token
 from app.services import refresh_token_service
 from app.security.risk_engine import evaluate_login_risk
@@ -187,9 +188,12 @@ async def _build_login_session(result, request, jti, db, method: str) -> LoginSe
     )
 
     # Authentication outcome is distinct from the retained risk assessment.
-    risk_breakdown = {**risk_breakdown, "risk_decision": risk["decision"]}
+    risk_breakdown = {**risk_breakdown, "risk_decision": risk["decision"],
+        "authentication": authentication_evidence(method, verified=True,
+            user_verified=getattr(result, "user_verified", False),
+            counter_regression=result.counter_regression)}
     authenticated_decision = (
-        "mfa_passed" if not result.counter_regression
+        "mfa_passed" if getattr(result, "user_verified", False) and not result.counter_regression
         and risk["decision"] not in ("block", "would_block")
         else "would_block" if risk["decision"] == "block" else risk["decision"]
     )
@@ -1355,6 +1359,8 @@ def _finalize_after_reauth(
     request: Request,
     db: Session,
     method: str = "passkey",
+    user_verified: bool | None = None,
+    counter_regression: bool = False,
 ) -> str:
     """หลัง re-auth ผ่าน → ออก authorization code (subsystem) หรือ JWT (hub_direct).
 
@@ -1363,6 +1369,7 @@ def _finalize_after_reauth(
     """
     flow = payload.get("flow")
     client_ip = get_client_ip(request)
+    session_id = (payload.get("risk_breakdown") or {}).get("login_session_id")
 
     if flow == "subsystem":
         authreq = payload["authreq"]
@@ -1418,12 +1425,14 @@ def _finalize_after_reauth(
             db.query(LoginSession)
             .filter(
                 LoginSession.user_id == user.id,
+                *([LoginSession.id == session_id] if session_id else []),
                 LoginSession.subsystem_id == authreq["subsystem_id"],
             )
             .order_by(LoginSession.created_at.desc())
             .first()
         )
         if latest:
+            record_authentication(latest, method, user_verified=user_verified, counter_regression=counter_regression)
             latest.decision = "mfa_passed"
         log_action(
             db,
@@ -1447,13 +1456,14 @@ def _finalize_after_reauth(
     access_token, token_jti = create_access_token(user)
     latest = (
         db.query(LoginSession)
-        .filter(LoginSession.user_id == user.id)
+        .filter(LoginSession.user_id == user.id, *([LoginSession.id == session_id] if session_id else []))
         .order_by(LoginSession.created_at.desc())
         .first()
     )
     refresh_token = None
     if latest:
         latest.jti = token_jti
+        record_authentication(latest, method, user_verified=user_verified, counter_regression=counter_regression)
         latest.decision = "mfa_passed"
         refresh_token, refresh_id = refresh_token_service.issue(
             user_id=str(user.id), session_id=str(latest.id)
@@ -1587,7 +1597,8 @@ async def risk_stepup_verify(
     if not consumed:
         raise HTTPException(status_code=410, detail="challenge ถูกใช้ไปแล้ว — login ใหม่")
     redirect_url = _finalize_after_reauth(
-        user=user, payload=consumed, request=request, db=db
+        user=user, payload=consumed, request=request, db=db,
+        user_verified=result.user_verified, counter_regression=result.counter_regression
     )
     db.commit()
     return JSONResponse({"redirect_url": redirect_url})
@@ -1894,7 +1905,7 @@ async def force_enroll_register_complete(
 
     # mint redirect URL (same finalizer as re-auth — issues auth code/JWT)
     redirect_url = _finalize_after_reauth(
-        user=user, payload=consumed, request=request, db=db
+        user=user, payload=consumed, request=request, db=db, method="passkey_enrollment", user_verified=True
     )
     db.commit()
     return JSONResponse(

@@ -99,7 +99,7 @@ async def evaluate_login_risk(
             "decision": decision.decision,
             "score": decision.total_score,
             "reasons": decision.reasons,
-            "breakdown": {**decision.breakdown, **({"l3_auth_candidate": candidate} if candidate else {})},
+            "breakdown": {"risk_decision": decision.decision, "risk_shadow_decision": "would_block" if shadow_mode else None, **decision.breakdown, **({"l3_auth_candidate": candidate} if candidate else {})},
             # hard block ข้าม L3 ไปเลย — คง shape ของ response ให้เท่ากันทุกเส้นทาง
             "iforest_explanation": [],
             "monitoring_decision": "normal",
@@ -155,8 +155,12 @@ async def evaluate_login_risk(
     # เก็บลง breakdown (LoginSession.risk_breakdown เป็น JSON — ไม่ต้อง migration)
     # ทำที่นี่จุดเดียวครอบคลุมทุก call site (auth x3, oauth, passkey)
     # `iforest_raw` ยังเก็บค่าจริงไว้เหมือนเดิม — เปลี่ยนแค่ว่ามันไม่ถูกบวกเข้า total
+    from app.services.auth_evidence import authentication_evidence
     breakdown = {
+        "risk_decision": decision.decision,
+        "risk_shadow_decision": ("would_" + decision.decision if shadow_mode and decision.decision in ("warn", "challenge") else decision.decision if shadow_mode and decision.decision == "would_block" else None),
         **decision.breakdown,
+        **({"authentication": authentication_evidence(login_method, verified=True)} if login_method else {}),
         "rule_context": context.snapshot(),
         "iforest_raw": round(l3["point"]["anomaly_score"], 4),
         # All login routers persist breakdown, including Hub Google/LINE.
