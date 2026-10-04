@@ -220,6 +220,8 @@ def stepup_totp_verify(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail={"code": "totp_verify_failed", "message": "รหัสไม่ถูกต้อง"},
         )
+    from app.services import auth_retry
+    auth_retry.succeeded(user.id, "totp")
     jti = _extract_jti(credentials)
     if not jti:
         raise HTTPException(status_code=400, detail="token ไม่มี jti")

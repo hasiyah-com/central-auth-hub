@@ -75,7 +75,7 @@ def _email_only_failures(db, user, n=N_ATTACK):
                 target_id=user.id,  # ให้ cleanup ลบได้ · ไม่มีผลต่อการนับ
                 ip="192.0.2.66",
                 metadata_json={"email": user.email, "code": "invalid"},
-                created_at=now - timedelta(minutes=30 + i),
+                created_at=now - timedelta(seconds=30 + i),
             )
         )
     db.commit()
@@ -91,14 +91,14 @@ def _post_factor_failures(db, user, n=N_ATTACK):
                 target_type="user",
                 target_id=user.id,
                 metadata_json={"method": "totp"},
-                created_at=now - timedelta(minutes=30 + i),
+                created_at=now - timedelta(seconds=30 + i),
             )
         )
     db.commit()
 
 
 def _failed_score_reasons(risk: dict) -> list[str]:
-    return [r for r in risk["reasons"] if r.startswith("failed_logins_24h (+")]
+    return [r for r in risk["reasons"] if r.startswith("failed_auth_consecutive_10m (+")]
 
 
 def _redeem(client, env, url: str) -> None:
@@ -343,3 +343,45 @@ def test_unknown_rule_mode_rejected():
         evaluate_rules(
             _vec(0.0), db=None, user_id="u", ip=None, geo_country=None, mode="x"
         )
+
+
+def test_daily_failures_expire_from_live_counter(db, env):
+    from app.services.auth_failures import count_recent_consecutive_auth
+    user = env['user']
+    _post_factor_failures(db, user)
+    db.query(AuditLog).filter(AuditLog.actor_id == user.id,
+        AuditLog.action == 'stepup_totp_failed').update(
+        {AuditLog.created_at: datetime.utcnow() - timedelta(minutes=30)})
+    db.commit()
+    assert count_recent_consecutive_auth(db, user.id, datetime.utcnow(), post_factor_only=True) == 0
+
+
+def test_success_resets_recent_factor_without_deleting_audit(db, env):
+    from app.services.auth_failures import count_recent_consecutive_auth
+    user = env['user']
+    _post_factor_failures(db, user)
+    db.add(AuditLog(actor_id=user.id, action='stepup_totp_success',
+        target_type='user', target_id=user.id, metadata_json={'method': 'totp'},
+        created_at=datetime.utcnow() - timedelta(seconds=1)))
+    db.commit()
+    assert count_recent_consecutive_auth(db, user.id, datetime.utcnow(), post_factor_only=True) == 0
+    assert db.query(AuditLog).filter(AuditLog.actor_id == user.id,
+        AuditLog.action == 'stepup_totp_failed').count() == N_ATTACK
+
+
+def test_risk_retry_backoff_is_account_and_factor_scoped(env):
+    from app.services import auth_retry
+    user_id = env['user'].id
+    try:
+        auth_retry.succeeded(user_id, 'totp')
+        assert auth_retry.failed(user_id, 'totp') == 0
+        assert auth_retry.failed(user_id, 'totp') == 0
+        assert auth_retry.failed(user_id, 'totp') == 30
+        with pytest.raises(HTTPException) as error:
+            auth_retry.check(user_id, 'totp')
+        assert error.value.status_code == 429
+        auth_retry.check(user_id, 'passkey')
+        auth_retry.succeeded(user_id, 'totp')
+        auth_retry.check(user_id, 'totp')
+    finally:
+        auth_retry.succeeded(user_id, 'totp')

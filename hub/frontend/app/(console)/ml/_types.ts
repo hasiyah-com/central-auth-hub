@@ -199,6 +199,7 @@ export const FEATURE_LABEL_TH: Record<string, string> = {
   is_new_user_agent_family: "เบราว์เซอร์ใหม่",
   log_minutes_since_last_login: "เวลาห่างจากล็อกอินก่อนหน้า",
   login_count_24h: "จำนวนล็อกอินใน 24 ชม.",
+  failed_auth_consecutive_10m: "ยืนยันล้มเหลวต่อเนื่องใน 10 นาที",
   failed_logins_24h: "ล็อกอินล้มเหลวใน 24 ชม.",
   passkey_count: "จำนวน Passkey",
   passkey_age_days: "อายุ Passkey (วัน)",

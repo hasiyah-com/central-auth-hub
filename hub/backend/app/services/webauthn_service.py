@@ -683,6 +683,10 @@ def auth_complete(
     credential.last_used_user_agent = (user_agent or None) and user_agent[:500]
     db.flush()
 
+    if not counter_regression:
+        from app.services import auth_retry
+        auth_retry.succeeded(user.id, "passkey")
+
     return AuthResult(
         user=user,
         credential=credential,
@@ -829,6 +833,10 @@ def discoverable_complete(
     credential.last_used_user_agent = (user_agent or None) and user_agent[:500]
     db.flush()
 
+    if not counter_regression:
+        from app.services import auth_retry
+        auth_retry.succeeded(user.id, "passkey")
+
     return AuthResult(
         user=user,
         credential=credential,
@@ -972,6 +980,10 @@ def stepup_complete(
     credential.last_used_ip = ip
     credential.last_used_user_agent = (user_agent or None) and user_agent[:500]
     db.flush()
+
+    if not counter_regression:
+        from app.services import auth_retry
+        auth_retry.succeeded(user.id, "passkey")
 
     return AuthResult(
         user=user,

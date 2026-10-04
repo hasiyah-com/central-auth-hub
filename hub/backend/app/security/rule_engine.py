@@ -19,7 +19,7 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.models import LoginSession
-from app.services.feature_extraction import count_failed_auth
+from app.services.auth_failures import count_recent_consecutive_auth
 from app.services.ip_blacklist import is_blacklisted
 from app.services.rule_context import RuleContext
 
@@ -217,6 +217,7 @@ def _evaluate_rules(
     # challenge floor — เจ้าของบัญชียังยืนยันตัวตนเพิ่มแล้วเข้าได้
     failed_total = features[FEAT["failed_logins_24h"]]
     failed_post = failed_total
+    failed_recent_total = failed_total
     if not legacy and failed_total >= FAILED_SPLIT_MIN:
         if db is None:
             raise RuleEvaluationError(
@@ -225,12 +226,10 @@ def _evaluate_rules(
                 " ให้เรียก mode='legacy_replay' (และห้ามรายงานผลเป็นกฎปัจจุบัน)"
             )
         now = datetime.utcnow()
-        failed_post = float(
-            count_failed_auth(
-                db, user_id, now - timedelta(hours=24), now, post_factor_only=True
-            )
-        )
+        failed_post = float(count_recent_consecutive_auth(db, user_id, now, post_factor_only=True))
+        failed_recent_total = float(count_recent_consecutive_auth(db, user_id, now))
 
+    # Daily feature stays unchanged for ML/audit; live rules use 10-minute consecutive counts.
     # ── Hard Block rules (from features) ──
     for feat_name, op, threshold in HARD_BLOCK_RULES:
         value = features[FEAT[feat_name]]
@@ -240,7 +239,7 @@ def _evaluate_rules(
             return RuleResult(
                 blocked=True,
                 score=1.0,
-                reasons=[f"{feat_name}={value:.0f} >= {threshold} (hard block)"],
+                reasons=[f"{'failed_auth_consecutive_10m' if feat_name == 'failed_logins_24h' and not legacy else feat_name}={value:.0f} >= {threshold} (hard block)"],
             )
 
     # ── Risk Score rules ──
@@ -265,7 +264,8 @@ def _evaluate_rules(
         )
         if hit:
             score += weight
-            reasons.append(f"{feat_name} (+{weight})")
+            reason_name = "failed_auth_consecutive_10m" if feat_name == "failed_logins_24h" and not legacy else feat_name
+            reasons.append(f"{reason_name} (+{weight})")
             if not legacy and exclusive_group:
                 matched_exclusive_groups.add(exclusive_group)
             contextual = feat_name in {"is_new_device", "is_new_user_agent_family",
@@ -283,7 +283,7 @@ def _evaluate_rules(
         unexplained_permission = permission and not context.latest_permission_approved
         novelty_count = sum((device, unverified_passkey, unexplained_permission))
         corroborated = (
-            failed_post >= 3 or features[FEAT["is_new_country"]] == 1
+            failed_post >= 5 or features[FEAT["is_new_country"]] == 1
             or context.recent_recovery_or_reset
         )
         if (novelty_count >= 2 or
@@ -337,11 +337,11 @@ def _evaluate_rules(
 
     if (
         not legacy
-        and failed_total >= FAILED_EMAIL_FLOOR_MIN
-        and failed_post < failed_total
+        and failed_recent_total >= FAILED_EMAIL_FLOOR_MIN
+        and failed_post < failed_recent_total
     ):
         reasons.append(
-            f"failed_logins_24h={failed_total:.0f} (หลังผ่านปัจจัยแรก {failed_post:.0f}) "
+            f"failed_auth_consecutive_10m={failed_recent_total:.0f} (หลังผ่านปัจจัยแรก {failed_post:.0f}) "
             "→ challenge floor ไม่บวกคะแนน"
         )
         floor_rank = max(floor_rank, _ACTION_RANK["challenge"])

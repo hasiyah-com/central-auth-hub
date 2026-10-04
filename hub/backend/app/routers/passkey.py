@@ -62,6 +62,8 @@ from app.services.feature_extraction import (
 from app.services.geoip import lookup_country, lookup_geo
 from app.services.ip_blacklist import is_blacklisted
 from app.services.auth_evidence import authentication_evidence, record_authentication
+from app.services import auth_retry
+from app.services.auth_failures import NEUTRAL_CODES
 from app.services.jwt_service import create_access_token
 from app.services import refresh_token_service
 from app.security.risk_engine import evaluate_login_risk
@@ -1443,6 +1445,7 @@ def _finalize_after_reauth(
             ip=client_ip,
             metadata={
                 "method": method,
+                "counter_regression": counter_regression,
                 "risk_score": payload.get("risk_score"),
             },
         )
@@ -1478,6 +1481,7 @@ def _finalize_after_reauth(
         ip=client_ip,
         metadata={
             "method": method,
+                "counter_regression": counter_regression,
             "risk_score": payload.get("risk_score"),
             "flow": "hub_direct",
         },
@@ -1561,6 +1565,7 @@ async def risk_stepup_verify(
     if payload.get("kind") != "reauth":
         raise HTTPException(status_code=400, detail="challenge นี้ไม่ใช่สำหรับ re-auth")
     ip = get_client_ip(request)
+    auth_retry.check(user.id, "passkey")
     try:
         result = webauthn_service.stepup_complete(
             user,
@@ -1571,6 +1576,8 @@ async def risk_stepup_verify(
         )
     except HTTPException as e:
         code = e.detail.get("code") if isinstance(e.detail, dict) else None
+        if e.status_code == 401 and code not in NEUTRAL_CODES:
+            auth_retry.failed(user.id, "passkey")
         log_action(
             db,
             actor_id=user.id,
@@ -1582,6 +1589,8 @@ async def risk_stepup_verify(
         )
         db.commit()
         raise
+    if not result.counter_regression:
+        auth_retry.succeeded(user.id, "passkey")
     if result.counter_regression:
         log_action(
             db,
@@ -1626,7 +1635,9 @@ async def risk_stepup_verify_totp(
         raise HTTPException(status_code=400, detail="challenge นี้ไม่ใช่สำหรับ re-auth")
     ip = get_client_ip(request)
 
+    auth_retry.check(user.id, "totp")
     if not totp_service.verify_active(user.id, body.code, db):
+        auth_retry.failed(user.id, "totp")
         log_action(
             db,
             actor_id=user.id,
@@ -1642,6 +1653,7 @@ async def risk_stepup_verify_totp(
             detail={"code": "totp_invalid", "message": "รหัสไม่ถูกต้อง"},
         )
 
+    auth_retry.succeeded(user.id, "totp")
     consumed = risk_challenge.consume(body.challenge_id)
     if not consumed:
         raise HTTPException(status_code=410, detail="challenge ถูกใช้ไปแล้ว — login ใหม่")

@@ -18,7 +18,7 @@ def assess(monkeypatch, context=None, **signals):
     v[FEAT["permission_change_age"]] = 365
     for k, value in signals.items():
         v[FEAT[k]] = value
-    monkeypatch.setattr(rule_engine, "count_failed_auth", lambda *a, **k: signals.get("failed_logins_24h", 0))
+    monkeypatch.setattr(rule_engine, "count_recent_consecutive_auth", lambda *a, **k: signals.get("failed_logins_24h", 0))
     result = evaluate_rules(v, object(), "u", None, None, context=context)
     return result, aggregate(result, BehaviorResult(0, []), monitoring_only())
 
@@ -69,9 +69,10 @@ def test_recovery_still_requires_stepup_even_with_strong_primary(monkeypatch):
     assert d.decision == "challenge"
 
 
-def test_three_failures_corroborate_new_device(monkeypatch):
+def test_three_failures_do_not_force_stepup_with_new_device(monkeypatch):
     r, d = assess(monkeypatch, is_new_device=1, failed_logins_24h=3)
-    assert d.decision == "challenge"
+    assert d.decision == "warn"
+    assert r.min_action is None
 
 
 @pytest.mark.parametrize("failed,decision", [(5, "challenge"), (10, "block")])

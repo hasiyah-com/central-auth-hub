@@ -155,7 +155,7 @@ async def test_e2e_rba_hard_block_failed_logins(db, fresh_user):
                 action="stepup_totp_failed",
                 target_type="user",
                 target_id=fresh_user.id,
-                created_at=now - timedelta(minutes=10 + i),
+                created_at=now - timedelta(seconds=10 + i),
             )
         )
     db.commit()
