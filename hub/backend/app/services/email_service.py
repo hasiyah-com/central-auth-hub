@@ -7,6 +7,7 @@ Fail-safe: ถ้า SMTP ไม่ตั้งค่าจะ log warning + ret
 from __future__ import annotations
 
 import logging
+import socket
 import smtplib
 import ssl
 from datetime import datetime
@@ -18,12 +19,43 @@ from app.config import settings
 log = logging.getLogger(__name__)
 
 
+class EmailDeliveryError(RuntimeError):
+    """Safe, structured email failure for callers that must explain a failure."""
+
+    def __init__(self, code: str):
+        super().__init__(code)
+        self.code = code
+
+
+def _delivery_error_code(exc: Exception) -> str:
+    if isinstance(exc, smtplib.SMTPAuthenticationError):
+        return "smtp_authentication_failed"
+    if isinstance(exc, smtplib.SMTPRecipientsRefused):
+        return "recipient_rejected"
+    if isinstance(exc, smtplib.SMTPSenderRefused):
+        return "sender_rejected"
+    if isinstance(exc, smtplib.SMTPConnectError):
+        return "smtp_connection_failed"
+    if isinstance(exc, smtplib.SMTPException):
+        return "smtp_protocol_error"
+    if isinstance(exc, (socket.timeout, TimeoutError, OSError)):
+        return "smtp_connection_failed"
+    return "email_delivery_failed"
+
+
 def _smtp_configured() -> bool:
     """SMTP พร้อมใช้งานไหม — ต้องมี user + password + host."""
     return bool(settings.smtp_user and settings.smtp_password and settings.smtp_host)
 
 
-def _send_html_email(to: str, subject: str, html: str, text_fallback: str) -> bool:
+def _send_html_email(
+    to: str,
+    subject: str,
+    html: str,
+    text_fallback: str,
+    *,
+    raise_on_error: bool = False,
+) -> bool:
     """ส่ง HTML email ผ่าน SMTP (Gmail App Password / generic SMTP).
 
     Returns True ถ้าส่งสำเร็จ, False ถ้า fail (logged ภายใน — ไม่ raise).
@@ -35,6 +67,8 @@ def _send_html_email(to: str, subject: str, html: str, text_fallback: str) -> bo
             to,
             subject,
         )
+        if raise_on_error:
+            raise EmailDeliveryError("smtp_not_configured")
         return False
 
     msg = MIMEMultipart("alternative")
@@ -70,7 +104,15 @@ def _send_html_email(to: str, subject: str, html: str, text_fallback: str) -> bo
         log.info("Email sent — to=%s subject=%r", to, subject)
         return True
     except Exception as e:
-        log.error("Email send failed — to=%s subject=%r err=%r", to, subject, e)
+        code = _delivery_error_code(e)
+        log.exception(
+            "Email send failed — code=%s to=%s subject=%r",
+            code,
+            to,
+            subject,
+        )
+        if raise_on_error:
+            raise EmailDeliveryError(code) from e
         return False
 
 
@@ -190,6 +232,8 @@ def send_revoke_notification(
     when: datetime,
     reason: str = "Force logout by admin",
     can_relogin: bool = True,
+    *,
+    raise_on_error: bool = False,
 ) -> bool:
     """Level 1/3: แจ้ง user ว่า session ถูก admin ปิด.
 
@@ -260,6 +304,7 @@ session ของคุณใน "{where}" ถูกปิดเวลา {when_
         subject=f"[Central Auth Hub] {subject_suffix} — {where}",
         html=html,
         text_fallback=text,
+        raise_on_error=raise_on_error,
     )
 
 

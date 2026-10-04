@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import ipaddress
+import logging
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -21,6 +22,18 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.models import AuditLog, LoginSession, Subsystem, User
+
+log = logging.getLogger(__name__)
+
+_EMAIL_FAILURE_MESSAGES = {
+    "smtp_not_configured": "ยังไม่ได้ตั้งค่า SMTP",
+    "smtp_authentication_failed": "SMTP ยืนยันบัญชีผู้ส่งไม่สำเร็จ",
+    "recipient_rejected": "SMTP ปฏิเสธอีเมลผู้รับ",
+    "sender_rejected": "SMTP ปฏิเสธอีเมลผู้ส่ง",
+    "smtp_connection_failed": "เชื่อมต่อ SMTP ไม่สำเร็จ",
+    "smtp_protocol_error": "SMTP ตอบกลับด้วยข้อผิดพลาด",
+    "email_delivery_failed": "ระบบส่งอีเมลขัดข้อง",
+}
 
 # สิทธิ์จริงที่ระบบใช้ตัดสินตามบทบาท (RBAC จริง — ดูตาราง RBAC ใน CLAUDE.md).
 # Hub-direct login ไม่มี OAuth scope ต่อ session (JWT มีแค่ sub/email/user_type/
@@ -1171,9 +1184,10 @@ def execute_incident_action(
     elif action == "notify_user":
         if not target:
             raise ValueError("incident นี้ไม่มี user")
-        from app.services.email_service import send_revoke_notification
+        from app.services.email_service import EmailDeliveryError, send_revoke_notification
 
         ok = False
+        error_code = None
         try:
             ok = send_revoke_notification(
                 to_email=target.email,
@@ -1182,13 +1196,28 @@ def execute_incident_action(
                 when=datetime.utcnow(),
                 reason="ตรวจพบการเข้าใช้งานที่ผิดปกติ",
                 can_relogin=True,
+                raise_on_error=True,
+            )
+            if not ok:
+                error_code = "email_delivery_failed"
+        except EmailDeliveryError as exc:
+            error_code = exc.code
+            log.warning(
+                "Incident email notification failed — code=%s session_id=%s recipient=%s",
+                error_code,
+                session_id,
+                target.email,
             )
         except Exception:
-            ok = False
+            error_code = "email_delivery_failed"
+            log.exception(
+                "Unexpected incident email notification failure — session_id=%s recipient=%s",
+                session_id,
+                target.email,
+            )
         result["ok"] = ok
-        result["message"] = (
-            "ส่งอีเมลแจ้งเตือนแล้ว" if ok else "ส่งอีเมลไม่สำเร็จ (SMTP ไม่ได้ตั้งค่า?)"
-        )
+        result["error_code"] = error_code
+        result["message"] = "ส่งอีเมลแจ้งเตือนแล้ว" if ok else _EMAIL_FAILURE_MESSAGES[error_code]
 
     else:
         raise ValueError(f"action ไม่รู้จัก: {action}")
@@ -1204,6 +1233,7 @@ def execute_incident_action(
             "session_id": str(ls.id),
             "incident_ip": str(ls.ip) if ls.ip else None,
             "result": result.get("message"),
+            "error_code": result.get("error_code"),
         },
     )
     db.commit()
