@@ -99,7 +99,7 @@ async def evaluate_login_risk(
             "decision": decision.decision,
             "score": decision.total_score,
             "reasons": decision.reasons,
-            "breakdown": {"risk_decision": decision.decision, "risk_shadow_decision": "would_block" if shadow_mode else None, **decision.breakdown, **({"l3_auth_candidate": candidate} if candidate else {})},
+            "breakdown": {"risk_policy": "contextual-trial-v1" if settings.risk_contextual_trial_enabled else "baseline", "risk_decision": decision.decision, "risk_shadow_decision": "would_block" if shadow_mode else None, **decision.breakdown, **({"l3_auth_candidate": candidate} if candidate else {})},
             # hard block ข้าม L3 ไปเลย — คง shape ของ response ให้เท่ากันทุกเส้นทาง
             "iforest_explanation": [],
             "monitoring_decision": "normal",
@@ -157,6 +157,7 @@ async def evaluate_login_risk(
     # `iforest_raw` ยังเก็บค่าจริงไว้เหมือนเดิม — เปลี่ยนแค่ว่ามันไม่ถูกบวกเข้า total
     from app.services.auth_evidence import authentication_evidence
     breakdown = {
+        "risk_policy": "contextual-trial-v1" if settings.risk_contextual_trial_enabled else "baseline",
         "risk_decision": decision.decision,
         "risk_shadow_decision": ("would_" + decision.decision if shadow_mode and decision.decision in ("warn", "challenge") else decision.decision if shadow_mode and decision.decision == "would_block" else None),
         **decision.breakdown,

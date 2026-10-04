@@ -32,3 +32,13 @@ def trusted_history(decision, breakdown, attack_ip=False, takeover=False):
     if evidence.get("stage") == "step_up" and evidence.get("method") == "totp":
         return True
     return decision in ("allow", "pass")
+
+
+def verified_strong_auth(breakdown):
+    """Only server-recorded proof can resolve risk propagation; labels cannot."""
+    evidence = (breakdown or {}).get("authentication") or {}
+    if not evidence.get("verified") or evidence.get("counter_regression"):
+        return False
+    if evidence.get("method") in ("passkey", "discoverable"):
+        return evidence.get("user_verified") is True
+    return evidence.get("method") == "totp" and evidence.get("stage") == "step_up"

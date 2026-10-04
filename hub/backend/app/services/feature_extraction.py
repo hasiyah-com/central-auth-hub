@@ -40,6 +40,7 @@ from datetime import datetime, timedelta
 from sqlalchemy import func, or_
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.services.auth_evidence import trusted_history
 from app.models import AuditLog, LoginSession, User
 from app.services.feature_time import as_bangkok, as_utc_naive
@@ -491,28 +492,37 @@ def extract_session_features(
         LoginSession.created_at >= concurrent_cutoff,
         LoginSession.created_at < now,  # point-in-time
     )
-    # cap ที่ FEATURE_RANGES max (กันเกิน validation → ml-service reject → fail-safe 0
-    # = ปัญหาแฝง: concurrent สูงถูกมองเป็นปกติ). ≥cap = "เยอะมาก" เท่ากันหมด
-    concurrent_session_count = min(
-        CONCURRENT_COUNT_CAP,
-        float(
-            db.query(func.count(LoginSession.id))
-            .filter(
-                LoginSession.user_id == user_id,
-                LoginSession.logout_at.is_(None),
-                LoginSession.created_at >= concurrent_cutoff,
-                LoginSession.created_at < now,  # point-in-time
-            )
-            .scalar()
-            or 0
-        ),
-    )
-    active_subsystem_count = float(
-        active_q.filter(LoginSession.subsystem_id.is_not(None))
-        .with_entities(LoginSession.subsystem_id)
-        .distinct()
-        .count()
-    )
+    if settings.risk_contextual_trial_enabled:
+        # Pending challenges and blocked attempts are not active authenticated sessions.
+        active = [s for s in active_q.all() if trusted_history(
+            s.decision, s.risk_breakdown, s.is_attack_ip, s.is_account_takeover)
+            or (s.jti and s.decision in ("allow", "warn", "pass", "mfa_passed")
+                and not s.is_attack_ip and not s.is_account_takeover)]
+        concurrent_session_count = min(CONCURRENT_COUNT_CAP, float(len(active)))
+        active_subsystem_count = float(len({s.subsystem_id for s in active if s.subsystem_id is not None}))
+    else:
+        # cap ที่ FEATURE_RANGES max (กันเกิน validation → ml-service reject → fail-safe 0
+        # = ปัญหาแฝง: concurrent สูงถูกมองเป็นปกติ). ≥cap = "เยอะมาก" เท่ากันหมด
+        concurrent_session_count = min(
+            CONCURRENT_COUNT_CAP,
+            float(
+                db.query(func.count(LoginSession.id))
+                .filter(
+                    LoginSession.user_id == user_id,
+                    LoginSession.logout_at.is_(None),
+                    LoginSession.created_at >= concurrent_cutoff,
+                    LoginSession.created_at < now,  # point-in-time
+                )
+                .scalar()
+                or 0
+            ),
+        )
+        active_subsystem_count = float(
+            active_q.filter(LoginSession.subsystem_id.is_not(None))
+            .with_entities(LoginSession.subsystem_id)
+            .distinct()
+            .count()
+        )
 
     # === OAuth (1) — scope sensitivity ของ subsystem ที่กำลัง login ===
     scope_sensitivity = 0.0

@@ -6,12 +6,14 @@
   - F-RBA (2024) — similarity-based feature engineering
 """
 
+import math
 from collections import Counter
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.models import LoginSession
 from app.security.rule_engine import FEAT
 from app.services.feature_time import as_bangkok
@@ -102,6 +104,11 @@ def get_user_profile(db: Session, user_id: str) -> dict | None:
         )
         .all()
     )
+
+    if settings.risk_contextual_trial_enabled:
+        from app.services.auth_evidence import trusted_history
+        sessions = [s for s in sessions if trusted_history(
+            s.decision, s.risk_breakdown, s.is_attack_ip, s.is_account_takeover)]
 
     if len(sessions) < MIN_SESSIONS:
         return None
@@ -203,7 +210,7 @@ def evaluate_behavior(
         reasons.append(f"hours_diff={hours_diff:.1f} >= 6 (+0.20)")
 
     # ── Geographic: new country ──
-    if features[FEAT["is_new_country"]] == 1:
+    if not settings.risk_contextual_trial_enabled and features[FEAT["is_new_country"]] == 1:
         score += 0.30
         reasons.append("is_new_country (+0.30)")
 
@@ -229,9 +236,12 @@ def evaluate_behavior(
         h = int(features[FEAT["hour_of_day"]]) % 24
         hr = _rarity(hour_counts.get(h, 0), total, HOUR_BUCKETS)
         if hr >= HOUR_RARITY_THRESHOLD:
-            score += HOUR_RARITY_WEIGHT
+            # Both hour signals describe the same temporal departure: use the stronger.
+            temporal = 0.40 if hours_diff >= 10 else 0.20 if hours_diff >= 6 else 0.0
+            contribution = max(0.0, HOUR_RARITY_WEIGHT - temporal) if settings.risk_contextual_trial_enabled else HOUR_RARITY_WEIGHT
+            score += contribution
             reasons.append(
-                f"hour_rarity={hr:.2f} (hour {h} ไม่เคยเข้า, +{HOUR_RARITY_WEIGHT:.2f})"
+                f"hour_rarity={hr:.2f} (hour {h} ไม่เคยเข้า, +{contribution:.2f})"
             )
 
     # ── Tier 1: subsystem novelty (เข้าระบบที่ไม่เคยใช้ = deterministic → challenge floor) ──
@@ -241,9 +251,9 @@ def evaluate_behavior(
         if subsystem_id not in seen:
             # ไม่เคยใช้ระบบนี้เลย → เหตุการณ์แน่นอน ไม่ใช่แค่คะแนน → policy floor
             score += NEW_SUBSYSTEM_SCORE
-            min_action = "challenge"
+            min_action = None if settings.risk_contextual_trial_enabled else "challenge"
             reasons.append(
-                f"new_subsystem={subsystem_id} (ไม่เคยใช้, +{NEW_SUBSYSTEM_SCORE:.2f} floor=challenge)"
+                f"new_subsystem={subsystem_id} (ไม่เคยใช้, +{NEW_SUBSYSTEM_SCORE:.2f} floor={min_action or 'none'})"
             )
         else:
             sr = _rarity(sub_counts.get(subsystem_id, 0), total, SUBSYSTEM_BUCKETS)
@@ -260,7 +270,10 @@ def evaluate_behavior(
     if gap_scale and total >= MIN_HISTORY_FOR_RARITY:
         cur_gap = features[FEAT["log_minutes_since_last_login"]]
         z = (cur_gap - profile["gap_log_median"]) / gap_scale
-        if z <= -CADENCE_Z_THRESHOLD:  # เร็วกว่าปกติมาก (negative = gap เล็กกว่า median)
+        velocity_already_scored = (settings.risk_contextual_trial_enabled
+            and features[FEAT["login_count_24h"]] >= 5
+            and features[FEAT["log_minutes_since_last_login"]] <= math.log(2.0))
+        if z <= -CADENCE_Z_THRESHOLD and not velocity_already_scored:  # เร็วกว่าปกติมาก (negative = gap เล็กกว่า median)
             score += CADENCE_SCORE
             reasons.append(
                 f"cadence_fast z={z:.1f} (login เร็วผิดปกติสำหรับคนนี้, +{CADENCE_SCORE:.2f})"
