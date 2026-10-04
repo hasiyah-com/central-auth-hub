@@ -1438,7 +1438,7 @@ export default function SubsystemDetailPage({
               </section>
             </div>
             {/* Daily grouped bars — แยกตามระดับความเสี่ยงจริง */}
-            <section className="cx-panel">
+            <section className="cx-panel subsystem-risk-panel">
               <header>
                 <div>
                   <span>daily login risk · {stats.range.days} วัน</span>
