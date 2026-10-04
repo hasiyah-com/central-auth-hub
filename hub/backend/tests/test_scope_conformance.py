@@ -49,7 +49,8 @@ class _FakeUser:
 @pytest.mark.parametrize(
     "decision,enforcing,always,expected",
     [
-        ("challenge", True, False, True),  # risk challenge (enforce) → MFA
+        ("challenge", True, False, True),  # risk challenge → MFA
+        ("challenge", False, False, True),  # block-shadow still enforces Challenge
         ("block", True, False, True),  # risk block (enforce) → MFA gate
         ("allow", False, True, True),  # Always-2FA (admin) → MFA แม้ shadow
         ("warn", False, True, True),  # Always-2FA ทำงานทุก decision
@@ -70,7 +71,7 @@ def test_scope1_mfa_required_positive(decision, enforcing, always, expected):
     "decision,enforcing,always,is_hard_block,expected",
     [
         ("allow", False, False, False, False),  # user ปกติ shadow → ไม่ MFA
-        ("challenge", False, False, False, False),  # shadow mode → risk ไม่ enforce
+        ("would_block", False, False, False, False),  # block-shadow observes Block
         ("warn", True, False, False, False),  # warn ไม่ถึงเกณฑ์ challenge
         ("block", True, False, True, False),  # hard block ชนะ (block ไม่ใช่ mfa)
     ],
@@ -460,14 +461,14 @@ def test_scope4_decision_levels(total, expected):
     assert d.decision == expected
 
 
-# 4(3) Shadow mode → decision prefix would_ (negative: ไม่ enforce จริง)
+# 4(3) Block-shadow does not suppress score-based Challenge
 @pytest.mark.parametrize("total", [0.70, 0.85])
-def test_scope4_shadow_mode_would_prefix(total):
+def test_scope4_block_shadow_enforces_challenge(total):
     rule = RuleResult(blocked=False, score=0.0)
     beh = BehaviorResult(score=0.0)
     ifr = IForestResult(raw_score=total, risk_score=total, label="x")
     d = aggregate(rule, beh, ifr, shadow_mode=True)
-    assert d.decision.startswith("would_")
+    assert d.decision == "challenge"
 
 
 # 4(1) Rule Engine hard-block ชนะทุกอย่าง → block + score 1.0

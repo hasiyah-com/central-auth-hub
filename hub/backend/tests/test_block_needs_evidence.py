@@ -46,10 +46,10 @@ def test_behavior_only_high_score_is_challenge_not_block():
     assert d.total_score == pytest.approx(0.95)  # คะแนนยังบันทึกตามจริง
 
 
-def test_shadow_mode_gives_would_challenge():
+def test_block_shadow_still_enforces_challenge():
     rule, beh = _session_2026_09_29()
     d = aggregate(rule, beh, IF_MONITOR, shadow_mode=True)
-    assert d.decision == "would_challenge"
+    assert d.decision == "challenge"
 
 
 def test_capped_decision_is_explained_in_reasons():

@@ -103,7 +103,7 @@ class Settings(BaseSettings):
     # Hub → subsystem health check verify TLS ของ subsystem ไหม (pre-flight ก่อน OAuth).
     # prod บน cert flaky (self-signed) → ตั้ง false เพื่อไม่ mark subsystem down ผิดๆ
     subsystem_verify_ssl: bool = True
-    ml_shadow_mode: bool = True  # True = log score แต่ไม่ block / False = enforce
+    ml_shadow_mode: bool = True  # True = shadow Block only; Challenge always enforces MFA
 
     # Deployment อยู่หลัง NAT ร่วม (campus/office) — ผู้ใช้ทุกคนใช้ public IP เดียวกัน
     # -> ปิดกฎ multi_account_ip ที่จะยิงใส่ login ปกติ ~26% โดยไม่มีข้อมูลจริง

@@ -50,7 +50,7 @@ def aggregate(
 ) -> RiskDecision:
     """รวม 3 ชั้น → final decision.
 
-    Shadow mode: เปลี่ยน block/challenge/warn เป็น would_* (ไม่บังคับจริง).
+    Shadow mode: observe block only; challenge still requires authentication.
     """
     # Hard block ชนะทุกอย่าง
     if rule.blocked:
@@ -96,7 +96,7 @@ def aggregate(
         raw_decision = _max_action(raw_decision, behavior.min_action)
 
     # Shadow mode prefix
-    if shadow_mode and raw_decision != "allow":
+    if shadow_mode and raw_decision == "block":
         decision = f"would_{raw_decision}"
     else:
         decision = raw_decision

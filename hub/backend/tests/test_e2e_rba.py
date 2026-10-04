@@ -175,12 +175,12 @@ async def test_e2e_rba_hard_block_login_count(db, fresh_user):
 
 
 @pytest.mark.asyncio
-async def test_e2e_rba_shadow_mode_would_prefix(db, fresh_user):
-    """shadow mode: decision เสี่ยงสูงได้ prefix would_ (log แต่ไม่บล็อกจริง)."""
+async def test_e2e_rba_block_shadow_would_block(db, fresh_user):
+    """Evidence-backed Block stays observational in block-shadow mode."""
     result = await _score(
-        db, fresh_user, _features(failed_logins_24h=12.0), shadow=True
+        db, fresh_user, _features(login_count_24h=60.0), shadow=True
     )
-    assert result["decision"].startswith("would_")
+    assert result["decision"] == "would_block"
 
 
 # ═══════════ ข้อ 3(3) SHAP explanation ต่อ session ═══════════
@@ -220,3 +220,12 @@ async def test_e2e_rba_score_never_exceeds_one(db, fresh_user):
         geo="RU",
     )
     assert 0.0 <= result["score"] <= 1.0
+
+
+@pytest.mark.asyncio
+async def test_e2e_rba_block_shadow_keeps_challenge(db, fresh_user):
+    result = await _score(
+        db, fresh_user, _features(login_count_24h=6., log_minutes_since_last_login=1.),
+        shadow=True,
+    )
+    assert result["decision"] == "challenge"

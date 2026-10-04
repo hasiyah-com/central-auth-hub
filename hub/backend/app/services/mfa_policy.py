@@ -58,7 +58,7 @@ def is_second_factor_required(
 
     - `is_hard_block` True → คืน False (block ชนะ ไม่ใช่ mfa; flow แยกจัดการ 403)
     - primary ที่เป็น Passkey ผ่าน strong authentication แล้ว → ไม่ขอ factor เดิมซ้ำ
-    - risk-based: enforce mode + decision ∈ {block, challenge} (เดิม — เงียบใน shadow)
+    - risk-based: Challenge is enforced even in block-shadow mode; Block only in enforce mode
     - Always-2FA: `user.effective_mfa_always` (user เปิดเอง หรือ admin) — **ทำงาน
       แม้ shadow mode** เพราะเป็นตัวเลือกของ user ไม่ใช่การ enforce ของ ML
     """
@@ -66,7 +66,9 @@ def is_second_factor_required(
         return False
     if login_method_satisfies_2fa(login_method):
         return False
-    risk_mfa = enforcing and actual_decision in ("block", "challenge")
+    risk_mfa = actual_decision in ("challenge", "would_challenge") or (
+        enforcing and actual_decision == "block"
+    )
     return bool(risk_mfa or user.effective_mfa_always)
 
 

@@ -112,3 +112,17 @@ def test_google_primary_still_requires_risk_stepup():
         )
         is True
     )
+
+
+def test_risk_challenge_requires_factor_in_block_shadow_without_always_2fa():
+    user = _FakeUser(effective_mfa_always=False)
+    for decision in ("challenge", "would_challenge"):
+        assert mfa_policy.is_second_factor_required(
+            user, actual_decision=decision, enforcing=False,
+            is_hard_block=False, login_method="google",
+        )
+    for decision in ("warn", "allow", "would_block"):
+        assert not mfa_policy.is_second_factor_required(
+            user, actual_decision=decision, enforcing=False,
+            is_hard_block=False, login_method="google",
+        )
