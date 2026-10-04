@@ -90,3 +90,12 @@ test('does not infer User Verification for older sessions', () => {
   expect(screen.getByText(/ไม่มีหลักฐานวิธีและ User Verification/)).toBeInTheDocument();
   expect(screen.queryByText(/ผ่านการตรวจ PIN\/ชีวมิติ/)).not.toBeInTheDocument();
 });
+
+test('trial waiting for calibration clearly shows legacy Warn mode', () => {
+  const s = session();
+  s.risk_breakdown!.l3_decision_trial = {ready: false, mode: 'legacy_fallback'};
+  s.risk_breakdown!.l3_fallback = {applied: true, threshold: 0.4606};
+  render(<SessionDetailPanel session={s} />);
+  expect(screen.getByText('ใช้กฎเดิม')).toBeInTheDocument();
+  expect(screen.getByText(/ยกระดับเป็น Warn แล้ว/)).toBeInTheDocument();
+});

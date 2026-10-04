@@ -184,6 +184,7 @@ async def evaluate_login_risk(
     # ── ชั้นที่ 3 เป็นตัวสำรองระดับ warn (เฉพาะเมื่อชั้นที่ 1+2 ตัดสิน allow) ──
     # ยกได้ถึง warn เท่านั้น · ไม่เปลี่ยนคะแนน · L3 ล่ม/ไม่มีคะแนน = คงผลเดิม (fail-safe B21)
     access_decision, access_reasons = decision.decision, list(decision.reasons)
+    trial_ready = False
     if settings.l3_decision_trial_enabled:
         from app.security import l3_decision_trial
 
@@ -195,8 +196,11 @@ async def evaluate_login_risk(
         )
         if trial_reason:
             access_reasons.append(trial_reason)
+        trial_ready = trial_detail["status"] in {"normal", "warn"}
+        trial_detail["ready"] = trial_ready
+        trial_detail["mode"] = "percentile_trial" if trial_ready else "legacy_fallback"
         breakdown["l3_decision_trial"] = trial_detail
-    elif settings.l3_fallback_warn_enabled:
+    if settings.l3_fallback_warn_enabled and not trial_ready:
         point = l3.get("point") or {}
         usable = (
             not l3.get("error") and point.get("available") and not point.get("error")
