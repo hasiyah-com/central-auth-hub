@@ -310,6 +310,11 @@ export interface UserSummary {
   failed_logins_7d: number;
   last_login_at: string | null;
   last_risk_event: { created_at: string; risk_score: number | null } | null;
+  mfa_policy_choice: "always" | "risk_based" | "snoozed";
+  mfa_always: boolean;
+  effective_mfa_always: boolean;
+  mfa_preferred_factor: "passkey" | "totp" | null;
+  security_onboarding_snoozed_until: string | null;
 }
 
 export interface UserLoginSessions {
