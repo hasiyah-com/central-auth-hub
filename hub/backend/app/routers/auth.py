@@ -524,11 +524,11 @@ async def google_callback(request: Request, db: Session = Depends(get_db)):
     db.flush()  # ต้องการ login_session.id สำหรับ MFA challenge
 
     # ─── Risk-Triggered Decision (Hub direct, Week 9-10) ─────────────────
-    # >= 0.85 hard threshold      → BLOCK 403
-    # 0.50 ≤ score < 0.85         → MFA flow (Passkey re-auth / grace / force-enroll)
-    # Shadow mode = log only (would_* ไม่ enforce). MFA/block เด้งเฉพาะ enforce mode.
+    # Evidence-backed Block → 403 only when block enforcement is enabled.
+    # Challenge (including score >= 0.85 without hard-block evidence) → MFA.
+    # Block-shadow observes Block; Challenge still requires MFA.
     enforcing = not settings.ml_shadow_mode
-    is_hard_block = enforcing and risk_score >= settings.risk_block_hard_threshold
+    is_hard_block = enforcing and actual_decision == "block"
     # รวม risk-based MFA + Always-2FA (user pref / admin) เป็น gate เดียว (mfa_policy)
     # — always-on ทำงานแม้ shadow mode; ยืนยันครั้งเดียว ไม่ซ้อนกับ risk
     is_mfa_required = mfa_policy.is_second_factor_required(
@@ -1039,11 +1039,11 @@ async def line_callback(request: Request, db: Session = Depends(get_db)):
     db.flush()  # ต้องการ login_session.id สำหรับ MFA challenge
 
     # ─── Risk-Triggered Decision (Hub direct, Week 9-10) ─────────────────
-    # >= 0.85 hard threshold      → BLOCK 403
-    # 0.50 ≤ score < 0.85         → MFA flow (Passkey re-auth / grace / force-enroll)
-    # Shadow mode = log only (would_* ไม่ enforce). MFA/block เด้งเฉพาะ enforce mode.
+    # Evidence-backed Block → 403 only when block enforcement is enabled.
+    # Challenge (including score >= 0.85 without hard-block evidence) → MFA.
+    # Block-shadow observes Block; Challenge still requires MFA.
     enforcing = not settings.ml_shadow_mode
-    is_hard_block = enforcing and risk_score >= settings.risk_block_hard_threshold
+    is_hard_block = enforcing and actual_decision == "block"
     # รวม risk-based MFA + Always-2FA (user pref / admin) เป็น gate เดียว (mfa_policy)
     # — always-on ทำงานแม้ shadow mode; ยืนยันครั้งเดียว ไม่ซ้อนกับ risk
     is_mfa_required = mfa_policy.is_second_factor_required(
@@ -1407,9 +1407,8 @@ async def _refresh_risk_gate(
 
     enforcing = not settings.ml_shadow_mode
 
-    # Shadow mode — log เข้า audit_logs ถ้า risk elevated (append-only, เก็บ
-    # ประวัติไว้เทียบตอนพิจารณาเปิด enforce จริง) แต่ไม่ block (ออก token ต่อปกติ)
-    if not enforcing:
+    # Block-shadow observes blocks only; challenges continue to the step-up gate.
+    if not enforcing and decision not in ("challenge", "would_challenge"):
         # would_challenge (ไม่ใช่ would_mfa) — aggregator emit "challenge" แล้วเติม
         # prefix would_ ใน shadow mode. เดิมเช็ค would_mfa ที่ไม่มีใครผลิตแล้ว → shadow
         # mode ไม่เคย log risk_refresh_would_stepup เลย (เงียบสนิท) — B58
@@ -1431,8 +1430,8 @@ async def _refresh_risk_gate(
             db.commit()
         return None
 
-    is_hard_block = risk_score >= settings.risk_block_hard_threshold
-    is_mfa = (not is_hard_block) and decision in ("block", "challenge")
+    is_hard_block = enforcing and decision == "block"
+    is_mfa = (not is_hard_block) and decision in ("challenge", "would_challenge")
     if not is_hard_block and not is_mfa:
         return None  # risk ปกติ
 

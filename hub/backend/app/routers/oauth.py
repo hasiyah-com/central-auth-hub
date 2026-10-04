@@ -652,9 +652,9 @@ async def _finalize_subsystem_login(
     # >= risk_block_hard_threshold (0.85)  → BLOCK 403
     # >= challenge (0.50) แต่ < 0.85       → MFA flow (re-auth / grace / force-enroll)
     # < challenge                          → PASS ปกติ
-    # Shadow mode = log only (would_* ไม่ enforce). MFA/block เด้งเฉพาะ enforce mode.
+    # Block-shadow observes Block; Challenge still requires MFA.
     enforcing = not settings.ml_shadow_mode
-    is_hard_block = enforcing and risk_score >= settings.risk_block_hard_threshold
+    is_hard_block = enforcing and actual_decision == "block"
     # รวม risk-based MFA + Always-2FA (user pref / admin) เป็น gate เดียว (mfa_policy)
     is_mfa_required = mfa_policy.is_second_factor_required(
         user,

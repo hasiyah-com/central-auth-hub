@@ -186,6 +186,13 @@ async def _build_login_session(result, request, jti, db, method: str) -> LoginSe
         subsystem_name="Hub-direct (Passkey)",
     )
 
+    # Authentication outcome is distinct from the retained risk assessment.
+    risk_breakdown = {**risk_breakdown, "risk_decision": risk["decision"]}
+    authenticated_decision = (
+        "mfa_passed" if not result.counter_regression
+        and risk["decision"] not in ("block", "would_block")
+        else "would_block" if risk["decision"] == "block" else risk["decision"]
+    )
     return LoginSession(
         user_id=result.user.id,
         ip=ip,
@@ -200,7 +207,7 @@ async def _build_login_session(result, request, jti, db, method: str) -> LoginSe
         risk_breakdown=risk_breakdown,
         risk_reasons=risk_reasons,
         # passkey = strong auth → always allow (record engine decision สำหรับ monitoring)
-        decision=risk["decision"] if risk["decision"] != "block" else "would_block",
+        decision=authenticated_decision,
         is_attack_ip=is_blacklisted(db, ip),
         jti=jti,
         login_method=method,
