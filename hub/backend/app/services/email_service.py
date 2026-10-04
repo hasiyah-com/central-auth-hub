@@ -22,9 +22,31 @@ log = logging.getLogger(__name__)
 class EmailDeliveryError(RuntimeError):
     """Safe, structured email failure for callers that must explain a failure."""
 
-    def __init__(self, code: str):
+    def __init__(
+        self,
+        code: str,
+        *,
+        exception_type: str | None = None,
+        smtp_code: int | None = None,
+        smtp_error: str | None = None,
+        retryable: bool = False,
+    ):
         super().__init__(code)
         self.code = code
+        self.exception_type = exception_type
+        self.smtp_code = smtp_code
+        self.smtp_error = smtp_error
+        self.retryable = retryable
+
+
+def _smtp_error_text(exc: Exception) -> str | None:
+    value = getattr(exc, "smtp_error", None)
+    if isinstance(value, bytes):
+        value = value.decode("utf-8", errors="replace")
+    if value is None:
+        value = str(exc) or None
+    # SMTP response is diagnostic data, not message content. Keep logs bounded and one-line.
+    return str(value).replace("\r", " ").replace("\n", " ")[:300] if value else None
 
 
 def _delivery_error_code(exc: Exception) -> str:
@@ -34,13 +56,31 @@ def _delivery_error_code(exc: Exception) -> str:
         return "recipient_rejected"
     if isinstance(exc, smtplib.SMTPSenderRefused):
         return "sender_rejected"
-    if isinstance(exc, smtplib.SMTPConnectError):
+    if isinstance(exc, (smtplib.SMTPConnectError, smtplib.SMTPServerDisconnected)):
         return "smtp_connection_failed"
+    if isinstance(exc, smtplib.SMTPHeloError):
+        return "smtp_helo_failed"
+    if isinstance(exc, smtplib.SMTPNotSupportedError):
+        return "smtp_not_supported"
+    if isinstance(exc, smtplib.SMTPDataError):
+        smtp_code = getattr(exc, "smtp_code", 0)
+        return "smtp_temporary_failure" if 400 <= smtp_code < 500 else "smtp_message_rejected"
+    if isinstance(exc, smtplib.SMTPResponseException):
+        smtp_code = getattr(exc, "smtp_code", 0)
+        return "smtp_temporary_failure" if 400 <= smtp_code < 500 else "smtp_protocol_error"
     if isinstance(exc, smtplib.SMTPException):
         return "smtp_protocol_error"
     if isinstance(exc, (socket.timeout, TimeoutError, OSError)):
         return "smtp_connection_failed"
     return "email_delivery_failed"
+
+
+def _is_retryable_email_error(exc: Exception) -> bool:
+    if isinstance(exc, smtplib.SMTPResponseException):
+        return 400 <= getattr(exc, "smtp_code", 0) < 500
+    if isinstance(exc, (smtplib.SMTPServerDisconnected, socket.timeout, TimeoutError, OSError)):
+        return True
+    return False
 
 
 def _smtp_configured() -> bool:
@@ -85,35 +125,64 @@ def _send_html_email(
     msg.attach(MIMEText(text_fallback, "plain", "utf-8"))
     msg.attach(MIMEText(html, "html", "utf-8"))
 
-    try:
-        ctx = ssl.create_default_context()
-        if settings.smtp_port == 465:
-            with smtplib.SMTP_SSL(
-                settings.smtp_host, settings.smtp_port, context=ctx, timeout=15
-            ) as s:
-                s.login(settings.smtp_user, settings.smtp_password)
-                s.send_message(msg)
-        else:
-            # 587 STARTTLS (Gmail default)
-            with smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=15) as s:
-                s.ehlo()
-                s.starttls(context=ctx)
-                s.ehlo()
-                s.login(settings.smtp_user, settings.smtp_password)
-                s.send_message(msg)
-        log.info("Email sent — to=%s subject=%r", to, subject)
-        return True
-    except Exception as e:
-        code = _delivery_error_code(e)
-        log.exception(
-            "Email send failed — code=%s to=%s subject=%r",
-            code,
-            to,
-            subject,
-        )
-        if raise_on_error:
-            raise EmailDeliveryError(code) from e
-        return False
+    for attempt in (1, 2):
+        try:
+            ctx = ssl.create_default_context()
+            if settings.smtp_port == 465:
+                with smtplib.SMTP_SSL(
+                    settings.smtp_host, settings.smtp_port, context=ctx, timeout=15
+                ) as s:
+                    s.login(settings.smtp_user, settings.smtp_password)
+                    s.send_message(msg)
+            else:
+                # 587 STARTTLS (Gmail default)
+                with smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=15) as s:
+                    s.ehlo()
+                    s.starttls(context=ctx)
+                    s.ehlo()
+                    s.login(settings.smtp_user, settings.smtp_password)
+                    s.send_message(msg)
+            log.info("Email sent — to=%s subject=%r attempt=%s", to, subject, attempt)
+            return True
+        except Exception as e:
+            code = _delivery_error_code(e)
+            retryable = _is_retryable_email_error(e)
+            smtp_code = getattr(e, "smtp_code", None)
+            smtp_error = _smtp_error_text(e)
+            if retryable and attempt == 1:
+                log.warning(
+                    "Email send transient failure; retrying once — code=%s "
+                    "exception_type=%s smtp_code=%s smtp_error=%r to=%s subject=%r",
+                    code,
+                    type(e).__name__,
+                    smtp_code,
+                    smtp_error,
+                    to,
+                    subject,
+                )
+                continue
+            log.exception(
+                "Email send failed — code=%s exception_type=%s smtp_code=%s "
+                "smtp_error=%r retryable=%s attempt=%s to=%s subject=%r",
+                code,
+                type(e).__name__,
+                smtp_code,
+                smtp_error,
+                retryable,
+                attempt,
+                to,
+                subject,
+            )
+            if raise_on_error:
+                raise EmailDeliveryError(
+                    code,
+                    exception_type=type(e).__name__,
+                    smtp_code=smtp_code,
+                    smtp_error=smtp_error,
+                    retryable=retryable,
+                ) from e
+            return False
+    return False
 
 
 # ─────────────────────────────────────────────────────────────

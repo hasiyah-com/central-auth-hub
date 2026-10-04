@@ -31,6 +31,10 @@ _EMAIL_FAILURE_MESSAGES = {
     "recipient_rejected": "SMTP ปฏิเสธอีเมลผู้รับ",
     "sender_rejected": "SMTP ปฏิเสธอีเมลผู้ส่ง",
     "smtp_connection_failed": "เชื่อมต่อ SMTP ไม่สำเร็จ",
+    "smtp_temporary_failure": "SMTP ขัดข้องชั่วคราวหลังลองส่งซ้ำแล้ว",
+    "smtp_message_rejected": "SMTP ปฏิเสธเนื้อหาข้อความ",
+    "smtp_helo_failed": "SMTP ปฏิเสธการเริ่มต้นเชื่อมต่อ",
+    "smtp_not_supported": "SMTP ไม่รองรับคำสั่งที่จำเป็น",
     "smtp_protocol_error": "SMTP ตอบกลับด้วยข้อผิดพลาด",
     "email_delivery_failed": "ระบบส่งอีเมลขัดข้อง",
 }
@@ -1202,9 +1206,14 @@ def execute_incident_action(
                 error_code = "email_delivery_failed"
         except EmailDeliveryError as exc:
             error_code = exc.code
+            result["exception_type"] = exc.exception_type
+            result["smtp_code"] = exc.smtp_code
             log.warning(
-                "Incident email notification failed — code=%s session_id=%s recipient=%s",
+                "Incident email notification failed — code=%s exception_type=%s "
+                "smtp_code=%s session_id=%s recipient=%s",
                 error_code,
+                exc.exception_type,
+                exc.smtp_code,
                 session_id,
                 target.email,
             )
@@ -1234,6 +1243,8 @@ def execute_incident_action(
             "incident_ip": str(ls.ip) if ls.ip else None,
             "result": result.get("message"),
             "error_code": result.get("error_code"),
+            "exception_type": result.get("exception_type"),
+            "smtp_code": result.get("smtp_code"),
         },
     )
     db.commit()
