@@ -16551,3 +16551,22 @@
     flex-wrap: wrap;
   }
 }
+
+
+/* Three-card configuration layout: policy + health, then sessions full width. */
+.sc.subsystem-detail-view .subsystem-config-grid > .cx-active-panel {
+  grid-column: 1 / -1;
+}
+.sc.subsystem-detail-view .subsystem-config-grid > .cx-active-panel .cx-panel-body {
+  width: 100%;
+  min-height: 0;
+}
+.sc.subsystem-detail-view .subsystem-config-grid > .cx-active-panel table {
+  width: 100%;
+  min-width: 980px;
+}
+@media (max-width: 900px) {
+  .sc.subsystem-detail-view .subsystem-config-grid > .cx-active-panel {
+    grid-column: auto;
+  }
+}
