@@ -51,6 +51,7 @@ _DECISION_THAI = {
     "would_block": "ควรบล็อกการเข้าสู่ระบบ (Shadow Mode — ยังไม่บล็อกจริง)",
 }
 _REASON_THAI = {
+    "failed_auth_consecutive_10m": "ยืนยันตัวตนล้มเหลวต่อเนื่องในช่วง 10 นาที",
     "new_passkey_recently_added": "เพิ่งเพิ่ม Passkey ใหม่",
     "permission_change_age": "มีการเปลี่ยนแปลงสิทธิ์เมื่อไม่นานมานี้",
     "weekend_mismatch": "เข้าใช้งานในวันที่ไม่คุ้นเคย",

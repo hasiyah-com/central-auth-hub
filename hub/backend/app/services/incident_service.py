@@ -257,11 +257,12 @@ def build_recommendations(
         )
 
     # 4) Brute force — failed logins
-    if "failed_logins_24h" in reasons:
+    if "failed_logins_24h" in reasons or "failed_auth_consecutive_10m" in reasons:
         recs.append(
             {
                 "severity": "warning",
-                "title": "มี failed login หลายครั้งใน 24 ชม.",
+                "title": ("ยืนยันตัวตนล้มเหลวต่อเนื่องใน 10 นาที"
+                    if "failed_auth_consecutive_10m" in reasons else "มี failed login หลายครั้งใน 24 ชม."),
                 "detail": (
                     "อาจเป็น brute force / credential stuffing — "
                     "พิจารณา lock บัญชีชั่วคราวหรือบังคับ reset"
@@ -757,6 +758,7 @@ def _incident_display_id(db: Session, ls: LoginSession) -> str:
 # ── executive summary / impact / attack path ─────────────────
 
 _REASON_HUMAN = {
+    "failed_auth_consecutive_10m": "ยืนยันตัวตนล้มเหลวต่อเนื่องใน 10 นาที (อาจเป็น brute force)",
     "failed_logins_24h": "มีการ login ผิดพลาดซ้ำหลายครั้ง (อาจเป็น brute force)",
     "is_new_country": "login จากประเทศที่ไม่เคยใช้",
     "is_new_device": "login จากอุปกรณ์ใหม่",
