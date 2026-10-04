@@ -522,6 +522,8 @@ async def google_callback(request: Request, db: Session = Depends(get_db)):
     )
     db.add(login_session)
     db.flush()  # ต้องการ login_session.id สำหรับ MFA challenge
+    risk_breakdown = {**risk_breakdown, "login_session_id": str(login_session.id)}
+    login_session.risk_breakdown = risk_breakdown
 
     # ─── Risk-Triggered Decision (Hub direct, Week 9-10) ─────────────────
     # Evidence-backed Block → 403 only when block enforcement is enabled.
@@ -1037,6 +1039,8 @@ async def line_callback(request: Request, db: Session = Depends(get_db)):
     )
     db.add(login_session)
     db.flush()  # ต้องการ login_session.id สำหรับ MFA challenge
+    risk_breakdown = {**risk_breakdown, "login_session_id": str(login_session.id)}
+    login_session.risk_breakdown = risk_breakdown
 
     # ─── Risk-Triggered Decision (Hub direct, Week 9-10) ─────────────────
     # Evidence-backed Block → 403 only when block enforcement is enabled.
@@ -1402,6 +1406,9 @@ async def _refresh_risk_gate(
         sess.risk_score = risk_score
         if (sess.risk_breakdown or {}).get("l3_auth_candidate"):
             breakdown["l3_auth_candidate"] = sess.risk_breakdown["l3_auth_candidate"]
+        breakdown = {**breakdown, "login_session_id": str(sess.id)}
+        if (sess.risk_breakdown or {}).get("authentication"):
+            breakdown["authentication"] = sess.risk_breakdown["authentication"]
         sess.risk_breakdown = breakdown
         sess.risk_reasons = reasons
 

@@ -17,6 +17,13 @@ export type ShapContribution = {
 /** risk_breakdown JSON shape — base 4 numbers from Layer 4 aggregator,
  *  plus optional iforest_explanation embedded by oauth.py at login time. */
 export type RiskBreakdown = {
+  risk_decision?: string;
+  risk_shadow_decision?: string | null;
+  authentication?: {
+    version: number; method: string; verified: boolean;
+    user_verified: boolean | null; counter_regression: boolean;
+    stage: string; verified_at: string | null;
+  };
   rule: number;
   behavior: number;
   iforest: number;

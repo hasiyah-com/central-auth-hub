@@ -467,7 +467,7 @@ def revoke_passkey(
 class AuthResult:
     """Returned by auth_complete — small object > dict for type clarity."""
 
-    __slots__ = ("user", "credential", "counter_regression", "previous_sign_count")
+    __slots__ = ("user", "credential", "counter_regression", "previous_sign_count", "user_verified")
 
     def __init__(
         self,
@@ -476,11 +476,13 @@ class AuthResult:
         *,
         counter_regression: bool,
         previous_sign_count: int,
+        user_verified: bool = False,
     ) -> None:
         self.user = user
         self.credential = credential
         self.counter_regression = counter_regression
         self.previous_sign_count = previous_sign_count
+        self.user_verified = user_verified
 
 
 def auth_begin(email: str, db: Session) -> dict:
@@ -685,6 +687,7 @@ def auth_complete(
         user=user,
         credential=credential,
         counter_regression=counter_regression,
+        user_verified=True,  # successful verification requires UV in this service
         previous_sign_count=previous,
     )
 
@@ -830,6 +833,7 @@ def discoverable_complete(
         user=user,
         credential=credential,
         counter_regression=counter_regression,
+        user_verified=True,  # successful verification requires UV in this service
         previous_sign_count=previous,
     )
 
@@ -973,5 +977,6 @@ def stepup_complete(
         user=user,
         credential=credential,
         counter_regression=counter_regression,
+        user_verified=True,  # successful verification requires UV in this service
         previous_sign_count=previous,
     )

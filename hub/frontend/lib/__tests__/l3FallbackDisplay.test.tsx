@@ -68,3 +68,25 @@ test('shows the nested hour-rarity weight instead of a dash', () => {
   expect(screen.getByText('+0.30')).toBeInTheDocument();
   expect(screen.getByText(/hour 2 ไม่เคยเข้า/)).toBeInTheDocument();
 });
+
+test('keeps risk Challenge visible after successful Passkey verification', () => {
+  const s = session();
+  s.decision = 'mfa_passed';
+  s.risk_breakdown!.risk_decision = 'challenge';
+  s.risk_breakdown!.risk_shadow_decision = 'would_challenge';
+  s.risk_breakdown!.authentication = { version: 1, method: 'passkey', verified: true,
+    user_verified: true, counter_regression: false, stage: 'step_up', verified_at: '2026-10-04T09:00:00Z' };
+  render(<SessionDetailPanel session={s} />);
+  expect(screen.getByText('ผลประเมินความเสี่ยง')).toBeInTheDocument();
+  expect(screen.getByText('CHALLENGE')).toBeInTheDocument();
+  expect(screen.getByText('ผลยืนยันตัวตน')).toBeInTheDocument();
+  expect(screen.getByText('ยืนยันเพิ่มเติมสำเร็จ')).toBeInTheDocument();
+  expect(screen.getByText(/ผ่านการตรวจ PIN\/ชีวมิติ/)).toBeInTheDocument();
+});
+
+test('does not infer User Verification for older sessions', () => {
+  const s = session(); s.decision = 'mfa_passed';
+  render(<SessionDetailPanel session={s} />);
+  expect(screen.getByText(/ไม่มีหลักฐานวิธีและ User Verification/)).toBeInTheDocument();
+  expect(screen.queryByText(/ผ่านการตรวจ PIN\/ชีวมิติ/)).not.toBeInTheDocument();
+});

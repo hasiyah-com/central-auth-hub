@@ -28,7 +28,7 @@ async def test_passkey_proof_keeps_risk_assessment(monkeypatch, decision, regres
     request = Request({"type": "http", "headers": [(b"user-agent", b"Chrome/154.0")],
                        "client": ("203.0.113.1", 1234)})
     result = SimpleNamespace(user=SimpleNamespace(id=uuid.uuid4(), email="test@example.com"),
-                             counter_regression=regression)
+                             counter_regression=regression, user_verified=True)
     session = await passkey._build_login_session(result, request, "test-jti", None, "passkey")
     assert session.decision == expected
     assert session.risk_score >= .9

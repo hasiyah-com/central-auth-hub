@@ -114,6 +114,7 @@ def _add_session(db, user, **kw):
         user_agent=kw.get("user_agent", "Mozilla/5.0"),
         geo_country=kw.get("geo_country", "TH"),
         decision=kw.get("decision", "pass"),
+        risk_breakdown=kw.get("risk_breakdown"),
         created_at=kw.get("created_at", datetime.utcnow()),
         logout_at=kw.get("logout_at"),
         subsystem_id=kw.get("subsystem_id"),
@@ -442,3 +443,16 @@ def test_scope_sensitivity_from_subsystem(user, db):
     finally:
         db.query(Subsystem).filter(Subsystem.id == sid).delete()
         db.commit()
+
+
+@pytest.mark.parametrize("regression,takeover,expected", [(False, False, 0.), (True, False, 1.), (False, True, 1.)])
+def test_challenge_with_verified_passkey_proof_controls_trusted_history(user, db, regression, takeover, expected):
+    from app.services.auth_evidence import authentication_evidence
+    _add_session(db, user, user_agent=_UA_IPHONE, decision="challenge",
+                 created_at=datetime.utcnow() - timedelta(minutes=10),
+                 is_account_takeover=takeover,
+                 risk_breakdown={"risk_decision": "challenge", "authentication":
+                     authentication_evidence("passkey", verified=True, user_verified=True, counter_regression=regression)})
+    feats = extract_session_features(db, user.id, "1.2.3.4", _UA_IPHONE, "TH")
+    assert feats[IDX["is_new_device"]] == expected
+    assert feats[IDX["is_new_user_agent_family"]] == expected
