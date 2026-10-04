@@ -17,7 +17,7 @@ def _base_vector() -> list[float]:
 
 def _evaluate(values: list[float], monkeypatch):
     failed = values[FEAT["failed_logins_24h"]]
-    monkeypatch.setattr(rule_engine, "count_failed_auth", lambda *args, **kwargs: failed)
+    monkeypatch.setattr(rule_engine, "count_recent_consecutive_auth", lambda *args, **kwargs: failed)
     return evaluate_rules(
         values,
         db=object(),
@@ -32,10 +32,10 @@ def _evaluate(values: list[float], monkeypatch):
     ("failed", "expected_score", "expected_reason"),
     [
         (2.0, 0.0, None),
-        (3.0, 0.20, "failed_logins_24h (+0.2)"),
-        (4.0, 0.20, "failed_logins_24h (+0.2)"),
-        (5.0, 0.30, "failed_logins_24h (+0.3)"),
-        (9.0, 0.30, "failed_logins_24h (+0.3)"),
+        (3.0, 0.20, "failed_auth_consecutive_10m (+0.2)"),
+        (4.0, 0.20, "failed_auth_consecutive_10m (+0.2)"),
+        (5.0, 0.30, "failed_auth_consecutive_10m (+0.3)"),
+        (9.0, 0.30, "failed_auth_consecutive_10m (+0.3)"),
     ],
 )
 def test_failed_login_tiers_do_not_stack(
@@ -45,7 +45,7 @@ def test_failed_login_tiers_do_not_stack(
     values[FEAT["failed_logins_24h"]] = failed
 
     result = _evaluate(values, monkeypatch)
-    failed_reasons = [r for r in result.reasons if r.startswith("failed_logins_24h")]
+    failed_reasons = [r for r in result.reasons if r.startswith("failed_auth_consecutive_10m")]
 
     assert result.score == pytest.approx(expected_score)
     assert failed_reasons == ([expected_reason] if expected_reason else [])
@@ -59,7 +59,7 @@ def test_failed_login_hard_block_still_applies_at_ten(monkeypatch):
 
     assert result.blocked is True
     assert result.score == 1.0
-    assert result.reasons == ["failed_logins_24h=10 >= 10 (hard block)"]
+    assert result.reasons == ["failed_auth_consecutive_10m=10 >= 10 (hard block)"]
 
 
 @pytest.mark.parametrize(
