@@ -30,7 +30,9 @@ role's calibrated warning percentile becomes Warn. It becomes Challenge at
 `L3_DECISION_TRIAL_CHALLENGE_PERCENTILE` (default P99), or when the warning percentile is reached
 and the enabled Sequence view independently returns `l3_investigate`. Missing calibration, model
 hash mismatch, unavailable point score, or insufficient Sequence history abstains rather than
-changing access. `L3_FALLBACK_WARN_ENABLED` is ignored while this trial is enabled.
+changing access via percentile. While calibration is unavailable, the existing raw-score Warn fallback
+continues when `L3_FALLBACK_WARN_ENABLED=true`. Once percentile data is valid, that legacy fallback
+is bypassed. The UI displays the active mode and readiness for the recorded event.
 
 Suggested verification: same known device/time, new browser/device, multiple normal subsystems, retry after successful MFA, and an independent high-risk scenario. Record policy marker, L1/L2 contributions, reasons, risk decision and authentication evidence for each. Do not replace chapter 4 experiment numbers with these scenario results; rerun the held-out evaluation before making performance claims.
 

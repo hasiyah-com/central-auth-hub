@@ -208,3 +208,14 @@ async def test_coexists_with_percentile_fallback(
     assert out["decision"] == expected
     assert out["score"] == 0.2, "ตัวสำรองต้องไม่เปลี่ยนคะแนน"
     assert "fallback" in out["l3"], "percentile fallback ยังบันทึกสถานะตามเดิม"
+
+@pytest.mark.asyncio
+async def test_trial_without_calibration_keeps_legacy_warn(monkeypatch):
+    from app.config import settings
+    monkeypatch.setattr(settings, 'l3_decision_trial_enabled', True)
+    monkeypatch.setattr(settings, 'l3_role_calibration_path', '')
+    out = await _run(monkeypatch, point_score=0.75)
+    assert out['decision'] == 'warn'
+    assert out['breakdown']['l3_decision_trial']['ready'] is False
+    assert out['breakdown']['l3_decision_trial']['mode'] == 'legacy_fallback'
+    assert out['breakdown']['l3_fallback']['applied'] is True

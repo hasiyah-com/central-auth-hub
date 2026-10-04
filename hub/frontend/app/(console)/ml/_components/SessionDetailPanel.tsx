@@ -89,6 +89,7 @@ export function SessionDetailPanel({ session, onFeedbackSaved, hideUserLink }: P
     riskScore >= 0.8 ? "bg-rose-500" : riskScore >= 0.5 ? "bg-amber-500" : riskScore >= 0.3 ? "bg-yellow-400" : "bg-emerald-500";
   const deviceIcon = DEVICE_ICON[session.device_type || "unknown"] || DEVICE_ICON.unknown;
   const bd = session.risk_breakdown;
+  const roleFallback = bd?.l3?.fallback ?? (bd?.l3_decision_trial ? { status: "abstain" as const, user_type: null, percentile: null, warn_percentile: null, reason: "not_configured" } : null);
   const riskDecision = bd?.risk_decision || (session.decision === "mfa_passed" ? "unknown" : session.decision) || "unknown";
   const authentication = bd?.authentication;
 
@@ -137,18 +138,26 @@ export function SessionDetailPanel({ session, onFeedbackSaved, hideUserLink }: P
           <RuleBreakdown reasons={session.risk_reasons} />
         )}
 
-        {bd?.l3?.fallback && (
-          <div className="mt-3 text-sm text-ink-600">
-            <p className="font-semibold">
-              L3 ตัวสำรอง: {{ warn: "เตือน", normal: "ปกติ", skipped: "ไม่ใช้ — ชั้น 1+2 ตรวจพบแล้ว", abstain: "ข้อมูลอ้างอิงยังไม่พร้อม" }[bd.l3.fallback.status]}
-            </p>
-            {bd.l3.fallback.percentile != null && bd.l3.fallback.warn_percentile != null && (
-              <p>
-                กลุ่ม {bd.l3.fallback.user_type} · Percentile {(bd.l3.fallback.percentile * 100).toFixed(2)}
-                {" · เกณฑ์เตือน > "}{(bd.l3.fallback.warn_percentile * 100).toFixed(2)}
+        {bd && roleFallback && (
+          <div className="mt-4 rounded-xl border border-ink-200 bg-ink-50/60 p-4">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-wider text-ink-400">Layer 3 · สถานะการประเมิน</p>
+                <p className="mt-1 text-sm font-semibold text-ink-800">L3 ตัวสำรอง: {roleFallback.status === "abstain" ? "ข้อมูลอ้างอิงยังไม่พร้อม" : roleFallback.status === "skipped" ? "ชั้น 1–2 ตัดสินแล้ว" : "ข้อมูลอ้างอิงพร้อมใช้งาน"}</p>
+              </div>
+              <Badge tone={bd.l3_decision_trial?.ready ? "good" : "default"}>
+                {bd.l3_decision_trial?.ready ? "กฎทดลองพร้อม" : bd.l3_decision_trial?.mode === "legacy_fallback" ? "ใช้กฎเดิม" : "เฝ้าระวัง"}
+              </Badge>
+            </div>
+            {roleFallback.percentile != null && roleFallback.warn_percentile != null && (
+              <p className="mt-3 rounded-lg border border-ink-100 bg-white px-3 py-2 text-xs text-ink-600">
+                กลุ่ม {roleFallback.user_type} · Percentile {(roleFallback.percentile * 100).toFixed(2)}
+                {" · เกณฑ์เตือน > "}{(roleFallback.warn_percentile * 100).toFixed(2)}
               </p>
             )}
-            <p>คำเตือนนี้ไม่เปลี่ยนผลอนุญาตเข้าใช้งาน</p>
+            <p className="mt-3 text-xs leading-relaxed text-ink-500">
+              {bd.l3_decision_trial?.ready ? `ใช้ percentile ตัดสิน · ผล ${bd.l3_decision_trial.decision ?? "Allow"} · Sequence ${bd.l3_decision_trial.sequence_corroborated ? "พบสัญญาณร่วม" : "ไม่มีสัญญาณร่วม"}` : bd.l3_decision_trial?.mode === "legacy_fallback" ? `ใช้ตัวสำรอง Warn แบบเดิมระหว่างรอข้อมูล · ${bd.l3_fallback?.applied ? "ยกระดับเป็น Warn แล้ว" : "ยังไม่ยกระดับผล"}` : "คำเตือนนี้ไม่เปลี่ยนผลอนุญาตเข้าใช้งาน"}
+            </p>
           </div>
         )}
 

@@ -47,6 +47,7 @@ export type RiskBreakdown = {
     };
   };
   // ตัวสำรองระดับ warn ที่ยกการตัดสิน (ชั้นที่ 3 ยกเมื่อชั้นที่ 1+2 ตัดสิน allow) — ไม่มีใน session เก่า
+  l3_decision_trial?: { ready?: boolean; mode?: string; applied?: boolean; decision?: string; percentile?: number | null; warn_percentile?: number | null; challenge_percentile?: number; sequence_corroborated?: boolean };
   l3_fallback?: { applied?: boolean; threshold?: number; user_type?: string | null };
 };
 
