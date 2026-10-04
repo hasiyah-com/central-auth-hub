@@ -276,6 +276,26 @@ export default function UserDetailPage({ params }: { params: { id: string } }) {
   if (otherCount) donutSegs.push({ label: "อื่นๆ", color: "#8b5cf6", value: otherCount });
   const riskFactors = sessions[0]?.risk_reasons ?? [];
   const initial = (u?.full_name || u?.email || "?").charAt(0).toUpperCase();
+  const mfaPolicyLabel =
+    summary?.mfa_policy_choice === "always"
+      ? "ยืนยันทุกครั้ง"
+      : summary?.mfa_policy_choice === "snoozed"
+        ? "ข้ามไปก่อน"
+        : "เฉพาะเมื่อเสี่ยง";
+  const mfaPolicyDetail =
+    summary?.mfa_policy_choice === "always"
+      ? summary.mfa_preferred_factor
+        ? `ใช้ ${summary.mfa_preferred_factor === "passkey" ? "Passkey" : "Authenticator"} ก่อน`
+        : summary.effective_mfa_always && !summary.mfa_always
+          ? "บังคับสำหรับผู้ดูแลระบบ"
+          : "ขอ 2FA ทุกครั้งที่เข้าสู่ระบบ"
+      : summary?.mfa_policy_choice === "snoozed"
+        ? summary.security_onboarding_snoozed_until
+          ? `พักการเตือนถึง ${parseUTC(summary.security_onboarding_snoozed_until).toLocaleDateString("th-TH", {
+              dateStyle: "medium",
+            })}`
+          : "พักการตั้งค่าไว้ชั่วคราว"
+        : "ระบบจะขอ 2FA เมื่อตรวจพบความเสี่ยง";
 
   return (
     <div className="sc">
@@ -678,6 +698,25 @@ export default function UserDetailPage({ params }: { params: { id: string } }) {
               </Badge>
               )}
               </div>
+              {summary && (
+              <div className="mx-4 mt-3 flex items-center justify-between gap-3 rounded-lg border border-ink-100 bg-ink-50/70 px-3 py-2.5">
+              <div className="min-w-0">
+              <div className="text-[10px] font-bold uppercase tracking-wider text-ink-400">2FA Policy</div>
+              <div className="truncate text-xs text-ink-500">{mfaPolicyDetail}</div>
+              </div>
+              <Badge
+              tone={
+              summary.mfa_policy_choice === "always"
+              ? "good"
+              : summary.mfa_policy_choice === "snoozed"
+              ? "warn"
+              : "brand"
+              }
+              >
+              {mfaPolicyLabel}
+              </Badge>
+              </div>
+              )}
               <div className="p-4 space-y-1.5">
               {!creds ? (
               <Empty sm title="ยังไม่มีวิธียืนยันตัวตน" hint="Passkey หรือบัญชี Google ที่ผูกไว้จะแสดงที่นี่" />
