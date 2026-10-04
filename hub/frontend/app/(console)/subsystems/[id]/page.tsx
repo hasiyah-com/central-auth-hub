@@ -1340,6 +1340,23 @@ export default function SubsystemDetailPage({
                 <span className="verified">OAuth 2.0 · OIDC</span>
               </div>
               <code>client_id · {sub.client_id}</code>
+              <div className="cx-secure-oauth-inline">
+                <div>
+                  <small>OAuth scopes</small>
+                  <span className="cx-secure-scope-list">
+                    {scopes.length ? scopes.map((scope) => <b key={scope}>{scope}</b>) : <i>ยังไม่ได้กำหนด</i>}
+                  </span>
+                </div>
+                <div>
+                  <small>Redirect URI</small>
+                  {redirectUris.length ? (
+                    <span className="cx-secure-redirect">
+                      <code title={redirectUris.join("\n")}>{redirectUris[0]}</code>
+                      {redirectUris.length > 1 && <b>+{redirectUris.length - 1}</b>}
+                    </span>
+                  ) : <i>ยังไม่ได้ลงทะเบียน</i>}
+                </div>
+              </div>
               {(sub.created_at || sub.approved_at) && (
                 <span className="cx-hero-dates">
                   {sub.created_at && `สร้าง ${new Date(sub.created_at).toISOString().slice(0, 10)}`}
@@ -1460,66 +1477,6 @@ export default function SubsystemDetailPage({
         )}
 
         <div className="subsystem-config-grid">
-        {/* ── Section 1: Identity card ───────────────────── */}
-        <section className="cx-panel">
-          <header>
-            <div>
-              <span>oauth client</span>
-              <h2>OAuth Client</h2>
-            </div>
-          </header>
-          <div className="cx-panel-body grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-5">
-            <Field label="Client ID" mono value={sub.client_id} />
-            <Field label="เจ้าของ" value={sub.owner_email || "—"} />
-
-            <div>
-              <FieldLabel>Scope (OAuth)</FieldLabel>
-              {scopes.length > 0 ? (
-                <div className="flex flex-wrap gap-1.5">
-                  {scopes.map((s) => (
-                    <span
-                      key={s}
-                      className="px-2 py-0.5 bg-brand-50 text-brand-700 text-[11px] font-mono font-semibold"
-                    >
-                      {s}
-                    </span>
-                  ))}
-                </div>
-              ) : (
-                <div className="text-sm text-ink-400">—</div>
-              )}
-            </div>
-
-            <div>
-              <FieldLabel>จำนวน Whitelist</FieldLabel>
-              <div className="text-2xl font-extrabold text-ink-900 tabular-nums">
-                {sub.whitelist_count}
-                <span className="ml-1 text-xs font-normal text-ink-400">คน</span>
-              </div>
-            </div>
-
-            <div className="md:col-span-2">
-              <FieldLabel>Redirect URIs</FieldLabel>
-              {sub.redirect_uris && sub.redirect_uris.length > 0 ? (
-                <ul className="space-y-1.5">
-                  {sub.redirect_uris.map((u) => (
-                    <li
-                      key={u}
-                      className="font-mono text-[12px] text-ink-700 break-all"
-                    >
-                      {u}
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <div className="text-sm text-ink-400">
-                  ยังไม่ได้ลงทะเบียน redirect URI
-                </div>
-              )}
-            </div>
-          </div>
-        </section>
-
         {/* ── Access Policy ───────────────────────── */}
         <AccessPolicyCard
           subId={id}
