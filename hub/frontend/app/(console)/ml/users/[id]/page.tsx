@@ -20,6 +20,7 @@ const USER_TYPE_TONE: Record<string, "good" | "warn" | "danger" | "brand" | "def
 export default function UserTimelinePage({ params }: { params: { id: string } }) {
   const userId = params.id;
   const [data, setData] = useState<UserTimeline["data"] | null>(null);
+  const [baselineView, setBaselineView] = useState<"all" | "calculation">("calculation");
   const [days, setDays] = useState(30);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -41,6 +42,8 @@ export default function UserTimelinePage({ params }: { params: { id: string } })
   const sessions = useMemo(() => data?.sessions ?? [], [data]);
   const summary = useMemo(() => summarize(sessions), [sessions]);
   const displayName = data?.user.full_name || data?.user.email || "User ML Profile";
+
+  const baseline = baselineView === "calculation" ? data?.behavior_baseline?.calculation : data?.behavior_baseline;
 
   return (
     <>
@@ -100,32 +103,38 @@ export default function UserTimelinePage({ params }: { params: { id: string } })
               <section className="overflow-hidden rounded-2xl border border-ink-200 bg-white shadow-[0_12px_36px_rgba(15,23,42,.04)]">
                 <div className="flex flex-wrap items-start justify-between gap-4 border-b border-ink-100 px-5 py-5 sm:px-6">
                   <SectionTitle eyebrow="Behavior baseline" title="ข้อมูลพฤติกรรมที่ใช้ประเมิน" detail="ภาพรวม ณ ตอนนี้ · เวลาไทย" />
-                  <span className="rounded-lg border border-ink-200 bg-ink-50 px-3 py-2 font-mono text-[10px] font-semibold text-ink-600">ย้อนหลัง {data.behavior_baseline?.days ?? days} วัน</span>
+                  <span className="rounded-lg border border-ink-200 bg-ink-50 px-3 py-2 font-mono text-[10px] font-semibold text-ink-600">ชั้น 2 ย้อนหลัง {baseline?.days ?? days} วัน</span>
                 </div>
-                {data.behavior_baseline ? (
+                <div className="flex gap-2 px-5 pt-4" role="group" aria-label="ชุดประวัติ">
+                  {(["all", "calculation"] as const).map(view => <button key={view} type="button" aria-pressed={baselineView === view} onClick={() => setBaselineView(view)} className={`rounded-lg border px-3 py-2 text-xs ${baselineView === view ? "border-brand-500 bg-brand-50 text-brand-700" : "border-ink-200 text-ink-600"}`}>{view === "all" ? "ประวัติทั้งหมด" : "ประวัติที่ใช้คำนวณจริง"}</button>)}
+                </div>
+                {baseline ? (
                   <div className="p-5 sm:p-6">
                     <p className="mb-4 text-xs text-ink-500">
-                      {data.behavior_baseline.session_count} ครั้ง · {data.behavior_baseline.ready ? "พร้อมใช้เป็นพฤติกรรม" : `ข้อมูลยังไม่พอ (ต้องมี ${data.behavior_baseline.min_sessions} ครั้ง)`}
+                      {baseline.session_count} ครั้ง · {baseline.ready ? "ข้อมูลเพียงพอสำหรับชั้น 2" : `ข้อมูลยังไม่พอ (ต้องมี ${baseline.min_sessions} ครั้ง)`}
                     </p>
 
+                    <p className="mb-4 text-xs leading-relaxed text-ink-500">
+                      {baselineView === "calculation" ? `ชั้น 2: ${baseline.history_policy === "trusted" ? "เฉพาะประวัติที่เชื่อถือ" : "ทุกสถานะตามกฎพื้นฐาน"} ใน 30 วัน · วันธรรมดา ${baseline.weekday_count ?? 0} / วันหยุด ${baseline.weekend_count ?? 0} ครั้ง · ตรวจอุปกรณ์ใหม่: ประวัติที่เชื่อถือทั้งหมด ${baseline.device_history_count ?? 0} ครั้ง ไม่จำกัด 30 วัน` : "ทุกสถานะใน 30 วัน รวมรายการรอยืนยันและถูกบล็อก · เป็นข้อมูลสรุป ไม่ใช่ชุดอ้างอิงสำหรับตรวจอุปกรณ์ใหม่"}
+                    </p>
                     <div className="grid gap-3 sm:grid-cols-3">
-                      <BaselineSummary label="การเข้าใช้งาน" value={`${data.behavior_baseline.session_count}`} unit="ครั้ง" />
-                      <BaselineSummary label="อุปกรณ์หลัก" value={data.behavior_baseline.devices[0]?.value || "ยังไม่มีข้อมูล"} />
-                      <BaselineSummary label="ช่วงวันที่ใช้งาน" value={data.behavior_baseline.typical_weekend === null ? "ข้อมูลยังไม่พอ" : data.behavior_baseline.typical_weekend ? "เสาร์–อาทิตย์" : "จันทร์–ศุกร์"} />
+                      <BaselineSummary label="การเข้าใช้งาน" value={`${baseline.session_count}`} unit="ครั้ง" />
+                      <BaselineSummary label="อุปกรณ์หลัก" value={baseline.devices[0]?.value || "ยังไม่มีข้อมูล"} />
+                      <BaselineSummary label="ช่วงวันที่ใช้งาน" value={baseline.typical_weekend === null ? "ข้อมูลยังไม่พอ" : baseline.typical_weekend ? "เสาร์–อาทิตย์" : "จันทร์–ศุกร์"} />
                     </div>
 
                     <div className="mt-4 grid items-stretch gap-4 xl:grid-cols-12">
                       <div className="rounded-xl border border-ink-200 p-5 xl:col-span-5">
-                        <FrequencyBars label="ช่วงเวลาที่ใช้บ่อย" items={data.behavior_baseline.hours} />
+                        <FrequencyBars label="ช่วงเวลาที่ใช้บ่อย" items={baseline.hours} />
                         <div className="mt-5 rounded-xl bg-brand-50 px-4 py-3">
                           <div className="flex flex-wrap items-center justify-between gap-2">
                             <span className="text-xs font-semibold text-ink-700">เวลาอ้างอิง</span>
                             <span className="font-mono text-sm font-semibold text-ink-900">
-                              {data.behavior_baseline.temporal_median_hour === null ? "ข้อมูลยังไม่พอ" : `${data.behavior_baseline.temporal_median_hour} น.`}
+                              {baseline.temporal_median_hour === null ? "ข้อมูลยังไม่พอ" : `${baseline.temporal_median_hour} น.`}
                             </span>
                           </div>
                           <p className="mt-1 text-[11px] leading-relaxed text-ink-500">
-                            มัธยฐานจาก {data.behavior_baseline.temporal_count} ครั้งล่าสุด (สูงสุด 50) · ใช้คำนวณ hours_diff
+                            มัธยฐานแบบวนรอบ 24 ชั่วโมง จาก {baseline.temporal_count} ครั้งล่าสุด (สูงสุด 50) · ใช้คำนวณ hours_diff
                           </p>
                         </div>
                       </div>
@@ -134,35 +143,35 @@ export default function UserTimelinePage({ params }: { params: { id: string } })
                         <div className="flex flex-wrap items-start justify-between gap-2">
                           <div>
                             <h4 className="text-base font-semibold text-ink-800">อุปกรณ์ที่ใช้ประจำ</h4>
-                            <p className="mt-1 text-sm text-ink-500">OS + ประเภทอุปกรณ์ + เบราว์เซอร์พร้อมเวอร์ชัน</p>
+                            <p className="mt-1 text-sm text-ink-500">{baselineView === "calculation" ? "ชุดอ้างอิงตรวจอุปกรณ์ใหม่ · ประวัติที่เชื่อถือทั้งหมด" : "OS + ประเภทอุปกรณ์ + เบราว์เซอร์พร้อมเวอร์ชัน"}</p>
                           </div>
-                          <span className="text-xs text-ink-400">เวอร์ชันจาก session ที่บันทึกจริง</span>
+                          <span className="text-xs text-ink-400">{baselineView === "calculation" ? "OS · ประเภท · ตระกูลเบราว์เซอร์ ไม่เทียบเวอร์ชัน" : "เวอร์ชันจาก session ที่บันทึกจริง"}</span>
                         </div>
-                        <DeviceSignatureTable items={data.behavior_baseline.device_signature_versions ?? data.behavior_baseline.device_signatures} />
+                        <DeviceSignatureTable items={baseline.device_signature_versions ?? baseline.device_signatures} />
                       </div>
                     </div>
 
                     <div className="mt-4 grid gap-4 lg:grid-cols-3">
-                      <FrequencyBars label="เบราว์เซอร์" items={data.behavior_baseline.browsers} compact />
-                      <FrequencyBars label="ระบบปฏิบัติการ (OS)" items={data.behavior_baseline.operating_systems} compact />
+                      <FrequencyBars label="เบราว์เซอร์" items={baseline.browsers} compact />
+                      <FrequencyBars label="ระบบปฏิบัติการ (OS)" items={baseline.operating_systems} compact />
                       <div className="rounded-xl border border-ink-200 p-5">
-                        <FrequencyBars label="ประเภทอุปกรณ์" items={data.behavior_baseline.devices} compact embedded />
+                        <FrequencyBars label="ประเภทอุปกรณ์" items={baseline.devices} compact embedded />
                         <div className="mt-4 border-t border-ink-100 pt-4">
                           <h4 className="text-xs font-semibold text-ink-700">ประเทศ</h4>
                           <p className="mt-2 text-xs text-ink-500">
-                            {data.behavior_baseline.countries.length ? data.behavior_baseline.countries.map((item) => `${item.value} · ${item.count} ครั้ง`).join(" / ") : "ยังไม่มีข้อมูลที่ระบุ"}
+                            {baseline.countries.length ? baseline.countries.map((item) => `${item.value} · ${item.count} ครั้ง`).join(" / ") : "ยังไม่มีข้อมูลที่ระบุ"}
                           </p>
                         </div>
                       </div>
                     </div>
 
                     <div className="mt-4 grid gap-4 lg:grid-cols-2">
-                      <FrequencyBars label="ระบบที่เข้าบ่อย" detail="ใช้เทียบระบบใหม่ ระบบที่ใช้นาน ๆ ครั้ง และระดับสิทธิ์" items={data.behavior_baseline.subsystems} compact />
-                      <FrequencyBars label="IP ที่พบในประวัติ" detail="ข้อมูลประกอบ · ชั้น 2 ไม่ให้คะแนนจากความถี่ IP โดยตรง" items={data.behavior_baseline.ips} compact />
+                      <FrequencyBars label="ระบบที่เข้าบ่อย" detail="ใช้เทียบระบบใหม่ ระบบที่ใช้นาน ๆ ครั้ง และระดับสิทธิ์" items={baseline.subsystems} compact />
+                      <FrequencyBars label="IP ที่พบในประวัติ" detail="ข้อมูลประกอบ · ชั้น 2 ไม่ให้คะแนนจากความถี่ IP โดยตรง" items={baseline.ips} compact />
                     </div>
 
                     <p className="mt-4 border-t border-ink-100 pt-4 text-[11px] text-ink-400">
-                      ข้อมูลสรุปปัจจุบัน ไม่ใช่ baseline ย้อนหลังของแต่ละเหตุการณ์
+                      ข้อมูล ณ ตอนนี้ ไม่ใช่ชุดอ้างอิงย้อนหลังของแต่ละเหตุการณ์ · เวลาอ้างอิงใช้ 50 ครั้งล่าสุดทุกสถานะ · IP เป็นข้อมูลประกอบ · ตารางแสดง 5 อันดับแรก
                     </p>
                   </div>
                 ) : <p className="px-6 py-8 text-sm text-ink-500">ยังไม่มีข้อมูล baseline จากเซิร์ฟเวอร์</p>}

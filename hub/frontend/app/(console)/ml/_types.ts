@@ -124,6 +124,8 @@ export type ThresholdPreview = {
 };
 
 export type BehaviorBaseline = {
+  calculation?: BehaviorBaseline; device_history_count?: number;
+  weekday_count?: number; weekend_count?: number; history_policy?: string;
   days: number; session_count: number; ready: boolean; min_sessions: number;
   hours: BehaviorFrequency[]; devices: BehaviorFrequency[]; browsers: BehaviorFrequency[];
   operating_systems: BehaviorFrequency[]; device_signatures: BehaviorFrequency[];

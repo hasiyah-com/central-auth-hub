@@ -8,7 +8,6 @@ Endpoints:
 """
 
 from collections import Counter
-from statistics import median
 from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -21,7 +20,7 @@ from app.database import get_db
 from app.deps import get_client_ip, require_hub_admin
 from app.models import LoginSession, MLFeedback, Subsystem, User
 from app.services.audit_service import log_action
-from app.services.feature_extraction import browser_family, _device_signature, parse_os_name, parse_device_type
+from app.services.feature_extraction import browser_family, _device_signature, parse_os_name, parse_device_type, circular_median_hour, MIN_HISTORY_FOR_PERSONALIZATION
 from app.services.feature_time import as_bangkok
 from app.security.behavior_profiling import get_user_profile, PROFILE_WINDOW_DAYS, MIN_SESSIONS
 from app.services.ip_blacklist import add_to_blacklist, remove_from_blacklist
@@ -409,6 +408,7 @@ def user_session_timeline(
     history = db.query(LoginSession).filter(
         LoginSession.user_id == user_id,
         LoginSession.created_at >= now - timedelta(days=PROFILE_WINDOW_DAYS),
+        LoginSession.created_at < now,
     ).all()
     temporal = db.query(LoginSession.created_at).filter(
         LoginSession.user_id == user_id, LoginSession.created_at < now,
@@ -449,8 +449,39 @@ def user_session_timeline(
         "subsystems": ranked(subsystem_names.get(str(row.subsystem_id), "ระบบที่ไม่พบชื่อ") if row.subsystem_id else "Hub (เข้าระบบโดยตรง)" for row in history),
         "typical_weekend": profile["typical_weekend"] if profile else None,
         "temporal_count": len(temporal),
-        "temporal_median_hour": median([as_bangkok(row[0]).hour for row in temporal]) if len(temporal) >= MIN_SESSIONS else None,
+        "temporal_median_hour": circular_median_hour([as_bangkok(row[0]).hour for row in temporal]) if len(temporal) >= MIN_HISTORY_FOR_PERSONALIZATION else None,
     }
+
+    from app.services.auth_evidence import trusted_history
+    def trusted(row):
+        return trusted_history(row.decision, row.risk_breakdown,
+                               row.is_attack_ip, row.is_account_takeover)
+    used = [row for row in history if trusted(row)] if settings.risk_contextual_trial_enabled else history
+    device_history = db.query(LoginSession).filter(
+        LoginSession.user_id == user_id, LoginSession.created_at < now,
+        LoginSession.user_agent.is_not(None),
+    ).all()
+    trusted_devices = [row for row in device_history if trusted(row)]
+    actual = dict(baseline)
+    actual.update({
+        "session_count": len(used),
+        "hours": ranked(f"{as_bangkok(row.created_at).hour:02d}:00–{as_bangkok(row.created_at).hour:02d}:59" for row in used),
+        "subsystems": ranked(subsystem_names.get(str(row.subsystem_id), "ระบบที่ไม่พบชื่อ") if row.subsystem_id else "Hub (เข้าระบบโดยตรง)" for row in used),
+        "ips": ranked(str(row.ip) for row in used if row.ip),
+        "countries": ranked(row.geo_country for row in used),
+        "devices": ranked(parse_device_type(row.user_agent) for row in trusted_devices),
+        "browsers": ranked(browser_family(row.user_agent) for row in trusted_devices),
+        "operating_systems": ranked(parse_os_name(row.user_agent) for row in trusted_devices),
+        "device_signatures": ranked(_device_signature(row.user_agent).replace("|", " · ") for row in trusted_devices),
+        "device_signature_versions": ranked(_device_signature(row.user_agent).replace("|", " · ") for row in trusted_devices),
+        "device_history_count": len(trusted_devices),
+        "weekday_count": sum(as_bangkok(row.created_at).weekday() < 5 for row in used),
+        "weekend_count": sum(as_bangkok(row.created_at).weekday() >= 5 for row in used),
+        "history_policy": "trusted" if settings.risk_contextual_trial_enabled else "all",
+    })
+    baseline["ready"] = len(history) >= MIN_SESSIONS
+    baseline["calculation"] = actual
+    baseline["typical_weekend"] = (round(sum(as_bangkok(row.created_at).weekday() >= 5 for row in history) / len(history)) if history else None)
 
     return {
         "data": {

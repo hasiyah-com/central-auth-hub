@@ -95,12 +95,14 @@ def get_user_profile(db: Session, user_id: str) -> dict | None:
     """สร้าง behavior profile จาก login history 30 วัน.
     คืน None ถ้า history ไม่เพียงพอ (cold start).
     """
-    since = datetime.utcnow() - timedelta(days=PROFILE_WINDOW_DAYS)
+    profile_now = datetime.utcnow()
+    since = profile_now - timedelta(days=PROFILE_WINDOW_DAYS)
     sessions = (
         db.query(LoginSession)
         .filter(
             LoginSession.user_id == user_id,
             LoginSession.created_at >= since,
+            LoginSession.created_at < profile_now,
         )
         .all()
     )
