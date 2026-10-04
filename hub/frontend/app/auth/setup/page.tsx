@@ -17,6 +17,7 @@ import {
   fetchSecurityStatus,
   dismissSecurityOnboarding,
   snoozeSecurityOnboarding,
+  updateSecurity,
   registerPasskey,
 } from "@/lib/passkey";
 import { TotpCard } from "@/components/account/TotpCard";
@@ -72,9 +73,11 @@ function SetupInner() {
   const params = useSearchParams();
   const [ready, setReady] = useState(false);
   const [dest, setDest] = useState("/dashboard");
-  const [busy, setBusy] = useState<"" | "later" | "never">("");
+  const [busy, setBusy] = useState<"" | "later" | "never" | "policy">("");
   const [email, setEmail] = useState("");
   const [required, setRequired] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [mfaPolicy, setMfaPolicy] = useState<"always" | "risk_based">("risk_based");
   const [gateError, setGateError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -91,8 +94,10 @@ function SetupInner() {
         return;
       }
 
-      const isAdmin = status.is_admin || me?.is_hub_admin === true || me?.user_type === "admin";
-      const home = isAdmin ? "/dashboard" : "/developer/subsystems";
+      const accountIsAdmin = status.is_admin || me?.is_hub_admin === true || me?.user_type === "admin";
+      setIsAdmin(accountIsAdmin);
+      setMfaPolicy(status.effective_mfa_always ? "always" : "risk_based");
+      const home = accountIsAdmin ? "/dashboard" : "/developer/subsystems";
       const requestedNext = params.get("next") || home;
       const next = requestedNext.startsWith("/") && !requestedNext.startsWith("//")
         ? requestedNext
@@ -103,10 +108,11 @@ function SetupInner() {
       // `required=1` มาจาก middleware หลังตรวจ JWT ว่าเป็น admin แล้ว
       // ใช้ค่านี้ด้วย เพราะ security-status อาจไม่มี is_admin ในบาง token/schema version.
       const mustSetup =
-        (isAdmin || params.get("required") === "1") &&
+        (accountIsAdmin || params.get("required") === "1") &&
         status.has_second_factor !== true;
       setRequired(mustSetup);
-      if (!mustSetup && !status.should_prompt_setup) {
+      const manageMode = params.get("manage") === "1";
+      if (!mustSetup && !status.should_prompt_setup && !manageMode) {
         window.location.href = next;
         return;
       }
@@ -143,6 +149,23 @@ function SetupInner() {
       /* fail-safe */
     }
     window.location.href = dest;
+  };
+
+  const changeMfaPolicy = async (choice: "always" | "risk_based") => {
+    if (isAdmin && choice === "risk_based") return;
+    const previous = mfaPolicy;
+    setMfaPolicy(choice);
+    setBusy("policy");
+    setGateError(null);
+    try {
+      const updated = await updateSecurity({ mfa_always: choice === "always" });
+      setMfaPolicy(updated.effective_mfa_always ? "always" : "risk_based");
+    } catch (e) {
+      setMfaPolicy(previous);
+      setGateError(e instanceof Error ? e.message : "บันทึกนโยบาย 2FA ไม่สำเร็จ");
+    } finally {
+      setBusy("");
+    }
   };
 
   if (!ready) {
@@ -220,6 +243,55 @@ function SetupInner() {
                 <button type="button" onClick={() => window.location.reload()} className="font-semibold underline">ลองตรวจสอบอีกครั้ง</button>
               </div>
             )}
+
+            <section className="mb-5 border border-slate-200 bg-white p-4">
+              <div className="mb-3">
+                <h3 className="text-sm font-bold text-slate-900">ต้องการยืนยัน 2FA เมื่อใด</h3>
+                <p className="mt-1 text-xs leading-5 text-slate-500">เปลี่ยนได้ทันที ระบบจะบันทึกกับบัญชีนี้และใช้กับทุกระบบย่อย</p>
+              </div>
+              <div className="grid gap-2 sm:grid-cols-2">
+                <button
+                  type="button"
+                  onClick={() => changeMfaPolicy("always")}
+                  disabled={busy === "policy" || !!gateError}
+                  aria-pressed={mfaPolicy === "always"}
+                  className={`min-h-[72px] border px-4 py-3 text-left transition disabled:opacity-60 ${
+                    mfaPolicy === "always"
+                      ? "border-teal-500 bg-teal-50 ring-1 ring-teal-500"
+                      : "border-slate-200 bg-slate-50 hover:border-slate-400"
+                  }`}
+                >
+                  <span className="flex items-center justify-between gap-3">
+                    <b className="text-sm text-slate-900">ยืนยันทุกครั้ง</b>
+                    <span className={`h-3 w-3 rounded-full border ${
+                      mfaPolicy === "always" ? "border-teal-600 bg-teal-600" : "border-slate-300 bg-white"
+                    }`} />
+                  </span>
+                  <small className="mt-1 block text-xs text-slate-500">ขอ Passkey หรือ Authenticator ทุกครั้งที่เข้าสู่ระบบ</small>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => changeMfaPolicy("risk_based")}
+                  disabled={busy === "policy" || !!gateError || isAdmin}
+                  aria-pressed={mfaPolicy === "risk_based"}
+                  className={`min-h-[72px] border px-4 py-3 text-left transition disabled:opacity-60 ${
+                    mfaPolicy === "risk_based"
+                      ? "border-blue-500 bg-blue-50 ring-1 ring-blue-500"
+                      : "border-slate-200 bg-slate-50 hover:border-slate-400"
+                  }`}
+                >
+                  <span className="flex items-center justify-between gap-3">
+                    <b className="text-sm text-slate-900">เฉพาะเมื่อเสี่ยง</b>
+                    <span className={`h-3 w-3 rounded-full border ${
+                      mfaPolicy === "risk_based" ? "border-blue-600 bg-blue-600" : "border-slate-300 bg-white"
+                    }`} />
+                  </span>
+                  <small className="mt-1 block text-xs text-slate-500">{isAdmin ? "บัญชีผู้ดูแลระบบถูกบังคับให้ยืนยันทุกครั้ง" : "ใช้งานปกติได้ทันที และขอ 2FA เมื่อระบบพบความเสี่ยง"}</small>
+                </button>
+              </div>
+              {busy === "policy" && <p className="mt-2 text-xs text-teal-700">กำลังบันทึกการตั้งค่า…</p>}
+            </section>
+
             <div className="space-y-3">
               {OPTIONS.map((o) => (
                 <button
