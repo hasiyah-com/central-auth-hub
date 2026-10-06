@@ -21,6 +21,7 @@ const ADMIN_PATHS = [
   "/subsystems",
   "/ml",
   "/audit",
+  "/reports",
   "/account",
 ];
 
