@@ -142,6 +142,33 @@ def auth_policy_public(db: Session = Depends(get_db)):
 # ============ 1. เริ่ม login — redirect ไป Google ============
 
 
+def _google_redirect_uri_for_request(request: Request) -> str:
+    """เลือก callback ตาม frontend proxy ที่ผ่านการยืนยันแล้ว.
+
+    ทำให้ Vercel และ frontend เดิมบน Dokploy ใช้ backend เดียวกันได้ โดย origin
+    ต้องมากับ shared secret ที่ถูกต้องและอยู่ใน CORS_ALLOW_ORIGINS เท่านั้น.
+    Direct backend request ยังคงใช้ GOOGLE_REDIRECT_URI เดิม.
+    """
+    supplied_secret = request.headers.get("x-proxy-secret", "")
+    expected_secret = settings.proxy_shared_secret
+    if not (
+        expected_secret
+        and supplied_secret
+        and secrets.compare_digest(supplied_secret, expected_secret)
+    ):
+        return settings.google_redirect_uri
+
+    origin = (request.headers.get("x-frontend-origin") or "").strip().rstrip("/")
+    allowed_origins = {
+        item.strip().rstrip("/")
+        for item in settings.cors_allow_origins.split(",")
+        if item.strip()
+    }
+    if origin in allowed_origins and origin.startswith(("https://", "http://localhost")):
+        return f"{origin}/api/proxy/auth/google/callback"
+    return settings.google_redirect_uri
+
+
 @router.get("/google/login")
 @limiter.limit(settings.rate_limit_login)
 async def google_login(request: Request, db: Session = Depends(get_db)):
@@ -161,7 +188,7 @@ async def google_login(request: Request, db: Session = Depends(get_db)):
             "user_agent": request.headers.get("user-agent"),
         },
     )
-    redirect_uri = settings.google_redirect_uri
+    redirect_uri = _google_redirect_uri_for_request(request)
     # prompt=select_account → Google บังคับให้เลือก account ทุกครั้ง
     # (ไม่ auto-login ด้วย session เดิม) — จำเป็นสำหรับ multi-account
     # + การเทส (register passkey หลายอีเมลบนเครื่องเดียว)
@@ -186,7 +213,7 @@ async def credentials_setup_start(request: Request, db: Session = Depends(get_db
         )
     request.session["cred_setup"] = True
     return await oauth.google.authorize_redirect(
-        request, settings.google_redirect_uri, prompt="select_account"
+        request, _google_redirect_uri_for_request(request), prompt="select_account"
     )
 
 
