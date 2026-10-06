@@ -163,7 +163,9 @@ async function forward(req: NextRequest, path: string[]) {
   // Vercel proxy ต้องส่ง cookie ขา callback กลับไปให้ backend ตรวจ state ด้วย.
   const oauthSessionRoute =
     targetPath.startsWith("/auth/google/") ||
-    targetPath === "/auth/credentials/setup";
+    targetPath === "/auth/credentials/setup" ||
+    targetPath === "/oauth" ||
+    targetPath.startsWith("/oauth/");
   const requestCookie = req.headers.get("cookie");
   if (oauthSessionRoute && requestCookie) {
     headers["cookie"] = requestCookie;
