@@ -1,12 +1,14 @@
 """FastAPI dependencies — ใช้ร่วมกันหลาย router."""
 
 import ipaddress
+import secrets
 
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jwt.exceptions import InvalidTokenError as JWTError
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.database import get_db
 from app.models import User
 from app.services.jwt_service import verify_token
@@ -53,6 +55,21 @@ def get_client_ip(request: Request) -> str | None:
 
     Validate เป็น IP เสมอ (กัน INET insert crash + malformed-header DoS) — ไม่ใช่ IP คืน None
     """
+    # 0. Next.js/Vercel proxy ส่ง IP พร้อม shared secret — ใช้เฉพาะเมื่อ
+    # secret ตรงกันแบบ constant-time เพื่อกัน client ยิง header ปลอมเข้า backend โดยตรง
+    supplied_secret = request.headers.get("x-proxy-secret", "")
+    expected_secret = settings.proxy_shared_secret
+    if (
+        expected_secret
+        and supplied_secret
+        and secrets.compare_digest(supplied_secret, expected_secret)
+    ):
+        signed_client_ip = _valid_ip_or_none(
+            (request.headers.get("x-client-ip") or "").strip()
+        )
+        if signed_client_ip:
+            return signed_client_ip
+
     # 1. X-Real-IP (nginx เขียนทับค่า client — authoritative ใน prod)
     xri = _valid_ip_or_none((request.headers.get("x-real-ip") or "").strip())
     if xri:
