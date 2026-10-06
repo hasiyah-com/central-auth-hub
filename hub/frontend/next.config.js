@@ -45,7 +45,6 @@ const nextConfig = {
   },
   async rewrites() {
     const passthrough = [
-      "/oauth",
       "/.well-known",
       "/auth/google",
       "/auth/credentials",
@@ -61,6 +60,10 @@ const nextConfig = {
     ];
     return [
       { source: "/api/hub/:path*", destination: `${HUB_INTERNAL}/:path*` },
+      // Subsystem browser OAuth ต้องผ่าน signed proxy เพื่อส่ง client IP จริง
+      // และคง URL /oauth/* เดิมให้ HTML chooser ใช้ same-origin ได้.
+      { source: "/oauth", destination: "/api/proxy/oauth" },
+      { source: "/oauth/:path*", destination: "/api/proxy/oauth/:path*" },
       ...passthrough.flatMap((p) => [
         { source: p, destination: `${HUB_INTERNAL}${p}` },
         { source: `${p}/:path*`, destination: `${HUB_INTERNAL}${p}/:path*` },
