@@ -156,10 +156,22 @@ async function forward(req: NextRequest, path: string[]) {
   // และคง X-Forwarded-For ไว้สำหรับ topology เดิม/diagnostics.
   Object.assign(headers, proxyClientHeaders(req));
 
+  // OAuth state ถูกเก็บใน signed session cookie ของ backend. เมื่อ flow วิ่งผ่าน
+  // Vercel proxy ต้องส่ง cookie ขา callback กลับไปให้ backend ตรวจ state ด้วย.
+  const oauthSessionRoute =
+    targetPath.startsWith("/auth/google/") ||
+    targetPath === "/auth/credentials/setup";
+  const requestCookie = req.headers.get("cookie");
+  if (oauthSessionRoute && requestCookie) {
+    headers["cookie"] = requestCookie;
+  }
+
   const init: RequestInit = {
     method: req.method,
     headers,
     cache: "no-store",
+    // ให้ 302 จาก backend/Google กลับไปที่ browser ห้าม server-side fetch ตามเอง.
+    redirect: "manual",
   };
   // GET/HEAD ห้ามมี body
   if (req.method !== "GET" && req.method !== "HEAD") {
