@@ -28,6 +28,7 @@ export function pathMatches(prefixes: string[], pathname: string): boolean {
  *  - `/auth/*` (หน้า login/callback/stepup — user ยังไม่ login จริง)
  *  - `/api/set-token`
  *  - `/api/proxy/auth/passkey/*`  — passkey login + recovery (public flow)
+ *  - `/api/proxy/auth/google/*`   — Google OAuth login + callback
  *  - `/api/proxy/auth/frontend/*` — one-time login-code exchange
  *    ("ยังไม่มี token" คือเหตุผลที่เรียก; code เองคือ credential single-use)
  *  - BACKEND_PASSTHROUGH (server-to-server / cross-origin ที่ backend auth เอง)
@@ -38,6 +39,7 @@ export function isPublicPath(pathname: string): boolean {
     pathname.startsWith("/auth/") ||
     pathname.startsWith("/api/set-token") ||
     pathname.startsWith("/api/proxy/auth/passkey/") ||
+    pathname.startsWith("/api/proxy/auth/google/") ||
     pathname.startsWith("/api/proxy/auth/frontend/") ||
     pathMatches(BACKEND_PASSTHROUGH, pathname) ||
     pathname.startsWith("/_next") ||
