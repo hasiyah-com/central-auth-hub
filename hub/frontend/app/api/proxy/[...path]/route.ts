@@ -39,9 +39,20 @@ function proxyClientHeaders(req: NextRequest): Record<string, string> {
     .split(",")
     .map((part) => part.trim())
     .filter(Boolean);
-  // Vercel/edge proxy เติม client IP ที่ hop ขวาสุดซึ่ง client เขียนทับไม่ได้
+  // Vercel เขียน header นี้จาก connection จริงและทับค่าที่ client ส่งมาเอง
+  // ส่วน deployment อื่น fallback ไป XFF hop ขวาสุดตาม trusted-proxy policy เดิม.
+  const vercelForwardedFor =
+    req.headers.get("x-vercel-forwarded-for") || "";
+  const vercelClientIp = vercelForwardedFor
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean)[0];
   const clientIp =
-    forwardedChain.at(-1) || req.headers.get("x-real-ip") || req.ip || "";
+    vercelClientIp ||
+    forwardedChain.at(-1) ||
+    req.headers.get("x-real-ip") ||
+    req.ip ||
+    "";
 
   const headers: Record<string, string> = {};
   if (forwardedFor) headers["x-forwarded-for"] = forwardedFor;
