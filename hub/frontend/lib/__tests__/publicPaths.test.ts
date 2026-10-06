@@ -7,9 +7,11 @@ describe("isPublicPath — flow ที่ยังไม่มี token ต้�
     expect(isPublicPath("/api/proxy/auth/frontend/exchange")).toBe(true);
   });
 
-  it("ปล่อยผ่าน passkey login + recovery", () => {
+  it("ปล่อยผ่าน passkey และ Google OAuth public flows", () => {
     expect(isPublicPath("/api/proxy/auth/passkey/login/start")).toBe(true);
     expect(isPublicPath("/api/proxy/auth/passkey/recover/otp")).toBe(true);
+    expect(isPublicPath("/api/proxy/auth/google/login")).toBe(true);
+    expect(isPublicPath("/api/proxy/auth/google/callback")).toBe(true);
   });
 
   it("ปล่อยผ่านหน้า /auth/* และ set-token", () => {
