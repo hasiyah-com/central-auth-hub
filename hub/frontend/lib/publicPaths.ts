@@ -41,6 +41,8 @@ export function isPublicPath(pathname: string): boolean {
     pathname.startsWith("/api/proxy/auth/passkey/") ||
     pathname.startsWith("/api/proxy/auth/google/") ||
     pathname.startsWith("/api/proxy/auth/frontend/") ||
+    pathname === "/api/proxy/oauth" ||
+    pathname.startsWith("/api/proxy/oauth/") ||
     pathMatches(BACKEND_PASSTHROUGH, pathname) ||
     pathname.startsWith("/_next") ||
     pathname === "/favicon.ico"
