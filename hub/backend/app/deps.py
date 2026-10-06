@@ -39,24 +39,28 @@ def _valid_ip_or_none(candidate: str | None) -> str | None:
     return str(ip)
 
 
+def _public_ip_or_none(candidate: str | None) -> str | None:
+    """คืน IP ที่ routable บนอินเทอร์เน็ตเท่านั้น ไม่รับ Docker/LAN/loopback."""
+    validated = _valid_ip_or_none(candidate)
+    if not validated:
+        return None
+    return validated if ipaddress.ip_address(validated).is_global else None
+
+
 def get_client_ip(request: Request) -> str | None:
-    """คืน IP ของ client (spoof-resistant) เมื่ออยู่หลัง reverse proxy.
+    """คืน IP ของ client เมื่ออยู่หลัง Vercel/Traefik/Dokploy.
 
-    ⚠️ ความปลอดภัย — **ห้ามใช้ X-Forwarded-For[0]** เพราะ client กำหนดค่าตัวแรกได้เอง
-    (`X-Forwarded-For: <IP ปลอม>`) → ปลอมประเทศ/เลี่ยง GeoIP risk/bypass IP blacklist/
-    ปลอม audit log. proxy ที่เชื่อถือได้จะ **append** IP จริงไว้ **ท้าย** เสมอ:
-      - nginx: `X-Real-IP $remote_addr` (ทับค่า client) + XFF `$proxy_add_x_forwarded_for`
-      - Cloudflare tunnel: append client IP จริงไว้ท้าย XFF
+    ลำดับความน่าเชื่อถือ:
+      1. x-client-ip ที่ Vercel proxy ลงนามด้วย shared secret
+      2. public IP ขวาสุดใน X-Forwarded-For
+      3. X-Real-IP (อาจเป็น private IP ของ Traefik ใน Dokploy)
+      4. request.client.host
 
-    ลำดับความน่าเชื่อถือ (topology = single trusted proxy):
-      1. X-Real-IP     — nginx set = $remote_addr (client ทับไม่ได้ผ่าน nginx)
-      2. XFF ตัวขวาสุด — IP ที่ proxy ที่เชื่อถือได้เติมล่าสุด (ไม่ใช่ตัวแรกที่ client คุม)
-      3. request.client.host — direct (dev / docker gateway 172.x)
-
-    Validate เป็น IP เสมอ (กัน INET insert crash + malformed-header DoS) — ไม่ใช่ IP คืน None
+    การไล่ XFF จากขวาไปซ้ายและข้าม private proxy hops ทำให้เลือก client IP
+    ที่ trusted proxy เติมไว้ โดยไม่หลงเลือก Docker/LAN address เช่น 192.168.x.x.
     """
-    # 0. Next.js/Vercel proxy ส่ง IP พร้อม shared secret — ใช้เฉพาะเมื่อ
-    # secret ตรงกันแบบ constant-time เพื่อกัน client ยิง header ปลอมเข้า backend โดยตรง
+    # 1. Next.js/Vercel proxy ส่ง IP พร้อม shared secret — ใช้เฉพาะเมื่อ
+    # secret ตรงกันแบบ constant-time เพื่อกัน client ยิง header ปลอมเข้า backendโดยตรง
     supplied_secret = request.headers.get("x-proxy-secret", "")
     expected_secret = settings.proxy_shared_secret
     if (
@@ -70,21 +74,22 @@ def get_client_ip(request: Request) -> str | None:
         if signed_client_ip:
             return signed_client_ip
 
-    # 1. X-Real-IP (nginx เขียนทับค่า client — authoritative ใน prod)
+    # 2. Traefik อาจใส่ private proxy hop ไว้ท้าย XFF จึงไล่จากขวาไปซ้าย
+    # และคืน public IP ตัวแรกที่พบ ไม่เลือกค่าปลอมทางซ้ายก่อนค่าที่ proxy เติม.
+    xff = request.headers.get("x-forwarded-for")
+    if xff:
+        candidates = [p.strip() for p in xff.split(",") if p.strip()]
+        for candidate in reversed(candidates):
+            public_ip = _public_ip_or_none(candidate)
+            if public_ip:
+                return public_ip
+
+    # 3. เก็บ fallback สำหรับเครือข่ายภายใน/dev ที่ไม่มี public IP ใน XFF.
     xri = _valid_ip_or_none((request.headers.get("x-real-ip") or "").strip())
     if xri:
         return xri
 
-    # 2. X-Forwarded-For — เอา "ตัวขวาสุด" ที่ valid (proxy ที่เชื่อถือได้เติมล่าสุด)
-    #    ไม่ใช่ตัวแรกที่ client ส่งมาเอง (ปลอมได้)
-    xff = request.headers.get("x-forwarded-for")
-    if xff:
-        for candidate in reversed([p.strip() for p in xff.split(",") if p.strip()]):
-            validated = _valid_ip_or_none(candidate)
-            if validated:
-                return validated
-
-    # 3. direct (ไม่มี proxy) — dev / docker
+    # 4. direct connection (dev / docker)
     client_host = request.client.host if request.client else None
     return _valid_ip_or_none(client_host)
 
