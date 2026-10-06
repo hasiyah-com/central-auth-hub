@@ -88,6 +88,9 @@ class Settings(BaseSettings):
     cors_allow_origins: str = (
         "http://localhost:3000,http://localhost:3001,http://localhost:3002"
     )
+    # Shared secret สำหรับยืนยัน X-Client-IP ที่ Next.js proxy ส่งมา
+    # ปล่อยว่าง = ไม่เชื่อถือ custom client-IP headers และใช้ proxy fallback เดิม
+    proxy_shared_secret: str = ""
 
     # Rate limit (per-IP) — slowapi
     # คา่ default เผื่อให้ admin gh + dev convenience; production ลดได้
