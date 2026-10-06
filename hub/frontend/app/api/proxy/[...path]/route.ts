@@ -59,6 +59,9 @@ function proxyClientHeaders(req: NextRequest): Record<string, string> {
   if (clientIp && PROXY_SHARED_SECRET) {
     headers["x-client-ip"] = clientIp;
     headers["x-proxy-secret"] = PROXY_SHARED_SECRET;
+    // backend ใช้เลือก OAuth callback ให้กลับมายัง frontend ต้นทางเดิม
+    // (Vercel หรือ Dokploy) หลังตรวจ shared secret + origin allowlist แล้ว.
+    headers["x-frontend-origin"] = req.nextUrl.origin;
   }
   return headers;
 }
