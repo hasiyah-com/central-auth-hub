@@ -173,7 +173,7 @@ export default function LoginPage() {
 
           {policy.passkey && passkeySupported === false && <div className={policy.google ? "login-error login-warning" : "login-error"}>เบราว์เซอร์นี้ไม่รองรับ Passkey{policy.google ? " — ใช้ Google Workspace แทนได้" : " และ Google login ถูกปิด"}</div>}
 
-          {policy.google && <><div className="login-divider"><span>หรือ</span></div><a href={`${HUB_URL}/auth/google/login`} className="google-button"><span className="google-g">G</span><span>เข้าสู่ระบบด้วย Google Workspace</span><b aria-hidden="true">→</b></a></>}
+          {policy.google && <><div className="login-divider"><span>หรือ</span></div><a href="/api/proxy/auth/google/login" className="google-button"><span className="google-g">G</span><span>เข้าสู่ระบบด้วย Google Workspace</span><b aria-hidden="true">→</b></a></>}
 
           <div className="login-help">
             <a href={`${HUB_URL}/auth/recovery/ticket`}>กู้บัญชีหรือขอทบทวนการบล็อก</a>
