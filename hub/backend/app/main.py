@@ -242,6 +242,25 @@ def jwks():
     return get_jwks()
 
 
+@app.get("/.well-known/webauthn", tags=["Authentication"])
+def webauthn_related_origins():
+    """อนุญาต WebAuthn Related Origin Requests ตาม WebAuthn Level 3.
+
+    Browser เรียก endpoint นี้ที่ RP ID เดิมเพื่อยืนยันว่า frontend origin อื่น
+    (เช่น Vercel) ได้รับอนุญาตให้ใช้ Passkey ชุดเดียวกัน.
+    """
+    origins = [
+        origin.strip().rstrip("/")
+        for origin in settings.webauthn_origins.split(",")
+        if origin.strip()
+        and (
+            origin.strip().startswith("https://")
+            or origin.strip().startswith("http://localhost")
+        )
+    ]
+    return {"origins": origins}
+
+
 @app.get("/")
 def root():
     return {
