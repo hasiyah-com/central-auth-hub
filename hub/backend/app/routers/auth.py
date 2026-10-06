@@ -164,6 +164,10 @@ def _google_redirect_uri_for_request(request: Request) -> str:
         for item in settings.cors_allow_origins.split(",")
         if item.strip()
     }
+    admin_origin = settings.admin_frontend_url.strip().rstrip("/")
+    if admin_origin:
+        allowed_origins.add(admin_origin)
+
     if origin in allowed_origins and origin.startswith(("https://", "http://localhost")):
         return f"{origin}/api/proxy/auth/google/callback"
     return settings.google_redirect_uri
