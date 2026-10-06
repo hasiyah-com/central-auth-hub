@@ -4,6 +4,7 @@ import { TOKEN_COOKIE, REFRESH_TOKEN_COOKIE } from "@/lib/auth";
 
 const HUB_INTERNAL =
   process.env.HUB_INTERNAL_URL || "http://hub-backend:8000";
+const PROXY_SHARED_SECRET = process.env.PROXY_SHARED_SECRET || "";
 
 /**
  * /api/proxy/<path> → Hub backend
@@ -32,13 +33,35 @@ type RefreshOutcome =
   | { kind: "stepup"; stepupUrl: string }
   | { kind: "fail" };
 
-async function tryRefresh(): Promise<RefreshOutcome> {
+function proxyClientHeaders(req: NextRequest): Record<string, string> {
+  const forwardedFor = req.headers.get("x-forwarded-for") || "";
+  const forwardedChain = forwardedFor
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean);
+  // Vercel/edge proxy เติม client IP ที่ hop ขวาสุดซึ่ง client เขียนทับไม่ได้
+  const clientIp =
+    forwardedChain.at(-1) || req.headers.get("x-real-ip") || req.ip || "";
+
+  const headers: Record<string, string> = {};
+  if (forwardedFor) headers["x-forwarded-for"] = forwardedFor;
+  if (clientIp && PROXY_SHARED_SECRET) {
+    headers["x-client-ip"] = clientIp;
+    headers["x-proxy-secret"] = PROXY_SHARED_SECRET;
+  }
+  return headers;
+}
+
+async function tryRefresh(req: NextRequest): Promise<RefreshOutcome> {
   const refreshToken = cookies().get(REFRESH_TOKEN_COOKIE)?.value;
   if (!refreshToken) return { kind: "fail" };
   try {
     const r = await fetch(`${HUB_INTERNAL}/auth/refresh`, {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: {
+        "content-type": "application/json",
+        ...proxyClientHeaders(req),
+      },
       body: JSON.stringify({ refresh_token: refreshToken }),
       cache: "no-store",
     });
@@ -118,20 +141,9 @@ async function forward(req: NextRequest, path: string[]) {
   const ua = req.headers.get("user-agent");
   if (ua) headers["user-agent"] = ua;
 
-  // forward client IP → backend get_client_ip() อ่าน X-Forwarded-For ก่อน
-  // (ไม่งั้น audit/ML เห็น IP ของ Next.js container 172.x แทน client จริง)
-  //
-  // ลำดับ fallback:
-  //   1. x-forwarded-for  — มีเมื่ออยู่หลัง reverse proxy (nginx/cloudflare) = prod
-  //   2. x-real-ip        — บาง proxy ใช้ header นี้
-  //   3. req.ip           — Next.js derive จาก connection (Vercel/edge)
-  // หมายเหตุ: dev ที่รันใน Docker published-port (browser→localhost:3000) ตัว
-  // Docker NAT จะ rewrite source เป็น gateway (172.18.0.1) ตั้งแต่ hop แรก →
-  // ทั้ง Next.js และ backend จะเห็น 172.x (กู้ client จริงไม่ได้ใน dev).
-  // prod ที่มี reverse proxy ตั้ง XFF ให้ → ได้ IP จริง.
-  const xff = req.headers.get("x-forwarded-for");
-  const realIp = xff || req.headers.get("x-real-ip") || req.ip || "";
-  if (realIp) headers["x-forwarded-for"] = realIp;
+  // ส่ง IP ที่ proxy เห็นพร้อม shared secret ให้ backend ตรวจสอบก่อนเชื่อถือ
+  // และคง X-Forwarded-For ไว้สำหรับ topology เดิม/diagnostics.
+  Object.assign(headers, proxyClientHeaders(req));
 
   const init: RequestInit = {
     method: req.method,
@@ -148,7 +160,7 @@ async function forward(req: NextRequest, path: string[]) {
 
   // 401 + มี access token เดิม (ไม่ใช่ anonymous request) → ลอง refresh ครั้งเดียว
   if (upstream.status === 401 && token) {
-    const outcome = await tryRefresh();
+    const outcome = await tryRefresh(req);
     if (outcome.kind === "ok") {
       refreshed = outcome.tokens;
       headers["authorization"] = `Bearer ${refreshed.access_token}`;
