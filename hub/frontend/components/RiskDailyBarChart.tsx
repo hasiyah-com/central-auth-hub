@@ -59,8 +59,8 @@ export function RiskDailyBarChart({ daily, days, rangeEnd }: Props) {
   const step = Math.max(1, Math.ceil(rawMax / 4));
   const yMax = step * 4;
   const W = 860;
-  const H = 250;
-  const pad = { left: 42, right: 12, top: 14, bottom: 36 };
+  const H = 172;
+  const pad = { left: 40, right: 10, top: 10, bottom: 28 };
   const plotW = W - pad.left - pad.right;
   const plotH = H - pad.top - pad.bottom;
   const groupW = plotW / points.length;
@@ -72,7 +72,7 @@ export function RiskDailyBarChart({ daily, days, rangeEnd }: Props) {
 
   return (
     <div>
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
           {series.map((item) => (
             <span
@@ -95,6 +95,8 @@ export function RiskDailyBarChart({ daily, days, rangeEnd }: Props) {
       <svg
         viewBox={`0 0 ${W} ${H}`}
         className="block w-full"
+        preserveAspectRatio="none"
+        style={{ height: `${H}px` }}
         role="img"
         aria-label={`กราฟ Login รายวันแยกตามระดับความเสี่ยง ${safeDays} วัน`}
       >
@@ -149,7 +151,7 @@ export function RiskDailyBarChart({ daily, days, rangeEnd }: Props) {
               })}
               <text
                 x={center}
-                y={H - 12}
+                y={H - 9}
                 textAnchor="middle"
                 fontSize={10}
                 fill="#718096"
