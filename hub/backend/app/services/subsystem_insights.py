@@ -14,7 +14,8 @@ subsystem_health_history, list_active_sessions, subsystem_audit) — เกณ�
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime, time, timedelta, timezone
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import and_, case, func
 from sqlalchemy.orm import Session
@@ -22,6 +23,8 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.models import AuditLog, LoginSession, Subsystem, User
 from app.services.subsystem_health import get_history as get_health_history
+
+_BANGKOK = ZoneInfo("Asia/Bangkok")
 
 
 def _session_ttl_min() -> int:
@@ -33,8 +36,18 @@ def _session_ttl_min() -> int:
 
 def stats_payload(db: Session, subsystem: Subsystem, days: int = 7) -> dict:
     """KPI — login counts, decision breakdown, unique users, active now, daily series."""
+    # ใช้วันตามปฏิทินกรุงเทพฯ ให้ KPI และกราฟมีช่วงเดียวกันจริง
     now = datetime.utcnow()
-    cutoff = now - timedelta(days=days)
+    now_bangkok = datetime.now(_BANGKOK)
+    first_date = now_bangkok.date() - timedelta(days=days - 1)
+    cutoff = (
+        datetime.combine(first_date, time.min, tzinfo=_BANGKOK)
+        .astimezone(timezone.utc)
+        .replace(tzinfo=None)
+    )
+    bangkok_date = func.date(
+        func.timezone("Asia/Bangkok", func.timezone("UTC", LoginSession.created_at))
+    )
 
     total_logins = (
         db.query(func.count(LoginSession.id))
@@ -82,7 +95,7 @@ def stats_payload(db: Session, subsystem: Subsystem, days: int = 7) -> dict:
 
     daily_rows = (
         db.query(
-            func.date(LoginSession.created_at).label("d"),
+            bangkok_date.label("d"),
             func.count(LoginSession.id).label("cnt"),
             func.sum(
                 case(
@@ -137,7 +150,11 @@ def stats_payload(db: Session, subsystem: Subsystem, days: int = 7) -> dict:
 
     return {
         "subsystem": {"id": str(subsystem.id), "name": subsystem.name},
-        "range": {"days": days, "from": cutoff.isoformat(), "to": now.isoformat()},
+        "range": {
+            "days": days,
+            "from": datetime.combine(first_date, time.min, tzinfo=_BANGKOK).isoformat(),
+            "to": now_bangkok.isoformat(),
+        },
         "total_logins": total_logins,
         "unique_users": unique_users,
         "active_now": active_now,
