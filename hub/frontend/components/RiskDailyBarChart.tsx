@@ -73,7 +73,10 @@ export function RiskDailyBarChart({ daily, days, rangeEnd }: Props) {
   return (
     <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_280px]">
       <div className="overflow-hidden rounded-xl border border-ink-200 bg-white">
-        <div className="grid grid-cols-[minmax(104px,1.25fr)_repeat(4,minmax(48px,.62fr))] border-b border-ink-200 bg-ink-50 px-3 py-2 text-[10px] font-bold uppercase tracking-[0.08em] text-ink-500">
+        <div
+          className="grid border-b border-ink-200 bg-ink-50 px-3 py-2 text-[10px] font-bold uppercase tracking-[0.08em] text-ink-500"
+          style={{ gridTemplateColumns: "minmax(104px, 1.25fr) repeat(4, minmax(48px, 0.62fr))" }}
+        >
           <span>วันที่</span>
           <span className="text-right text-emerald-700">ต่ำ</span>
           <span className="text-right text-amber-700">กลาง</span>
@@ -89,6 +92,7 @@ export function RiskDailyBarChart({ daily, days, rangeEnd }: Props) {
                 className={`grid grid-cols-[minmax(104px,1.25fr)_repeat(4,minmax(48px,.62fr)) items-center px-3 py-2 text-[12px] ${
                   isRiskDay ? "bg-rose-50/55" : "bg-white"
                 }`}
+                style={{ gridTemplateColumns: "minmax(104px, 1.25fr) repeat(4, minmax(48px, 0.62fr))" }}
               >
                 <span className="flex min-w-0 items-center gap-2 font-semibold text-ink-700">
                   <i className={`h-1.5 w-1.5 shrink-0 rounded-full ${
