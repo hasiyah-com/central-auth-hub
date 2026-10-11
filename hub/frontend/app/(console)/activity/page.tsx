@@ -769,7 +769,7 @@ function HourlyChart({ hourly, hours }: { hourly: HourBucket[]; hours: number })
       <svg
         viewBox={"0 0 " + W + " " + H}
         className="block w-full"
-        preserveAspectRatio="none"
+        preserveAspectRatio="xMidYMid meet"
         style={{ height: `${H}px` }}
         role="img"
         aria-label={"กราฟกิจกรรมแยกตามระดับความเสี่ยง " + hours + " ชั่วโมงล่าสุด"}
