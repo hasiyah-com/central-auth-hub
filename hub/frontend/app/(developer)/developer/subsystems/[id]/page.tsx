@@ -855,10 +855,10 @@ export default function DeveloperSubsystemDetailPage({
             </button>
           </header>
           <div className="cx-panel-body">
-            <div className="bg-white rounded-xl border border-ink-200 shadow-sm p-5 grid grid-cols-3 gap-4">
+            <div className="bg-white border border-ink-200 p-3 grid grid-cols-3 gap-3">
               <div>
                 <FieldLabel>latency เฉลี่ย</FieldLabel>
-                <div className="text-2xl font-extrabold text-ink-900 tabular-nums">
+                <div className="text-xl font-extrabold text-ink-900 tabular-nums">
                   {healthHist?.avg_latency_ms != null
                     ? healthHist.avg_latency_ms
                     : "—"}
@@ -869,7 +869,7 @@ export default function DeveloperSubsystemDetailPage({
               </div>
               <div>
                 <FieldLabel>latency สูงสุด</FieldLabel>
-                <div className="text-2xl font-extrabold text-ink-900 tabular-nums">
+                <div className="text-xl font-extrabold text-ink-900 tabular-nums">
                   {healthHist?.max_latency_ms != null
                     ? healthHist.max_latency_ms
                     : "—"}
@@ -880,7 +880,7 @@ export default function DeveloperSubsystemDetailPage({
               </div>
               <div>
                 <FieldLabel>รอบที่ healthy</FieldLabel>
-                <div className="text-2xl font-extrabold text-emerald-600 tabular-nums">
+                <div className="text-xl font-extrabold text-emerald-600 tabular-nums">
                   {healthHist?.healthy_ratio != null
                     ? `${Math.round(healthHist.healthy_ratio * 1000) / 10}%`
                     : "—"}
@@ -891,7 +891,7 @@ export default function DeveloperSubsystemDetailPage({
               </div>
             </div>
 
-            <div className="mt-3 bg-white border border-ink-200 p-4">
+            <div className="mt-2 bg-white border border-ink-200 p-3">
               <div className="text-[10px] font-mono font-semibold text-ink-500 uppercase tracking-wider mb-2">
                 Response time · min–max band
               </div>
@@ -902,7 +902,7 @@ export default function DeveloperSubsystemDetailPage({
                     latency_ms:
                       typeof p.latency_ms === "number" ? p.latency_ms : null,
                   }))}
-                  height={200}
+                  height={150}
                   formatLabel={(at) =>
                     parseUTC(at).toLocaleTimeString("th-TH", {
                       timeZone: "Asia/Bangkok",
