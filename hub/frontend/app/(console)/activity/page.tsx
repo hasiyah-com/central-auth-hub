@@ -448,18 +448,18 @@ export default function ActivityPage() {
         <section className="cx-panel overflow-hidden">
           <div className="grid xl:grid-cols-[minmax(0,2fr)_minmax(300px,1fr)]">
             <div className="min-w-0 xl:border-r xl:border-ink-100">
-              <header>
-                <div>
-                  <span>risk level · {hours <= 24 ? "hourly" : hours <= 168 ? "6-hour buckets" : "daily"}</span>
-                  <h2>Risk Activity Trend</h2>
+              <header className="flex min-h-[62px] items-center justify-between gap-4 border-b border-ink-100 px-4 py-3">
+                <div className="min-w-[170px]">
+                  <span className="font-mono text-[9px] uppercase tracking-[.14em] text-ink-400">risk level · {hours <= 24 ? "hourly" : hours <= 168 ? "6-hour buckets" : "daily"}</span>
+                  <h2 className="mt-1 text-sm font-bold text-ink-900">Risk Activity Trend</h2>
                 </div>
-                <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-1 text-[10px] text-ink-500">
+                <div className="flex min-w-0 flex-wrap items-center justify-end gap-x-3 gap-y-1 text-[10px] text-ink-500">
                   <span className="flex items-center gap-1.5"><i className="h-2 w-2 rounded-full bg-emerald-500" />ต่ำ</span>
                   <span className="flex items-center gap-1.5"><i className="h-2 w-2 rounded-full bg-amber-500" />ปานกลาง</span>
                   <span className="flex items-center gap-1.5"><i className="h-2 w-2 rounded-full bg-rose-500" />สูง</span>
                   <span className="flex items-center gap-1.5"><i className="w-4 border-t border-dashed border-slate-400" />ยังไม่ประเมิน</span>
-                  <span className="ml-1 border-l border-ink-200 pl-3 font-mono text-ink-700">
-                    รวม {riskTotal.toLocaleString("th-TH")}
+                  <span className="ml-1 shrink-0 border-l border-ink-200 pl-3 font-mono font-semibold text-ink-700">
+                    รวม {riskTotal.toLocaleString("th-TH")} รายการ
                   </span>
                 </div>
               </header>
@@ -469,13 +469,13 @@ export default function ActivityPage() {
             </div>
 
             <div className="min-w-0 border-t border-ink-100 xl:border-t-0">
-              <header>
+              <header className="flex min-h-[62px] items-center border-b border-ink-100 px-4 py-3">
                 <div>
-                  <span>share of evaluated activity</span>
-                  <h2>Risk Distribution</h2>
+                  <span className="font-mono text-[9px] uppercase tracking-[.14em] text-ink-400">share of evaluated activity</span>
+                  <h2 className="mt-1 text-sm font-bold text-ink-900">Risk Distribution</h2>
                 </div>
               </header>
-              <div className="px-4 pb-3 pt-3">
+              <div className="flex min-h-[188px] flex-col justify-center px-5 py-3">
                 <RiskDistribution totals={riskTotals} />
               </div>
             </div>
@@ -725,11 +725,11 @@ function RiskDistribution({
   const max = Math.max(1, ...rows.map((row) => row.value));
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
       {rows.map((row) => {
         const percent = total ? (row.value / total) * 100 : 0;
         return (
-          <div key={row.key} className="grid grid-cols-[82px_minmax(80px,1fr)_52px] items-center gap-2">
+          <div key={row.key} className="grid grid-cols-[88px_minmax(100px,1fr)_92px] items-center gap-3">
             <span className="truncate text-xs font-medium text-ink-600">{row.label}</span>
             <div className="h-2.5 overflow-hidden bg-ink-100">
               <div
@@ -737,9 +737,9 @@ function RiskDistribution({
                 style={{ width: `${Math.max(row.value ? 2 : 0, (row.value / max) * 100)}%`, background: row.color }}
               />
             </div>
-            <span className="text-right font-mono text-[10px] tabular-nums text-ink-500">
-              <b className="font-semibold text-ink-800">{row.value.toLocaleString("th-TH")}</b>
-              <small className="ml-1 text-ink-400">{percent.toFixed(1)}%</small>
+            <span className="flex items-baseline justify-end gap-2 whitespace-nowrap font-mono tabular-nums">
+              <b className="text-xs font-semibold text-ink-800">{row.value.toLocaleString("th-TH")}</b>
+              <small className="w-11 text-right text-[10px] text-ink-400">{percent.toFixed(1)}%</small>
             </span>
           </div>
         );
