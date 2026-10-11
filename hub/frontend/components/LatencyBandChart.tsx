@@ -139,7 +139,7 @@ export function LatencyBandChart({
   return (
     <svg
       viewBox={`0 0 ${W} ${H}`}
-      preserveAspectRatio="none"
+      preserveAspectRatio="xMidYMid meet"
       style={{ width: "100%", height: `${H}px` }}
       role="img"
       aria-label="กราฟแนวโน้มเวลา response แบบ min-max และ median"
