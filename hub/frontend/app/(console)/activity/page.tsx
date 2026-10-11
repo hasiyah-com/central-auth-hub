@@ -727,8 +727,8 @@ function HourlyChart({ hourly, hours }: { hourly: HourBucket[]; hours: number })
   const step = Math.max(1, Math.ceil(roughStep / magnitude) * magnitude);
   const chartMax = step * 4;
   const W = 900;
-  const H = 272;
-  const pad = { left: 48, right: 14, top: 18, bottom: 42 };
+  const H = 176;
+  const pad = { left: 44, right: 12, top: 12, bottom: 30 };
   const plotW = W - pad.left - pad.right;
   const plotH = H - pad.top - pad.bottom;
   const baseY = pad.top + plotH;
@@ -769,6 +769,8 @@ function HourlyChart({ hourly, hours }: { hourly: HourBucket[]; hours: number })
       <svg
         viewBox={"0 0 " + W + " " + H}
         className="block w-full"
+        preserveAspectRatio="none"
+        style={{ height: `${H}px` }}
         role="img"
         aria-label={"กราฟกิจกรรมแยกตามระดับความเสี่ยง " + hours + " ชั่วโมงล่าสุด"}
       >
@@ -852,7 +854,7 @@ function HourlyChart({ hourly, hours }: { hourly: HourBucket[]; hours: number })
         ))}
 
         {labelIndices.map((i) => (
-          <text key={i} x={xOf(i)} y={H - 13} textAnchor="middle"
+          <text key={i} x={xOf(i)} y={H - 9} textAnchor="middle"
             fontSize={11} fill="#718096" fontFamily="Sarabun, sans-serif">
             {formatTime(buckets[i].time)}
           </text>
