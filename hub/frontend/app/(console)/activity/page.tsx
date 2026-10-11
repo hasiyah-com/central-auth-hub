@@ -266,6 +266,16 @@ export default function ActivityPage() {
   }, []);
 
   const k = data?.kpis;
+  const riskTotals = (data?.hourly ?? []).reduce(
+    (sum, bucket) => ({
+      low: sum.low + Math.max(0, bucket.low ?? 0),
+      medium: sum.medium + Math.max(0, bucket.medium ?? 0),
+      high: sum.high + Math.max(0, bucket.high ?? 0),
+      unknown: sum.unknown + Math.max(0, bucket.unknown ?? 0),
+    }),
+    { low: 0, medium: 0, high: 0, unknown: 0 }
+  );
+  const riskTotal = riskTotals.low + riskTotals.medium + riskTotals.high + riskTotals.unknown;
   // stale = โหลดรอบล่าสุดพลาด แต่ยังมี data เก่าค้างอยู่ → เตือนว่าไม่ใช่ realtime
   // (กันเข้าใจผิดว่า pulse เขียว = คนออนไลน์จริงตอนนี้ ทั้งที่ fetch ค้างไปแล้ว)
   const stale = !!error && !!data;
@@ -434,31 +444,47 @@ export default function ActivityPage() {
           )}
         </section>
 
-        {/* ── Risk activity trend ── */}
-        <section className="cx-panel">
-          <header>
-            <div>
-              <span>risk level · hourly</span>
-              <h2>Risk Activity Trend</h2>
+        {/* ── Risk analytics: trend + distribution ── */}
+        <section className="cx-panel overflow-hidden">
+          <div className="grid xl:grid-cols-[minmax(0,2fr)_minmax(300px,1fr)]">
+            <div className="min-w-0 xl:border-r xl:border-ink-100">
+              <header>
+                <div>
+                  <span>risk level · {hours <= 24 ? "hourly" : hours <= 168 ? "6-hour buckets" : "daily"}</span>
+                  <h2>Risk Activity Trend</h2>
+                </div>
+                <div className="flex flex-wrap items-center justify-end gap-x-3 gap-y-1 text-[10px] text-ink-500">
+                  <span className="flex items-center gap-1.5"><i className="h-2 w-2 rounded-full bg-emerald-500" />ต่ำ</span>
+                  <span className="flex items-center gap-1.5"><i className="h-2 w-2 rounded-full bg-amber-500" />ปานกลาง</span>
+                  <span className="flex items-center gap-1.5"><i className="h-2 w-2 rounded-full bg-rose-500" />สูง</span>
+                  <span className="flex items-center gap-1.5"><i className="w-4 border-t border-dashed border-slate-400" />ยังไม่ประเมิน</span>
+                  <span className="ml-1 border-l border-ink-200 pl-3 font-mono text-ink-700">
+                    รวม {riskTotal.toLocaleString("th-TH")}
+                  </span>
+                </div>
+              </header>
+              <div className="px-4 pb-3 pt-2">
+                <HourlyChart hourly={data?.hourly ?? []} hours={hours} compact />
+              </div>
             </div>
-            <div className="flex flex-wrap items-center justify-end gap-x-4 gap-y-1 text-[11px] text-ink-500">
-              <span className="flex items-center gap-1.5">
-                <span className="w-5 h-0.5 rounded-full bg-emerald-500 inline-block" /> ต่ำ
-              </span>
-              <span className="flex items-center gap-1.5">
-                <span className="w-5 h-0.5 rounded-full bg-amber-500 inline-block" /> ปานกลาง
-              </span>
-              <span className="flex items-center gap-1.5">
-                <span className="w-5 h-0.5 rounded-full bg-rose-500 inline-block" /> สูง
-              </span>
-              <span className="flex items-center gap-1.5">
-                <span className="w-5 border-t border-dashed border-slate-400 inline-block" /> ยังไม่ประเมิน
-              </span>
+
+            <div className="min-w-0 border-t border-ink-100 xl:border-t-0">
+              <header>
+                <div>
+                  <span>share of evaluated activity</span>
+                  <h2>Risk Distribution</h2>
+                </div>
+              </header>
+              <div className="px-4 pb-3 pt-3">
+                <RiskDistribution totals={riskTotals} />
+              </div>
             </div>
-          </header>
-          <div className="px-5 pt-4 pb-5">
-            <HourlyChart hourly={data?.hourly ?? []} hours={hours} />
           </div>
+          <footer className="flex flex-wrap gap-x-5 gap-y-1 border-t border-ink-100 bg-ink-50/60 px-4 py-2 text-[10px] text-ink-400">
+            <span>ต่ำ: คะแนน &lt; 0.40</span>
+            <span>ปานกลาง: 0.40–0.49</span>
+            <span>สูง: ≥ 0.50</span>
+          </footer>
         </section>
 
         {/* ── Filters ── */}
@@ -684,7 +710,46 @@ function Select({
   );
 }
 
-function HourlyChart({ hourly, hours }: { hourly: HourBucket[]; hours: number }) {
+function RiskDistribution({
+  totals,
+}: {
+  totals: { low: number; medium: number; high: number; unknown: number };
+}) {
+  const rows = [
+    { key: "low", label: "ต่ำ", value: totals.low, color: "#10b981" },
+    { key: "medium", label: "ปานกลาง", value: totals.medium, color: "#f59e0b" },
+    { key: "high", label: "สูง", value: totals.high, color: "#f43f5e" },
+    { key: "unknown", label: "ยังไม่ประเมิน", value: totals.unknown, color: "#94a3b8" },
+  ] as const;
+  const total = rows.reduce((sum, row) => sum + row.value, 0);
+  const max = Math.max(1, ...rows.map((row) => row.value));
+
+  return (
+    <div className="space-y-3">
+      {rows.map((row) => {
+        const percent = total ? (row.value / total) * 100 : 0;
+        return (
+          <div key={row.key} className="grid grid-cols-[82px_minmax(80px,1fr)_52px] items-center gap-2">
+            <span className="truncate text-xs font-medium text-ink-600">{row.label}</span>
+            <div className="h-2.5 overflow-hidden bg-ink-100">
+              <div
+                className="h-full min-w-0"
+                style={{ width: `${Math.max(row.value ? 2 : 0, (row.value / max) * 100)}%`, background: row.color }}
+              />
+            </div>
+            <span className="text-right font-mono text-[10px] tabular-nums text-ink-500">
+              <b className="font-semibold text-ink-800">{row.value.toLocaleString("th-TH")}</b>
+              <small className="ml-1 text-ink-400">{percent.toFixed(1)}%</small>
+            </span>
+          </div>
+        );
+      })}
+      {total === 0 && <p className="py-3 text-center text-xs text-ink-400">ยังไม่มีข้อมูลในช่วงเวลานี้</p>}
+    </div>
+  );
+}
+
+function HourlyChart({ hourly, hours, compact = false }: { hourly: HourBucket[]; hours: number; compact?: boolean }) {
   // API ส่งเฉพาะช่วงที่มีข้อมูล จึงเติมช่วงว่างเพื่อรักษาระยะบนแกนเวลา
   // ช่วงยาวจะถูกรวม bucket เพื่อให้กราฟยังอ่านง่าย
   const hourMs = 60 * 60 * 1000;
@@ -727,8 +792,8 @@ function HourlyChart({ hourly, hours }: { hourly: HourBucket[]; hours: number })
   const step = Math.max(1, Math.ceil(roughStep / magnitude) * magnitude);
   const chartMax = step * 4;
   const W = 900;
-  const H = 176;
-  const pad = { left: 44, right: 12, top: 12, bottom: 30 };
+  const H = compact ? 154 : 176;
+  const pad = { left: 44, right: 12, top: 10, bottom: 28 };
   const plotW = W - pad.left - pad.right;
   const plotH = H - pad.top - pad.bottom;
   const baseY = pad.top + plotH;
@@ -757,14 +822,9 @@ function HourlyChart({ hourly, hours }: { hourly: HourBucket[]; hours: number })
 
   return (
     <div>
-      <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
-        <p className="m-0 text-xs text-ink-500">
-          {hours <= 24 ? "รายชั่วโมง" : hours <= 168 ? "ทุก 6 ชั่วโมง" : "รายวัน"}
-          {" · "}เวลาประเทศไทย
-        </p>
-        <p className="m-0 text-xs font-mono text-ink-500">
-          รวม <strong className="text-ink-900">{total.toLocaleString("th-TH")}</strong> รายการ
-        </p>
+      <div className="mb-1 flex items-center justify-between text-[10px] text-ink-400">
+        <span>{hours <= 24 ? "รายชั่วโมง" : hours <= 168 ? "ทุก 6 ชั่วโมง" : "รายวัน"} · เวลาประเทศไทย</span>
+        {!compact && <span className="font-mono">รวม {total.toLocaleString("th-TH")} รายการ</span>}
       </div>
       <svg
         viewBox={"0 0 " + W + " " + H}
@@ -860,11 +920,13 @@ function HourlyChart({ hourly, hours }: { hourly: HourBucket[]; hours: number })
           </text>
         ))}
       </svg>
-      <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-[10px] text-ink-400">
-        <span>ต่ำ: คะแนน &lt; 0.40</span>
-        <span>ปานกลาง: 0.40–0.49</span>
-        <span>สูง: ≥ 0.50</span>
-      </div>
+      {!compact && (
+        <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-[10px] text-ink-400">
+          <span>ต่ำ: คะแนน &lt; 0.40</span>
+          <span>ปานกลาง: 0.40–0.49</span>
+          <span>สูง: ≥ 0.50</span>
+        </div>
+      )}
       {total === 0 && (
         <p className="mt-1 text-center text-xs text-ink-400">
           ยังไม่มีการเข้าใช้งานในช่วงเวลานี้
