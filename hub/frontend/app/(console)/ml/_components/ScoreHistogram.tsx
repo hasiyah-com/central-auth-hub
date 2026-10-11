@@ -29,18 +29,18 @@ export function ScoreHistogram({ histogram }: Props) {
   ];
 
   return (
-    <section className="mb-8">
-      <h3 className="text-xs font-bold text-ink-500 uppercase tracking-wider mb-3">
+    <section className="mb-5">
+      <h3 className="text-xs font-bold text-ink-500 uppercase tracking-wider mb-2">
         Score Distribution · 10 buckets · max={histMax}
       </h3>
-      <div className="bg-white rounded-xl border border-ink-200 shadow-sm p-6">
+      <div className="bg-white rounded-xl border border-ink-200 shadow-sm p-4">
         <LineChart
           labels={histogram.map((b) => b.bucket)}
           series={series}
-          height={240}
+          height={164}
           valueSuffix=" sessions"
         />
-        <div className="mt-4 pt-4 border-t border-ink-100 flex justify-between text-[11px] font-semibold text-ink-500">
+        <div className="mt-2 pt-2 border-t border-ink-100 flex justify-between text-[11px] font-semibold text-ink-500">
           <span className="text-emerald-600">&larr; LOW · PASS</span>
           <span className="text-amber-600">MFA ZONE (0.4–0.7)</span>
           <span className="text-rose-600">HIGH · BLOCK &rarr;</span>
