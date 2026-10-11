@@ -95,7 +95,7 @@ export default function UserTimelinePage({ params }: { params: { id: string } })
             </section>
 
             <div className="mt-5 space-y-5">
-              <section className="rounded-xl border border-ink-200 bg-white p-5">
+              <section className="rounded-xl border border-ink-200 bg-white p-4">
                 <SectionTitle eyebrow="Risk timeline" title="รูปแบบความเสี่ยงตามเวลา" detail={`${days} วันล่าสุด · ${sessions.length} sessions`} />
                 <RiskSparkline sessions={sessions} />
               </section>
@@ -266,18 +266,18 @@ function DeviceSignatureTable({ items }: { items: BehaviorFrequency[] }) {
 
 function RiskSparkline({ sessions }: { sessions: UserSession[] }) {
   const values = [...sessions].sort((a, b) => Date.parse(asUtc(a.created_at)) - Date.parse(asUtc(b.created_at))).map((session) => session.risk_score ?? session.score ?? 0);
-  if (!values.length) return <div className="mt-5 grid h-44 place-items-center rounded-lg border border-dashed border-ink-200 text-sm text-ink-400">ยังไม่มีข้อมูลความเสี่ยง</div>;
+  if (!values.length) return <div className="mt-3 grid h-28 place-items-center rounded-lg border border-dashed border-ink-200 text-sm text-ink-400">ยังไม่มีข้อมูลความเสี่ยง</div>;
   const width = 800;
-  const height = 190;
-  const inset = 16;
+  const height = 126;
+  const inset = 12;
   const points = values.map((value, index) => {
     const x = inset + (index / Math.max(values.length - 1, 1)) * (width - inset * 2);
     const y = height - inset - Math.min(Math.max(value, 0), 1) * (height - inset * 2);
     return `${x},${y}`;
   }).join(" ");
   return (
-    <div className="mt-4">
-      <svg viewBox={`0 0 ${width} ${height}`} className="h-48 w-full" role="img" aria-label="กราฟคะแนนความเสี่ยงตามเวลา">
+    <div className="mt-2">
+      <svg viewBox={`0 0 ${width} ${height}`} className="h-32 w-full" role="img" aria-label="กราฟคะแนนความเสี่ยงตามเวลา">
         {[0.25, 0.5, 0.75].map((level) => <line key={level} x1={inset} x2={width - inset} y1={height - inset - level * (height - inset * 2)} y2={height - inset - level * (height - inset * 2)} stroke="#e5e9ef" strokeDasharray="4 6" />)}
         <defs><linearGradient id="riskLine" x1="0" x2="1"><stop offset="0" stopColor="#10b981" /><stop offset=".55" stopColor="#f59e0b" /><stop offset="1" stopColor="#e11d48" /></linearGradient></defs>
         <polyline points={points} fill="none" stroke="url(#riskLine)" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
