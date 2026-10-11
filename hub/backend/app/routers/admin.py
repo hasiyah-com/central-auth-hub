@@ -33,7 +33,7 @@ from app.models import (
     User,
 )
 from app.services.audit_service import log_action
-from app.services import incident_service
+from app.services import incident_service, subsystem_insights
 from app.services.critical_action_policy import gate as _stepup_gate
 from app.services import passkey_recovery
 from app.services.change_request_service import apply_approved
@@ -1313,124 +1313,7 @@ def subsystem_stats(
     if not subsystem:
         raise HTTPException(status_code=404, detail="ไม่พบ subsystem")
 
-    now = datetime.utcnow()
-    cutoff = now - timedelta(days=days)
-
-    base = db.query(LoginSession).filter(
-        LoginSession.subsystem_id == subsystem.id,
-        LoginSession.created_at >= cutoff,
-    )
-    total_logins = base.count()
-
-    # decision breakdown
-    decision_rows = (
-        db.query(LoginSession.decision, func.count(LoginSession.id))
-        .filter(
-            LoginSession.subsystem_id == subsystem.id,
-            LoginSession.created_at >= cutoff,
-        )
-        .group_by(LoginSession.decision)
-        .all()
-    )
-    decision_breakdown = {(d or "unknown"): c for d, c in decision_rows}
-
-    # unique users
-    unique_users = (
-        db.query(func.count(func.distinct(LoginSession.user_id)))
-        .filter(
-            LoginSession.subsystem_id == subsystem.id,
-            LoginSession.created_at >= cutoff,
-        )
-        .scalar()
-        or 0
-    )
-
-    # active sessions ตอนนี้ (logout_at NULL + within JWT window)
-    jwt_cutoff = now - timedelta(minutes=settings.jwt_access_token_expire_minutes)
-    active_now = (
-        db.query(func.count(LoginSession.id))
-        .filter(
-            LoginSession.subsystem_id == subsystem.id,
-            LoginSession.logout_at.is_(None),
-            LoginSession.created_at >= jwt_cutoff,
-            LoginSession.decision.notin_(["block", "would_block"]),
-        )
-        .scalar()
-        or 0
-    )
-
-    # daily login counts แยกตามระดับความเสี่ยง
-    # เกณฑ์เดียวกับ RBA/dashboard: low < 0.40 · medium 0.40–0.49 · high >= 0.50
-    # NULL แยก unknown เพื่อไม่ทำให้ login ที่ยังไม่ประเมินดูปลอดภัยผิด ๆ
-    daily_rows = (
-        db.query(
-            func.date(LoginSession.created_at).label("d"),
-            func.count(LoginSession.id).label("cnt"),
-            func.sum(
-                case(
-                    (
-                        and_(
-                            LoginSession.risk_score.isnot(None),
-                            LoginSession.risk_score < 0.4,
-                        ),
-                        1,
-                    ),
-                    else_=0,
-                )
-            ).label("low"),
-            func.sum(
-                case(
-                    (
-                        and_(
-                            LoginSession.risk_score >= 0.4,
-                            LoginSession.risk_score < 0.5,
-                        ),
-                        1,
-                    ),
-                    else_=0,
-                )
-            ).label("medium"),
-            func.sum(case((LoginSession.risk_score >= 0.5, 1), else_=0)).label(
-                "high"
-            ),
-            func.sum(case((LoginSession.risk_score.is_(None), 1), else_=0)).label(
-                "unknown"
-            ),
-        )
-        .filter(
-            LoginSession.subsystem_id == subsystem.id,
-            LoginSession.created_at >= cutoff,
-        )
-        .group_by("d")
-        .order_by("d")
-        .all()
-    )
-    daily = [
-        {
-            "date": (d.isoformat() if hasattr(d, "isoformat") else str(d)),
-            "count": int(c or 0),
-            "low": int(low or 0),
-            "medium": int(medium or 0),
-            "high": int(high or 0),
-            "unknown": int(unknown or 0),
-        }
-        for d, c, low, medium, high, unknown in daily_rows
-    ]
-
-    return {
-        "subsystem": {"id": str(subsystem.id), "name": subsystem.name},
-        "range": {
-            "days": days,
-            "from": cutoff.isoformat(),
-            "to": now.isoformat(),
-        },
-        "total_logins": total_logins,
-        "unique_users": unique_users,
-        "active_now": active_now,
-        "decision_breakdown": decision_breakdown,
-        "daily": daily,
-    }
-
+    return subsystem_insights.stats_payload(db, subsystem, days=days)
 
 # ============ Per-subsystem audit log ============
 
