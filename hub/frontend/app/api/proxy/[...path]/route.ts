@@ -183,7 +183,38 @@ async function forward(req: NextRequest, path: string[]) {
     init.body = await req.text();
   }
 
-  let upstream = await fetch(target, init);
+  // Next.js canonicalizes a browser URL ending in `/` to the no-slash form.
+  // Some FastAPI collection routes do the opposite and answer with 307/308 to
+  // add the slash back.  Returning that redirect to the browser leaks it out
+  // of this authenticated same-origin proxy (and the httpOnly auth cookie is
+  // then unavailable on the backend domain).  Follow only this exact
+  // slash-only canonical redirect internally; OAuth/Google redirects and any
+  // redirect to a different path must still be returned to the browser.
+  async function fetchUpstream(requestInit: RequestInit): Promise<Response> {
+    const first = await fetch(target, requestInit);
+    if (first.status !== 307 && first.status !== 308) return first;
+
+    const location = first.headers.get("location");
+    if (!location) return first;
+
+    let redirectUrl: URL;
+    try {
+      redirectUrl = new URL(location, HUB_INTERNAL);
+    } catch {
+      return first;
+    }
+
+    const slashVariant =
+      redirectUrl.pathname === `${targetPath}/` ||
+      (targetPath.endsWith("/") &&
+        redirectUrl.pathname === targetPath.slice(0, -1));
+    if (!slashVariant) return first;
+
+    const internalRedirect = `${HUB_INTERNAL}${redirectUrl.pathname}${redirectUrl.search}`;
+    return fetch(internalRedirect, requestInit);
+  }
+
+  let upstream = await fetchUpstream(init);
   let refreshed: RefreshedTokens | null = null;
 
   // 401 + มี access token เดิม (ไม่ใช่ anonymous request) → ลอง refresh ครั้งเดียว
@@ -192,7 +223,7 @@ async function forward(req: NextRequest, path: string[]) {
     if (outcome.kind === "ok") {
       refreshed = outcome.tokens;
       headers["authorization"] = `Bearer ${refreshed.access_token}`;
-      upstream = await fetch(target, { ...init, headers });
+      upstream = await fetchUpstream({ ...init, headers });
     } else if (outcome.kind === "stepup") {
       // RBA จับความเสี่ยงตอน refresh → บอก browser ให้ไปยืนยัน Passkey
       // (clientFetch อ่าน code นี้แล้ว window.location.href = stepup_url)
