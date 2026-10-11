@@ -90,9 +90,9 @@ function segments(values: (number | null)[]): { i: number; v: number }[][] {
 export function LineChart({
   labels,
   series,
-  height = 220,
+  height = 164,
   showValues = true,
-  ticks = 5,
+  ticks = 4,
   valueSuffix = "",
   showLegend,
   showMarkers = true,
@@ -110,7 +110,7 @@ export function LineChart({
   // ระบบพิกัดภายใน (viewBox) — responsive เองตามความกว้าง container
   const W = 760;
   const H = height;
-  const PAD = { top: 18, right: 14, bottom: 34, left: 46 };
+  const PAD = { top: 14, right: 12, bottom: 28, left: 42 };
   const plotW = W - PAD.left - PAD.right;
   const plotH = H - PAD.top - PAD.bottom;
 
@@ -136,7 +136,7 @@ export function LineChart({
   return (
     <div>
       {withLegend && (
-        <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5 mb-3">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mb-2">
           {series.map((s) => (
             <span key={s.name} className="inline-flex items-center gap-2 text-[11px] font-semibold text-ink-600">
               <span
@@ -238,10 +238,10 @@ export function LineChart({
               v === null || v === undefined ? null : (
                 <g key={`pt-${i}`}>
                   <rect
-                    x={x(i) - 4}
-                    y={y(v) - 4}
-                    width={8}
-                    height={8}
+                    x={x(i) - 3.5}
+                    y={y(v) - 3.5}
+                    width={7}
+                    height={7}
                     fill={s.pointColors?.[i] || s.color}
                     stroke="#fff"
                     strokeWidth={1.5}
