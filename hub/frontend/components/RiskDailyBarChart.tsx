@@ -95,7 +95,7 @@ export function RiskDailyBarChart({ daily, days, rangeEnd }: Props) {
       <svg
         viewBox={`0 0 ${W} ${H}`}
         className="block w-full"
-        preserveAspectRatio="none"
+        preserveAspectRatio="xMidYMid meet"
         style={{ height: `${H}px` }}
         role="img"
         aria-label={`กราฟ Login รายวันแยกตามระดับความเสี่ยง ${safeDays} วัน`}
