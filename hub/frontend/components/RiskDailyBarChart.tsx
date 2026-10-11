@@ -36,9 +36,10 @@ function formatDate(value: string) {
 export function RiskDailyBarChart({ daily, days, rangeEnd }: Props) {
   const safeDays = Math.max(1, Math.min(days, 31));
   const byDate = new Map(daily.map((item) => [item.date.slice(0, 10), item]));
-  const parsedEnd = new Date(
-    /[+-]\d{2}:?\d{2}$|Z$/i.test(rangeEnd) ? rangeEnd : rangeEnd + "Z"
-  );
+  // Backend ส่งช่วงวันที่ตาม Asia/Bangkok; ใช้ส่วนวันที่โดยตรงเพื่อไม่ให้
+  // การแปลงเป็น UTC เลื่อนวันย้อนหลังในช่วงก่อน 07:00 น.
+  const endKey = /^\d{4}-\d{2}-\d{2}/.exec(rangeEnd)?.[0];
+  const parsedEnd = new Date(`${endKey ?? dateKey(new Date())}T00:00:00Z`);
   const end = Number.isFinite(parsedEnd.getTime()) ? parsedEnd : new Date();
   const points = Array.from({ length: safeDays }, (_, index) => {
     const date = new Date(end);
