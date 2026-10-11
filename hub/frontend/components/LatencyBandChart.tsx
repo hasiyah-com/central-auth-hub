@@ -52,7 +52,7 @@ function fmt(ms: number): string {
 
 export function LatencyBandChart({
   points,
-  height = 200,
+  height = 150,
   buckets = 60,
   formatLabel,
 }: {
@@ -111,7 +111,7 @@ export function LatencyBandChart({
 
   const W = 760;
   const H = height;
-  const PAD = { top: 12, right: 12, bottom: 26, left: 52 };
+  const PAD = { top: 9, right: 10, bottom: 22, left: 48 };
   const plotW = W - PAD.left - PAD.right;
   const plotH = H - PAD.top - PAD.bottom;
 
@@ -137,7 +137,13 @@ export function LatencyBandChart({
   const labelEvery = Math.max(1, Math.ceil(n / 8));
 
   return (
-    <svg viewBox={`0 0 ${W} ${H}`} style={{ width: "100%", height: "auto" }}>
+    <svg
+      viewBox={`0 0 ${W} ${H}`}
+      preserveAspectRatio="none"
+      style={{ width: "100%", height: `${H}px` }}
+      role="img"
+      aria-label="กราฟแนวโน้มเวลา response แบบ min-max และ median"
+    >
       {/* gridline + ค่าแกน Y */}
       {yTicks.map((v) => (
         <g key={`t-${v}`}>
