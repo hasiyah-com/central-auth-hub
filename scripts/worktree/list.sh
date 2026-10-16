@@ -16,7 +16,7 @@ echo
 echo "=========================================="
 echo "  Slot summary (port allocation)"
 echo "=========================================="
-for slug in main hub dorm library ml; do
+for slug in main hub ml; do
   if [ "$slug" = "main" ]; then
     echo "[main] base — รันที่ $(git rev-parse --show-toplevel) ตรงๆ"
     echo "  ports: 8000/8001/8002/9000  pg: 5432/5433/5434  redis: 6379"

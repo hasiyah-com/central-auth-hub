@@ -1,7 +1,7 @@
 # Hub Auth Platform stack — Hub backend + ML Verifier + Admin Frontend + shared infra (PG, Redis)
 #
 # This file is the *Auth Platform* — owned/operated by the central IT team.
-# Each subsystem (Dorm, Library, …) lives in its own docker-compose.<slug>.yml
+# Each OAuth client lives in its own repository and Compose project
 # and runs as a separate stack that connects via the shared `cah-net` external
 # network. Why: the subsystems are independent OAuth clients in production
 # (deployed by different teams, possibly on different servers). The split here

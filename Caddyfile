@@ -31,24 +31,6 @@ admin.<DOMAIN> {
     }
 }
 
-# ─── Subsystem A: ระบบหอพัก ─────────────────────────────────
-dorm.<DOMAIN> {
-    encode zstd gzip
-    reverse_proxy subsystem-dorm:8000 {
-        header_up X-Forwarded-Proto https
-        header_up X-Forwarded-For {remote_host}
-    }
-}
-
-# ─── Subsystem B: ระบบห้องสมุด ──────────────────────────────
-library.<DOMAIN> {
-    encode zstd gzip
-    reverse_proxy subsystem-library:8000 {
-        header_up X-Forwarded-Proto https
-        header_up X-Forwarded-For {remote_host}
-    }
-}
-
 # ─── ML Service (optional — เปิดถ้า admin ต้องการ debug ตรง) ─
 # ml.<DOMAIN> {
 #     reverse_proxy ml-service:9000

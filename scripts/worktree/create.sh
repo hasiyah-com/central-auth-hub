@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # create.sh — สร้าง git worktree + docker-compose.override.yml + ปรับ .env
 # Usage: bash scripts/worktree/create.sh <slot> [<branch-suffix>]
-#   slot: hub | dorm | library | ml
+#   slot: hub | ml
 #   branch-suffix: ชื่อต่อท้าย feature/<slot>-<suffix>  (default: dev)
 #
 # ตัวอย่าง:
@@ -21,7 +21,7 @@ SUFFIX=${2:-dev}
 if [ -z "$SLUG" ]; then
   cat <<EOF
 Usage: bash scripts/worktree/create.sh <slot> [<branch-suffix>]
-  slot: hub | dorm | library | ml
+  slot: hub | ml
   branch-suffix: ต่อท้าย feature/<slot>-<suffix>  (default: dev)
 EOF
   exit 1
@@ -35,7 +35,7 @@ BRANCH="feature/${SLUG}-${SUFFIX}"
 PROJECT=$(slot_project_name "$SLUG")
 OFFSET=$(slot_offset "$SLUG")
 
-read -r HUB_PORT DORM_PORT LIB_PORT PG_PORT PG_DORM_PORT PG_LIB_PORT REDIS_PORT ML_PORT \
+read -r HUB_PORT PG_PORT REDIS_PORT ML_PORT \
   < <(slot_ports "$SLUG")
 
 echo "==> Creating worktree for slot=$SLUG"
@@ -81,22 +81,7 @@ services:
     container_name: hub-backend-$SLUG
     ports: !override
       - "$HUB_PORT:8000"
-  postgres-dorm:
-    container_name: hub-postgres-dorm-$SLUG
-    ports: !override
-      - "$PG_DORM_PORT:5432"
-  subsystem-dorm:
-    container_name: hub-subsystem-dorm-$SLUG
-    ports: !override
-      - "$DORM_PORT:8000"
-  postgres-library:
-    container_name: hub-postgres-library-$SLUG
-    ports: !override
-      - "$PG_LIB_PORT:5432"
-  subsystem-library:
-    container_name: hub-subsystem-library-$SLUG
-    ports: !override
-      - "$LIB_PORT:8000"
+
 EOF
 echo "==> Wrote $OVERRIDE"
 
@@ -109,8 +94,6 @@ copy_env() {
   fi
 }
 copy_env "$REPO_ROOT/.env" "$TARGET/.env"
-copy_env "$REPO_ROOT/hub/subsystem-dorm/.env" "$TARGET/hub/subsystem-dorm/.env"
-copy_env "$REPO_ROOT/hub/subsystem-library/.env" "$TARGET/hub/subsystem-library/.env"
 
 # --- 4. ปรับ HUB_BASE_URL/redirect URIs ใน .env ของ worktree ---
 patch_env() {
@@ -134,8 +117,6 @@ HUB_URL="http://localhost:$HUB_PORT"
 patch_env "$TARGET/.env" "HUB_BASE_URL" "$HUB_URL"
 patch_env "$TARGET/.env" "GOOGLE_REDIRECT_URI" "$HUB_URL/auth/google/callback"
 patch_env "$TARGET/.env" "OAUTH_CALLBACK_URI" "$HUB_URL/oauth/callback"
-patch_env "$TARGET/hub/subsystem-dorm/.env" "HUB_BASE_URL" "$HUB_URL"
-patch_env "$TARGET/hub/subsystem-library/.env" "HUB_BASE_URL" "$HUB_URL"
 
 # --- 5. symlink hub/backend/keys (shared JWT keys) ---
 KEYS_SRC="$REPO_ROOT/hub/backend/keys"
@@ -180,8 +161,6 @@ echo
 echo "==> เปิด Claude Code ใน worktree นี้แล้วพูดว่า:"
 case "$SLUG" in
   hub)     echo "      /hub-backend       ← Hub FastAPI context" ;;
-  dorm)    echo "      /subsystem-dorm    ← Subsystem A context" ;;
-  library) echo "      /subsystem-library ← Subsystem B context" ;;
   ml)      echo "      /ml-service        ← ML Verifier context" ;;
   *)       echo "      /hub-backend       ← default Hub context" ;;
 esac

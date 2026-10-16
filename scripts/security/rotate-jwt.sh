@@ -13,6 +13,7 @@
 #   bash scripts/security/rotate-jwt.sh status
 
 set -e
+# External OAuth clients refresh JWKS independently; restart them in their own deployment if required.
 
 ACTION=${1:-status}
 KID=${2:-}
@@ -67,8 +68,8 @@ case "$ACTION" in
       set_env JWT_EXTRA_PUBLIC_KEYS "${OLD_EXTRA},${NEW_ENTRY}"
     fi
 
-    echo "==> Recreating hub-backend + subsystems (load new key)..."
-    docker compose up -d --force-recreate hub-backend subsystem-dorm subsystem-library
+    echo "==> Recreating hub-backend (load new key)..."
+    docker compose up -d --force-recreate hub-backend
 
     echo
     echo "✅ Phase 1 complete — $KID added as verify-only extra"
@@ -114,7 +115,7 @@ case "$ACTION" in
     fi
 
     echo "==> Recreating hub-backend..."
-    docker compose up -d --force-recreate hub-backend subsystem-dorm subsystem-library
+    docker compose up -d --force-recreate hub-backend
 
     echo
     echo "✅ Phase 2 complete — signing with $KID; $OLD_KID still in JWKS"
@@ -135,7 +136,7 @@ case "$ACTION" in
     set_env JWT_EXTRA_PUBLIC_KEYS "$NEW_EXTRA"
 
     echo "==> Recreating services..."
-    docker compose up -d --force-recreate hub-backend subsystem-dorm subsystem-library
+    docker compose up -d --force-recreate hub-backend
 
     echo
     echo "✅ Phase 3 complete — $KID removed from JWKS"

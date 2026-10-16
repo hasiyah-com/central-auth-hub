@@ -124,3 +124,7 @@ docker compose down -v
 
 **ปัญหา: Port 8000 ถูกใช้**
 - แก้ใน `docker-compose.yml` เปลี่ยน `"8000:8000"` เป็น `"8001:8000"`
+
+## Independent OAuth client repositories
+
+This repository contains only Central Auth Hub, ML service and integration SDKs. Library, Dorm and Grade applications and their Compose files are distributed separately. See docs/subsystem-repository-migration.md for migration steps and history bundles. Hub does not require their source folders to build or start.

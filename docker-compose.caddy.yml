@@ -5,7 +5,7 @@
 #
 # Prereq:
 #   1. แก้ Caddyfile — แทน <DOMAIN> ด้วย domain จริง
-#   2. ชี้ DNS A record ของ hub./admin./dorm./library.<DOMAIN> → server IP
+#   2. ชี้ DNS A record ของ hub./admin.<DOMAIN> → server IP
 #   3. server เปิด port 80 + 443
 services:
   caddy:
@@ -23,8 +23,6 @@ services:
     depends_on:
       - hub-backend
       - hub-frontend
-      - subsystem-dorm
-      - subsystem-library
 
 volumes:
   caddy_data:
