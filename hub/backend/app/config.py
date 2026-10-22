@@ -13,6 +13,9 @@ _FORBIDDEN_DEFAULTS = {
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
+    # C3 + PG-E research comparison only; never changes live access or ML artifacts.
+    c3_pge_shadow_enabled: bool = False
+
     # App
     app_env: str = "development"
     # Explicit calibration artifact enables monitoring-only L3 fallback.
@@ -238,3 +241,4 @@ class Settings(BaseSettings):
 
 settings = Settings()
 settings.validate_production()
+

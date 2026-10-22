@@ -76,7 +76,7 @@ def _failed_rows(db, user):
 
 def test_invalid_otp_is_audited_and_counted(client, db, user, auth_headers):
     _seed_otp(user)
-    headers = {**_headers(user, auth_headers), "X-Forwarded-For": "203.0.113.9"}
+    headers = {**_headers(user, auth_headers), "X-Forwarded-For": "8.8.4.4"}
     r = client.post(VERIFY, json={"otp": "000000"}, headers=headers)
     assert r.status_code == 400
     assert r.json()["detail"]["code"] == "otp_invalid"
@@ -85,7 +85,7 @@ def test_invalid_otp_is_audited_and_counted(client, db, user, auth_headers):
     assert len(rows) == 1
     assert rows[0].target_id == user.id
     assert rows[0].metadata_json.get("code") == "otp_invalid"
-    assert str(rows[0].ip) == "203.0.113.9"
+    assert str(rows[0].ip) == "8.8.4.4"
 
     feats = extract_session_features(
         db, user.id, "1.2.3.4", "Mozilla/5.0", "TH", now=datetime.utcnow()
@@ -115,3 +115,4 @@ def test_expired_otp_is_not_counted(client, db, user, auth_headers):
     )
     assert r.json()["detail"]["code"] == "otp_expired"
     assert _failed_rows(db, user) == []
+

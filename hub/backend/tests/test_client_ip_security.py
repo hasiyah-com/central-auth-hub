@@ -30,27 +30,28 @@ def _req(headers: dict | None = None, client_host: str | None = "172.18.0.1"):
 # ── #2 X-Forwarded-For spoofing resistance ──────────────────────────────────
 
 
+# 8.8.4.4 is a public DNS fixture; no network call is made. TEST-NET is not global.
 def test_xff_takes_rightmost_not_client_controlled_leftmost():
     """client ปลอม IP ไว้ซ้ายสุด, proxy เติม IP จริงไว้ขวาสุด → ต้องได้ตัวขวาสุด."""
-    r = _req({"x-forwarded-for": "6.6.6.6, 203.0.113.9"})
-    assert get_client_ip(r) == "203.0.113.9", "ต้องเอา IP ที่ proxy เติม ไม่ใช่ที่ client ปลอม"
+    r = _req({"x-forwarded-for": "6.6.6.6, 8.8.4.4"})
+    assert get_client_ip(r) == "8.8.4.4", "ต้องเอา IP ที่ proxy เติม ไม่ใช่ที่ client ปลอม"
 
 
 def test_xff_multi_hop_takes_last():
-    r = _req({"x-forwarded-for": "1.1.1.1, 2.2.2.2, 203.0.113.9"})
-    assert get_client_ip(r) == "203.0.113.9"
+    r = _req({"x-forwarded-for": "1.1.1.1, 2.2.2.2, 8.8.4.4"})
+    assert get_client_ip(r) == "8.8.4.4"
 
 
-def test_x_real_ip_preferred_over_xff():
-    """nginx set X-Real-IP = remote_addr (client ทับไม่ได้) → ใช้ก่อน XFF."""
+def test_public_xff_preferred_over_x_real_ip():
+    """Current policy: public XFF precedes the X-Real-IP fallback."""
     r = _req({"x-real-ip": "203.0.113.9", "x-forwarded-for": "6.6.6.6"})
-    assert get_client_ip(r) == "203.0.113.9"
+    assert get_client_ip(r) == "6.6.6.6"
 
 
 def test_spoofed_leftmost_alone_still_from_proxy():
     """XFF ค่าเดียว = ที่ proxy set (single-hop) → ใช้ได้ (rightmost==only)."""
-    r = _req({"x-forwarded-for": "203.0.113.9"})
-    assert get_client_ip(r) == "203.0.113.9"
+    r = _req({"x-forwarded-for": "8.8.4.4"})
+    assert get_client_ip(r) == "8.8.4.4"
 
 
 def test_garbage_xff_falls_back_to_client_host():
@@ -128,3 +129,30 @@ def test_csp_has_form_action_on_api_route(client):
     r = client.get("/health")
     csp = r.headers.get("content-security-policy", "")
     assert "form-action 'self'" in csp
+
+
+
+def test_private_proxy_tail_does_not_hide_public_client():
+    r = _req({"x-forwarded-for": "6.6.6.6, 8.8.4.4, 192.168.10.1"})
+    assert get_client_ip(r) == "8.8.4.4"
+
+
+def test_private_xff_uses_x_real_fallback():
+    r = _req({"x-forwarded-for": "192.168.10.1", "x-real-ip": "203.0.113.9"})
+    assert get_client_ip(r) == "203.0.113.9"
+
+
+def test_signed_proxy_ip_takes_precedence(monkeypatch):
+    from app.config import settings
+    monkeypatch.setattr(settings, "proxy_shared_secret", "unit-test-proxy-key")
+    r = _req({"x-proxy-secret": "unit-test-proxy-key", "x-client-ip": "203.0.113.9",
+              "x-forwarded-for": "8.8.4.4"})
+    assert get_client_ip(r) == "203.0.113.9"
+
+
+def test_unsigned_client_ip_is_not_trusted(monkeypatch):
+    from app.config import settings
+    monkeypatch.setattr(settings, "proxy_shared_secret", "unit-test-proxy-key")
+    r = _req({"x-proxy-secret": "wrong-key", "x-client-ip": "6.6.6.6",
+              "x-forwarded-for": "8.8.4.4"})
+    assert get_client_ip(r) == "8.8.4.4"
