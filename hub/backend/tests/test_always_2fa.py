@@ -320,6 +320,22 @@ def test_risk_passkey_policy_guard_rejects_disabled_method(monkeypatch):
     assert exc.value.detail["code"] == "passkey_disabled"
 
 
+def test_risk_stepup_falls_back_to_totp_when_preferred_passkey_is_unavailable():
+    html = passkey_router._risk_stepup_html(
+        challenge_id="challenge-123",
+        user_email="user@example.test",
+        risk_score=0.8,
+        reasons=[],
+        nonce="test-nonce",
+        has_totp=True,
+        has_passkey=False,
+        preferred_factor="passkey",
+    )
+    assert 'const INITIAL_FACTOR = "totp"' in html
+    assert 'id="totpPanel"' in html
+    assert 'id="passkeyPanel"' not in html
+
+
 # ── 4. Account security API ──────────────────────────────────────────────────
 
 

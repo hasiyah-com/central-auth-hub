@@ -2265,9 +2265,13 @@ def _risk_stepup_html(
         if len(method_cards) > 1
         else ""
     )
+    preferred_available = (
+        (preferred_factor == "passkey" and has_passkey)
+        or (preferred_factor == "totp" and has_totp)
+    )
     initial_factor = (
         preferred_factor
-        if preferred_factor in {"passkey", "totp"}
+        if preferred_available
         else ("passkey" if has_passkey else "totp" if has_totp else "")
     )
     no_factor = (
