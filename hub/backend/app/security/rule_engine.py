@@ -151,6 +151,9 @@ def evaluate_rules(
     *,
     mode: str = "current",
     context: RuleContext | None = None,
+    shadow_c3_history_count: int | None = None,
+    shadow_deduplicate: bool = True,
+    _observations=None,
 ) -> RuleResult:
     """Layer 1: ประเมินกฎตายตัว → hard block หรือ risk score.
 
@@ -160,6 +163,10 @@ def evaluate_rules(
       - "legacy_replay" — ทำซ้ำกฎ ณ freeze 2026-08-29 (นับความล้มเหลวทั้งหมดเป็นหลักฐาน
         เดียวกัน) สำหรับสคริปต์ทดลอง/replay เท่านั้น · ผลติด rule_mode="legacy_replay"
     """
+    if shadow_c3_history_count is not None and (
+        type(shadow_c3_history_count) is not int or shadow_c3_history_count < 0
+    ):
+        raise ValueError("shadow history count must be a nonnegative integer")
     if mode not in RULE_MODES:
         raise ValueError(f"rule mode ไม่รู้จัก: {mode!r} (ใช้ได้: {RULE_MODES})")
     result = _evaluate_rules(
@@ -171,9 +178,24 @@ def evaluate_rules(
         subsystem_id,
         legacy=mode == "legacy_replay",
         context=context or RuleContext(),
+        shadow_c3_history_count=shadow_c3_history_count,
+        shadow_deduplicate=shadow_deduplicate,
+        _observations=_observations,
     )
     result.rule_mode = mode
     return result
+
+
+def _observe(cache, key, read):
+    """Event-local evidence cache; a read-only shadow view cannot issue new reads."""
+    if cache is None:
+        return read()
+    if key in cache:
+        return cache[key]
+    if not isinstance(cache, dict):
+        raise ValueError("shadow observation unavailable: " + key)
+    cache[key] = read()
+    return cache[key]
 
 
 def _evaluate_rules(
@@ -186,6 +208,9 @@ def _evaluate_rules(
     *,
     legacy: bool,
     context: RuleContext,
+    shadow_c3_history_count: int | None = None,
+    shadow_deduplicate: bool = True,
+    _observations=None,
 ) -> RuleResult:
     """ตัวประเมินจริงของ evaluate_rules (ดู docstring ที่นั่นเรื่องโหมด).
 
@@ -194,9 +219,11 @@ def _evaluate_rules(
     """
 
     trial = settings.risk_contextual_trial_enabled and not legacy
+    c3_cold = (not legacy and not trial and shadow_c3_history_count is not None
+               and shadow_c3_history_count < 5)
 
     # ── IP Blacklist check ──
-    if ip and is_blacklisted(db, ip):
+    if ip and _observe(_observations, "blacklisted", lambda: is_blacklisted(db, ip)):
         return RuleResult(
             blocked=True,
             score=1.0,
@@ -205,7 +232,7 @@ def _evaluate_rules(
 
     # ── Impossible Travel ──
     if geo_country and ip:
-        impossible = _check_impossible_travel(db, user_id, geo_country)
+        impossible = _observe(_observations, "impossible_travel", lambda: _check_impossible_travel(db, user_id, geo_country))
         if impossible:
             return RuleResult(
                 blocked=True,
@@ -228,9 +255,9 @@ def _evaluate_rules(
                 " จาก audit_logs แต่ไม่มี db — กฎปัจจุบันประเมินไม่ได้ · ถ้าจะทำซ้ำผล freeze"
                 " ให้เรียก mode='legacy_replay' (และห้ามรายงานผลเป็นกฎปัจจุบัน)"
             )
-        now = datetime.utcnow()
-        failed_post = float(count_recent_consecutive_auth(db, user_id, now, post_factor_only=True))
-        failed_recent_total = float(count_recent_consecutive_auth(db, user_id, now))
+        now = _observe(_observations, "failed_now", datetime.utcnow)
+        failed_post = float(_observe(_observations, "failed_post", lambda: count_recent_consecutive_auth(db, user_id, now, post_factor_only=True)))
+        failed_recent_total = float(_observe(_observations, "failed_total", lambda: count_recent_consecutive_auth(db, user_id, now)))
 
     # Daily feature stays unchanged for ML/audit; live rules use 10-minute consecutive counts.
     # ── Hard Block rules (from features) ──
@@ -257,7 +284,7 @@ def _evaluate_rules(
         # legacy_replay ต้องคงผล frozen experiment เดิมที่เคยบวกช่วงซ้อนกันทุกบิต
         if not legacy and exclusive_group in matched_exclusive_groups:
             continue
-        if trial and feat_name == "is_new_user_agent_family" and features[FEAT["is_new_device"]] == 1:
+        if (trial or (c3_cold and shadow_deduplicate)) and feat_name == "is_new_user_agent_family" and features[FEAT["is_new_device"]] == 1:
             continue  # browser novelty is already represented by device signature
         value = features[FEAT[feat_name]]
         if feat_name == "failed_logins_24h":
@@ -292,7 +319,7 @@ def _evaluate_rules(
             failed_post >= 5 or features[FEAT["is_new_country"]] == 1
             or context.recent_recovery_or_reset
         )
-        if device:
+        if device and not c3_cold:
             floor_rank = max(floor_rank, _ACTION_RANK["challenge"])
             reasons.append("new_environment_stepup (new device or browser family)")
         if (novelty_count >= 2 or
@@ -335,7 +362,7 @@ def _evaluate_rules(
     # ระบบย่อยอื่นเพิ่งมี login เสี่ยงสูง (เช่น ระบบ 1 ได้ 0.7) → พอ user เข้าระบบนี้
     # ให้ "ระแวง" มากขึ้น (escalate). Hub เห็น login ทุกระบบใน DB เดียว → ทำได้
     if subsystem_id is not None:
-        cross = _check_cross_subsystem_risk(db, user_id, subsystem_id, use_trial=trial)
+        cross = _observe(_observations, "cross_subsystem", lambda: _check_cross_subsystem_risk(db, user_id, subsystem_id, use_trial=trial))
         if cross:
             boost, reason = cross
             score += boost
@@ -345,7 +372,7 @@ def _evaluate_rules(
     # ⚠️ ปิดเมื่ออยู่หลัง campus/office NAT ร่วม (settings.shared_nat) — ทุกคนใช้ IP
     # เดียวกัน กฎนี้จะยิงใส่ login ปกติ ~26% โดยไม่ได้บ่งชี้ attack จริง (B60)
     if ip and not settings.shared_nat:
-        multi = _check_multi_account_ip(db, ip)
+        multi = _observe(_observations, "multi_accounts", lambda: _check_multi_account_ip(db, ip))
         if multi > MULTI_ACCOUNT_THRESHOLD:
             score += MULTI_ACCOUNT_SCORE
             reasons.append(
@@ -468,3 +495,4 @@ def _check_multi_account_ip(db: Session, ip: str) -> int:
         .scalar()
     )
     return result or 0
+

@@ -72,8 +72,11 @@ async def evaluate_login_risk(
         except Exception:
             logger.exception("Rule context unavailable user=%s", user_id)
     # ── Layer 1: Rule Engine (+ cross-subsystem risk propagation) ──
+    c3_shadow_enabled = getattr(settings, "c3_pge_shadow_enabled", False)
+    rule_observations = {} if c3_shadow_enabled else None
     rule_result = evaluate_rules(
-        features, db, user_id, ip, geo_country, subsystem_id=subsystem_id, context=context
+        features, db, user_id, ip, geo_country, subsystem_id=subsystem_id, context=context,
+        **({"_observations": rule_observations} if c3_shadow_enabled else {}),
     )
 
     if rule_result.blocked:
@@ -95,11 +98,17 @@ async def evaluate_login_risk(
         decision = aggregate(
             rule_result, behavior_result, monitoring_only(), shadow_mode
         )
+        shadow_comparison = _evaluate_c3_shadow(
+            c3_shadow_enabled, db=db, user_id=user_id, subsystem_id=subsystem_id,
+            features=features, ip=ip, geo_country=geo_country, context=context,
+            baseline_rule=rule_result, behavior=behavior_result, baseline=decision,
+            observations=rule_observations,
+        )
         return {
             "decision": decision.decision,
             "score": decision.total_score,
             "reasons": decision.reasons,
-            "breakdown": {"risk_policy": "contextual-trial-v1" if settings.risk_contextual_trial_enabled else "baseline", "risk_decision": decision.decision, "risk_shadow_decision": "would_block" if shadow_mode else None, **decision.breakdown, **({"l3_auth_candidate": candidate} if candidate else {})},
+            "breakdown": {"risk_policy": "contextual-trial-v1" if settings.risk_contextual_trial_enabled else "baseline", "risk_decision": decision.decision, "risk_shadow_decision": "would_block" if shadow_mode else None, **decision.breakdown, **({"l3_auth_candidate": candidate} if candidate else {}), **({"c3_pge_shadow": shadow_comparison} if shadow_comparison else {})},
             # hard block ข้าม L3 ไปเลย — คง shape ของ response ให้เท่ากันทุกเส้นทาง
             "iforest_explanation": [],
             "monitoring_decision": "normal",
@@ -121,6 +130,12 @@ async def evaluate_login_risk(
     # ล่มแล้วการตัดสินสิทธิ์ผู้ใช้ไม่กระทบเลย ต่างจากเดิมที่ "fallback เป็น 0.0"
     # ซึ่งก็คือการเปลี่ยนผลการตัดสินตามสถานะของบริการภายนอกอยู่ดี
     decision = aggregate(rule_result, behavior_result, monitoring_only(), shadow_mode)
+    shadow_comparison = _evaluate_c3_shadow(
+        c3_shadow_enabled, db=db, user_id=user_id, subsystem_id=subsystem_id,
+        features=features, ip=ip, geo_country=geo_country, context=context,
+        baseline_rule=rule_result, behavior=behavior_result, baseline=decision,
+        observations=rule_observations,
+    )
 
     # ── Layer 3 (แกน monitoring) — point view + sequence view รวมเป็นผลเดียว ──
     # B86: L3 residual สะสมประวัติด้วย subsystem_id ชนิดสตริงมาตลอด (count = 0 เสมอ) ·
@@ -163,6 +178,7 @@ async def evaluate_login_risk(
         **decision.breakdown,
         **({"authentication": authentication_evidence(login_method, verified=True)} if login_method else {}),
         "rule_context": context.snapshot(),
+        **({"c3_pge_shadow": shadow_comparison} if shadow_comparison else {}),
         "iforest_raw": round(l3["point"]["anomaly_score"], 4),
         # All login routers persist breakdown, including Hub Google/LINE.
         # Keeping SHAP only in the top-level result loses it on those paths.
@@ -242,6 +258,29 @@ async def evaluate_login_risk(
         "l3_sequence": seq_contract,
         "l3": _l3_summary(l3),
     }
+
+
+def _evaluate_c3_shadow(enabled, **kwargs):
+    if not enabled:
+        return None
+    from app.security import c3_pge_shadow
+
+    if kwargs["baseline_rule"].blocked:
+        return {**c3_pge_shadow.unavailable("hard_block_preserved"),
+                "would_decision": "would_block"}
+    try:
+        with kwargs["db"].begin_nested():
+            detail = c3_pge_shadow.build(
+                **kwargs, contextual_trial=settings.risk_contextual_trial_enabled,
+            )
+        logger.info("[c3_pge_shadow] status=%s baseline=%s candidate=%s latency_ms=%s",
+                    detail["status"], detail.get("baseline_l1_l2_decision"),
+                    detail.get("candidate_decision"), detail.get("latency_ms"))
+        return detail
+    except Exception as exc:
+        # Roll back the savepoint only. Baseline access, tokens and ML remain intact.
+        logger.warning("[c3_pge_shadow] unavailable error_type=%s", type(exc).__name__)
+        return c3_pge_shadow.unavailable("unavailable")
 
 
 def _user_type(db, user_id) -> str | None:
@@ -370,3 +409,4 @@ async def _evaluate_l3(
         except Exception as e:  # noqa: BLE001
             logger.warning("[risk_engine] record_residual error: %s", e)
     return l3
+
