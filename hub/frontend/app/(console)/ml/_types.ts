@@ -18,6 +18,7 @@ export type ShapContribution = {
  *  plus optional iforest_explanation embedded by oauth.py at login time. */
 export type RiskBreakdown = {
   risk_decision?: string;
+  access_decision?: string;
   risk_shadow_decision?: string | null;
   authentication?: {
     version: number; method: string; verified: boolean;
@@ -34,6 +35,13 @@ export type RiskBreakdown = {
   // ผลชั้นที่ 3 (monitoring) — ไม่มีใน session เก่า
   l3?: {
     point_available?: boolean;
+    error?: string | null;
+    point_error?: string | null;
+    sequence_error?: string | null;
+    point_model_sha256?: string | null;
+    explainer?: string | null;
+    shap_status?: "ready" | "point_unavailable" | "explanation_unavailable";
+    shap_count?: number;
     is_anomaly?: boolean;
     unique_to_l3?: boolean;
     monitoring_decision?: string;

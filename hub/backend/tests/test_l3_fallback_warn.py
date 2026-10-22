@@ -206,6 +206,8 @@ async def test_coexists_with_percentile_fallback(
 
     out = await E.evaluate_login_risk([0] * 23, "user", None, None, DB())
     assert out["decision"] == expected
+    assert out["breakdown"]["access_decision"] == expected
+    assert out["breakdown"]["risk_decision"] == baseline
     assert out["score"] == 0.2, "ตัวสำรองต้องไม่เปลี่ยนคะแนน"
     assert "fallback" in out["l3"], "percentile fallback ยังบันทึกสถานะตามเดิม"
 
