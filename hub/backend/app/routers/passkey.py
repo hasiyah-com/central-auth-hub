@@ -1160,6 +1160,32 @@ def _grant_stepup(user: User, request: Request, credentials, method: str) -> boo
     return True
 
 
+@router.get("/auth/stepup/methods")
+async def stepup_methods(
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    methods = mfa_policy.available_stepup_methods(
+        user, db, allow_email_otp_bootstrap=True
+    )
+    preferred = user.mfa_preferred_factor
+    return {
+        "available_methods": methods,
+        "preferred_method": preferred if preferred in methods else (methods[0] if methods else None),
+    }
+
+
+def _require_stepup_method(user: User, db: Session, method: str) -> None:
+    methods = mfa_policy.available_stepup_methods(
+        user, db, allow_email_otp_bootstrap=True
+    )
+    if method not in methods:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={"code": "stepup_method_not_allowed", "available_methods": methods},
+        )
+
+
 @router.post(
     "/auth/passkey/stepup/start",
     summary="เริ่ม step-up ceremony (ต้อง login แล้ว)",
@@ -1169,7 +1195,8 @@ async def stepup_start(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> dict:
-    """Assertion options ของ user ปัจจุบัน. 400 no_passkey → frontend fallback OTP."""
+    """Assertion options ของ user ปัจจุบันสำหรับ ACTIVE passkey."""
+    _require_stepup_method(user, db, "passkey")
     return webauthn_service.stepup_begin(user, db)
 
 
@@ -1246,6 +1273,7 @@ async def stepup_otp_start(
     from app.redis_client import redis_client
     from app.services import mfa_service
 
+    _require_stepup_method(user, db, "email_otp")
     otp = mfa_service.generate_otp()
     redis_client.setex(
         f"{_STEPUP_OTP_PREFIX}:{user.id}",
@@ -1278,6 +1306,7 @@ async def stepup_otp_verify(
     from app.redis_client import redis_client
     from app.services import mfa_service
 
+    _require_stepup_method(user, db, "email_otp")
     key = f"{_STEPUP_OTP_PREFIX}:{user.id}"
     raw = redis_client.get(key)
     if not raw:
@@ -1525,6 +1554,7 @@ async def risk_stepup_page(
     nonce = secrets.token_urlsafe(16)
     request.state.csp_nonce = nonce
     reasons = payload.get("risk_reasons") or []
+    methods = mfa_policy.available_stepup_methods(user, db)
     return HTMLResponse(
         content=_risk_stepup_html(
             challenge_id=challenge,
@@ -1532,8 +1562,8 @@ async def risk_stepup_page(
             risk_score=payload.get("risk_score", 0.0),
             reasons=reasons,
             nonce=nonce,
-            has_totp=totp_service.is_enabled(user.id, db),
-            has_passkey=webauthn_service.count_active(user.id, db) > 0,
+            has_totp="totp" in methods,
+            has_passkey="passkey" in methods,
             preferred_factor=user.mfa_preferred_factor,
         )
     )

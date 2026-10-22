@@ -704,6 +704,15 @@ export async function adminRejectTicket(
  * Step-up ด้วย passkey ของ user ปัจจุบัน (JWT required).
  * Throws {detail:{code:"no_passkey"}} ถ้าไม่มี passkey → caller fallback OTP.
  */
+export type StepupMethod = "passkey" | "totp" | "email_otp";
+export type StepupMethodsResponse = {
+  available_methods: StepupMethod[];
+  preferred_method: StepupMethod | null;
+};
+export async function fetchStepupMethods(): Promise<StepupMethodsResponse> {
+  return clientFetch("/auth/stepup/methods");
+}
+
 export async function stepUpWithPasskey(): Promise<{ granted: boolean; ttl_sec: number }> {
   const optionsJSON = await clientFetch<PublicKeyCredentialRequestOptionsJSON>(
     "/auth/passkey/stepup/start",
