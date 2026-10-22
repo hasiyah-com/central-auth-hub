@@ -30,6 +30,7 @@ from app.model import (
     explainer_status,
     load_model,
     model_loaded,
+    model_sha256,
     predict_with_explanation,
     warm_up_explainer,
     FeatureContractMismatch,
@@ -247,6 +248,7 @@ def score(req: ScoreRequest, request: Request):
             "feature_count": FEATURE_COUNT,
             "explainer": explainer_status(),
             "feature_contract": FEATURE_CONTRACT,
+            "model_sha256": model_sha256(),
         },
     )
 

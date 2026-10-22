@@ -265,7 +265,11 @@ def test_risk_stepup_hides_passkey_when_global_policy_disables_it(
         assert response.status_code == 200
         assert 'data-method="passkey"' not in response.text
         assert 'id="verify"' not in response.text
-        assert 'data-method="totp"' in response.text
+        # A single available factor opens directly; the chooser exists only
+        # when multiple methods are eligible. Assert the usable TOTP panel.
+        assert 'id="totpPanel"' in response.text
+        assert 'data-factor="totp"' in response.text
+        assert 'const INITIAL_FACTOR = "totp"' in response.text
     finally:
         risk_challenge.consume(cid)
 

@@ -236,6 +236,11 @@ async def evaluate_login_risk(
             "user_type": user_type,
         }
 
+    # Preserve both stages: risk_decision is the historical L1+L2 result;
+    # access_decision is the risk policy outcome after the optional L3 fallback.
+    # Neither is overwritten by later authentication (e.g. mfa_passed).
+    breakdown["access_decision"] = access_decision
+
     logger.info(
         "[risk_engine] user=%s score=%.3f decision=%s monitoring=%s",
         user_id,
@@ -317,6 +322,21 @@ _L3_SUMMARY_KEYS = (
 def _l3_summary(l3: dict) -> dict:
     """ส่วนที่เก็บลง log/replay — ตัดผลดิบของแต่ละมุมมองออก (ยาวเกินจำเป็น)."""
     summary = {k: l3[k] for k in _L3_SUMMARY_KEYS}
+    point = l3.get("point") or {}
+    sequence = l3.get("sequence") or {}
+    available = point.get("available") is True
+    explanations = point.get("explanation") or []
+    summary.update({
+        "error": l3.get("error"),
+        "point_available": available,
+        "point_error": point.get("error"),
+        "point_model_sha256": point.get("model_sha256"),
+        "explainer": point.get("explainer"),
+        "shap_count": len(explanations),
+        "shap_status": ("point_unavailable" if not available else
+                        "ready" if explanations else "explanation_unavailable"),
+        "sequence_error": sequence.get("error"),
+    })
     if "fallback" in l3:
         summary["fallback"] = l3["fallback"]
     return summary

@@ -11,7 +11,7 @@ import type {
   ShapContribution,
 } from "../_types";
 import { DECISION_TONE, DEVICE_ICON, FEEDBACK_LABELS, featureLabelTh } from "../_types";
-import { classifyReason, l3Status } from "@/lib/riskDisplay";
+import { classifyReason, finalRiskDecision, l3Status } from "@/lib/riskDisplay";
 import { formatShapFeatureValue, localHourFromShap } from "@/lib/shapDisplay";
 
 type SessionData = Anomaly | (UserSession & { user_email?: string; user_id?: string; session_id?: string; subsystem_name?: string });
@@ -90,7 +90,8 @@ export function SessionDetailPanel({ session, onFeedbackSaved, hideUserLink }: P
   const deviceIcon = DEVICE_ICON[session.device_type || "unknown"] || DEVICE_ICON.unknown;
   const bd = session.risk_breakdown;
   const roleFallback = bd?.l3?.fallback ?? (bd?.l3_decision_trial ? { status: "abstain" as const, user_type: null, percentile: null, warn_percentile: null, reason: "not_configured" } : null);
-  const riskDecision = bd?.risk_decision || (session.decision === "mfa_passed" ? "unknown" : session.decision) || "unknown";
+  const riskDecision = finalRiskDecision(bd, session.decision);
+  const pointUnavailable = bd?.l3?.point_available === false;
   const authentication = bd?.authentication;
 
   return (
@@ -110,9 +111,10 @@ export function SessionDetailPanel({ session, onFeedbackSaved, hideUserLink }: P
           <div className={`h-full ${riskColor}`} style={{ width: `${riskPct}%` }} />
         </div>
         <div className="mt-1 text-[10px] text-ink-400">
-          Risk Score (4-Layer) · 0.000 – 1.000
-          {score != null && <span className="ml-2">| IForest raw: {score.toFixed(2)}</span>}
+          Risk Score (ชั้น 1+2) · 0.000 – 1.000
+          {!pointUnavailable && (bd?.iforest_raw ?? score) != null && <span className="ml-2">| IForest raw: {(bd?.iforest_raw ?? score)!.toFixed(2)}</span>}
         </div>
+        {bd?.risk_decision && <p className="mt-1 text-xs text-ink-500">ผลชั้น 1+2: {bd.risk_decision.toUpperCase()} · ผลหลังนโยบาย L3: {riskDecision.toUpperCase()}</p>}
 
         {/* Risk Breakdown — 3 layers */}
         {bd && (
@@ -121,13 +123,23 @@ export function SessionDetailPanel({ session, onFeedbackSaved, hideUserLink }: P
             <BreakdownBar label="Behavior" value={bd.behavior} max={1} color="bg-purple-500" />
             <BreakdownBar
               label="IForest"
-              value={bd.iforest_raw ?? bd.iforest}
+               value={pointUnavailable ? null : bd.iforest_raw ?? bd.iforest}
               max={1}
               color="bg-amber-500"
             />
           </div>
         )}
         {bd && <L3StatusLine status={l3Status(bd)} />}
+        {bd?.l3 && (
+          <div className="mt-3 space-y-1 rounded-lg border border-ink-200 p-3 text-xs text-ink-600">
+            <p>{pointUnavailable ? "IForest: ไม่มีคะแนน" : bd.l3.point_available ? "IForest: คำนวณคะแนนสำเร็จ" : "IForest: รายการเก่าไม่มีสถานะการคำนวณ"}</p>
+            {(bd.l3.error || bd.l3.point_error) && <p>สาเหตุ: {bd.l3.error || bd.l3.point_error}</p>}
+            {bd.l3.shap_status === "ready" && <p>SHAP: พร้อม · {bd.l3.shap_count} ฟีเจอร์</p>}
+            {bd.l3.shap_status === "explanation_unavailable" && <p>SHAP: ไม่มีคำอธิบาย · คะแนน IForest ยังใช้ได้ · explainer {bd.l3.explainer ?? "unknown"}</p>}
+            {bd.l3.shap_status === "point_unavailable" && <p>SHAP: ไม่พร้อม เพราะไม่มีผลคะแนน IForest</p>}
+            {bd.l3.sequence_error && <p>Sequence: {bd.l3.sequence_error}</p>}
+          </div>
+        )}
 
         {/* Reasons (Layer 1 + 2) — bar style matching SHAP for visual parity.
             Rules only fire when a signal is suspicious, so every bar here is
@@ -384,16 +396,16 @@ function BreakdownBar({
   color,
 }: {
   label: string;
-  value: number;
+  value: number | null;
   max: number;
   color: string;
 }) {
-  const pct = Math.round((value / max) * 100);
+  const pct = value == null ? 0 : Math.round((value / max) * 100);
   return (
     <div>
       <div className="flex min-h-4 items-baseline justify-between mb-1">
         <span className="whitespace-nowrap text-[10px] font-bold text-ink-500 uppercase">{label}</span>
-        <span className="text-xs font-mono font-bold text-ink-900">{value.toFixed(2)}</span>
+        <span className="text-xs font-mono font-bold text-ink-900">{value == null ? "—" : value.toFixed(2)}</span>
       </div>
       <div className="h-1.5 bg-ink-100 rounded-full overflow-hidden">
         <div className={`h-full ${color}`} style={{ width: `${Math.min(pct, 100)}%` }} />

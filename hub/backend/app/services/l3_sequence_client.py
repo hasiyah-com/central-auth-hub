@@ -322,7 +322,7 @@ async def _recover_point(
             )
             result["point"] = {
                 "available": True,
-                "model_sha256": None,
+                "model_sha256": body.get("meta", {}).get("model_sha256"),
                 "anomaly_score": score,
                 "is_anomaly": is_anomaly,
                 "explanation": explanation,

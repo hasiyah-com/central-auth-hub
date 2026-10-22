@@ -29,3 +29,5 @@ jobs:
         run: npx tsc --noEmit
       - name: Jest (React Testing Library)
         run: npm test
+      - name: Production build
+        run: npm run build

@@ -80,3 +80,14 @@ def test_service_startup_warms_shap_after_loading_model(monkeypatch):
     monkeypatch.setattr(main, "warm_up_explainer", lambda: calls.append("shap") or "ready")
     main.startup()
     assert calls == ["model", "shap"]
+
+
+def test_point_endpoint_includes_fingerprint_for_recovery_calibration(monkeypatch):
+    from app import main
+    monkeypatch.setattr(main, "predict_with_explanation", lambda *a, **kw: (.49, []))
+    monkeypatch.setattr(main, "model_sha256", lambda: "a" * 64)
+    request = main.ScoreRequest(feature_contract=model.FEATURE_CONTRACT,
+        features=[16, 4, 2.5, 1, 0, 0, 1, 1, 3, 1, 0, 1, 100, 0, 1, 1, 1, .8, .2, 0, 100, 0, 0])
+    result = main.score(request, None)
+    assert result.meta["model_sha256"] == "a" * 64
+    assert result.data.anomaly_score == .49

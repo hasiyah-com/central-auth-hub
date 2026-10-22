@@ -21,6 +21,22 @@ export function classifyReason(raw: string): ReasonKind {
 export type L3Tone = "fallback" | "unique" | "duplicate" | "quiet";
 export type L3Status = { tone: L3Tone; text: string };
 
+/** Historical risk_decision predates L3; MFA completion is a separate outcome. */
+export function finalRiskDecision(bd: {
+  access_decision?: string; risk_decision?: string;
+  l3_fallback?: { applied?: boolean };
+  l3_decision_trial?: { ready?: boolean; decision?: string };
+} | null | undefined, sessionDecision: string | null): string {
+  if (bd?.access_decision) return bd.access_decision;
+  const baseline = bd?.risk_decision;
+  if (baseline === "allow") {
+    if (bd?.l3_decision_trial?.ready && bd.l3_decision_trial.decision)
+      return bd.l3_decision_trial.decision;
+    if (bd?.l3_fallback?.applied) return sessionDecision === "would_warn" ? "would_warn" : "warn";
+  }
+  return baseline || (sessionDecision === "mfa_passed" ? "unknown" : sessionDecision) || "unknown";
+}
+
 type L3Input = {
   iforest_raw?: number;
   l3?: { is_anomaly?: boolean; unique_to_l3?: boolean };
