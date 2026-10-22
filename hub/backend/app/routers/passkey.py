@@ -1514,6 +1514,15 @@ class RiskStepupVerifyBody(BaseModel):
     credential: dict = Field(..., description="WebAuthn assertion")
 
 
+def _require_risk_passkey_enabled(db: Session) -> None:
+    """Enforce the global Passkey switch at every risk-stepup API boundary."""
+    if not get_auth_policy(db)["passkey"]:
+        raise HTTPException(
+            status_code=403,
+            detail={"code": "passkey_disabled", "message": "ระบบปิดการใช้งาน Passkey"},
+        )
+
+
 @router.get("/auth/passkey/risk-stepup", response_class=HTMLResponse)
 async def risk_stepup_page(
     request: Request,
@@ -1525,6 +1534,7 @@ async def risk_stepup_page(
     nonce = secrets.token_urlsafe(16)
     request.state.csp_nonce = nonce
     reasons = payload.get("risk_reasons") or []
+    passkey_allowed = get_auth_policy(db)["passkey"]
     return HTMLResponse(
         content=_risk_stepup_html(
             challenge_id=challenge,
@@ -1533,7 +1543,10 @@ async def risk_stepup_page(
             reasons=reasons,
             nonce=nonce,
             has_totp=totp_service.is_enabled(user.id, db),
-            has_passkey=webauthn_service.count_active(user.id, db) > 0,
+            has_passkey=(
+                passkey_allowed
+                and webauthn_service.count_active(user.id, db) > 0
+            ),
             preferred_factor=user.mfa_preferred_factor,
         )
     )
@@ -1550,6 +1563,7 @@ async def risk_stepup_start(
     payload, user = _load_challenge_user(body.challenge_id, db)
     if payload.get("kind") != "reauth":
         raise HTTPException(status_code=400, detail="challenge นี้ไม่ใช่สำหรับ re-auth")
+    _require_risk_passkey_enabled(db)
     return webauthn_service.stepup_begin(user, db)
 
 
@@ -1564,6 +1578,7 @@ async def risk_stepup_verify(
     payload, user = _load_challenge_user(body.challenge_id, db)
     if payload.get("kind") != "reauth":
         raise HTTPException(status_code=400, detail="challenge นี้ไม่ใช่สำหรับ re-auth")
+    _require_risk_passkey_enabled(db)
     ip = get_client_ip(request)
     auth_retry.check(user.id, "passkey")
     try:
@@ -2190,7 +2205,7 @@ def _risk_stepup_html(
 
     # TOTP section (แสดงถ้า user มี ACTIVE TOTP) — ช่องกรอก 6 หลัก + ปุ่มยืนยัน
     # style ฝังใน fragment (nonced) — เลี่ยงแตะ CSS ที่แชร์กับหน้า force-enroll
-    totp_label = "หรือใช้ Authenticator" if has_passkey else "ยืนยันด้วย Authenticator"
+    totp_label = "Authenticator (TOTP)"
     otp_inputs = "".join(
         f'<input class="otp-digit" type="text" inputmode="numeric" maxlength="6" '
         f'aria-label="รหัสหลักที่ {i + 1}" autocomplete="{ "one-time-code" if i == 0 else "off" }">'
@@ -2207,12 +2222,13 @@ def _risk_stepup_html(
         font-family:'IBM Plex Mono',monospace; }}
       .or-sep::before, .or-sep::after {{ content:''; flex:1; height:1px; background:var(--line); }}
     </style>
-    <div class="totp-box" id="totpBox">
+    <div class="factor-panel" id="totpPanel" data-factor="totp">
+      <div class="totp-box" id="totpBox">
       <div class="or-sep"><span>{totp_label}</span></div>
       <div class="totp-label">รหัสยืนยัน 6 หลัก</div>
       <div class="otp-digits" role="group" aria-label="รหัสยืนยัน 6 หลัก">{otp_inputs}</div>
       <input id="totpIn" type="hidden">
-      <button class="btn btn-totp" id="verifyTotp">📱 ยืนยันด้วยรหัส</button>
+      <button class="btn btn-totp" id="verifyTotp">📱 ยืนยันด้วยรหัส</button></div>
     </div>"""
         if has_totp
         else ""
@@ -2221,7 +2237,8 @@ def _risk_stepup_html(
     totp_first = has_totp and (preferred_factor == "totp" or not has_passkey)
     # passkey block (ปุ่ม + ลิงก์ recover) — ซ่อนปุ่ม passkey ถ้าไม่มี passkey
     passkey_btn = (
-        '<button class="btn btn-pk" id="verify">🔑 ยืนยันด้วย Passkey</button>'
+        '<div class="factor-panel" id="passkeyPanel" data-factor="passkey">'
+        '<button class="btn btn-pk" id="verify">🔑 ยืนยันด้วย Passkey</button></div>'
         if has_passkey
         else ""
     )
@@ -2229,6 +2246,38 @@ def _risk_stepup_html(
         (totp_section + "\n    " + passkey_btn)
         if totp_first
         else (passkey_btn + totp_section)
+    )
+    method_cards = []
+    if has_passkey:
+        method_cards.append(
+            '<button class="method-card" type="button" data-method="passkey">'
+            '<b>Passkey</b><span>ยืนยันด้วยอุปกรณ์ที่ลงทะเบียนไว้</span><i>›</i></button>'
+        )
+    if has_totp:
+        method_cards.append(
+            '<button class="method-card" type="button" data-method="totp">'
+            '<b>Authenticator (TOTP)</b><span>กรอกรหัส 6 หลักจากแอป Authenticator</span><i>›</i></button>'
+        )
+    method_chooser = (
+        '<div class="method-chooser" id="methodChooser">'
+        + "".join(method_cards)
+        + "</div>"
+        if len(method_cards) > 1
+        else ""
+    )
+    preferred_available = (
+        (preferred_factor == "passkey" and has_passkey)
+        or (preferred_factor == "totp" and has_totp)
+    )
+    initial_factor = (
+        preferred_factor
+        if preferred_available
+        else ("passkey" if has_passkey else "totp" if has_totp else "")
+    )
+    no_factor = (
+        '<div class="unsupported show">ไม่มีวิธียืนยันตัวตนที่เปิดใช้งาน กรุณากู้คืนบัญชีหรือติดต่อผู้ดูแลระบบ</div>'
+        if not method_cards
+        else ""
     )
     # reasons box แสดงเฉพาะตอนมี reason จริง (risk-triggered) — สำหรับ Always-2FA
     # (ไม่ได้เสี่ยง) จะไม่ขึ้น "ตรวจพบความเสี่ยง" ที่ทำให้ user งงทุก login
@@ -2324,6 +2373,13 @@ button:focus-visible,a:focus-visible{{outline:2px solid var(--mint);outline-offs
 .weight{{color:var(--amber);align-self:center;white-space:nowrap}}
 .btn-pk::after{{content:"›";position:absolute;right:18px}}.btn-pk{{position:relative}}
 .panel .or-sep{{margin:24px 0 20px}}
+.method-chooser{{display:grid;gap:12px}}
+.method-card{{position:relative;width:100%;padding:18px 46px 18px 18px;text-align:left;color:var(--ink);background:#18283b;border:1px solid var(--line);cursor:pointer}}
+.method-card:hover,.method-card:focus-visible{{border-color:var(--mint);background:#1b3044}}
+.method-card b,.method-card span{{display:block}}.method-card b{{font-size:15px}}.method-card span{{margin-top:4px;color:var(--muted);font-size:12px}}
+.method-card i{{position:absolute;right:18px;top:50%;transform:translateY(-50%);font:24px 'IBM Plex Mono';color:var(--muted)}}
+.factor-panel{{display:none}}.factor-panel.active{{display:block}}
+.choose-other{{display:none;margin-top:14px;background:transparent;color:var(--muted)}}.choose-other.show{{display:flex}}
 @media(max-width:520px){{.session{{flex-wrap:wrap;justify-content:flex-end}}.risk-badge{{padding:6px}}.otp-digit{{height:44px}}.panel{{padding:24px 16px}}.brand{{font-size:16px}}}}
 </style></head><body>
 <main class="page">
@@ -2347,14 +2403,30 @@ button:focus-visible,a:focus-visible{{outline:2px solid var(--mint);outline-offs
       ⚠️ <strong>เบราว์เซอร์นี้ไม่รองรับ Passkey</strong><br>
       กรุณาใช้อุปกรณ์ที่รองรับ หรือใช้ <a href="/auth/passkey/recover" style="color:var(--mint)">Account Recovery</a>
     </div>
-    {factor_blocks}
-    <a class="btn btn-recover" href="/auth/passkey/recover">ทำ Passkey หาย? → กู้บัญชี</a>
+    {method_chooser}{no_factor}
+    <div id="factorArea">{factor_blocks}</div>
+    <button class="btn choose-other" id="chooseOther" type="button">← เลือกวิธีอื่น</button>
+    <a class="btn btn-recover" href="/auth/passkey/recover">กู้คืนบัญชีหรือติดต่อผู้ดูแล</a>
   </div>
 </section></div></div>
 <footer class="footer"><span>Central Auth Hub</span><span>WebAuthn · FIDO2 · Risk-Based Authentication</span></footer>
 </main>
 <script nonce="{nonce}">
 const CHALLENGE_ID = {json.dumps(challenge_id)};
+const INITIAL_FACTOR = {json.dumps(initial_factor)};
+const chooser=document.getElementById('methodChooser');
+const chooseOther=document.getElementById('chooseOther');
+const factorPanels=Array.from(document.querySelectorAll('.factor-panel'));
+function selectMethod(method) {{
+  factorPanels.forEach(panel=>panel.classList.toggle('active',panel.dataset.factor===method));
+  if(chooser) chooser.style.display='none';
+  if(chooseOther && chooser) chooseOther.classList.add('show');
+  if(method==='totp') document.querySelector('.otp-digit')?.focus();
+}}
+if(chooser) {{
+  chooser.querySelectorAll('[data-method]').forEach(card=>card.addEventListener('click',()=>selectMethod(card.dataset.method)));
+  chooseOther.addEventListener('click',()=>{{factorPanels.forEach(panel=>panel.classList.remove('active'));chooser.style.display='grid';chooseOther.classList.remove('show');}});
+}} else if(INITIAL_FACTOR) {{ selectMethod(INITIAL_FACTOR); }}
 function b64urlToBuf(s) {{ const p=s.replace(/-/g,'+').replace(/_/g,'/');
   const pad=p.length%4===0?'':'='.repeat(4-(p.length%4)); const bin=atob(p+pad);
   const a=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++)a[i]=bin.charCodeAt(i); return a.buffer; }}
