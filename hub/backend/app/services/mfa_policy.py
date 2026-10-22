@@ -72,23 +72,16 @@ def is_second_factor_required(
     return bool(risk_mfa or user.effective_mfa_always)
 
 
-def available_stepup_methods(
-    user: User, db: Session, *, allow_email_otp_bootstrap: bool = False
-) -> list[str]:
-    """Backend-authoritative eligible methods. Email OTP is bootstrap-only."""
-    methods: list[str] = []
-    if webauthn_service.count_active(user.id, db) > 0:
-        methods.append("passkey")
-    if totp_service.is_enabled(user.id, db):
-        methods.append("totp")
-    if allow_email_otp_bootstrap and not methods and user.email:
-        methods.append("email_otp")
-    return methods
-
-
 def has_second_factor(user: User, db: Session) -> bool:
-    """ผู้ใช้มี ACTIVE Passkey หรือ ACTIVE TOTP."""
-    return bool(available_stepup_methods(user, db))
+    """ผู้ใช้มี factor ที่สองใช้ได้ไหม (ACTIVE passkey หรือ ACTIVE TOTP).
+
+    ใช้เลือกทางหลัง is_mfa_required: มี factor → risk-stepup (รับ passkey/TOTP);
+    ไม่มีเลย → grace / force-enroll passkey (ต้องตั้งอย่างน้อย 1). กัน always-on
+    user ที่มี TOTP อย่างเดียวถูกลากไป force-enroll passkey.
+    """
+    if webauthn_service.count_active(user.id, db) > 0:
+        return True
+    return totp_service.is_enabled(user.id, db)
 
 
 def should_prompt_setup(user: User, db: Session) -> bool:
