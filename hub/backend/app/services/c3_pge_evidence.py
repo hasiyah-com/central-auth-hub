@@ -4,6 +4,7 @@ A missing link is unknown. Audit metadata is server-written, not request evidenc
 Current legacy enrollment routes do not write the linkage: report unknown honestly.
 """
 from datetime import datetime, timedelta, timezone
+import math
 from uuid import UUID
 
 from app.models import AccessList, AuditLog, LoginSession, PasskeyCredential
@@ -69,8 +70,33 @@ def trusted_count_capped(db, user_id, now):
     return count
 
 
+def count_warn_threshold(times):
+    """Same linear p95/ceil convention as the research count_base; no NumPy."""
+    if len(times) < 5:
+        return None
+    times = sorted(times)
+    lo, counts = 0, []
+    for i, at in enumerate(times):
+        while times[lo] < at - timedelta(hours=24):
+            lo += 1
+        counts.append(i - lo)
+    counts.sort()
+    position = (len(counts) - 1) * .95
+    lower = int(position)
+    fraction = position - lower
+    upper = min(lower + 1, len(counts) - 1)
+    p95 = counts[lower] + fraction * (counts[upper] - counts[lower])
+    return max(3, math.ceil(p95) + 2)
+
+
 def collect(db, user_id, subsystem_id, now, *, recent_passkey, recent_permission):
+    window = db.query(LoginSession.created_at).filter(
+        LoginSession.user_id == user_id,
+        LoginSession.created_at >= now - timedelta(days=30),
+        LoginSession.created_at < now,
+    ).all()
     facts = {
+        "count24h_warn_threshold": count_warn_threshold([at for (at,) in window]),
         "trusted_history_count_capped_at5": trusted_count_capped(db, user_id, now),
         "registration_verified": False, "grant_provenance_recorded": False,
         "registration_status": "unknown" if recent_passkey else "not_recent",

@@ -13,7 +13,7 @@ from app.security import c3_pge_shadow as shadow, risk_engine, rule_engine
 from app.security.behavior_profiling import BehaviorResult
 from app.security.iforest_scorer import monitoring_only
 from app.security.risk_aggregator import aggregate
-from app.services.c3_pge_evidence import registration_verified, trusted_count_capped
+from app.services.c3_pge_evidence import count_warn_threshold, registration_verified, trusted_count_capped
 from app.services.rule_context import RuleContext
 
 
@@ -216,3 +216,32 @@ def test_full_orchestrator_access_is_identical_with_shadow(monkeypatch, fail):
     detail = new["breakdown"].pop("c3_pge_shadow")
     assert new == old
     assert detail["status"] == ("unavailable" if fail else "evaluated")
+
+
+def test_verified_recent_registration_retains_research_warn(monkeypatch):
+    base, detail = assess(vector(new_passkey_recently_added=1), behavior=0, monkeypatch=monkeypatch)
+    assert base.decision == "allow"
+    assert detail["candidate_decision"] == "warn"
+    assert not detail["pge_reasons"]
+
+
+def test_personal_count_warn_stays_shadow_only(monkeypatch):
+    monkeypatch.setattr(shadow, "collect", lambda *a, **kw: {
+        **facts(), "count24h_warn_threshold": 3,
+    })
+    v = vector(login_count_24h=3)
+    rr = rule_engine.evaluate_rules(v, object(), "u", None, None)
+    br = BehaviorResult(0, [])
+    base = aggregate(rr, br, monitoring_only())
+    result = shadow.build(db=object(), user_id="u", subsystem_id=None, features=v,
+                          ip=None, geo_country=None, context=RuleContext(), baseline_rule=rr,
+                          behavior=br, baseline=base, observations={})
+    assert base.decision == "allow"
+    assert result["candidate_decision"] == "warn"
+
+
+def test_count_threshold_requires_five_prior_sessions():
+    now = datetime(2026, 10, 22, 12)
+    assert count_warn_threshold([now]*4) is None
+    assert count_warn_threshold([now]*5) == 6
+    assert count_warn_threshold([now-timedelta(days=i*2) for i in range(5)]) == 3

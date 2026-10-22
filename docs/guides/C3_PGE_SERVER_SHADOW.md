@@ -47,6 +47,8 @@ Collector รองรับลิงก์ explicit ที่ server บัน�
 
 สิทธิ์ต้องมี latest grant ที่ตรง subsystem, ผู้ให้ และ server audit ก่อนเหตุการณ์ การมี provenance ไม่พิสูจน์ว่าไม่มีผู้โจมตี ข้อกำหนดนี้เข้มกว่าการจำลองที่มี actor อย่างเดียว จึงไม่ถือว่าผลวิจัย F1 0.766 ใช้กับ server อัตโนมัติ
 
+ผล shadow คงกฎ warn ของสคริปต์ทดลองด้วย: passkey ใหม่ และ login_count_24h >= max(3, ceil(p95 ของจำนวนก่อนหน้า24ชั่วโมงในหน้าต่าง30วัน)+2) เมื่อมีอย่างน้อย5เซสชัน ใช้ linear percentile เดียวกันโดยไม่เพิ่ม NumPy เข้า backend ทั้งสองกฎนี้ไม่ถูกเพิ่มให้ผล access จริง
+
 C3 ใช้ floor/น้ำหนักเฉพาะกลุ่ม trusted history<5 ไม่เปิด contextual-trial อื่น เก็บ warn ขั้นต่ำตาม C2 กฎ block และ floor อื่นยังอยู่ PG-E ยก unknown recent change เป็น would_challenge ตามสูตรทดลอง แต่ไม่กระทบผู้ใช้จริง
 
 เวลาในฟีเจอร์ 23 ตัวใช้ระบบเดิม ไม่เปลี่ยนเขตเวลา การเก็บ provenance ใช้ UTC ค่า failure/IP/travel/cross-system ของ L1 ใช้ observation cache ของเหตุการณ์ฐานเดียวกัน ไม่อ่านใหม่เพื่อหาอีกผลหนึ่ง ส่วน trusted history และ provenance เป็น read-only snapshot ตอนเก็บ shadow อาจเห็นรายการที่ commit พร้อมกันภายหลังการสกัดฟีเจอร์เล็กน้อย จึงเก็บเวลาและต้องตรวจสอบ concurrency ก่อนใช้ enforce
@@ -71,3 +73,5 @@ C3 ใช้ floor/น้ำหนักเฉพาะกลุ่ม trusted h
 เทสใหม่ตรวจ default-off, shadow isolation ทั้งกรณีสำเร็จ/พัง, DB savepoint, block/floor อื่น, reuse failure counts, unknown/future/cross-account provenance และ collector SQL บน PostgreSQL ของ CI
 
 CI ของฐาน 011cb1b มี5failureเดิมจาก fixture IP และลำดับ header ที่ไม่ตรง policy ปัจจุบัน งานนี้ปรับเฉพาะเทส IP ให้ใช้ public fixture และทดสอบลำดับปัจจุบันรวม signed-proxy/forged-header ไม่เปลี่ยน get_client_ip ของ production
+
+ตรวจซ้ำก่อนส่ง: ผล L1 เดิม (score/min_action/reasons) และผล C3 เมื่อใช้ฟีเจอร์/หลักฐาน/ประวัติชุดเดียวกับการทดลอง ตรงครบ240000แถว; สูตร percentile แบบไม่ใช้ NumPy ตรงกับนิยาม NumPy ใน200กรณี การตรวจนี้ไม่ใช่การยืนยัน provenance บน server หรือการรับประกัน accuracy จริง

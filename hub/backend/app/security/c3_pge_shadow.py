@@ -43,7 +43,11 @@ def build(*, db, user_id, subsystem_id, features, ip, geo_country, context,
     c3 = evaluate_rules(features, db, user_id, ip, geo_country, **common)
     c2_decision = aggregate(c2, behavior, monitoring_only()).decision
     c3_decision = aggregate(c3, behavior, monitoring_only()).decision
-    rank = max(RANK[c3_decision], int(RANK[c2_decision] >= 1))
+    threshold = facts.get("count24h_warn_threshold")
+    count_warn = threshold is not None and features[FEAT["login_count_24h"]] >= threshold
+    # The research pipeline also warns on recent enrollment/count deviations.
+    # Add these only to the counterfactual, never the baseline access result.
+    rank = max(RANK[c3_decision], int(RANK[c2_decision] >= 1 or pk or count_warn))
     pge_reasons = []
     if pk and not facts["registration_verified"]:
         rank = max(rank, 2)
