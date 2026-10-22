@@ -48,6 +48,8 @@ def build_integration_kit(
             "# Central Auth Hub — server-side only",
             f"CENTRAL_AUTH_ISSUER={_env_value(issuer)}",
             f"CENTRAL_AUTH_BASE_URL={_env_value(base)}",
+            f"CENTRAL_AUTH_INTERNAL_URL={_env_value(base)}",
+            f"CENTRAL_AUTH_PUBLIC_URL={_env_value(base)}",
             f"CENTRAL_AUTH_CLIENT_ID={_env_value(client_id)}",
             'CENTRAL_AUTH_CLIENT_SECRET="replace-with-the-secret-from-the-one-time-email-link"',
             f"CENTRAL_AUTH_REDIRECT_URI={_env_value(callback)}",
@@ -88,6 +90,10 @@ def build_integration_kit(
 4. เริ่ม Authorization Code flow และส่ง `redirect_uri` ค่าเดียวกับที่ลงทะเบียน
 5. แลก authorization code ที่ token endpoint จากฝั่ง Backendเท่านั้น
 6. ตรวจลายเซ็น JWT ด้วย JWKS และตรวจ `iss`, `aud`, `exp` ก่อนสร้าง session
+
+`CENTRAL_AUTH_INTERNAL_URL` ใช้สำหรับการเรียก Hub จาก Backend และ
+`CENTRAL_AUTH_PUBLIC_URL` ใช้สำหรับ redirect browser โดยค่าเริ่มต้นในชุดนี้เท่ากัน
+หากรันร่วม Docker network ให้เปลี่ยนเฉพาะ internal URL เป็นชื่อ service ภายใน
 
 ## ข้อควรระวัง
 

@@ -37,6 +37,8 @@ def test_kit_contains_env_registration_and_thai_guide_without_secret():
         guide = archive.read("README_TH.md").decode()
 
     assert 'CENTRAL_AUTH_CLIENT_ID="client-123"' in env
+    assert 'CENTRAL_AUTH_INTERNAL_URL="https://auth.example.ac.th"' in env
+    assert 'CENTRAL_AUTH_PUBLIC_URL="https://auth.example.ac.th"' in env
     assert "replace-with-the-secret-from-the-one-time-email-link" in env
     assert registration["redirect_uris"] == [
         "https://dorm.example.ac.th/auth/callback"
