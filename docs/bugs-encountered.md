@@ -437,6 +437,13 @@
 - **กฎ:** ค่าที่ผ่าน JSON/Redis ต้องแปลงกลับเป็นชนิดเดียวกับฐานข้อมูลที่ขอบ ก่อนนำไปเทียบใน Python (`in`, `dict.get`) · เทสของ risk path ต้องป้อนค่าผ่าน JSON แบบเดียวกับของจริง
 - **Verify:** `tests/test_subsystem_id_type_b86.py` (4 tests · ผ่าน finalizer จริง)
 
+**B87. Session detail shows baseline Allow beside applied L3 Warn and loses ML diagnostics**
+- Symptom: Allow badge beside an applied Warn fallback; an unavailable Point score looks like zero, with no persisted explanation of missing SHAP.
+- Cause: the badge read the pre-fallback `risk_decision`; `_l3_summary` dropped Point/Sequence errors and explainer state; Point recovery dropped loaded-model identity.
+- Fix: retain `access_decision` separately, show both risk stages, persist availability/errors/SHAP status/model hash, and include the hash on `/v1/score` recovery. No threshold/model change.
+- **Rule:** baseline risk, post-policy risk, authentication completion and model availability are distinct states. Missing scores are not zero; an available score is not proof that SHAP succeeded. Require frontend production build as well as unit/type tests before merge.
+- **Verify:** `test_l3_diagnostics.py`, `test_l3_fallback_warn.py`, `l3DiagnosticsDisplay.test.tsx`, `test_point_explanation.py`; see `docs/guides/L3_SHAP_DIAGNOSTICS.md` for server limitations.
+
 ---
 
 ## วิธีเพิ่ม bug ใหม่
