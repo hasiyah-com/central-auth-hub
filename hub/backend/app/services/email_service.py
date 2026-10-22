@@ -13,6 +13,7 @@ import ssl
 from datetime import datetime
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
+from html import escape
 
 from app.config import settings
 
@@ -196,6 +197,8 @@ def send_secret_retrieval_email(
     retrieval_url: str,
     expires_at: datetime,
     client_id: str,
+    redirect_uris: list[str] | None = None,
+    portal_url: str | None = None,
 ) -> bool:
     """ส่ง email พร้อมลิงก์ดู client_secret (one-time, 15min expiry).
 
@@ -203,6 +206,21 @@ def send_secret_retrieval_email(
     คนเรียกควรมี fallback (เช่นคืน URL ตรงในกรณี dev mode).
     """
     expires_thai = expires_at.strftime("%d/%m/%Y %H:%M UTC")
+    safe_subsystem_name = escape(subsystem_name)
+    safe_client_id = escape(client_id)
+    safe_retrieval_url = escape(retrieval_url, quote=True)
+    safe_portal_url = escape(portal_url, quote=True) if portal_url else None
+    redirect_html = "".join(
+        f'<div style="color:#0f172a; font-size:12px; word-break:break-all; margin-top:4px;">{escape(uri)}</div>'
+        for uri in (redirect_uris or [])
+    )
+    portal_html = (
+        f'<p style="margin:18px 0 0; font-size:13px; line-height:1.6;">'
+        f'<a href="{safe_portal_url}" style="color:#4338ca; font-weight:700;">'
+        "เปิด Developer Portal และดาวน์โหลด .env.example + คู่มือ</a></p>"
+        if portal_url
+        else ""
+    )
 
     html = f"""<!doctype html>
 <html lang="th">
@@ -224,7 +242,7 @@ def send_secret_retrieval_email(
           <tr>
             <td style="padding:28px 32px 8px;">
               <p style="margin:0 0 16px; font-size:15px; line-height:1.6;">
-                ระบบย่อย <strong>{subsystem_name}</strong> ได้รับการลงทะเบียนเรียบร้อย — รออนุมัติจาก Hub Admin
+                ระบบย่อย <strong>{safe_subsystem_name}</strong> ได้รับการลงทะเบียนเรียบร้อย — รออนุมัติจาก Hub Admin
               </p>
               <p style="margin:0 0 20px; font-size:13px; color:#475569; line-height:1.55;">
                 คลิกปุ่มด้านล่างเพื่อดู <strong>Client Secret</strong> — ลิงก์นี้
@@ -235,7 +253,7 @@ def send_secret_retrieval_email(
               <table role="presentation" cellpadding="0" cellspacing="0" style="margin:24px 0;">
                 <tr>
                   <td style="background:#0f172a; border-radius:10px;">
-                    <a href="{retrieval_url}"
+                    <a href="{safe_retrieval_url}"
                        style="display:inline-block; padding:14px 28px; color:#ffffff; font-weight:700; font-size:14px; text-decoration:none; letter-spacing:0.04em;">
                       → ดู Client Secret ตอนนี้
                     </a>
@@ -252,8 +270,11 @@ def send_secret_retrieval_email(
 
               <div style="border-top:1px solid #e2e8f0; padding-top:16px; margin-top:8px; font-family:'JetBrains Mono',ui-monospace,monospace; font-size:12px; color:#64748b;">
                 <div style="margin-bottom:4px;">CLIENT_ID</div>
-                <div style="color:#0f172a; font-size:13px; word-break:break-all;">{client_id}</div>
+                <div style="color:#0f172a; font-size:13px; word-break:break-all;">{safe_client_id}</div>
+                <div style="margin-top:12px; margin-bottom:4px;">REDIRECT URI</div>
+                {redirect_html or '<div style="color:#64748b;">ดูค่าล่าสุดใน Developer Portal</div>'}
               </div>
+              {portal_html}
             </td>
           </tr>
           <tr>
@@ -277,6 +298,11 @@ def send_secret_retrieval_email(
 {retrieval_url}
 
 CLIENT_ID: {client_id}
+REDIRECT_URIS:
+{chr(10).join(redirect_uris or []) or "ดูค่าล่าสุดใน Developer Portal"}
+
+Developer Portal / ดาวน์โหลด .env.example และคู่มือ:
+{portal_url or "-"}
 
 คำเตือน: secret จะแสดงเพียงครั้งเดียวเท่านั้น
 """

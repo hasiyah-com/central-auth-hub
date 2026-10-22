@@ -18,7 +18,7 @@ from fastapi.responses import StreamingResponse
 from openpyxl import Workbook, load_workbook
 from openpyxl.worksheet.datavalidation import DataValidation
 from openpyxl.workbook.defined_name import DefinedName
-from pydantic import BaseModel, EmailStr, field_validator
+from pydantic import BaseModel, EmailStr, Field, field_validator
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -31,6 +31,7 @@ from app.services.critical_action_policy import gate as _stepup_gate
 from app.services.change_request_service import create_request as create_change_request
 from app.services.change_request_service import close_subsystem_login_sessions
 from app.services.email_service import send_secret_retrieval_email
+from app.services.integration_kit import build_integration_kit
 from app.services.jwt_service import revoke_jti
 from app.services.webhook_dispatcher import send_access_revoked, send_access_updated
 from app.services.secret_service import (
@@ -187,6 +188,7 @@ class SubsystemResponse(BaseModel):
     client_id: str
     status: str
     scope: list[str]
+    redirect_uris: list[str] = Field(default_factory=list)
     allowed_roles: list[str] = []
     access_policy: str = "explicit"
     access_policy_config: dict | None = None
@@ -414,6 +416,10 @@ def register_subsystem(
         retrieval_url=retrieval_url,
         expires_at=retrieval.expires_at,
         client_id=client_id,
+        redirect_uris=list(subsystem.redirect_uris or []),
+        portal_url=(
+            f"{settings.admin_frontend_url.rstrip('/')}/developer/subsystems/{subsystem.id}"
+        ),
     )
 
     response: dict = {
@@ -512,6 +518,7 @@ def my_subsystems(
             client_id=s.client_id,
             status=s.status,
             scope=s.scope,
+            redirect_uris=list(s.redirect_uris or []),
             allowed_roles=list(s.allowed_roles or []),
             access_policy=s.access_policy or "explicit",
             access_policy_config=s.access_policy_config,
@@ -519,6 +526,40 @@ def my_subsystems(
         )
         for s in subs
     ]
+
+
+@router.get("/subsystems/{subsystem_id}/integration-kit")
+def download_integration_kit(
+    subsystem_id: str,
+    request: Request,
+    user: User = Depends(require_developer),
+    db: Session = Depends(get_db),
+):
+    """Download current non-secret OAuth/OIDC configuration and Thai guide."""
+    subsystem = _get_owned_subsystem(subsystem_id, user, db, request)
+    kit = build_integration_kit(
+        subsystem_name=subsystem.name,
+        client_id=subsystem.client_id,
+        redirect_uris=list(subsystem.redirect_uris or []),
+        scopes=list(subsystem.scope or []),
+        issuer=settings.hub_issuer,
+        hub_base_url=settings.hub_base_url,
+    )
+    log_action(
+        db,
+        actor_id=user.id,
+        action="integration_kit_downloaded",
+        target_type="subsystem",
+        target_id=subsystem.id,
+        ip=get_client_ip(request),
+        metadata={"filename": kit.filename},
+    )
+    db.commit()
+    return StreamingResponse(
+        BytesIO(kit.content),
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{kit.filename}"'},
+    )
 
 
 # ============ 3. upload whitelist CSV ============
@@ -1981,6 +2022,10 @@ def rotate_client_secret(
                 retrieval_url=applied["retrieval_url"],
                 expires_at=expires_at,
                 client_id=subsystem.client_id,
+                redirect_uris=list(subsystem.redirect_uris or []),
+                portal_url=(
+                    f"{settings.admin_frontend_url.rstrip('/')}/developer/subsystems/{subsystem.id}"
+                ),
             )
         except Exception:
             pass

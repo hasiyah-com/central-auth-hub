@@ -547,6 +547,29 @@ export default function DeveloperSubsystemDetailPage({
     }
   }
 
+  async function downloadIntegrationKit() {
+    setMsg(null);
+    try {
+      const response = await fetch(
+        `/api/proxy/developer/subsystems/${id}/integration-kit`,
+        { credentials: "include" }
+      );
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({}));
+        throw { detail: body.detail || "ดาวน์โหลดชุดเชื่อมต่อไม่สำเร็จ" };
+      }
+      const url = URL.createObjectURL(await response.blob());
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `central-auth-integration-${id}.zip`;
+      link.click();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+      setMsg({ kind: "ok", text: "ดาวน์โหลด .env.example และคู่มือแล้ว" });
+    } catch (e) {
+      setMsg({ kind: "err", text: errText(e, "ดาวน์โหลดชุดเชื่อมต่อไม่สำเร็จ") });
+    }
+  }
+
   async function uploadCsv(file: File) {
     setCsvUploading(true);
     setCsvResult(null);
@@ -956,6 +979,13 @@ export default function DeveloperSubsystemDetailPage({
               <span>oauth client</span>
               <h2>OAuth Client</h2>
             </div>
+            <button
+              type="button"
+              onClick={downloadIntegrationKit}
+              className="px-3 py-2 rounded-lg border border-brand-200 bg-brand-50 hover:bg-brand-100 text-sm font-semibold text-brand-700"
+            >
+              ดาวน์โหลด .env + คู่มือ
+            </button>
           </header>
           <div className="cx-panel-body grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-5">
             <div>
