@@ -16,7 +16,9 @@ from datetime import datetime, timedelta
 
 import pyotp
 import pytest
+from fastapi import HTTPException
 
+from app.routers import passkey as passkey_router
 from app.models import AuditLog, PasskeyCredential, User, UserTotpCredential
 from app.services import mfa_policy, risk_challenge, totp_service
 from app.services.jwt_service import create_access_token
@@ -242,6 +244,80 @@ def test_risk_stepup_page_shows_totp_when_enabled(client, temp_user, db):
         assert "verify-totp" in r.text  # TOTP section ฝังในหน้า
     finally:
         risk_challenge.consume(cid)
+
+
+def test_risk_stepup_hides_passkey_when_global_policy_disables_it(
+    client, temp_user, db, monkeypatch
+):
+    _enable_totp(db, temp_user)
+    monkeypatch.setattr(
+        "app.routers.passkey.get_auth_policy",
+        lambda db: {"google": True, "passkey": False},
+    )
+    monkeypatch.setattr(
+        "app.routers.passkey.webauthn_service.count_active", lambda *_: 1
+    )
+    cid = _mint_reauth(temp_user)
+    try:
+        response = client.get(
+            "/auth/passkey/risk-stepup", params={"challenge": cid}
+        )
+        assert response.status_code == 200
+        assert 'data-method="passkey"' not in response.text
+        assert 'id="verify"' not in response.text
+        assert 'data-method="totp"' in response.text
+    finally:
+        risk_challenge.consume(cid)
+
+
+def test_risk_stepup_passkey_start_rejects_disabled_global_policy(
+    client, temp_user, monkeypatch
+):
+    monkeypatch.setattr(
+        "app.routers.passkey.get_auth_policy",
+        lambda db: {"google": True, "passkey": False},
+    )
+    monkeypatch.setattr(
+        "app.routers.passkey.webauthn_service.stepup_begin",
+        lambda *_: pytest.fail("disabled Passkey must not start a ceremony"),
+    )
+    cid = _mint_reauth(temp_user)
+    try:
+        response = client.post(
+            "/auth/passkey/risk-stepup/start", json={"challenge_id": cid}
+        )
+        assert response.status_code == 403
+        assert response.json()["detail"]["code"] == "passkey_disabled"
+    finally:
+        risk_challenge.consume(cid)
+
+
+def test_risk_stepup_renders_method_chooser_before_factor_forms():
+    html = passkey_router._risk_stepup_html(
+        challenge_id="challenge-123",
+        user_email="user@example.test",
+        risk_score=0.8,
+        reasons=["new device (+0.3)"],
+        nonce="test-nonce",
+        has_totp=True,
+        has_passkey=True,
+    )
+    assert 'id="methodChooser"' in html
+    assert 'data-method="passkey"' in html
+    assert 'data-method="totp"' in html
+    assert 'class="factor-panel"' in html
+
+
+def test_risk_passkey_policy_guard_rejects_disabled_method(monkeypatch):
+    monkeypatch.setattr(
+        passkey_router,
+        "get_auth_policy",
+        lambda db: {"google": True, "passkey": False},
+    )
+    with pytest.raises(HTTPException) as exc:
+        passkey_router._require_risk_passkey_enabled(object())
+    assert exc.value.status_code == 403
+    assert exc.value.detail["code"] == "passkey_disabled"
 
 
 # ── 4. Account security API ──────────────────────────────────────────────────
