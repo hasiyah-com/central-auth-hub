@@ -530,6 +530,10 @@
   width: min(680px, calc(100% - 48px));
   margin: auto;
   padding: 36px;
+  max-height: 100%;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
 }
 
 .codesPanel {
@@ -754,6 +758,12 @@
 }
 
 @media (max-width: 780px) {
+  .page {
+    height: auto;
+    min-height: 100svh;
+    overflow: visible;
+  }
+
   .topbar {
     min-height: 64px;
     padding: 0 18px;
