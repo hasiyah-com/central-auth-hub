@@ -1366,7 +1366,7 @@ def _finalize_after_reauth(
 ) -> str:
     """หลัง re-auth ผ่าน → ออก authorization code (subsystem) หรือ JWT (hub_direct).
 
-    `method` = factor ที่ใช้ยืนยัน ("passkey" / "totp") — บันทึกใน audit + stepup_cache.
+    `method` = factor ที่ใช้ยืนยัน ("passkey" / "totp" / "email_otp") — บันทึกใน audit + stepup_cache.
     Returns: redirect URL string.
     """
     flow = payload.get("flow")
@@ -1535,6 +1535,11 @@ async def risk_stepup_page(
     request.state.csp_nonce = nonce
     reasons = payload.get("risk_reasons") or []
     passkey_allowed = get_auth_policy(db)["passkey"]
+    has_totp = totp_service.is_enabled(user.id, db)
+    has_passkey = (
+        passkey_allowed
+        and webauthn_service.count_active(user.id, db) > 0
+    )
     return HTMLResponse(
         content=_risk_stepup_html(
             challenge_id=challenge,
@@ -1542,11 +1547,9 @@ async def risk_stepup_page(
             risk_score=payload.get("risk_score", 0.0),
             reasons=reasons,
             nonce=nonce,
-            has_totp=totp_service.is_enabled(user.id, db),
-            has_passkey=(
-                passkey_allowed
-                and webauthn_service.count_active(user.id, db) > 0
-            ),
+            has_totp=has_totp,
+            has_passkey=has_passkey,
+            allow_email_otp=not has_passkey and not has_totp,
             preferred_factor=user.mfa_preferred_factor,
         )
     )
@@ -1633,6 +1636,43 @@ class RiskStepupVerifyTotpBody(BaseModel):
     code: str = Field(..., min_length=6, max_length=8)
 
 
+class RiskStepupOtpBody(BaseModel):
+    challenge_id: str = Field(..., min_length=8, max_length=128)
+
+
+class RiskStepupOtpVerifyBody(RiskStepupOtpBody):
+    otp: str = Field(..., min_length=6, max_length=6, pattern=r"^\d{6}$")
+
+
+_RISK_STEPUP_OTP_PREFIX = "risk_stepup_otp"
+_RISK_STEPUP_OTP_TTL = 300
+_RISK_STEPUP_OTP_MAX_ATTEMPTS = 5
+
+
+def _risk_stepup_otp_key(challenge_id: str) -> str:
+    return f"{_RISK_STEPUP_OTP_PREFIX}:{challenge_id}"
+
+
+def _risk_email_otp_allowed(user: User, db: Session) -> bool:
+    """Email OTP is last-resort only when no strong method is currently usable."""
+    passkey_usable = (
+        get_auth_policy(db)["passkey"]
+        and webauthn_service.count_active(user.id, db) > 0
+    )
+    return not passkey_usable and not totp_service.is_enabled(user.id, db)
+
+
+def _require_risk_email_otp_allowed(user: User, db: Session) -> None:
+    if not _risk_email_otp_allowed(user, db):
+        raise HTTPException(
+            status_code=403,
+            detail={
+                "code": "strong_factor_available",
+                "message": "กรุณาใช้ Passkey หรือ Authenticator ที่ลงทะเบียนไว้",
+            },
+        )
+
+
 @router.post("/auth/passkey/risk-stepup/verify-totp")
 @limiter.limit(settings.rate_limit_token)
 async def risk_stepup_verify_totp(
@@ -1674,6 +1714,104 @@ async def risk_stepup_verify_totp(
         raise HTTPException(status_code=410, detail="challenge ถูกใช้ไปแล้ว — login ใหม่")
     redirect_url = _finalize_after_reauth(
         user=user, payload=consumed, request=request, db=db, method="totp"
+    )
+    db.commit()
+    return JSONResponse({"redirect_url": redirect_url})
+
+
+@router.post("/auth/passkey/risk-stepup/otp/start")
+@limiter.limit("3/minute")
+async def risk_stepup_otp_start(
+    request: Request,
+    body: RiskStepupOtpBody,
+    db: Session = Depends(get_db),
+):
+    """Send a challenge-bound email OTP only when no strong factor is usable."""
+    from datetime import datetime, timedelta
+    from app.services.mfa_service import generate_otp, hash_otp, send_otp_email
+
+    payload, user = _load_challenge_user(body.challenge_id, db)
+    if payload.get("kind") != "reauth":
+        raise HTTPException(status_code=400, detail="challenge นี้ไม่ใช่สำหรับ re-auth")
+    _require_risk_email_otp_allowed(user, db)
+
+    otp = generate_otp()
+    expires_at = datetime.utcnow() + timedelta(seconds=_RISK_STEPUP_OTP_TTL)
+    redis_client.setex(
+        _risk_stepup_otp_key(body.challenge_id),
+        _RISK_STEPUP_OTP_TTL,
+        json.dumps({"hash": hash_otp(otp), "attempts": 0}),
+    )
+    log_action(
+        db,
+        actor_id=user.id,
+        action="risk_mfa_otp_sent",
+        target_type="user",
+        target_id=user.id,
+        ip=get_client_ip(request),
+        metadata={"challenge_id": body.challenge_id, "method": "email_otp"},
+    )
+    db.commit()
+    send_otp_email(user.email, otp, expires_at)
+    return {"sent": True, "ttl_sec": _RISK_STEPUP_OTP_TTL}
+
+
+@router.post("/auth/passkey/risk-stepup/otp/verify")
+@limiter.limit("5/minute")
+async def risk_stepup_otp_verify(
+    request: Request,
+    body: RiskStepupOtpVerifyBody,
+    db: Session = Depends(get_db),
+):
+    """Verify and consume a challenge-bound last-resort email OTP."""
+    from app.services.mfa_service import verify_otp
+
+    payload, user = _load_challenge_user(body.challenge_id, db)
+    if payload.get("kind") != "reauth":
+        raise HTTPException(status_code=400, detail="challenge นี้ไม่ใช่สำหรับ re-auth")
+    _require_risk_email_otp_allowed(user, db)
+    key = _risk_stepup_otp_key(body.challenge_id)
+    raw = redis_client.get(key)
+    if not raw:
+        raise HTTPException(status_code=410, detail="OTP หมดอายุ — กรุณาขอ OTP ใหม่")
+    try:
+        state = json.loads(raw.decode() if isinstance(raw, bytes) else raw)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        redis_client.delete(key)
+        raise HTTPException(status_code=410, detail="OTP หมดอายุ — กรุณาขอ OTP ใหม่")
+
+    attempts = int(state.get("attempts", 0))
+    if attempts >= _RISK_STEPUP_OTP_MAX_ATTEMPTS:
+        redis_client.delete(key)
+        raise HTTPException(status_code=429, detail="ลองรหัสเกินจำนวนที่กำหนด — กรุณาขอ OTP ใหม่")
+    if not verify_otp(state.get("hash", ""), body.otp):
+        attempts += 1
+        if attempts >= _RISK_STEPUP_OTP_MAX_ATTEMPTS:
+            redis_client.delete(key)
+        else:
+            state["attempts"] = attempts
+            redis_client.setex(key, _RISK_STEPUP_OTP_TTL, json.dumps(state))
+        log_action(
+            db,
+            actor_id=user.id,
+            action="risk_mfa_verify_failed",
+            target_type="user",
+            target_id=user.id,
+            ip=get_client_ip(request),
+            metadata={"code": "otp_invalid", "method": "email_otp", "attempts": attempts},
+        )
+        db.commit()
+        raise HTTPException(
+            status_code=401,
+            detail={"code": "otp_invalid", "message": "รหัสไม่ถูกต้อง"},
+        )
+
+    consumed = risk_challenge.consume(body.challenge_id)
+    if not consumed:
+        raise HTTPException(status_code=410, detail="challenge ถูกใช้ไปแล้ว — login ใหม่")
+    redis_client.delete(key)
+    redirect_url = _finalize_after_reauth(
+        user=user, payload=consumed, request=request, db=db, method="email_otp"
     )
     db.commit()
     return JSONResponse({"redirect_url": redirect_url})
@@ -2189,6 +2327,7 @@ def _risk_stepup_html(
     nonce: str,
     has_totp: bool = False,
     has_passkey: bool = True,
+    allow_email_otp: bool = False,
     preferred_factor: str | None = None,
 ) -> str:
     """Hub-served HTML page สำหรับ Risk Re-Auth (Passkey หรือ TOTP).
@@ -2242,11 +2381,26 @@ def _risk_stepup_html(
         if has_passkey
         else ""
     )
-    factor_blocks = (
+    strong_factor_blocks = (
         (totp_section + "\n    " + passkey_btn)
         if totp_first
         else (passkey_btn + totp_section)
     )
+    email_otp_section = (
+        """
+    <div class="factor-panel" id="emailOtpPanel" data-factor="email_otp">
+      <div class="or-sep"><span>Email OTP · ทางเลือกสุดท้าย</span></div>
+      <p class="otp-help">บัญชีนี้ไม่มี Passkey หรือ Authenticator ที่ใช้งานได้ ระบบจึงส่งรหัสไปยังอีเมลที่ยืนยันแล้วได้</p>
+      <button class="btn btn-totp" id="sendEmailOtp" type="button">📧 ส่งรหัสทางอีเมล</button>
+      <div id="emailOtpForm" hidden>
+        <input class="email-otp-input" id="emailOtpIn" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="รหัส 6 หลัก" aria-label="รหัส OTP ทางอีเมล">
+        <button class="btn btn-totp" id="verifyEmailOtp" type="button">ยืนยันรหัสทางอีเมล</button>
+      </div>
+    </div>"""
+        if allow_email_otp
+        else ""
+    )
+    factor_blocks = strong_factor_blocks + email_otp_section
     method_cards = []
     if has_passkey:
         method_cards.append(
@@ -2257,6 +2411,11 @@ def _risk_stepup_html(
         method_cards.append(
             '<button class="method-card" type="button" data-method="totp">'
             '<b>Authenticator (TOTP)</b><span>กรอกรหัส 6 หลักจากแอป Authenticator</span><i>›</i></button>'
+        )
+    if allow_email_otp:
+        method_cards.append(
+            '<button class="method-card" type="button" data-method="email_otp">'
+            '<b>Email OTP · ทางเลือกสุดท้าย</b><span>รับรหัสทางอีเมลเมื่อไม่มีวิธีที่แข็งแรงกว่า</span><i>›</i></button>'
         )
     method_chooser = (
         '<div class="method-chooser" id="methodChooser">'
@@ -2272,7 +2431,12 @@ def _risk_stepup_html(
     initial_factor = (
         preferred_factor
         if preferred_available
-        else ("passkey" if has_passkey else "totp" if has_totp else "")
+        else (
+            "passkey" if has_passkey
+            else "totp" if has_totp
+            else "email_otp" if allow_email_otp
+            else ""
+        )
     )
     no_factor = (
         '<div class="unsupported show">ไม่มีวิธียืนยันตัวตนที่เปิดใช้งาน กรุณากู้คืนบัญชีหรือติดต่อผู้ดูแลระบบ</div>'
@@ -2362,6 +2526,8 @@ h1{{font-family:'Kanit',sans-serif;font-size:28px;font-weight:600;margin:0 0 4px
 .footer{{display:flex;justify-content:space-between;gap:16px;border-top:1px solid var(--line);padding:16px 32px;color:var(--muted);font:10px 'IBM Plex Mono'}}
 .stage{{flex:1;display:flex;padding:0 0 24px}}
 .totp-label{{display:block;font-size:12px;color:var(--muted);margin-bottom:10px}}
+.otp-help{{color:var(--muted);font-size:12px;line-height:1.65;margin:0 0 12px}}
+.email-otp-input{{width:100%;height:50px;margin:12px 0;border:1px solid #34465e;background:#0b1420;color:var(--ink);text-align:center;font:24px 'IBM Plex Mono';letter-spacing:.2em}}
 button:focus-visible,a:focus-visible{{outline:2px solid var(--mint);outline-offset:3px}}
 @media(max-width:760px){{.shell{{grid-template-columns:1fr;width:calc(100% - 24px)}}.context{{border-right:0;border-bottom:1px solid var(--line)}}.panel{{padding:26px 22px}}.context-note{{padding-top:20px}}.header{{padding:16px}}.brand small{{display:none}}.session{{font-size:9px}}.footer{{padding:16px;flex-wrap:wrap}}.stage{{padding:12px 0}}}}
 
@@ -2386,7 +2552,7 @@ button:focus-visible,a:focus-visible{{outline:2px solid var(--mint);outline-offs
 <header class="header"><div class="brand"><b>⌘</b> HUB <small>IDENTITY CONTROL</small></div><div class="session"><i></i>SECURE CHALLENGE {risk_badge}</div></header>
 <div class="stage"><div class="shell">
 <aside class="context"><div class="kicker">WHY THIS CHECK</div>{context_block}
-<div class="context-note"><p>ยืนยันตัวตนด้วย Passkey หรือ Authenticator ที่ผูกกับบัญชี เมื่อสำเร็จระบบจะดำเนินการต่อ</p></div></aside>
+<div class="context-note"><p>ระบบจะให้ใช้ Passkey หรือ Authenticator ที่ลงทะเบียนไว้ก่อน และแสดง Email OTP เฉพาะเมื่อไม่มีวิธีที่แข็งแรงกว่าที่ใช้งานได้</p></div></aside>
 <section class="panel" aria-labelledby="verification-title">
   <div class="top">
     <div class="emblem">
@@ -2528,6 +2694,36 @@ async function doVerifyTotp(){{
 if(tBtn){{
   tBtn.addEventListener('click', doVerifyTotp);
   tIn.addEventListener('keydown', e=>{{ if(e.key==='Enter') doVerifyTotp(); }});
+}}
+
+// ── Last-resort email OTP (only rendered when no strong factor is usable) ──
+const emailSend=document.getElementById('sendEmailOtp');
+const emailForm=document.getElementById('emailOtpForm');
+const emailIn=document.getElementById('emailOtpIn');
+const emailVerify=document.getElementById('verifyEmailOtp');
+if(emailSend) emailSend.addEventListener('click', async()=>{{
+  errEl.classList.remove('show'); emailSend.disabled=true;
+  emailSend.innerHTML='<span class="spinner"></span> กำลังส่ง…';
+  try {{
+    const r=await fetch('/auth/passkey/risk-stepup/otp/start',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{challenge_id:CHALLENGE_ID}})}});
+    if(!r.ok){{const e=await r.json().catch(()=>({{}}));const d=e.detail;throw new Error(typeof d==='string'?d:(d&&d.message?d.message:'ส่งรหัสไม่สำเร็จ'));}}
+    emailForm.hidden=false; emailIn.focus(); emailSend.textContent='📧 ส่งรหัสใหม่'; emailSend.disabled=false;
+  }} catch(err) {{ showErr(err.message||'ส่งรหัสไม่สำเร็จ'); emailSend.textContent='📧 ส่งรหัสทางอีเมล'; emailSend.disabled=false; }}
+}});
+async function doVerifyEmailOtp(){{
+  const otp=(emailIn.value||'').replace(/\D/g,'');
+  if(otp.length!==6){{showErr('กรอกรหัส 6 หลัก');return;}}
+  emailVerify.disabled=true; emailVerify.innerHTML='<span class="spinner"></span> กำลังยืนยัน…';
+  try {{
+    const r=await fetch('/auth/passkey/risk-stepup/otp/verify',{{method:'POST',headers:{{'Content-Type':'application/json'}},body:JSON.stringify({{challenge_id:CHALLENGE_ID,otp}})}});
+    if(!r.ok){{const e=await r.json().catch(()=>({{}}));const d=e.detail;throw new Error(typeof d==='string'?d:(d&&d.message?d.message:'รหัสไม่ถูกต้อง'));}}
+    const data=await r.json(); window.location.href=data.redirect_url;
+  }} catch(err) {{ showErr(err.message||'ยืนยันไม่สำเร็จ'); emailVerify.disabled=false; emailVerify.textContent='ยืนยันรหัสทางอีเมล'; }}
+}}
+if(emailVerify) emailVerify.addEventListener('click',doVerifyEmailOtp);
+if(emailIn){{
+  emailIn.addEventListener('input',()=>{{emailIn.value=emailIn.value.replace(/\D/g,'').slice(0,6);}});
+  emailIn.addEventListener('keydown',e=>{{if(e.key==='Enter')doVerifyEmailOtp();}});
 }}
 </script>
 </body></html>"""
