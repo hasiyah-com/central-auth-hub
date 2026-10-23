@@ -46,17 +46,21 @@ def _read_csv(path: Path) -> tuple[list, list]:
     return X.tolist(), y.tolist()
 
 
-def load_data() -> tuple[np.ndarray, np.ndarray]:
+def load_data(*, include_provenance=False):
     if not DATA_PATH.exists():
         raise FileNotFoundError(f"ไม่พบ {DATA_PATH} — รัน scripts/generate_data ก่อน")
-    X, y = _read_csv(DATA_PATH)
+    X, y, metadata = read_dataset(DATA_PATH)
+    X, y = X.tolist(), y.tolist()
+    provenance = {"synthetic": metadata, "real_labeled": None}
 
     # Phase 2.2 — merge real labeled data ถ้ามี (feedback loop)
     if REAL_DATA_PATH.exists():
-        Xr, yr = _read_csv(REAL_DATA_PATH)
+        Xr, yr, real_metadata = read_dataset(REAL_DATA_PATH)
+        Xr, yr = Xr.tolist(), yr.tolist()
         if Xr and len(Xr[0]) == len(X[0]):  # feature count ต้องตรง (B49)
             X += Xr
             y += yr
+            provenance["real_labeled"] = real_metadata
             print(
                 f"🔁 feedback loop: merge real labeled {len(Xr)} แถว "
                 f"(normal={yr.count(0)}, attack={yr.count(1)})"
@@ -66,7 +70,8 @@ def load_data() -> tuple[np.ndarray, np.ndarray]:
                 f"⚠️ real_labeled.csv feature count ไม่ตรง — ข้าม (synthetic={len(X[0])})"
             )
 
-    return np.array(X), np.array(y)
+    arrays = (np.array(X), np.array(y))
+    return (*arrays, provenance) if include_provenance else arrays
 
 
 def report_split(
@@ -119,7 +124,7 @@ def suggest_threshold(y_true: np.ndarray, scores: np.ndarray) -> None:
 
 def main():
     print("📊 โหลด data ...")
-    X, y = load_data()
+    X, y, provenance = load_data(include_provenance=True)
     print(f"   total:   {len(X)} samples")
     print(f"   normal:  {(y == 0).sum()}")
     print(f"   anomaly: {(y == 1).sum()}")
@@ -152,6 +157,9 @@ def main():
     )
     model.fit(X_train_normal)
     model.rba_feature_contract_ = FEATURE_CONTRACT
+    # Bind the generated-country semantics and source checksums to the artifact.
+    # Older metadata may not have those keys: preserve that missingness honestly.
+    model.rba_training_provenance_ = provenance
 
     # ประเมิน TRAIN (sanity check — ดูว่า model fit ได้)
     train_pred = (model.predict(X_train) == -1).astype(int)

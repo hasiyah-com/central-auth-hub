@@ -418,7 +418,7 @@ function BreakdownBar({
  *
  *  Bars are normalized to the MAX absolute SHAP in the list — relative
  *  magnitudes are what humans read at a glance, not absolute SHAP units
- *  (which are decision_function space, unbounded for IForest).
+ *  (which are corrected isolation-tree path-length units for IForest).
  *
  *  Direction → color:
  *    anomaly (positive shap) = rose-500 (this feature made score WORSE)
@@ -442,7 +442,7 @@ function ShapBreakdown({ items, inputs }: { items: ShapContribution[]; inputs: A
         <span>SHAP (Layer 3 · IForest)</span>
         <span
           className="text-amber-500 font-normal normal-case tracking-normal"
-          title="ทุก feature เรียงตาม |SHAP|. แดง = ดันไป anomaly, เขียว = ดันไป normal. (หน่วย SHAP = decision-function ไม่ใช่ 0-1)"
+          title="ทุก feature เรียงตาม |SHAP|. แดง = ดันไป anomaly, เขียว = ดันไป normal. (หน่วย SHAP = ความยาวเส้นทางในต้นไม้ ไม่ใช่คะแนนความเสี่ยง 0-1)"
         >
           {showAll ? `ทั้งหมด ${ranked.length}` : `${items.length ? "top" : "แสดง"} ${Math.min(COLLAPSED, ranked.length)} / ${ranked.length}`}
         </span>
