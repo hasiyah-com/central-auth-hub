@@ -133,6 +133,8 @@ class Subsystem(Base):
     # attribute: {"faculty": [...], "major": [...]}
     # explicit/all: null
     access_policy_config = Column(JSON, nullable=True)
+    self_registration_mode = Column(String(24), nullable=False, server_default="closed")
+    allowed_email_domains = Column(ARRAY(String), nullable=False, server_default="{}")
 
     # ── Roster Sync API key (Week 11) — read-only S2S สำหรับดึง roster ──
     api_key_hash = Column(Text, nullable=True)  # Argon2 (เหมือน client_secret)
@@ -162,6 +164,7 @@ class AccessList(Base):
     granted_by = Column(UUID(as_uuid=True), ForeignKey("users.id"))
     granted_at = Column(DateTime, default=datetime.utcnow)
     revoked_at = Column(DateTime, nullable=True)
+    source = Column(String(24), nullable=False, server_default="admin")
 
 
 class LoginSession(Base):

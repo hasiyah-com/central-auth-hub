@@ -59,6 +59,8 @@ type Subsystem = {
   allowed_roles?: string[];
   redirect_uris?: string[];
   access_revoke_webhook_url?: string | null;
+  self_registration_mode?: "closed" | "domain_auto";
+  allowed_email_domains?: string[];
   previous_secret_expires_at?: string | null;
   created_at: string;
 };
@@ -78,6 +80,8 @@ const PENDING_TYPE_LABEL: Record<string, string> = {
   edit_redirect_uris: "↩แก้ Redirect URIs",
   change_whitelist_role: "เปลี่ยน role (1 คน)",
   bulk_change_whitelist_roles: "เปลี่ยน role (batch)",
+  edit_registration_policy: "แก้นโยบายรับผู้ใช้ใหม่",
+  user_registration: "ผู้ใช้ใหม่รอตรวจสอบ",
 };
 
 const SCOPE_OPTIONS: Array<{ key: string; label: string; desc: string }> = [
@@ -219,6 +223,8 @@ export default function DeveloperSubsystemDetailPage({
   const [editRedirects, setEditRedirects] = useState("");
   const [editScope, setEditScope] = useState<Set<string>>(new Set());
   const [editAllowedRoles, setEditAllowedRoles] = useState("");
+  const [editSelfRegistration, setEditSelfRegistration] = useState(false);
+  const [editRegistrationDomains, setEditRegistrationDomains] = useState("");
   const [editBusy, setEditBusy] = useState(false);
   // Pending requests for this subsystem
   const [pendings, setPendings] = useState<PendingRequest[]>([]);
@@ -301,6 +307,8 @@ export default function DeveloperSubsystemDetailPage({
     setEditRedirects((sub.redirect_uris || []).join("\n"));
     setEditScope(new Set(sub.scope || []));
     setEditAllowedRoles((sub.allowed_roles || []).join(", "));
+    setEditSelfRegistration(sub.self_registration_mode === "domain_auto");
+    setEditRegistrationDomains((sub.allowed_email_domains || []).join(", "));
     setEditOpen(true);
   }
 
@@ -339,6 +347,19 @@ export default function DeveloperSubsystemDetailPage({
       JSON.stringify(newRoles) !== JSON.stringify(sub.allowed_roles || [])
     ) {
       body.allowed_roles = newRoles;
+    }
+
+    const newDomains = editRegistrationDomains
+      .split(/[\s,]+/)
+      .map((value) => value.trim().toLowerCase().replace(/^@/, ""))
+      .filter(Boolean);
+    const newMode = editSelfRegistration ? "domain_auto" : "closed";
+    if (
+      newMode !== (sub.self_registration_mode || "closed") ||
+      JSON.stringify(newDomains) !== JSON.stringify(sub.allowed_email_domains || [])
+    ) {
+      body.self_registration_mode = newMode;
+      body.allowed_email_domains = newDomains;
     }
 
     if (Object.keys(body).length === 0) {
@@ -1521,6 +1542,30 @@ export default function DeveloperSubsystemDetailPage({
                   placeholder="resident, teacher, staff"
                   className="w-full px-3 py-2 rounded-lg border border-ink-200 font-mono text-[12px] focus:outline-none focus:border-brand-500"
                 />
+              </div>
+
+              <div>
+                <div className="text-[11px] font-bold text-ink-500 uppercase tracking-wider mb-1.5">
+                  New-user registration <span className="text-amber-700 normal-case">· ต้อง approve</span>
+                </div>
+                <label className="flex items-center gap-2 text-sm text-ink-700">
+                  <input
+                    type="checkbox"
+                    checked={editSelfRegistration}
+                    onChange={(event) => setEditSelfRegistration(event.target.checked)}
+                    className="accent-brand-600"
+                  />
+                  เปิดรับผู้ใช้ Google จากโดเมนที่กำหนด
+                </label>
+                <input
+                  value={editRegistrationDomains}
+                  onChange={(event) => setEditRegistrationDomains(event.target.value)}
+                  placeholder="student.uni.ac.th, staff.uni.ac.th"
+                  className="mt-2 w-full px-3 py-2 rounded-lg border border-ink-200 font-mono text-[12px] focus:outline-none focus:border-brand-500"
+                />
+                <p className="mt-1 text-[11px] text-ink-500">
+                  ผู้ใช้ใหม่ได้สิทธิ์ต่ำสุดเฉพาะระบบนี้และถูกส่งเข้าคิว Admin
+                </p>
               </div>
             </div>
             <div className="px-6 py-4 border-t border-ink-100 flex justify-end gap-2">

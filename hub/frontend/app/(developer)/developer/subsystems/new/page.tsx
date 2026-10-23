@@ -170,6 +170,8 @@ export default function NewSubsystemPage() {
   const [facultySearch, setFacultySearch] = useState("");
   const [majorSearch, setMajorSearch] = useState("");
   const [webhookUrl, setWebhookUrl] = useState("");
+  const [selfRegistration, setSelfRegistration] = useState(false);
+  const [registrationDomains, setRegistrationDomains] = useState("");
   const [busy, setBusy] = useState(false);
   const [verifying, setVerifying] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -311,6 +313,8 @@ export default function NewSubsystemPage() {
             scope: Array.from(scope),
             access_policy: accessPolicy,
             access_policy_config: policyConfig,
+            self_registration_mode: selfRegistration ? "domain_auto" : "closed",
+            allowed_email_domains: registrationDomains.split(/[\s,]+/).map((v) => v.trim().toLowerCase().replace(/^@/, "")).filter(Boolean),
             access_revoke_webhook_url: webhookUrl.trim() || null,
           }),
         },
@@ -874,6 +878,12 @@ export default function NewSubsystemPage() {
                   </p>
                 </div>
               )}
+              <div className="cx-policy-config">
+                <span>ผู้ใช้ใหม่จากโดเมนมหาวิทยาลัย</span>
+                <label><input type="checkbox" checked={selfRegistration} onChange={(e) => setSelfRegistration(e.target.checked)} /> ให้ผู้ใช้ Google รายใหม่สมัครและเข้าเฉพาะระบบนี้ด้วยสิทธิ์ต่ำสุด</label>
+                {selfRegistration && <input value={registrationDomains} onChange={(e) => setRegistrationDomains(e.target.value)} placeholder="student.uni.ac.th, staff.uni.ac.th" required />}
+                <p className="cx-policy-note">นโยบายนี้ต้องผ่าน Admin ก่อนเปิดใช้จริง</p>
+              </div>
             </section>
 
             <footer className="cx-register-form-actions">
