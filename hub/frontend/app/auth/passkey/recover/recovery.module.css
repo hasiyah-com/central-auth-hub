@@ -383,6 +383,13 @@
   line-height: 1.5;
 }
 
+.guidance a {
+  display: inline-block;
+  margin-top: 6px;
+  color: var(--teal-dark);
+  font-weight: 500;
+}
+
 .field {
   display: block;
   margin-bottom: 12px;

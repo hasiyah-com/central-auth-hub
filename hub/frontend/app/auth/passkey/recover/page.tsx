@@ -31,7 +31,7 @@ type Tab = "backup" | "otp" | "regen" | "totp" | "ticket";
 const METHODS: Array<{ id: Tab; code: string; title: string; description: string }> = [
   { id: "backup", code: "BC", title: "Backup Code", description: "ใช้รหัสสำรองที่บันทึกไว้" },
   { id: "otp", code: "EM", title: "Email OTP", description: "รับรหัสยืนยันทางอีเมล" },
-  { id: "totp", code: "AU", title: "Authenticator", description: "ยืนยันด้วยรหัสจากแอป" },
+  { id: "totp", code: "AU", title: "Authenticator ที่ลงทะเบียนแล้ว", description: "เฉพาะผู้ที่เปิด TOTP ไว้ก่อนหน้า" },
   { id: "ticket", code: "AD", title: "ขอความช่วยเหลือ", description: "ส่งคำขอให้ผู้ดูแลตรวจสอบ" },
   { id: "regen", code: "RC", title: "สร้าง Codes ใหม่", description: "เปลี่ยนเฉพาะชุดรหัสสำรอง" },
 ];
@@ -225,7 +225,10 @@ function RecoverInner() {
 
                 {(tab === "totp" || tab === "ticket" || tab === "regen") && (
                   <div className={styles.guidance}>
-                    {tab === "totp" && "ใช้วิธีนี้เมื่อเข้า Gmail และ Passkey เดิมไม่ได้ แต่ยังมีแอป Authenticator"}
+                    {tab === "totp" && <>
+                      ใช้ได้เฉพาะบัญชีที่เปิดใช้งาน Authenticator ไว้ก่อนหน้านี้เท่านั้น หากยังไม่เคยลงทะเบียน จะไม่มีรหัสสำหรับกรอก<br />
+                      <a href="/auth/login">เข้าสู่ระบบเพื่อลงทะเบียน Authenticator ก่อน</a>
+                    </>}
                     {tab === "ticket" && "หากไม่เหลือวิธียืนยัน ผู้ดูแลจะตรวจสอบข้อมูลก่อนออกลิงก์กู้บัญชี"}
                     {tab === "regen" && "ระบบจะสร้าง Backup codes ชุดใหม่ โดยไม่ยกเลิก Passkey ที่ใช้งานอยู่"}
                   </div>
