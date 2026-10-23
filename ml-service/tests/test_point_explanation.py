@@ -91,3 +91,24 @@ def test_point_endpoint_includes_fingerprint_for_recovery_calibration(monkeypatc
     result = main.score(request, None)
     assert result.meta["model_sha256"] == "a" * 64
     assert result.data.anomaly_score == .49
+
+
+def test_iforest_shap_reconstructs_path_length_not_decision_function():
+    import shap
+    from sklearn.ensemble._iforest import _average_path_length
+
+    forest = IsolationForest(n_estimators=10, max_samples=64, random_state=42).fit(
+        np.random.default_rng(42).normal(size=(100, 23)))
+    x = np.zeros((1, 23))
+    explainer = shap.TreeExplainer(forest, feature_perturbation="tree_path_dependent")
+    reconstructed = float(np.asarray(explainer.expected_value).ravel()[0] + explainer.shap_values(x)[0].sum())
+    depths = []
+    for tree, columns in zip(forest.estimators_, forest.estimators_features_):
+        values = x[:, columns]
+        leaves = tree.apply(values)
+        depths.append(float(tree.decision_path(values).sum()) - 1
+                      + float(_average_path_length(tree.tree_.n_node_samples[leaves])[0]))
+    assert reconstructed == pytest.approx(float(np.mean(depths)), abs=1e-8)
+    normalizer = float(_average_path_length(np.array([forest.max_samples_]))[0])
+    decision_function = -(2 ** (-reconstructed / normalizer)) - forest.offset_
+    assert decision_function == pytest.approx(forest.decision_function(x)[0], abs=1e-8)

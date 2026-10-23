@@ -31,6 +31,26 @@ from pathlib import Path
 
 random.seed(42)
 
+# Runtime counts DISTINCT prior countries, not the number of country changes.
+# Keep the old deterministic stream available for reproducing published results.
+COUNTRY_COUNT_MODE = os.environ.get("RBA_COUNTRY_COUNT_MODE", "distinct-v1")
+if COUNTRY_COUNT_MODE not in {"distinct-v1", "legacy-v0"}:
+    raise ValueError("RBA_COUNTRY_COUNT_MODE must be distinct-v1 or legacy-v0")
+
+
+def _finish_country_count(row, *, foreign_history=False):
+    """Correct legacy non-foreign counts without consuming additional randomness.
+
+    These synthetic sessions assume an observed country history. Legacy ordinary
+    patterns encoded 0/1/2 changes; distinct countries are 1/2/3. The foreign
+    pattern already specified a multi-country history (2..5 distinct countries).
+    No observed history / missing GeoIP remains a valid runtime zero, but is not
+    simulated by this feature-level generator; evaluate it as a separate stress case.
+    """
+    if COUNTRY_COUNT_MODE == "distinct-v1" and not foreign_history:
+        row[5] += 1
+    return row
+
 NORMAL_COUNT = 10_000
 ANOMALY_COUNT = 500
 DATA_DIR = Path(os.environ.get("RBA_DATA_DIR", "/app/data"))
@@ -203,7 +223,7 @@ def normal_session() -> list[float]:
         [1, 2, 3, 4, 5, 6], weights=[20, 25, 25, 15, 10, 5]
     )[0]
     failed_24h = random.choices([0, 1, 2], weights=[92, 6, 2])[0]
-    return (
+    return _finish_country_count(
         [
             hour,
             day,
@@ -318,11 +338,12 @@ def anomaly_session() -> list[float]:
         ]
         # passkey: เพิ่งเพิ่มเมื่อกี้ (takeover sign) — count, age<5ชม, recently=1, last_used ทันที
         passkey = [1, random.uniform(0, 0.2), 1, random.uniform(0, 0.2)]
-        return (
+        return _finish_country_count(
             base
             + passkey
             + anomaly_extra_features(pattern)
-            + [_anomaly_impossible(pattern)]
+            + [_anomaly_impossible(pattern)],
+            foreign_history=(pattern == "foreign"),
         )
     else:  # failed_spike — brute force
         day = random.randint(0, 6)
@@ -340,11 +361,12 @@ def anomaly_session() -> list[float]:
             random.choices([5, 10, 15, 20, 30], weights=[20, 30, 25, 15, 10])[0],
         ]
 
-    return (
+    return _finish_country_count(
         base
         + anomaly_passkey_features()
         + anomaly_extra_features(pattern)
-        + [_anomaly_impossible(pattern)]
+        + [_anomaly_impossible(pattern)],
+        foreign_history=(pattern == "foreign"),
     )
 
 
@@ -394,6 +416,11 @@ def main():
         "feature_contract": "rba-23-bangkok-v1",
         "timezone": "Asia/Bangkok",
         "source": "synthetic-feature-level", "seed": 42,
+        "generator_version": "synthetic-country-count-v1",
+        "country_count_mode": COUNTRY_COUNT_MODE,
+        "country_count_semantics": ("distinct_observed_countries"
+            if COUNTRY_COUNT_MODE == "distinct-v1" else "legacy_mixed_country_semantics"),
+        "history_scope": "observed-country history assumed; missing/cold history not simulated",
         "dataset_sha256": hashlib.sha256(OUTPUT.read_bytes()).hexdigest(),
     }, indent=2), encoding="utf-8")
 

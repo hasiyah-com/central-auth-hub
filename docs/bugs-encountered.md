@@ -444,6 +444,13 @@
 - **Rule:** baseline risk, post-policy risk, authentication completion and model availability are distinct states. Missing scores are not zero; an available score is not proof that SHAP succeeded. Require frontend production build as well as unit/type tests before merge.
 - **Verify:** `test_l3_diagnostics.py`, `test_l3_fallback_warn.py`, `l3DiagnosticsDisplay.test.tsx`, `test_point_explanation.py`; see `docs/guides/L3_SHAP_DIAGNOSTICS.md` for server limitations.
 
+**B88. Synthetic country-change zeros disagree with runtime distinct-country counts**
+- Symptom: one previously observed country receives a large anomaly-oriented SHAP contribution. Controlled paired experiments show high false warnings when a legacy-trained IF receives corrected counts.
+- Cause: ordinary synthetic patterns encoded country CHANGES (0/1), while runtime counts distinct prior countries (1/2). TreeExplainer IF output was also mislabeled as decision_function units rather than corrected tree path length.
+- Fix: versioned distinct-v1 generator mode, exact legacy-v0 replay, artifact provenance, paired staged-only evaluation, true serving-worker fingerprint probe, and corrected SHAP comments/tooltip. No real login feature or deployed model is silently replaced.
+- **Rule:** align feature meaning as well as column order; bind the training metadata actually validated with the artifact; a semantic correction is not proof a candidate passes FP/recall budgets. Point-model results must not be substituted for end-to-end C3/PG-E results.
+- **Verify:** `ml-service/tests/test_generator_country_semantics.py`, `test_training_provenance.py`, `test_running_point_inspection.py`, `test_point_explanation.py`; results and activation restrictions in `docs/guides/COUNTRY_COUNT_TRAIN_SERVE_FIX.md`.
+
 ---
 
 ## วิธีเพิ่ม bug ใหม่

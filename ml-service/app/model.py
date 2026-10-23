@@ -12,9 +12,10 @@ decision_function ของ sklearn:
 แปลงด้วย sigmoid scaled.
 
 SHAP convention (สำคัญ — มี sign flip):
-  shap_value บน decision_function:
-    > 0  → feature ผลัก output ทาง NORMAL
-    < 0  → feature ผลัก output ทาง ANOMALY
+  TreeExplainer ของ sklearn IsolationForest อธิบาย mean corrected path length
+  (ไม่ใช่ decision_function หรือคะแนน sigmoid โดยตรง):
+    > 0  → ทำให้เส้นทางยาวขึ้นเมื่อเทียบค่าฐาน (ทาง NORMAL)
+    < 0  → ทำให้เส้นทางสั้นลงเมื่อเทียบค่าฐาน (ทาง ANOMALY)
   เราต้องการ UI ที่ "positive = anomalous" (intuitive กว่า)
   → flip sign: anomaly_contribution = -shap_value
 """
@@ -78,8 +79,7 @@ def _load_explainer():
     """Lazy-init SHAP TreeExplainer (called on first explain call).
 
     Fail-safe: ถ้า shap import พัง หรือ TreeExplainer ไม่รองรับ IForest ของ
-    sklearn version นี้ → ตั้ง status เป็น 'unavailable' แล้วใช้ fallback
-    (top-3 feature deviation จาก feature_extraction normalization).
+    sklearn version นี้ → ตั้ง status เป็น 'unavailable' แล้วคืนรายการคำอธิบายว่าง โดยคะแนน IForest ยังใช้ได้.
 
     ใช้ `feature_perturbation="tree_path_dependent"` — ไม่ต้อง background
     dataset, เร็วกว่า, และทำงานกับ IsolationForest โดยตรง.
@@ -103,7 +103,7 @@ def _load_explainer():
         _explainer = None
         _explainer_status = "unavailable"
         log.warning(
-            "SHAP TreeExplainer unavailable — falling back to heuristic. " "Reason: %s",
+            "SHAP TreeExplainer unavailable — explanations omitted. " "Reason: %s",
             e,
         )
 
