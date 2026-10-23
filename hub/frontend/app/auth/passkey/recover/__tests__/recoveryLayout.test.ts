@@ -8,7 +8,7 @@ const css = fs.readFileSync(
 
 function rule(selector: string, source = css) {
   const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  return source.match(new RegExp(\`${escaped}\\s*\\{([^}]*)\\}\`, "s"))?.[1] ?? "";
+  return source.match(new RegExp(escaped + "\\s*\\{([^}]*)\\}", "s"))?.[1] ?? "";
 }
 
 describe("recovery layout scroll contract", () => {
