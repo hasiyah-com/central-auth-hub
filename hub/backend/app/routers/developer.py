@@ -25,6 +25,7 @@ from app.config import settings
 from app.database import get_db
 from app.deps import get_client_ip, require_developer
 from app.models import AccessList, LoginSession, SecretRetrievalToken, Subsystem, User
+from app.services.provisional_registration import allowed_email_domain, create_provisional_identity
 from app.rate_limiter import limiter
 from app.services.audit_service import log_action
 from app.services.critical_action_policy import gate as _stepup_gate
@@ -174,11 +175,25 @@ class SubsystemCreate(BaseModel):
     # Access Policy (Week 11) — explicit/all/role/attribute
     access_policy: str = "explicit"
     access_policy_config: dict | None = None
+    self_registration_mode: str = "closed"
+    allowed_email_domains: list[str] = Field(default_factory=list)
 
     @field_validator("redirect_uris")
     @classmethod
     def _check_redirect_uris(cls, v: list[str]) -> list[str]:
         return _validate_redirect_uris(v)
+
+    @field_validator("self_registration_mode")
+    @classmethod
+    def _check_registration_mode(cls, value: str) -> str:
+        if value not in {"closed", "domain_auto"}:
+            raise ValueError("self_registration_mode ไม่ถูกต้อง")
+        return value
+
+    @field_validator("allowed_email_domains")
+    @classmethod
+    def _clean_registration_domains(cls, values: list[str]) -> list[str]:
+        return sorted({value.strip().lower().lstrip("@") for value in values if value.strip()})
 
 
 class SubsystemResponse(BaseModel):
@@ -192,6 +207,8 @@ class SubsystemResponse(BaseModel):
     allowed_roles: list[str] = []
     access_policy: str = "explicit"
     access_policy_config: dict | None = None
+    self_registration_mode: str = "closed"
+    allowed_email_domains: list[str] = Field(default_factory=list)
     created_at: datetime
 
 
@@ -227,12 +244,28 @@ class SubsystemUpdate(BaseModel):
     access_revoke_webhook_url: str | None = None
     access_policy: str | None = None
     access_policy_config: dict | None = None
+    self_registration_mode: str | None = None
+    allowed_email_domains: list[str] | None = None
 
     @field_validator("redirect_uris")
     @classmethod
     def _check_redirect_uris(cls, v: list[str] | None) -> list[str] | None:
         # None = ไม่แก้ field นี้ → ข้าม; ถ้าส่งมาต้อง valid เหมือน Create
         return v if v is None else _validate_redirect_uris(v)
+
+    @field_validator("self_registration_mode")
+    @classmethod
+    def _check_registration_mode(cls, value: str | None) -> str | None:
+        if value is not None and value not in {"closed", "domain_auto"}:
+            raise ValueError("self_registration_mode ไม่ถูกต้อง")
+        return value
+
+    @field_validator("allowed_email_domains")
+    @classmethod
+    def _clean_registration_domains(cls, values: list[str] | None) -> list[str] | None:
+        if values is None:
+            return None
+        return sorted({value.strip().lower().lstrip("@") for value in values if value.strip()})
 
 
 def _suggest_webhook_endpoints(redirect_uris: list[str] | None) -> dict | None:
@@ -349,6 +382,11 @@ def register_subsystem(
     policy, policy_cfg = _validate_access_policy(
         payload.access_policy, payload.access_policy_config
     )
+    if payload.self_registration_mode == "domain_auto" and not payload.allowed_email_domains:
+        raise HTTPException(
+            status_code=400,
+            detail="ต้องกำหนด allowed_email_domains ก่อนเปิดรับสมัคร",
+        )
 
     # สร้าง credentials + แนะนำ webhook endpoints (derive จาก redirect origin)
     client_id, client_secret = generate_client_credentials()
@@ -373,6 +411,8 @@ def register_subsystem(
         or None,
         access_policy=policy,
         access_policy_config=policy_cfg,
+        self_registration_mode=payload.self_registration_mode if payload.self_registration_mode in {"closed", "domain_auto"} else "closed",
+        allowed_email_domains=sorted({d.strip().lower().lstrip("@") for d in payload.allowed_email_domains if d.strip()}),
         api_key_hash=hash_secret(api_key_plain),
         api_key_prefix=api_key_prefix,
         status="pending",
@@ -522,6 +562,8 @@ def my_subsystems(
             allowed_roles=list(s.allowed_roles or []),
             access_policy=s.access_policy or "explicit",
             access_policy_config=s.access_policy_config,
+            self_registration_mode=s.self_registration_mode or "closed",
+            allowed_email_domains=list(s.allowed_email_domains or []),
             created_at=s.created_at,
         )
         for s in subs
@@ -708,7 +750,17 @@ def upload_whitelist(
         # หา user ใน Hub
         target = db.query(User).filter(User.email == email).first()
         if not target:
-            skipped.append({"email": email, "reason": "ไม่พบ user ใน Hub"})
+            if not allowed_email_domain(email, subsystem.allowed_email_domains):
+                skipped.append({"email": email, "reason": "ไม่พบ user และโดเมนไม่ได้รับอนุญาต"})
+                continue
+            try:
+                target, membership, _pending = create_provisional_identity(db, subsystem=subsystem,
+                    email=email, full_name=email.split("@", 1)[0], identifier=None, faculty=None,
+                    major=None, google_sub=None, source="developer_invite", invited_by=user)
+            except ValueError as exc:
+                skipped.append({"email": email, "reason": str(exc)})
+                continue
+            added.append(email)
             continue
 
         # เช็คว่ามีใน access_list อยู่แล้วหรือยัง
@@ -990,24 +1042,26 @@ def add_user_to_whitelist(
     # หา target user
     target = db.query(User).filter(User.email == payload.email).first()
     if not target:
-        # B7 — log failure path (กัน enumeration เงียบ + เก็บ trail ทุก attempt)
-        log_action(
-            db,
-            actor_id=user.id,
-            action="whitelist_add_failed",
-            target_type="subsystem",
-            target_id=subsystem.id,
-            ip=ip,
-            metadata={
-                "email": payload.email,
-                "reason": "email_not_found",
-                "user_agent": ua,
-            },
-        )
+        if not allowed_email_domain(payload.email, subsystem.allowed_email_domains):
+            log_action(db, actor_id=user.id, action="subsystem_invite_rejected_domain",
+                target_type="subsystem", target_id=subsystem.id, ip=ip,
+                metadata={"email": str(payload.email), "user_agent": ua})
+            db.commit()
+            raise HTTPException(status_code=400, detail="โดเมนอีเมลไม่ได้รับอนุญาตสำหรับระบบย่อยนี้")
+        try:
+            target, membership, pending = create_provisional_identity(db, subsystem=subsystem,
+                email=str(payload.email), full_name=str(payload.email).split("@", 1)[0],
+                identifier=None, faculty=None, major=None, google_sub=None,
+                source="developer_invite", invited_by=user)
+        except ValueError as exc:
+            db.rollback(); raise HTTPException(status_code=400, detail=str(exc)) from exc
+        log_action(db, actor_id=user.id, action="subsystem_user_invited", target_type="subsystem",
+            target_id=subsystem.id, ip=ip, metadata={"email": target.email,
+            "registration_request_id": str(pending.id)})
         db.commit()
-        raise HTTPException(
-            status_code=404, detail=f"ไม่พบ user อีเมล {payload.email} ใน Hub"
-        )
+        return {"subsystem": subsystem.name, "email": target.email, "role": membership.role_in_sub,
+            "result": "ส่งคำเชิญแล้ว — ผู้ใช้เข้าได้เฉพาะระบบนี้ด้วยสิทธิ์เริ่มต้นและรอ Admin ตรวจสอบ",
+            "user_status": "provisional"}
 
     # เช็คว่ามีใน access_list อยู่แล้วไหม
     existing = (
@@ -1392,6 +1446,8 @@ def update_subsystem(
         and payload.access_revoke_webhook_url is None
         and payload.access_policy is None
         and payload.access_policy_config is None
+        and payload.self_registration_mode is None
+        and payload.allowed_email_domains is None
     ):
         _audit_fail(
             db,
@@ -1448,6 +1504,14 @@ def update_subsystem(
                 pending_requests.append(entry)
         except ValueError as e:
             raise HTTPException(status_code=400, detail=str(e))
+
+    if payload.self_registration_mode is not None or payload.allowed_email_domains is not None:
+        mode = payload.self_registration_mode or subsystem.self_registration_mode or "closed"
+        domains = payload.allowed_email_domains if payload.allowed_email_domains is not None else list(subsystem.allowed_email_domains or [])
+        domains = sorted({d.strip().lower().lstrip("@") for d in domains if d.strip()})
+        if mode not in {"closed", "domain_auto"}: raise HTTPException(status_code=400, detail="self_registration_mode ไม่ถูกต้อง")
+        if mode == "domain_auto" and not domains: raise HTTPException(status_code=400, detail="ต้องกำหนด allowed_email_domains ก่อนเปิดรับสมัคร")
+        _enqueue("edit_registration_policy", {"self_registration_mode": mode, "allowed_email_domains": domains}, "New-user registration policy")
 
     # Access Policy — widening (เห็น user มากขึ้น เช่น explicit→all) ต้อง admin
     # approve เหมือน scope (audit run-2 #2); narrowing apply ทันที + kick ทุก session

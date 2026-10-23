@@ -2305,6 +2305,7 @@ def list_change_requests(
 
 class ReviewBody(BaseModel):
     note: str | None = None
+    user_type: str | None = None
 
 
 @router.post("/change-requests/{request_id}/approve")
@@ -2335,6 +2336,10 @@ def approve_change_request(
     subsystem = db.query(Subsystem).filter(Subsystem.id == req.subsystem_id).first()
     if not subsystem:
         raise HTTPException(status_code=404, detail="subsystem หาย")
+    if req.request_type == "user_registration":
+        chosen_type = body.user_type or "student"
+        if chosen_type not in {"student", "teacher", "staff"}: raise HTTPException(status_code=400, detail="user_type ไม่ถูกต้อง")
+        req.payload = {**(req.payload or {}), "approved_user_type": chosen_type}
 
     # Apply change
     try:
@@ -2448,6 +2453,16 @@ def reject_change_request(
     req.reviewed_at = datetime.utcnow()
 
     subsystem = db.query(Subsystem).filter(Subsystem.id == req.subsystem_id).first()
+    if req.request_type == "user_registration":
+        payload = req.payload or {}
+        target = db.query(User).filter(User.id == payload.get("user_id")).first()
+        membership = db.query(AccessList).filter(AccessList.subsystem_id == req.subsystem_id,
+            AccessList.user_id == payload.get("user_id"), AccessList.revoked_at.is_(None)).first()
+        if membership: membership.revoked_at = datetime.utcnow()
+        other = db.query(AccessList.id).filter(AccessList.user_id == payload.get("user_id"),
+            AccessList.subsystem_id != req.subsystem_id, AccessList.entry_type == "allow",
+            AccessList.revoked_at.is_(None)).first()
+        if target and target.status == "provisional" and not other: target.status = "rejected"
 
     log_action(
         db,

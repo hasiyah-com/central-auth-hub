@@ -17,6 +17,7 @@ from __future__ import annotations
 from sqlalchemy.orm import Session
 
 from app.models import AccessList, Subsystem, User
+from app.services.provisional_registration import can_provisional_access
 
 VALID_POLICIES = ("explicit", "all", "role", "attribute")
 
@@ -64,13 +65,16 @@ def evaluate_access_policy(
     reason ใช้ log/debug — เช่น 'explicit', 'all_users', 'role:teacher',
     'attribute', 'denied', 'role_not_allowed' ...
     """
-    # user ต้อง active เสมอ (ทุก policy)
+    # deny-list ทับทุก policy
+    denied = _has_deny(db, subsystem.id, user.id)
+    if denied:
+        return (False, "denied")
+    if user.status == "provisional":
+        if can_provisional_access(user, membership_exists=_in_allow_list(db, subsystem.id, user.id), denied=denied):
+            return (True, "provisional_explicit")
+        return (False, "user_status:provisional")
     if user.status != "active":
         return (False, f"user_status:{user.status}")
-
-    # deny-list ทับทุก policy
-    if _has_deny(db, subsystem.id, user.id):
-        return (False, "denied")
 
     policy = subsystem.access_policy or "explicit"
     cfg = subsystem.access_policy_config or {}
@@ -130,7 +134,7 @@ def list_allowed_users(db: Session, subsystem: Subsystem) -> list[User]:
             )
             .all()
         ]
-        candidates = q.filter(User.id.in_(allow_ids)).all() if allow_ids else []
+        candidates = (db.query(User).filter(User.status.in_(["active", "provisional"]), User.id.in_(allow_ids)).all() if allow_ids else [])
 
     # ตัด deny-list ออก
     deny_ids = {

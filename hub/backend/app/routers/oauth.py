@@ -15,7 +15,7 @@ from app.config import settings
 from app.database import get_db
 from app.deps import get_client_ip
 from app.rate_limiter import limiter
-from app.models import LoginSession, Subsystem, User
+from app.models import AccessList, LoginSession, Subsystem, User
 from app.redis_client import redis_client
 from app.routers.auth import oauth  # ใช้ Authlib client ตัวเดียวกับ Week 2
 from app.services.alert_service import maybe_alert_ml_risk
@@ -46,12 +46,33 @@ from app.services import passkey_recovery
 from app.services import risk_challenge
 from app.services import mfa_policy
 from app.services import totp_service
+from app.services.provisional_registration import allowed_email_domain, create_provisional_identity, google_identity_can_register
 
 router = APIRouter()
 
 AUTH_REQUEST_TTL = 600  # OAuth request เก็บใน Redis 10 นาที
 AUTH_CODE_TTL = 60  # authorization code อายุ 60 วินาที
 ENROLL_TTL = 600  # passkey enrollment context (หลัง Google identify) 10 นาที
+REGISTRATION_TTL = 600
+
+def _registration_html(*, token: str, email: str, full_name: str, subsystem_name: str, nonce: str) -> str:
+    safe_email, safe_name = html.escape(email), html.escape(full_name)
+    safe_subsystem, safe_token = html.escape(subsystem_name), html.escape(token, quote=True)
+    return f"""<!doctype html><html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>สมัครบัญชี · Central Auth Hub</title>
+<style nonce="{nonce}">*{{box-sizing:border-box}}body{{margin:0;background:#09121f;color:#edf4ff;font-family:system-ui,sans-serif;min-height:100vh;display:grid;place-items:center;padding:20px}}main{{width:min(620px,100%);background:#111f31;border:1px solid #30445d;padding:32px}}small{{color:#3bd8bd;letter-spacing:.12em}}p{{color:#9cafc5;line-height:1.65}}label{{display:block;margin:16px 0 6px}}input{{width:100%;padding:12px;background:#091522;border:1px solid #40546d;color:white}}button{{width:100%;margin-top:24px;padding:14px;border:0;background:#38d8bd;font-weight:700}}</style></head><body><main>
+<small>NEW USER REGISTRATION</small><h1>สมัครบัญชีเพื่อเข้า {safe_subsystem}</h1><p>Google ยืนยันอีเมลแล้ว คุณจะเริ่มด้วยสิทธิ์ต่ำสุดเฉพาะระบบนี้ และข้อมูลจะถูกส่งให้ Admin ตรวจสอบ</p>
+<form method="post" action="/oauth/register"><input type="hidden" name="registration_token" value="{safe_token}"><label>อีเมลมหาวิทยาลัย</label><input value="{safe_email}" readonly>
+<label for="full_name">ชื่อ-นามสกุล</label><input id="full_name" name="full_name" value="{safe_name}" minlength="2" maxlength="255" required><label for="identifier">รหัสนักศึกษา/บุคลากร</label><input id="identifier" name="identifier" maxlength="50" required><label for="faculty">คณะ/หน่วยงาน</label><input id="faculty" name="faculty" maxlength="100" required><label for="major">สาขา (ถ้ามี)</label><input id="major" name="major" maxlength="100"><button type="submit">สมัครและเข้าใช้งานด้วยสิทธิ์เริ่มต้น</button></form></main></body></html>"""
+
+def _begin_registration(*, state: str, userinfo: dict, subsystem: Subsystem, request: Request) -> HTMLResponse:
+    token = secrets.token_urlsafe(32)
+    redis_client.setex(f"registration:{token}", REGISTRATION_TTL, json.dumps({"state": state,
+        "email": userinfo["email"], "google_sub": userinfo["sub"],
+        "full_name": userinfo.get("name") or "", "subsystem_id": str(subsystem.id)}))
+    nonce = secrets.token_urlsafe(16); request.state.csp_nonce = nonce
+    return HTMLResponse(_registration_html(token=token, email=userinfo["email"],
+        full_name=userinfo.get("name") or "", subsystem_name=subsystem.name, nonce=nonce),
+        headers={"Cache-Control": "no-store"})
 
 
 # ============ 1. /oauth/authorize — จุดเริ่มต้น ============
@@ -304,10 +325,17 @@ async def oauth_callback(
         raise HTTPException(status_code=400, detail="ไม่ได้รับข้อมูลจาก Google")
     email = userinfo["email"]
     client_ip = get_client_ip(request)
+    subsystem = db.query(Subsystem).filter(Subsystem.id == authreq["subsystem_id"]).first()
+    if not subsystem: raise HTTPException(status_code=400, detail="ไม่พบระบบย่อย")
 
     # หา user ใน Hub
     user = db.query(User).filter(User.email == email).first()
     if not user:
+        if subsystem.self_registration_mode == "domain_auto" and google_identity_can_register(userinfo, subsystem.allowed_email_domains):
+            log_action(db, actor_id=None, action="oauth_registration_started", target_type="subsystem",
+                target_id=subsystem.id, ip=client_ip, metadata={"email": email, "client_id": authreq["client_id"]})
+            db.commit()
+            return _begin_registration(state=state, userinfo=userinfo, subsystem=subsystem, request=request)
         log_action(
             db,
             actor_id=None,
@@ -330,7 +358,15 @@ async def oauth_callback(
             status_code=403,
             detail=f"อีเมล {email} ไม่ใช่ผู้ใช้ของมหาวิทยาลัย",
         )
-    if user.status != "active":
+    if user.status == "provisional":
+        if userinfo.get("email_verified") is not True:
+            raise HTTPException(status_code=403, detail="Google ยังไม่ได้ยืนยันอีเมลนี้")
+        membership = db.query(AccessList).filter(AccessList.subsystem_id == subsystem.id,
+            AccessList.user_id == user.id, AccessList.entry_type == "allow", AccessList.revoked_at.is_(None)).first()
+        if not membership: raise HTTPException(status_code=403, detail="บัญชีนี้รอตรวจสอบและไม่มีสิทธิ์ในระบบย่อยนี้")
+        if not user.google_sub or not user.identifier or not user.faculty:
+            return _begin_registration(state=state, userinfo=userinfo, subsystem=subsystem, request=request)
+    elif user.status != "active":
         log_action(
             db,
             actor_id=user.id,
@@ -448,6 +484,46 @@ async def oauth_callback(
         provider="google",
     )
     return RedirectResponse(url=callback_url)
+
+@router.post("/register")
+@limiter.limit("5/minute")
+async def complete_registration(request: Request,
+    registration_token: str = Form(..., min_length=20, max_length=128),
+    full_name: str = Form(..., min_length=2, max_length=255),
+    identifier: str = Form(..., min_length=2, max_length=50),
+    faculty: str = Form(..., min_length=2, max_length=100),
+    major: str = Form("", max_length=100), db: Session = Depends(get_db)):
+    key = f"registration:{registration_token}"
+    raw = redis_client.getdel(key)
+    if not raw: raise HTTPException(status_code=410, detail="แบบฟอร์มหมดอายุ — กรุณาเริ่ม Login ใหม่")
+    try: context = json.loads(raw.decode() if isinstance(raw, bytes) else raw)
+    except (TypeError, ValueError, json.JSONDecodeError): raise HTTPException(status_code=410, detail="แบบฟอร์มหมดอายุ — กรุณาเริ่ม Login ใหม่")
+    state = context.get("state"); auth_raw = redis_client.get(f"authreq:{state}")
+    if not auth_raw: raise HTTPException(status_code=410, detail="OAuth request หมดอายุ — กรุณาเริ่มใหม่")
+    authreq = json.loads(auth_raw)
+    if str(authreq.get("subsystem_id")) != str(context.get("subsystem_id")): raise HTTPException(status_code=400, detail="ข้อมูลสมัครไม่ตรงกับระบบย่อย")
+    subsystem = db.query(Subsystem).filter(Subsystem.id == context["subsystem_id"]).first()
+    if not subsystem: raise HTTPException(status_code=404, detail="ไม่พบระบบย่อย")
+    existing = db.query(User).filter(User.email == context["email"]).first()
+    invited = bool(existing and db.query(AccessList).filter(AccessList.subsystem_id == subsystem.id,
+        AccessList.user_id == existing.id, AccessList.entry_type == "allow",
+        AccessList.source == "developer_invite", AccessList.revoked_at.is_(None)).first())
+    if subsystem.self_registration_mode != "domain_auto" and not invited: raise HTTPException(status_code=403, detail="ระบบย่อยปิดรับสมัครผู้ใช้ใหม่แล้ว")
+    if not allowed_email_domain(context["email"], subsystem.allowed_email_domains): raise HTTPException(status_code=403, detail="โดเมนอีเมลไม่ได้รับอนุญาตแล้ว")
+    source = "developer_invite" if invited else "self_registration"
+    try:
+        user, membership, pending = create_provisional_identity(db, subsystem=subsystem,
+            email=context["email"], full_name=full_name, identifier=identifier, faculty=faculty,
+            major=major, google_sub=context["google_sub"], source=source)
+    except ValueError as exc:
+        db.rollback(); raise HTTPException(status_code=400, detail=str(exc)) from exc
+    log_action(db, actor_id=user.id, action="provisional_registration_completed", target_type="subsystem",
+        target_id=subsystem.id, ip=get_client_ip(request), metadata={"source": source,
+        "role": membership.role_in_sub, "request_id": str(pending.id) if pending else None})
+    db.commit()
+    callback_url = await _finalize_subsystem_login(user=user, authreq=authreq, hub_state=state,
+        request=request, db=db, provider="google")
+    return RedirectResponse(url=callback_url, status_code=303)
 
 
 # ============ Shared finalizer (Google + Passkey ใช้ร่วมกัน) ============

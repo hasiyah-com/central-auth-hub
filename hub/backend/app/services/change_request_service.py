@@ -56,12 +56,15 @@ VALID_TYPES = {
     "edit_access_policy",  # ขยาย audience (เช่น explicit→all) — admin approve (audit run-2 #2)
     "change_whitelist_role",  # เปลี่ยน role ของ user 1 คน
     "bulk_change_whitelist_roles",  # batch เปลี่ยน role
+    "user_registration",
+    "edit_registration_policy",
 }
 
 # Types ที่อนุญาตให้มี pending ซ้อนกันได้ (ต่าง user / ต่างชุด)
 _ALLOW_DUPLICATE_PENDING = {
     "change_whitelist_role",
     "bulk_change_whitelist_roles",
+    "user_registration",
 }
 
 SECRET_GRACE_HOURS = 24
@@ -277,6 +280,25 @@ def _apply_edit_redirect_uris(
         **closed,
     }
 
+def _apply_user_registration(db: Session, subsystem: Subsystem, payload: dict[str, Any]) -> dict[str, Any]:
+    user = db.query(User).filter(User.id == payload.get("user_id")).first()
+    if not user: raise ValueError("registration user not found")
+    if user.status not in {"provisional", "active"}:
+        raise ValueError(f"registration user cannot be approved: {user.status}")
+    approved_type = payload.get("approved_user_type") or "student"
+    if approved_type not in {"student", "teacher", "staff"}: raise ValueError("invalid approved_user_type")
+    user.user_type = approved_type; user.status = "active"
+    if user.email_verified and not user.email_verified_at: user.email_verified_at = datetime.utcnow()
+    return {"user_id": str(user.id), "email": user.email, "user_type": user.user_type,
+        "membership_role": payload.get("initial_role")}
+
+def _apply_edit_registration_policy(db: Session, subsystem: Subsystem, payload: dict[str, Any]) -> dict[str, Any]:
+    old = {"self_registration_mode": subsystem.self_registration_mode,
+        "allowed_email_domains": list(subsystem.allowed_email_domains or [])}
+    subsystem.self_registration_mode = payload["self_registration_mode"]
+    subsystem.allowed_email_domains = list(payload.get("allowed_email_domains") or [])
+    return {"old": old, "new": payload}
+
 
 def _apply_change_whitelist_role(
     db: Session, subsystem: Subsystem, payload: dict[str, Any]
@@ -412,6 +434,8 @@ _DISPATCH = {
     "edit_access_policy": _apply_edit_access_policy,
     "change_whitelist_role": _apply_change_whitelist_role,
     "bulk_change_whitelist_roles": _apply_bulk_change_whitelist_roles,
+    "user_registration": _apply_user_registration,
+    "edit_registration_policy": _apply_edit_registration_policy,
 }
 
 

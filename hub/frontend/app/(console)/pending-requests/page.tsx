@@ -29,6 +29,8 @@ const TYPE_LABELS: Record<string, string> = {
   edit_redirect_uris: "แก้ไข Redirect URIs",
   change_whitelist_role: "เปลี่ยน Role (1 คน)",
   bulk_change_whitelist_roles: "เปลี่ยน Role (batch)",
+  user_registration: "ตรวจสอบผู้ใช้ใหม่",
+  edit_registration_policy: "แก้นโยบายรับผู้ใช้ใหม่",
 };
 
 const STATUS_TONE: Record<string, string> = {
@@ -80,6 +82,15 @@ export default function PendingRequestsPage() {
   useEffect(load, [load]);
 
   async function approve(req: ChangeRequest) {
+    let userType: string | undefined;
+    if (req.request_type === "user_registration") {
+      const value = prompt("กำหนดประเภทผู้ใช้หลังตรวจสอบ: student, teacher หรือ staff", "student");
+      if (value === null) return;
+      if (!["student", "teacher", "staff"].includes(value.trim())) {
+        setMsg({ kind: "err", text: "ประเภทผู้ใช้ต้องเป็น student, teacher หรือ staff" }); return;
+      }
+      userType = value.trim();
+    }
     if (
       !confirm(
         `Approve request ${(TYPE_LABELS[req.request_type] || req.request_type)}\n` +
@@ -93,7 +104,7 @@ export default function PendingRequestsPage() {
     try {
       const r = await clientFetch<{ message: string }>(
         `/admin/change-requests/${req.id}/approve`,
-        { method: "POST", body: JSON.stringify({}) }
+        { method: "POST", body: JSON.stringify({ user_type: userType }) }
       );
       setMsg({ kind: "ok", text: r.message });
       load();
@@ -185,8 +196,7 @@ export default function PendingRequestsPage() {
                     : "ที่ถูกปฏิเสธ"}
               </strong>
               <span>
-                คำขอที่ต้องให้ admin อนุมัติ: rotate secret · edit scope · roles ·
-                redirect URIs
+                คำขอเปลี่ยนระบบและคำขอสมัครผู้ใช้ใหม่จะแสดงที่นี่
               </span>
             </div>
           ) : (
