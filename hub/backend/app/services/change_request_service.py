@@ -293,6 +293,19 @@ def _apply_user_registration(db: Session, subsystem: Subsystem, payload: dict[st
         "membership_role": payload.get("initial_role")}
 
 def _apply_edit_registration_policy(db: Session, subsystem: Subsystem, payload: dict[str, Any]) -> dict[str, Any]:
+    from app.services.registration_domains import (
+        get_trusted_registration_domains,
+        untrusted_domains,
+    )
+
+    invalid = untrusted_domains(
+        payload.get("allowed_email_domains"), get_trusted_registration_domains(db)
+    )
+    if invalid:
+        raise ValueError(
+            "registration domains are no longer trusted centrally: "
+            + ", ".join(invalid)
+        )
     old = {"self_registration_mode": subsystem.self_registration_mode,
         "allowed_email_domains": list(subsystem.allowed_email_domains or [])}
     subsystem.self_registration_mode = payload["self_registration_mode"]

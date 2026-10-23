@@ -24,3 +24,23 @@ test("developer UI exposes only scoped domain registration policy", () => {
   expect(createPage).toContain("allowed_email_domains:");
   expect(createPage).not.toContain("approved_user_type");
 });
+
+test("subsystem detail separates roles from allowed registration domains", () => {
+  const detailPage = fs.readFileSync(
+    path.join(root, "(developer)", "developer", "subsystems", "[id]", "page.tsx"),
+    "utf8"
+  );
+  expect(detailPage).toContain("Allowed Registration Domains");
+  expect(detailPage).toContain("sub.allowed_email_domains");
+  expect(detailPage).toContain("เปิดรับผู้ใช้ใหม่");
+});
+
+test("central users page manages trusted registration domains", () => {
+  const usersPage = fs.readFileSync(
+    path.join(root, "(console)", "users", "page.tsx"),
+    "utf8"
+  );
+  expect(usersPage).toContain("Trusted Registration Domains");
+  expect(usersPage).toContain("/admin/users/registration-domains");
+  expect(usersPage).toContain("เพิ่ม Domain");
+});

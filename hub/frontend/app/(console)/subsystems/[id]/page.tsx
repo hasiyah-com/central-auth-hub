@@ -62,6 +62,8 @@ type Subsystem = {
   // scope ใน DB เป็น text[] → JSON เป็น array (ไม่ใช่ string!)
   scope?: string[] | string | null;
   allowed_roles?: string[];
+  self_registration_mode?: "closed" | "domain_auto";
+  allowed_email_domains?: string[];
   access_policy?: string;
   access_policy_config?: {
     roles?: string[];
@@ -1779,6 +1781,43 @@ export default function SubsystemDetailPage({
                 </span>
               ))}
             </div>
+          </div>
+        </section>
+
+        {/* ── Registration domains ──────────────────────── */}
+        <section className="cx-panel">
+          <header>
+            <div>
+              <span>registration policy</span>
+              <h2>Allowed Registration Domains</h2>
+            </div>
+            <Link
+              href="/users"
+              className="px-3 py-2 rounded-lg border border-ink-200 hover:bg-ink-50 text-sm font-semibold text-ink-700"
+            >
+              จัดการ Domain กลาง
+            </Link>
+          </header>
+          <div className="cx-panel-body">
+            <div className="flex items-center gap-2 mb-3">
+              <Badge tone={sub.self_registration_mode === "domain_auto" ? "good" : "default"}>
+                {sub.self_registration_mode === "domain_auto" ? "เปิดรับผู้ใช้ใหม่" : "ปิดรับผู้ใช้ใหม่"}
+              </Badge>
+              <p className="text-xs text-ink-500">
+                ผู้ใช้ใหม่ต้องมีอีเมลตรงกับ Domain กลางและ Domain ของระบบย่อยนี้พร้อมกัน
+              </p>
+            </div>
+            {sub.allowed_email_domains?.length ? (
+              <div className="flex flex-wrap gap-2">
+                {sub.allowed_email_domains.map((domain) => (
+                  <span key={domain} className="px-2.5 py-1 rounded-md bg-sky-50 border border-sky-200 text-sky-800 text-xs font-mono">
+                    {domain}
+                  </span>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-ink-400">ยังไม่ได้กำหนด Domain</p>
+            )}
           </div>
         </section>
 

@@ -46,7 +46,11 @@ from app.services import passkey_recovery
 from app.services import risk_challenge
 from app.services import mfa_policy
 from app.services import totp_service
-from app.services.provisional_registration import allowed_email_domain, create_provisional_identity, google_identity_can_register
+from app.services.provisional_registration import create_provisional_identity
+from app.services.registration_domains import (
+    email_allowed_by_both_layers,
+    get_trusted_registration_domains,
+)
 
 router = APIRouter()
 
@@ -331,7 +335,15 @@ async def oauth_callback(
     # หา user ใน Hub
     user = db.query(User).filter(User.email == email).first()
     if not user:
-        if subsystem.self_registration_mode == "domain_auto" and google_identity_can_register(userinfo, subsystem.allowed_email_domains):
+        if (
+            subsystem.self_registration_mode == "domain_auto"
+            and userinfo.get("email_verified") is True
+            and email_allowed_by_both_layers(
+                str(userinfo.get("email") or ""),
+                subsystem.allowed_email_domains,
+                get_trusted_registration_domains(db),
+            )
+        ):
             log_action(db, actor_id=None, action="oauth_registration_started", target_type="subsystem",
                 target_id=subsystem.id, ip=client_ip, metadata={"email": email, "client_id": authreq["client_id"]})
             db.commit()
@@ -509,7 +521,12 @@ async def complete_registration(request: Request,
         AccessList.user_id == existing.id, AccessList.entry_type == "allow",
         AccessList.source == "developer_invite", AccessList.revoked_at.is_(None)).first())
     if subsystem.self_registration_mode != "domain_auto" and not invited: raise HTTPException(status_code=403, detail="ระบบย่อยปิดรับสมัครผู้ใช้ใหม่แล้ว")
-    if not allowed_email_domain(context["email"], subsystem.allowed_email_domains): raise HTTPException(status_code=403, detail="โดเมนอีเมลไม่ได้รับอนุญาตแล้ว")
+    if not email_allowed_by_both_layers(
+        context["email"],
+        subsystem.allowed_email_domains,
+        get_trusted_registration_domains(db),
+    ):
+        raise HTTPException(status_code=403, detail="โดเมนอีเมลไม่ได้รับอนุญาตแล้ว")
     source = "developer_invite" if invited else "self_registration"
     try:
         user, membership, pending = create_provisional_identity(db, subsystem=subsystem,

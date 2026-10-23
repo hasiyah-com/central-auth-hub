@@ -35,7 +35,16 @@ def create_provisional_identity(db: Session, *, subsystem, email: str, full_name
     google_sub: str | None, source: str, invited_by=None):
     from app.models import AccessList, SubsystemChangeRequest, User
     clean_email = normalize_email(email)
-    if not allowed_email_domain(clean_email, subsystem.allowed_email_domains):
+    from app.services.registration_domains import (
+        email_allowed_by_both_layers,
+        get_trusted_registration_domains,
+    )
+
+    if not email_allowed_by_both_layers(
+        clean_email,
+        subsystem.allowed_email_domains,
+        get_trusted_registration_domains(db),
+    ):
         raise ValueError("โดเมนอีเมลไม่ได้รับอนุญาตสำหรับระบบย่อยนี้")
     user = db.query(User).filter(User.email == clean_email).first()
     if user and user.status not in {"provisional", "active"}:
