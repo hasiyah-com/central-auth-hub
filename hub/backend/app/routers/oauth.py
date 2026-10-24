@@ -59,23 +59,72 @@ AUTH_CODE_TTL = 60  # authorization code อายุ 60 วินาที
 ENROLL_TTL = 600  # passkey enrollment context (หลัง Google identify) 10 นาที
 REGISTRATION_TTL = 600
 
-def _registration_html(*, token: str, email: str, full_name: str, subsystem_name: str, nonce: str) -> str:
+def _registration_profile_options(db: Session) -> dict[str, list[str]]:
+    """Return the approved profile vocabulary already used by active users.
+
+    Provisional rows are deliberately excluded so an unreviewed typo cannot
+    become a new selectable value for later registrations.
+    """
+    rows = (
+        db.query(User.faculty, User.major)
+        .filter(
+            User.status == "active",
+            User.faculty.isnot(None),
+            User.faculty != "",
+        )
+        .distinct()
+        .order_by(User.faculty, User.major)
+        .all()
+    )
+    options: dict[str, list[str]] = {}
+    for faculty, major in rows:
+        clean_faculty = faculty.strip()
+        if not clean_faculty:
+            continue
+        majors = options.setdefault(clean_faculty, [])
+        clean_major = (major or "").strip()
+        if clean_major and clean_major not in majors:
+            majors.append(clean_major)
+    return options
+
+
+def _valid_registration_profile(
+    faculty: str, major: str, options: dict[str, list[str]]
+) -> bool:
+    clean_faculty, clean_major = faculty.strip(), major.strip()
+    return clean_faculty in options and (
+        not clean_major or clean_major in options[clean_faculty]
+    )
+
+
+def _registration_html(*, token: str, email: str, full_name: str,
+    subsystem_name: str, nonce: str,
+    profile_options: dict[str, list[str]] | None = None) -> str:
     safe_email, safe_name = html.escape(email), html.escape(full_name)
     safe_subsystem, safe_token = html.escape(subsystem_name), html.escape(token, quote=True)
+    profile_options = profile_options or {}
+    faculty_options = "".join(
+        f'<option value="{html.escape(faculty, quote=True)}">{html.escape(faculty)}</option>'
+        for faculty in profile_options
+    )
+    options_json = json.dumps(profile_options, ensure_ascii=False).replace("<", "\\u003c")
     return f"""<!doctype html><html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>สมัครบัญชี · Central Auth Hub</title>
-<style nonce="{nonce}">*{{box-sizing:border-box}}body{{margin:0;background:#09121f;color:#edf4ff;font-family:system-ui,sans-serif;min-height:100vh;display:grid;place-items:center;padding:20px}}main{{width:min(620px,100%);background:#111f31;border:1px solid #30445d;padding:32px}}small{{color:#3bd8bd;letter-spacing:.12em}}p{{color:#9cafc5;line-height:1.65}}label{{display:block;margin:16px 0 6px}}input{{width:100%;padding:12px;background:#091522;border:1px solid #40546d;color:white}}button{{width:100%;margin-top:24px;padding:14px;border:0;background:#38d8bd;font-weight:700}}</style></head><body><main>
+<style nonce="{nonce}">*{{box-sizing:border-box}}body{{margin:0;background:#09121f;color:#edf4ff;font-family:system-ui,sans-serif;min-height:100vh;display:grid;place-items:center;padding:20px}}main{{width:min(620px,100%);background:#111f31;border:1px solid #30445d;padding:32px}}small{{color:#3bd8bd;letter-spacing:.12em}}p{{color:#9cafc5;line-height:1.65}}label{{display:block;margin:16px 0 6px}}input,select{{width:100%;padding:12px;background:#091522;border:1px solid #40546d;color:white}}select:disabled{{opacity:.55}}button{{width:100%;margin-top:24px;padding:14px;border:0;background:#38d8bd;font-weight:700}}</style></head><body><main>
 <small>NEW USER REGISTRATION</small><h1>สมัครบัญชีเพื่อเข้า {safe_subsystem}</h1><p>Google ยืนยันอีเมลแล้ว คุณจะเริ่มด้วยสิทธิ์ต่ำสุดเฉพาะระบบนี้ และข้อมูลจะถูกส่งให้ Admin ตรวจสอบ</p>
 <form method="post" action="/oauth/register"><input type="hidden" name="registration_token" value="{safe_token}"><label>อีเมลมหาวิทยาลัย</label><input value="{safe_email}" readonly>
-<label for="full_name">ชื่อ-นามสกุล</label><input id="full_name" name="full_name" value="{safe_name}" minlength="2" maxlength="255" required><label for="identifier">รหัสนักศึกษา/บุคลากร</label><input id="identifier" name="identifier" maxlength="50" required><label for="faculty">คณะ/หน่วยงาน</label><input id="faculty" name="faculty" maxlength="100" required><label for="major">สาขา (ถ้ามี)</label><input id="major" name="major" maxlength="100"><button type="submit">สมัครและเข้าใช้งานด้วยสิทธิ์เริ่มต้น</button></form></main></body></html>"""
+<label for="full_name">ชื่อ-นามสกุล</label><input id="full_name" name="full_name" value="{safe_name}" minlength="2" maxlength="255" required><label for="identifier">รหัสนักศึกษา/บุคลากร</label><input id="identifier" name="identifier" maxlength="50" required><label for="faculty">คณะ/หน่วยงาน</label><select id="faculty" name="faculty" required><option value="">เลือกคณะ/หน่วยงาน</option>{faculty_options}</select><label for="major">สาขา (ถ้ามี)</label><select id="major" name="major" disabled><option value="">เลือกคณะก่อน</option></select><button type="submit">สมัครและเข้าใช้งานด้วยสิทธิ์เริ่มต้น</button></form></main>
+<script nonce="{nonce}">const profileOptions={options_json};const faculty=document.getElementById("faculty");const major=document.getElementById("major");function refreshMajors(){{const values=profileOptions[faculty.value]||[];major.replaceChildren(new Option("ไม่ระบุสาขา",""),...values.map(value=>new Option(value,value)));major.disabled=!faculty.value;}}faculty.addEventListener("change",refreshMajors);</script></body></html>"""
 
-def _begin_registration(*, state: str, userinfo: dict, subsystem: Subsystem, request: Request) -> HTMLResponse:
+def _begin_registration(*, state: str, userinfo: dict, subsystem: Subsystem,
+    request: Request, db: Session) -> HTMLResponse:
     token = secrets.token_urlsafe(32)
     redis_client.setex(f"registration:{token}", REGISTRATION_TTL, json.dumps({"state": state,
         "email": userinfo["email"], "google_sub": userinfo["sub"],
         "full_name": userinfo.get("name") or "", "subsystem_id": str(subsystem.id)}))
     nonce = secrets.token_urlsafe(16); request.state.csp_nonce = nonce
     return HTMLResponse(_registration_html(token=token, email=userinfo["email"],
-        full_name=userinfo.get("name") or "", subsystem_name=subsystem.name, nonce=nonce),
+        full_name=userinfo.get("name") or "", subsystem_name=subsystem.name, nonce=nonce,
+        profile_options=_registration_profile_options(db)),
         headers={"Cache-Control": "no-store"})
 
 
@@ -347,7 +396,7 @@ async def oauth_callback(
             log_action(db, actor_id=None, action="oauth_registration_started", target_type="subsystem",
                 target_id=subsystem.id, ip=client_ip, metadata={"email": email, "client_id": authreq["client_id"]})
             db.commit()
-            return _begin_registration(state=state, userinfo=userinfo, subsystem=subsystem, request=request)
+            return _begin_registration(state=state, userinfo=userinfo, subsystem=subsystem, request=request, db=db)
         log_action(
             db,
             actor_id=None,
@@ -377,7 +426,7 @@ async def oauth_callback(
             AccessList.user_id == user.id, AccessList.entry_type == "allow", AccessList.revoked_at.is_(None)).first()
         if not membership: raise HTTPException(status_code=403, detail="บัญชีนี้รอตรวจสอบและไม่มีสิทธิ์ในระบบย่อยนี้")
         if not user.google_sub or not user.identifier or not user.faculty:
-            return _begin_registration(state=state, userinfo=userinfo, subsystem=subsystem, request=request)
+            return _begin_registration(state=state, userinfo=userinfo, subsystem=subsystem, request=request, db=db)
     elif user.status != "active":
         log_action(
             db,
@@ -527,6 +576,12 @@ async def complete_registration(request: Request,
         get_trusted_registration_domains(db),
     ):
         raise HTTPException(status_code=403, detail="โดเมนอีเมลไม่ได้รับอนุญาตแล้ว")
+    profile_options = _registration_profile_options(db)
+    if not _valid_registration_profile(faculty, major, profile_options):
+        raise HTTPException(
+            status_code=400,
+            detail="คณะ/หน่วยงานหรือสาขาไม่อยู่ในรายการที่ระบบอนุญาต",
+        )
     source = "developer_invite" if invited else "self_registration"
     try:
         user, membership, pending = create_provisional_identity(db, subsystem=subsystem,
