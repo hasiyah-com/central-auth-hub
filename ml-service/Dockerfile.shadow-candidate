@@ -1,0 +1,12 @@
+FROM python:3.11-slim
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+COPY app/features.py app/features.py
+COPY app/shadow_candidate.py app/shadow_candidate.py
+COPY app/shadow_main.py app/shadow_main.py
+RUN groupadd --gid 10001 candidateapp && useradd --uid 10001 --gid 10001 --create-home candidateapp
+ENV OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 NUMBA_CACHE_DIR=/tmp/numba MPLCONFIGDIR=/tmp/matplotlib
+USER 10001:10001
+EXPOSE 9001
+CMD ["uvicorn", "app.shadow_main:app", "--host", "0.0.0.0", "--port", "9001", "--workers", "1", "--limit-concurrency", "8"]
