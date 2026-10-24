@@ -26,13 +26,17 @@ test("developer UI exposes only scoped domain registration policy", () => {
 });
 
 test("subsystem detail separates roles from allowed registration domains", () => {
-  const detailPage = fs.readFileSync(
+  const detailPages = [
     path.join(root, "(developer)", "developer", "subsystems", "[id]", "page.tsx"),
-    "utf8"
-  );
-  expect(detailPage).toContain("Allowed Registration Domains");
-  expect(detailPage).toContain("sub.allowed_email_domains");
-  expect(detailPage).toContain("เปิดรับผู้ใช้ใหม่");
+    path.join(root, "(console)", "subsystems", "[id]", "page.tsx"),
+  ].map((file) => fs.readFileSync(file, "utf8"));
+  for (const detailPage of detailPages) {
+    expect(detailPage).toContain("Allowed Registration Domains");
+    expect(detailPage).toContain("sub.allowed_email_domains");
+    expect(detailPage).toContain("เปิดรับผู้ใช้ใหม่");
+    expect(detailPage).toContain('data-testid="role-domain-grid"');
+    expect(detailPage).toContain("xl:grid-cols-2");
+  }
 });
 
 test("central users page manages trusted registration domains", () => {

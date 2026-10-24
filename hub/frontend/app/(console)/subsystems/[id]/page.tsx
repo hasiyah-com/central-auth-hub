@@ -1755,6 +1755,10 @@ export default function SubsystemDetailPage({
 
         </div>
 
+        <div
+          data-testid="role-domain-grid"
+          className="grid grid-cols-1 xl:grid-cols-2 gap-4 items-stretch [&>section]:h-full"
+        >
         {/* ── Subsystem roles ─────────────────────────────── */}
         <section className="cx-panel">
           <header>
@@ -1820,6 +1824,8 @@ export default function SubsystemDetailPage({
             )}
           </div>
         </section>
+
+        </div>
 
         {/* ── Section 2: Whitelist ───────────────────────── */}
         <section className="cx-panel">

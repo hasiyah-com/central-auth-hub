@@ -1058,6 +1058,10 @@ export default function DeveloperSubsystemDetailPage({
           </div>
         </section>
 
+        <div
+          data-testid="role-domain-grid"
+          className="grid grid-cols-1 xl:grid-cols-2 gap-4 items-stretch [&>section]:h-full"
+        >
         {/* Subsystem roles */}
         <section className="cx-panel">
           <header>
@@ -1125,6 +1129,8 @@ export default function DeveloperSubsystemDetailPage({
             )}
           </div>
         </section>
+
+        </div>
 
         {/* Whitelist */}
         <section className="cx-panel">
