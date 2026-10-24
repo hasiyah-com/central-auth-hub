@@ -212,6 +212,9 @@ class SubsystemResponse(BaseModel):
     allowed_roles: list[str] = []
     access_policy: str = "explicit"
     access_policy_config: dict | None = None
+    api_key_prefix: str | None = None
+    access_revoke_webhook_url: str | None = None
+    previous_secret_expires_at: datetime | None = None
     self_registration_mode: str = "closed"
     allowed_email_domains: list[str] = Field(default_factory=list)
     created_at: datetime
@@ -591,6 +594,9 @@ def my_subsystems(
             allowed_roles=list(s.allowed_roles or []),
             access_policy=s.access_policy or "explicit",
             access_policy_config=s.access_policy_config,
+            api_key_prefix=s.api_key_prefix,
+            access_revoke_webhook_url=s.access_revoke_webhook_url,
+            previous_secret_expires_at=s.previous_secret_expires_at,
             self_registration_mode=s.self_registration_mode or "closed",
             allowed_email_domains=list(s.allowed_email_domains or []),
             created_at=s.created_at,
