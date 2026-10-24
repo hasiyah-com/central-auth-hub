@@ -195,6 +195,7 @@ async def test_full_orchestrator_access_identical(monkeypatch, base_action, fail
     clean = copy.deepcopy(after)
     clean["breakdown"].pop("if_candidate_shadow", None)
     assert clean == before
-    assert call.await_count == (1 if base_action == "allow" else 0)
+    assert call.await_count == 1
+    assert after["breakdown"]["if_candidate_shadow"]["applied_to_access"] is False
     if base_action == "allow":
         assert after["decision"] == "warn"  # original live fallback still applied
