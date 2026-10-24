@@ -1087,6 +1087,45 @@ export default function DeveloperSubsystemDetailPage({
           </div>
         </section>
 
+        {/* Registration domains are intentionally separate from roles: a domain
+            controls who may create an account, while a role controls access after approval. */}
+        <section className="cx-panel">
+          <header>
+            <div>
+              <span>registration policy</span>
+              <h2>Allowed Registration Domains</h2>
+            </div>
+            <button
+              type="button"
+              onClick={openEditModal}
+              className="px-3 py-2 rounded-lg border border-ink-200 hover:bg-ink-50 text-sm font-semibold text-ink-700"
+            >
+              จัดการ Domains
+            </button>
+          </header>
+          <div className="cx-panel-body">
+            <div className="flex items-center gap-2 mb-3">
+              <Badge tone={sub.self_registration_mode === "domain_auto" ? "good" : "default"}>
+                {sub.self_registration_mode === "domain_auto" ? "เปิดรับผู้ใช้ใหม่" : "ปิดรับผู้ใช้ใหม่"}
+              </Badge>
+              <p className="text-xs text-ink-500">
+                ใช้ได้เฉพาะ Domain ที่แอดมินส่วนกลางอนุมัติ และต้องผ่านทั้งนโยบายส่วนกลางกับระบบย่อย
+              </p>
+            </div>
+            {sub.allowed_email_domains?.length ? (
+              <div className="flex flex-wrap gap-2">
+                {sub.allowed_email_domains.map((domain) => (
+                  <span key={domain} className="px-2.5 py-1 rounded-md bg-sky-50 border border-sky-200 text-sky-800 text-xs font-mono">
+                    {domain}
+                  </span>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-ink-400">ยังไม่ได้กำหนด Domain</p>
+            )}
+          </div>
+        </section>
+
         {/* Whitelist */}
         <section className="cx-panel">
           <header>

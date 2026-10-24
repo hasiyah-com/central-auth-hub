@@ -338,6 +338,8 @@ def list_subsystems(
             "scope": s.scope,
             "redirect_uris": list(s.redirect_uris or []),
             "allowed_roles": list(s.allowed_roles or []),
+            "self_registration_mode": s.self_registration_mode or "closed",
+            "allowed_email_domains": list(s.allowed_email_domains or []),
             "access_policy": s.access_policy or "explicit",
             "access_policy_config": s.access_policy_config,
             "api_key_prefix": s.api_key_prefix,

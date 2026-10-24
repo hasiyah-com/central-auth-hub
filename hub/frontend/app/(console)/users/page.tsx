@@ -6,6 +6,7 @@ import { Topbar } from "@/components/Topbar";
 import { DataTable, type Column } from "@/components/DataTable";
 import { Badge } from "@/components/Badge";
 import { clientFetch } from "@/lib/api";
+import { mutateWithStepup } from "@/lib/passkey";
 // design system ที่ port จากดีไซน์ตัวจริง — .sc = ชุด cx-* ของหน้าคอนโซล
 import "../../signal-room.css";
 import "../../signal-console.css";
@@ -30,6 +31,16 @@ type User = {
   year_or_position?: string;
   status: string;
   [k: string]: unknown;
+};
+
+type RegistrationDomainsResponse = {
+  domains: string[];
+  usage?: Record<string, Array<{ id: string; name: string }>>;
+  affected_subsystems?: Array<{
+    id: string;
+    name: string;
+    disabled_domains: string[];
+  }>;
 };
 
 const TYPE_TONE: Record<string, "brand" | "good" | "warn" | "danger" | "default"> = {
@@ -67,11 +78,75 @@ export default function UsersPage() {
   const [importOpen, setImportOpen] = useState(false);
   // จำนวนผู้ใช้แยกตามประเภท — ใช้กับ KPI 4 ใบด้านบน (ข้อมูลจริง ไม่ใช่ค่าสมมติ)
   const [counts, setCounts] = useState<Record<string, number> | null>(null);
+  const [registrationDomains, setRegistrationDomains] = useState<string[]>([]);
+  const [domainUsage, setDomainUsage] = useState<RegistrationDomainsResponse["usage"]>({});
+  const [newDomain, setNewDomain] = useState("");
+  const [domainBusy, setDomainBusy] = useState(false);
+  const [domainError, setDomainError] = useState<string | null>(null);
+  const [domainNotice, setDomainNotice] = useState<string | null>(null);
   useEffect(() => {
     clientFetch<Record<string, number>>("/admin/users/count")
       .then(setCounts)
       .catch(() => {});
   }, []);
+
+  function loadRegistrationDomains() {
+    clientFetch<RegistrationDomainsResponse>("/admin/users/registration-domains")
+      .then((data) => {
+        setRegistrationDomains(data.domains);
+        setDomainUsage(data.usage || {});
+      })
+      .catch((e) => setDomainError(e.detail || "โหลด Domain กลางไม่สำเร็จ"));
+  }
+
+  useEffect(loadRegistrationDomains, []);
+
+  async function saveRegistrationDomains(domains: string[]) {
+    setDomainBusy(true);
+    setDomainError(null);
+    setDomainNotice(null);
+    try {
+      const result = await mutateWithStepup<RegistrationDomainsResponse>(
+        "/admin/users/registration-domains",
+        { method: "PUT", body: JSON.stringify({ domains }) }
+      );
+      setRegistrationDomains(result.domains);
+      setNewDomain("");
+      const affected = result.affected_subsystems || [];
+      if (affected.length) {
+        setDomainNotice(
+          `ปิดสิทธิ์สมัครของ ${affected.length} ระบบย่อยสำหรับ Domain ที่ถูกนำออกแล้ว`
+        );
+      }
+      loadRegistrationDomains();
+    } catch (e) {
+      const detail = (e as { detail?: string | { message?: string } })?.detail;
+      setDomainError(
+        typeof detail === "string" ? detail : detail?.message || "บันทึก Domain ไม่สำเร็จ"
+      );
+    } finally {
+      setDomainBusy(false);
+    }
+  }
+
+  function addRegistrationDomain() {
+    const domain = newDomain.trim().toLowerCase().replace(/^@+/, "");
+    if (!domain) return;
+    if (registrationDomains.includes(domain)) {
+      setDomainError("Domain นี้มีอยู่แล้ว");
+      return;
+    }
+    void saveRegistrationDomains([...registrationDomains, domain]);
+  }
+
+  function removeRegistrationDomain(domain: string) {
+    const usedBy = domainUsage?.[domain] || [];
+    const warning = usedBy.length
+      ? `Domain นี้ถูกใช้โดย ${usedBy.length} ระบบย่อย การลบจะหยุดรับผู้ใช้ใหม่จาก Domain นี้ ยืนยันหรือไม่?`
+      : `ลบ ${domain} ออกจาก Domain กลางหรือไม่?`;
+    if (!window.confirm(warning)) return;
+    void saveRegistrationDomains(registrationDomains.filter((d) => d !== domain));
+  }
 
   useEffect(() => {
     clientFetch<UserFilterOptions>("/admin/users/filter-options")
@@ -210,6 +285,77 @@ export default function UsersPage() {
               </small>
             </article>
           ))}
+        </section>
+
+        <section className="cx-panel">
+          <header>
+            <div>
+              <span>registration trust policy</span>
+              <h2>Trusted Registration Domains</h2>
+            </div>
+            <span className="cx-chip mono">{registrationDomains.length} domains</span>
+          </header>
+          <div className="cx-panel-body space-y-4">
+            <p className="text-sm text-ink-600">
+              Domain กลางคือรายการที่องค์กรรับรอง ระบบย่อยเลือกใช้ได้เฉพาะ Domain ในรายการนี้ และผู้ใช้ใหม่ต้องผ่านทั้งสองชั้น
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <input
+                aria-label="Domain ใหม่"
+                value={newDomain}
+                onChange={(e) => setNewDomain(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    addRegistrationDomain();
+                  }
+                }}
+                placeholder="uni.ac.th (ไม่ต้องใส่ @)"
+                className="h-10 min-w-[260px] flex-1 px-3 rounded-lg border border-ink-200 focus:outline-none focus:border-brand-500 text-sm font-mono"
+              />
+              <button
+                type="button"
+                onClick={addRegistrationDomain}
+                disabled={domainBusy || !newDomain.trim()}
+                className="cx-add-button disabled:opacity-50"
+              >
+                {domainBusy ? "กำลังบันทึก…" : "+ เพิ่ม Domain"}
+              </button>
+            </div>
+            {domainError && (
+              <div className="rounded-lg border border-rose-200 bg-rose-50 p-3 text-sm text-rose-700">{domainError}</div>
+            )}
+            {domainNotice && (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">{domainNotice}</div>
+            )}
+            {registrationDomains.length ? (
+              <div className="grid gap-2 md:grid-cols-2">
+                {registrationDomains.map((domain) => {
+                  const systems = domainUsage?.[domain] || [];
+                  return (
+                    <div key={domain} className="flex items-center justify-between gap-3 rounded-lg border border-ink-200 bg-white p-3">
+                      <div className="min-w-0">
+                        <div className="font-mono text-sm font-semibold text-ink-900">{domain}</div>
+                        <div className="truncate text-xs text-ink-500">
+                          {systems.length ? `ใช้งานใน ${systems.map((s) => s.name).join(", ")}` : "ยังไม่มีระบบย่อยเลือกใช้"}
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => removeRegistrationDomain(domain)}
+                        disabled={domainBusy}
+                        className="shrink-0 rounded-md border border-rose-200 px-2.5 py-1 text-xs font-semibold text-rose-700 hover:bg-rose-50 disabled:opacity-50"
+                      >
+                        ลบ
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <p className="text-sm text-ink-400">ยังไม่มี Domain กลาง — ระบบย่อยจะยังเปิดรับผู้ใช้ใหม่ไม่ได้</p>
+            )}
+          </div>
         </section>
 
         {error && (

@@ -26,6 +26,11 @@ from app.database import get_db
 from app.deps import get_client_ip, require_developer
 from app.models import AccessList, LoginSession, SecretRetrievalToken, Subsystem, User
 from app.services.provisional_registration import allowed_email_domain, create_provisional_identity
+from app.services.registration_domains import (
+    get_trusted_registration_domains,
+    invalid_domains as invalid_registration_domain_values,
+    untrusted_domains,
+)
 from app.rate_limiter import limiter
 from app.services.audit_service import log_action
 from app.services.critical_action_policy import gate as _stepup_gate
@@ -386,6 +391,30 @@ def register_subsystem(
         raise HTTPException(
             status_code=400,
             detail="ต้องกำหนด allowed_email_domains ก่อนเปิดรับสมัคร",
+        )
+    malformed_registration_domains = invalid_registration_domain_values(
+        payload.allowed_email_domains
+    )
+    if malformed_registration_domains:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "invalid_registration_domains",
+                "domains": malformed_registration_domains,
+                "message": "รูปแบบ Domain ไม่ถูกต้อง",
+            },
+        )
+    invalid_registration_domains = untrusted_domains(
+        payload.allowed_email_domains, get_trusted_registration_domains(db)
+    )
+    if invalid_registration_domains:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "untrusted_registration_domains",
+                "domains": invalid_registration_domains,
+                "message": "Domain ยังไม่ได้รับอนุมัติจาก Admin ส่วนกลาง",
+            },
         )
 
     # สร้าง credentials + แนะนำ webhook endpoints (derive จาก redirect origin)
@@ -1511,6 +1540,28 @@ def update_subsystem(
         domains = sorted({d.strip().lower().lstrip("@") for d in domains if d.strip()})
         if mode not in {"closed", "domain_auto"}: raise HTTPException(status_code=400, detail="self_registration_mode ไม่ถูกต้อง")
         if mode == "domain_auto" and not domains: raise HTTPException(status_code=400, detail="ต้องกำหนด allowed_email_domains ก่อนเปิดรับสมัคร")
+        malformed_domains = invalid_registration_domain_values(domains)
+        if malformed_domains:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "code": "invalid_registration_domains",
+                    "domains": malformed_domains,
+                    "message": "รูปแบบ Domain ไม่ถูกต้อง",
+                },
+            )
+        invalid_domains = untrusted_domains(
+            domains, get_trusted_registration_domains(db)
+        )
+        if invalid_domains:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "code": "untrusted_registration_domains",
+                    "domains": invalid_domains,
+                    "message": "Domain ยังไม่ได้รับอนุมัติจาก Admin ส่วนกลาง",
+                },
+            )
         _enqueue("edit_registration_policy", {"self_registration_mode": mode, "allowed_email_domains": domains}, "New-user registration policy")
 
     # Access Policy — widening (เห็น user มากขึ้น เช่น explicit→all) ต้อง admin

@@ -32,6 +32,12 @@ from app.services.audit_service import log_action
 from app.services.change_request_service import close_subsystem_login_sessions
 from app.services.critical_action_policy import gate as _stepup_gate
 from app.services.webhook_dispatcher import send_access_restored, send_access_revoked
+from app.services.registration_domains import (
+    clean_domains,
+    get_trusted_registration_domains,
+    invalid_domains,
+    set_trusted_registration_domains,
+)
 
 router = APIRouter()
 
@@ -42,6 +48,81 @@ _VALID_STATUS = {"active", "suspended", "deleted", "graduated", "resigned"}
 _CASCADE_STATUSES = {"deleted", "graduated", "resigned"}
 _IMPORT_LIMIT = 500
 _IMPORT_BYTES = 1_000_000
+
+
+class RegistrationDomainsUpdate(BaseModel):
+    domains: list[str] = Field(default_factory=list, max_length=100)
+
+
+@router.get("/registration-domains")
+def read_registration_domains(
+    admin: User = Depends(require_hub_admin),
+    db: Session = Depends(get_db),
+):
+    domains = get_trusted_registration_domains(db)
+    usage = {
+        domain: [
+            {"id": str(sub.id), "name": sub.name}
+            for sub in db.query(Subsystem).filter(
+                Subsystem.allowed_email_domains.any(domain)
+            ).all()
+        ]
+        for domain in domains
+    }
+    return {"domains": domains, "usage": usage}
+
+
+@router.put(
+    "/registration-domains",
+    dependencies=[Depends(_stepup_gate("registration_domain_update"))],
+)
+def update_registration_domains(
+    payload: RegistrationDomainsUpdate,
+    request: Request,
+    admin: User = Depends(require_hub_admin),
+    db: Session = Depends(get_db),
+):
+    old_domains = get_trusted_registration_domains(db)
+    new_domains = clean_domains(payload.domains)
+    invalid = invalid_domains(payload.domains)
+    if invalid:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "invalid_registration_domains",
+                "domains": invalid,
+                "message": "รูปแบบ Domain ไม่ถูกต้อง",
+            },
+        )
+    set_trusted_registration_domains(db, new_domains, actor_id=admin.id)
+    removed = sorted(set(old_domains) - set(new_domains))
+    affected = []
+    if removed:
+        for subsystem in db.query(Subsystem).all():
+            blocked = sorted(set(subsystem.allowed_email_domains or []) & set(removed))
+            if blocked:
+                affected.append(
+                    {
+                        "id": str(subsystem.id),
+                        "name": subsystem.name,
+                        "disabled_domains": blocked,
+                    }
+                )
+    log_action(
+        db,
+        actor_id=admin.id,
+        action="trusted_registration_domains_updated",
+        target_type="app_setting",
+        target_id=None,
+        ip=get_client_ip(request),
+        metadata={
+            "old_domains": old_domains,
+            "new_domains": new_domains,
+            "affected_subsystems": affected,
+        },
+    )
+    db.commit()
+    return {"domains": new_domains, "affected_subsystems": affected}
 
 
 class StatusImportFile(BaseModel):
