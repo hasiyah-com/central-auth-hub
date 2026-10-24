@@ -241,6 +241,17 @@ async def evaluate_login_risk(
     # Neither is overwritten by later authentication (e.g. mfa_passed).
     breakdown["access_decision"] = access_decision
 
+    # Compare an independent research artifact only after live policy is fixed.
+    # No DB access, token/MFA/alert callbacks or live model-cache writes here.
+    if getattr(settings, "l3_candidate_shadow_enabled", False) and decision.decision == "allow":
+        from app.services.if_candidate_shadow import evaluate_candidate, quiet
+        try:
+            comparison = await evaluate_candidate(list(features))
+        except Exception:
+            comparison = quiet("unavailable")
+        if comparison is not None:
+            breakdown["if_candidate_shadow"] = comparison
+
     logger.info(
         "[risk_engine] user=%s score=%.3f decision=%s monitoring=%s",
         user_id,
@@ -429,4 +440,5 @@ async def _evaluate_l3(
         except Exception as e:  # noqa: BLE001
             logger.warning("[risk_engine] record_residual error: %s", e)
     return l3
+
 

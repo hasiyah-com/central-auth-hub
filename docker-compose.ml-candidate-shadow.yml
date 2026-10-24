@@ -1,0 +1,38 @@
+services:
+  ml-candidate-shadow:
+    build:
+      context: ./ml-service
+      dockerfile: Dockerfile.shadow-candidate
+    restart: unless-stopped
+    read_only: true
+    init: true
+    cpus: 0.5
+    mem_limit: 512m
+    pids_limit: 128
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    environment:
+      CANDIDATE_SHADOW_KEY: ${CANDIDATE_SHADOW_KEY:?Set a new shared key for candidate service and Hub}
+      CANDIDATE_MANIFEST_SHA256: ${CANDIDATE_MANIFEST_SHA256:?Use the prepared manifest hash}
+    volumes:
+      - ./deploy/ml-candidate-shadow/artifacts:/candidate:ro
+    expose: ["9001"]
+    networks: [candidate_internal]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:9001/health',timeout=2)"]
+      interval: 30s
+      timeout: 3s
+      start_period: 30s
+      retries: 3
+networks:
+  candidate_internal:
+    external: true
+    name: ${SHADOW_NETWORK_NAME:?Use the existing private network shared with Hub}

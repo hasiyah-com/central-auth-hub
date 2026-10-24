@@ -16,6 +16,14 @@ class Settings(BaseSettings):
     # C3 + PG-E research comparison only; never changes live access or ML artifacts.
     c3_pge_shadow_enabled: bool = False
 
+    # Independent IF candidate diagnostics; never changes live model/fallback.
+    l3_candidate_shadow_enabled: bool = False
+    l3_candidate_shadow_url: str = ""
+    l3_candidate_shadow_key: str = Field(default="", repr=False)
+    l3_candidate_shadow_model_sha256: str = ""
+    l3_candidate_shadow_raw_threshold: float = Field(default=0.0918450679660674, ge=-1, le=1)
+    l3_candidate_shadow_timeout_seconds: float = Field(default=0.25, gt=0, le=1)
+
     # App
     app_env: str = "development"
     # Explicit calibration artifact enables monitoring-only L3 fallback.
@@ -241,4 +249,5 @@ class Settings(BaseSettings):
 
 settings = Settings()
 settings.validate_production()
+
 

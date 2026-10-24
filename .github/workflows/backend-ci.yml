@@ -87,6 +87,25 @@ jobs:
           docker exec ml pip install pytest httpx==0.27.2
           docker exec -e PYTHONPATH=/app ml pytest tests -q
 
+      - name: Build independent candidate shadow image
+        working-directory: ml-service
+        run: docker build -f Dockerfile.shadow-candidate -t cah-ml-candidate-shadow-ci .
+
+      - name: Verify private shadow container without replacing live ML
+        working-directory: ml-service
+        run: |
+          docker exec ml python -m scripts.shadow_candidate_ci prepare /app/.candidate-ci
+          manifest_sha=$(cat .candidate-ci/manifest.sha256)
+          docker run -d --name candidate-shadow --network host --read-only --tmpfs /tmp:rw,size=64m,mode=1777 --memory=512m --cpus=0.5 \
+            -e CANDIDATE_SHADOW_KEY=ci-candidate-fixture-only-not-for-production-0001 \
+            -e CANDIDATE_MANIFEST_SHA256="$manifest_sha" \
+            -v "$PWD/.candidate-ci:/candidate:ro" cah-ml-candidate-shadow-ci
+          if ! docker exec ml python -m scripts.shadow_candidate_ci probe http://127.0.0.1:9001; then
+            docker logs candidate-shadow
+            exit 1
+          fi
+          docker rm -f candidate-shadow
+
       - name: Generate JWT RS256 keys
         run: |
           mkdir -p keys
@@ -106,3 +125,4 @@ jobs:
             --ignore=tests/test_l1_oidc.py \
             --ignore=tests/test_l1_oidc_authlib.py \
             -p no:cacheprovider
+
