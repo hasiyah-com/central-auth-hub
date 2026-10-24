@@ -48,3 +48,21 @@ test("central users page manages trusted registration domains", () => {
   expect(usersPage).toContain("/admin/users/registration-domains");
   expect(usersPage).toContain("เพิ่ม Domain");
 });
+
+test("developer subsystem exposes the same owner-manageable controls as admin", () => {
+  const developerPage = fs.readFileSync(
+    path.join(root, "(developer)", "developer", "subsystems", "[id]", "page.tsx"),
+    "utf8"
+  );
+  const adminPage = fs.readFileSync(
+    path.join(root, "(console)", "subsystems", "[id]", "page.tsx"),
+    "utf8"
+  );
+  for (const source of [developerPage, adminPage]) {
+    expect(source).toContain("<AccessPolicyCard");
+    expect(source).toContain("apiKeyPrefix={sub.api_key_prefix}");
+    expect(source).toContain("subsystem-detail-view");
+  }
+  expect(developerPage).toContain("editWebhookUrl");
+  expect(developerPage).toContain("body.access_revoke_webhook_url");
+});

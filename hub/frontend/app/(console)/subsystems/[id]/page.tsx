@@ -13,7 +13,7 @@ import { clientFetch } from "@/lib/api";
 import { mutateWithStepup, runWithStepup } from "@/lib/passkey";
 import "../../../signal-room.css";
 import "../../../signal-console.css";
-import { AccessPolicyCard } from "./_components/AccessPolicyCard";
+import { AccessPolicyCard } from "@/components/subsystems/AccessPolicyCard";
 
 function errText(e: unknown, fallback: string): string {
   if (e instanceof DOMException && e.name === "NotAllowedError")

@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Access Policy card — เลือกว่าใครเข้า subsystem ได้ (explicit/all/role/attribute)
+ * Shared Access Policy card — เลือกว่าใครเข้า subsystem ได้ (explicit/all/role/attribute)
  * + จัดการ Roster API key (prefix + rotate).
  * เปลี่ยน policy = critical action → mutateWithStepup (PATCH /developer/subsystems/{id}).
  */

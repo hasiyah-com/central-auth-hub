@@ -8,6 +8,7 @@ import { Badge } from "@/components/Badge";
 import { LineChart } from "@/components/LineChart";
 import { LatencyBandChart } from "@/components/LatencyBandChart";
 import { RiskDailyBarChart } from "@/components/RiskDailyBarChart";
+import { AccessPolicyCard } from "@/components/subsystems/AccessPolicyCard";
 import { clientFetch } from "@/lib/api";
 import { mutateWithStepup, runWithStepup } from "@/lib/passkey";
 import "@/app/signal-console.css";
@@ -57,6 +58,13 @@ type Subsystem = {
   status: string;
   scope: string[];
   allowed_roles?: string[];
+  access_policy?: string;
+  access_policy_config?: {
+    roles?: string[];
+    faculty?: string[];
+    major?: string[];
+  } | null;
+  api_key_prefix?: string | null;
   redirect_uris?: string[];
   access_revoke_webhook_url?: string | null;
   self_registration_mode?: "closed" | "domain_auto";
@@ -225,6 +233,7 @@ export default function DeveloperSubsystemDetailPage({
   const [editAllowedRoles, setEditAllowedRoles] = useState("");
   const [editSelfRegistration, setEditSelfRegistration] = useState(false);
   const [editRegistrationDomains, setEditRegistrationDomains] = useState("");
+  const [editWebhookUrl, setEditWebhookUrl] = useState("");
   const [editBusy, setEditBusy] = useState(false);
   // Pending requests for this subsystem
   const [pendings, setPendings] = useState<PendingRequest[]>([]);
@@ -309,6 +318,7 @@ export default function DeveloperSubsystemDetailPage({
     setEditAllowedRoles((sub.allowed_roles || []).join(", "));
     setEditSelfRegistration(sub.self_registration_mode === "domain_auto");
     setEditRegistrationDomains((sub.allowed_email_domains || []).join(", "));
+    setEditWebhookUrl(sub.access_revoke_webhook_url || "");
     setEditOpen(true);
   }
 
@@ -360,6 +370,11 @@ export default function DeveloperSubsystemDetailPage({
     ) {
       body.self_registration_mode = newMode;
       body.allowed_email_domains = newDomains;
+    }
+
+    const newWebhookUrl = editWebhookUrl.trim();
+    if (newWebhookUrl !== (sub.access_revoke_webhook_url || "")) {
+      body.access_revoke_webhook_url = newWebhookUrl;
     }
 
     if (Object.keys(body).length === 0) {
@@ -634,7 +649,7 @@ export default function DeveloperSubsystemDetailPage({
     return (
       <>
         <Topbar title="ระบบย่อย" />
-        <div className="sc">
+        <div className="sc subsystem-detail-view">
           <main className="cx-document">
             <div className="cx-msg err">{error}</div>
             <Link href="/developer/subsystems" className="cx-back">
@@ -650,7 +665,7 @@ export default function DeveloperSubsystemDetailPage({
     return (
       <>
         <Topbar title="ระบบย่อย" />
-        <div className="sc">
+        <div className="sc subsystem-detail-view">
           <main className="cx-document text-ink-400 text-sm">กำลังโหลด…</main>
         </div>
       </>
@@ -764,7 +779,7 @@ export default function DeveloperSubsystemDetailPage({
         </div>
       )}
       <Topbar title={sub.name} />
-      <div className="sc">
+      <div className="sc subsystem-detail-view">
       <section className="cx-command">
         <div>
           <span>
@@ -887,6 +902,19 @@ export default function DeveloperSubsystemDetailPage({
           </section>
         )}
 
+        <div className="subsystem-config-grid">
+        <AccessPolicyCard
+          subId={id}
+          policy={sub.access_policy || "explicit"}
+          config={sub.access_policy_config}
+          apiKeyPrefix={sub.api_key_prefix}
+          onReload={() => {
+            loadSubsystem();
+            loadWhitelist();
+            loadActive();
+          }}
+        />
+
         {/* ── Health — latency ย้อนหลัง (จากประวัติจริง) ── */}
         <section className="cx-panel">
           <header>
@@ -964,6 +992,7 @@ export default function DeveloperSubsystemDetailPage({
             </div>
           </div>
         </section>
+        </div>
 
         {/* Pending change requests banner */}
         {pendings.length > 0 && (
@@ -1610,6 +1639,21 @@ export default function DeveloperSubsystemDetailPage({
                 />
                 <p className="mt-1 text-[11px] text-ink-500">
                   ผู้ใช้ใหม่ได้สิทธิ์ต่ำสุดเฉพาะระบบนี้และถูกส่งเข้าคิว Admin
+                </p>
+              </div>
+
+              <div>
+                <div className="text-[11px] font-bold text-ink-500 uppercase tracking-wider mb-1.5">
+                  Webhook URL ของ subsystem <span className="text-emerald-600 normal-case">· apply ทันที</span>
+                </div>
+                <input
+                  value={editWebhookUrl}
+                  onChange={(event) => setEditWebhookUrl(event.target.value)}
+                  placeholder="ปล่อยว่างเพื่อใช้ URL ที่ derive จาก redirect_uri"
+                  className="w-full px-3 py-2 rounded-lg border border-ink-200 font-mono text-[12px] focus:outline-none focus:border-brand-500"
+                />
+                <p className="mt-1 text-[11px] text-ink-500">
+                  Hub ใช้ส่งเหตุการณ์ revoke หรือเปลี่ยนสิทธิ์ไปปิด session ในระบบย่อย
                 </p>
               </div>
             </div>
