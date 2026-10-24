@@ -104,11 +104,22 @@ async def evaluate_login_risk(
             baseline_rule=rule_result, behavior=behavior_result, baseline=decision,
             observations=rule_observations,
         )
+        breakdown = {
+            "risk_policy": "contextual-trial-v1" if settings.risk_contextual_trial_enabled else "baseline",
+            "risk_decision": decision.decision,
+            "risk_shadow_decision": "would_block" if shadow_mode else None,
+            **decision.breakdown,
+            **({"l3_auth_candidate": candidate} if candidate else {}),
+            **({"c3_pge_shadow": shadow_comparison} if shadow_comparison else {}),
+        }
+        candidate_comparison = await _evaluate_if_candidate_shadow(features)
+        if candidate_comparison is not None:
+            breakdown["if_candidate_shadow"] = candidate_comparison
         return {
             "decision": decision.decision,
             "score": decision.total_score,
             "reasons": decision.reasons,
-            "breakdown": {"risk_policy": "contextual-trial-v1" if settings.risk_contextual_trial_enabled else "baseline", "risk_decision": decision.decision, "risk_shadow_decision": "would_block" if shadow_mode else None, **decision.breakdown, **({"l3_auth_candidate": candidate} if candidate else {}), **({"c3_pge_shadow": shadow_comparison} if shadow_comparison else {})},
+            "breakdown": breakdown,
             # hard block ข้าม L3 ไปเลย — คง shape ของ response ให้เท่ากันทุกเส้นทาง
             "iforest_explanation": [],
             "monitoring_decision": "normal",
@@ -241,16 +252,12 @@ async def evaluate_login_risk(
     # Neither is overwritten by later authentication (e.g. mfa_passed).
     breakdown["access_decision"] = access_decision
 
-    # Compare an independent research artifact only after live policy is fixed.
-    # No DB access, token/MFA/alert callbacks or live model-cache writes here.
-    if getattr(settings, "l3_candidate_shadow_enabled", False) and decision.decision == "allow":
-        from app.services.if_candidate_shadow import evaluate_candidate, quiet
-        try:
-            comparison = await evaluate_candidate(list(features))
-        except Exception:
-            comparison = quiet("unavailable")
-        if comparison is not None:
-            breakdown["if_candidate_shadow"] = comparison
+    # Observe the independent candidate at every baseline level so operators can
+    # verify it is alive.  Its response remains diagnostic-only; live access was
+    # fixed above and only the existing L3 fallback may elevate a baseline allow.
+    candidate_comparison = await _evaluate_if_candidate_shadow(features)
+    if candidate_comparison is not None:
+        breakdown["if_candidate_shadow"] = candidate_comparison
 
     logger.info(
         "[risk_engine] user=%s score=%.3f decision=%s monitoring=%s",
@@ -297,6 +304,17 @@ def _evaluate_c3_shadow(enabled, **kwargs):
         # Roll back the savepoint only. Baseline access, tokens and ML remain intact.
         logger.warning("[c3_pge_shadow] unavailable error_type=%s", type(exc).__name__)
         return c3_pge_shadow.unavailable("unavailable")
+
+
+async def _evaluate_if_candidate_shadow(features):
+    """Evaluate the isolated candidate without letting it affect live access."""
+    if not getattr(settings, "l3_candidate_shadow_enabled", False):
+        return None
+    from app.services.if_candidate_shadow import evaluate_candidate, quiet
+    try:
+        return await evaluate_candidate(list(features))
+    except Exception:
+        return quiet("unavailable")
 
 
 def _user_type(db, user_id) -> str | None:
